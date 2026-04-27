@@ -1,5 +1,62 @@
 # WORKLOG
 
+## 2026-04-28 07:23 - Add web login placeholder and role gate
+
+### 完成内容
+- 在 `web/src/app/` 建立前端 mock 登录态边界：
+  - 新增 `auth-store.ts`，集中管理本地 mock 角色会话、登录跳转路径和测试环境下的内存回退；
+  - 新增 `auth.tsx`，提供 `/login` 登录占位页和角色受保护路由包装。
+- 为成员、管理员、系统管理员三类入口补齐前端门禁：
+  - 未登录访问 `/member`、`/admin`、`/system` 时会被重定向到 `/login`；
+  - 已登录但角色不匹配时，显式展示角色错配占位，而不是静默放行或吞掉问题。
+- 调整首页和角色占位页文案：
+  - 首页显示当前 mock 会话状态、切换入口和“未接真实 OAuth”的边界说明；
+  - `RoleShell` 改为通用容器，供受保护角色页和错配提示复用。
+- 补充前端测试，覆盖：
+  - 首页角色入口与登录占位文案；
+  - 未登录访问管理员页会跳转到登录页；
+  - 以 mock 管理员身份登录后可进入请求页；
+  - 角色错配时返回明确提示。
+- 将 `TASKS.md` 中“建立 Web 登录和角色入口占位”标记为已完成。
+
+### 修改文件
+- `web/src/app/auth-store.ts`
+- `web/src/app/auth.tsx`
+- `web/src/app/role-routes.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/app/App.test.tsx`
+- `web/src/components/RoleShell.tsx`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮已经有前端路由骨架和 API 合同层，但还没有任何“未登录不可进入业务页”的统一前端门禁。
+- 如果继续直接做管理员列表或成员上传页，每个页面都需要各自拼接临时登录态和角色判断，前端权限边界会立刻分散，后续再收敛会产生返工。
+- 需求文档和架构文档都要求成员、管理员、系统管理员三类角色入口明确分离；在真实 OAuth 尚未接入前，需要先把 mock 会话和路由守卫边界固定下来。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，3 个前端测试文件、8 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于后端已有 `HTTP_422_UNPROCESSABLE_ENTITY` 常量使用，不是本轮新增问题。
+  - `npm test` 期间仍打印 1 条 Node `--localstorage-file` 警告，但测试与构建均通过；本轮已在前端 mock 会话 store 中对非标准 `localStorage` 环境做了显式内存回退，不影响当前任务结论。
+
+### 假设
+- 本轮 Web 登录只服务于前端页面开发和权限入口联调，不与后端认证、真实用户资料或令牌交换耦合。
+- mock 会话仅保存角色和占位身份信息；不模拟刷新令牌、会话过期或后端鉴权失败，这些边界留给后续真实认证任务。
+- 角色错配时当前选择显式展示“不可访问”占位页，而不是自动跳转到当前角色首页，以避免掩盖权限问题。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现管理员任务列表页面”，直接复用当前 `/admin` 受保护入口、mock 管理员身份和统一错误展示边界。
+
 ## 2026-04-28 07:12 - Establish frontend API contract and error boundary
 
 ### 完成内容

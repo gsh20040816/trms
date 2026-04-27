@@ -1,16 +1,22 @@
 import { Link, Outlet } from "react-router-dom";
 
+import { buildLoginPath, clearMockSession, useAuthSession } from "./auth-store";
 import { roleRoutes } from "./role-routes";
 import { apiClient } from "../lib/api/client";
 
 export function RootLayout() {
+  const session = useAuthSession();
+  const currentRoleRoute = session
+    ? roleRoutes.find((roleRoute) => roleRoute.role === session.role) ?? null
+    : null;
+
   return (
     <div className="app-shell">
       <header className="hero-panel">
         <p className="eyebrow">TRMS Web Skeleton</p>
-        <h1>报销收集前端骨架已建立</h1>
+        <h1>报销收集前端入口与登录占位已建立</h1>
         <p className="hero-copy">
-          当前只固化入口、路由和 API 客户端边界，不在本轮实现业务页面。
+          当前只固化入口、mock 登录态、角色路由门禁和 API 客户端边界，不在本轮实现业务页面。
         </p>
         <dl className="boundary-grid" aria-label="当前边界">
           <div>
@@ -34,6 +40,45 @@ export function RootLayout() {
             <dd>统一解析 detail/message/字段校验错误，不在前端静默吞掉</dd>
           </div>
         </dl>
+        <section className="session-banner" aria-label="当前会话">
+          <div>
+            <p className="eyebrow">Session Boundary</p>
+            <h2>{session ? "当前已进入 mock 会话" : "当前未登录"}</h2>
+            <p>
+              当前未接真实 OAuth 或账号密码，只使用本地 mock 角色会话固化成员、管理员和系统管理员三类入口。
+            </p>
+          </div>
+          <div className="session-grid">
+            <div>
+              <dt>当前角色</dt>
+              <dd>{currentRoleRoute ? currentRoleRoute.loginLabel : "未登录"}</dd>
+            </div>
+            <div>
+              <dt>当前身份</dt>
+              <dd>
+                {session
+                  ? `${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`
+                  : "请先选择 mock 身份"}
+              </dd>
+            </div>
+          </div>
+          <div className="inline-actions">
+            <Link className="route-link" to={session && currentRoleRoute ? currentRoleRoute.path : "/login"}>
+              {session ? "进入当前入口" : "选择 mock 身份"}
+            </Link>
+            {session ? (
+              <button
+                className="route-link route-link-secondary"
+                type="button"
+                onClick={() => {
+                  clearMockSession();
+                }}
+              >
+                退出 mock 会话
+              </button>
+            ) : null}
+          </div>
+        </section>
       </header>
       <main className="page-content">
         <Outlet />
@@ -43,6 +88,8 @@ export function RootLayout() {
 }
 
 export function HomePage() {
+  const session = useAuthSession();
+
   return (
     <div className="page-stack">
       <section className="card-grid" aria-label="角色入口">
@@ -51,11 +98,31 @@ export function HomePage() {
             <p className="card-kicker">{roleRoute.emphasis}</p>
             <h2>{roleRoute.title}</h2>
             <p>{roleRoute.summary}</p>
-            <Link className="route-link" to={roleRoute.path}>
-              进入占位页
+            <p className="role-card-meta">
+              {session
+                ? session.role === roleRoute.role
+                  ? "当前身份可直接进入该入口。"
+                  : "当前已登录为其他角色，进入后会看到角色错配提示。"
+                : "未登录时将先跳转到 mock 登录占位页。"}
+            </p>
+            <Link
+              className="route-link"
+              to={session ? roleRoute.path : buildLoginPath(roleRoute.path)}
+            >
+              {session ? (session.role === roleRoute.role ? "进入当前入口" : "查看入口边界") : "登录后进入"}
             </Link>
           </article>
         ))}
+      </section>
+      <section className="status-card auth-panel" aria-label="登录占位边界">
+        <p className="eyebrow">Mock Auth</p>
+        <h2>登录与角色入口边界已固定</h2>
+        <p>
+          未登录用户访问业务路由时会被重定向到 `/login`；当前登录只保存本地 mock 角色，不接入真实 OAuth，也不向后端换取令牌。
+        </p>
+        <p className="status-note">
+          这一边界用于支撑下一批管理员列表、成员上传和系统配置页面开发，避免每个页面各自实现临时登录逻辑。
+        </p>
       </section>
       <section className="status-card contract-card" aria-label="API 合同边界">
         <p className="eyebrow">API Contracts</p>

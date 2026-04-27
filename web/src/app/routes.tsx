@@ -1,7 +1,8 @@
 import type { RouteObject } from "react-router-dom";
 
+import { MockLoginPage, ProtectedRoleRoute } from "./auth";
 import { HomePage, NotFoundPage, RootLayout } from "./pages";
-import { buildRoleShell, roleRoutes } from "./role-routes";
+import { roleRoutes } from "./role-routes";
 
 export const routes: RouteObject[] = [
   {
@@ -12,9 +13,13 @@ export const routes: RouteObject[] = [
         index: true,
         element: <HomePage />,
       },
+      {
+        path: "login",
+        element: <MockLoginPage />,
+      },
       ...roleRoutes.map((roleRoute) => ({
         path: roleRoute.path.slice(1),
-        element: buildRoleShell(roleRoute),
+        element: <ProtectedRoleRoute roleRoute={roleRoute} />,
       })),
       {
         path: "*",
