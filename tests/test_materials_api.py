@@ -45,14 +45,68 @@ def test_submit_material_to_open_task(tmp_path):
 
     assert response.status_code == 201
     material = response.json()["items"][0]
+    assert material["status"] == "assigned"
     assert material["task_id"] == task_id
     assert material["submitter_id"] == "2250001"
+    assert material["task_id_hint"] is None
+    assert material["submitter_id_hint"] is None
     assert material["channel"] == "web"
     assert material["material_type"] == "invoice"
     assert material["storage_key"].startswith(f"{task_id}/")
     assert material["original_filename"] == "ticket.pdf"
     assert material["size_bytes"] == len(b"fake-pdf-content")
     assert material["duplicate_of"] is None
+
+
+def test_submit_pending_assignment_material_without_resolved_identity(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/materials/pending-assignment",
+        data={
+            "channel": "telegram",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    material = response.json()["items"][0]
+    assert material["status"] == "pending_assignment"
+    assert material["task_id"] is None
+    assert material["submitter_id"] is None
+    assert material["task_id_hint"] is None
+    assert material["submitter_id_hint"] is None
+    assert material["channel"] == "telegram"
+    assert material["storage_key"].startswith("_pending_assignment/")
+
+
+def test_pending_assignment_material_stays_hidden_from_task_material_list(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        "/api/materials/pending-assignment",
+        data={
+            "task_id_hint": task_id,
+            "submitter_id_hint": "2250999",
+            "channel": "email",
+            "material_type": "other_attachment",
+        },
+        files={"files": ("notice.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    material = response.json()["items"][0]
+    assert material["status"] == "pending_assignment"
+    assert material["task_id"] is None
+    assert material["submitter_id"] is None
+    assert material["task_id_hint"] == task_id
+    assert material["submitter_id_hint"] == "2250999"
+
+    listed = client.get(f"/api/tasks/{task_id}/materials")
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
 
 
 def test_submit_material_accepts_supported_material_types(tmp_path):

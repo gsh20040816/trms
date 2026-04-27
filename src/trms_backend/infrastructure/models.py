@@ -42,13 +42,16 @@ class MaterialRow(Base):
     __table_args__ = (Index("ix_material_task_sha256", "task_id", "sha256"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     task_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("reimbursement_tasks.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
-    submitter_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    submitter_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    task_id_hint: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    submitter_id_hint: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     material_type: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)

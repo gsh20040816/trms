@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-04-28 02:11 - Add pending-assignment material status
+
+### 完成内容
+- 在材料领域模型中新增显式 `status`，区分 `assigned` 和 `pending_assignment` 两类材料；待归属材料允许暂不绑定 `task_id` 和 `submitter_id`，同时保留 `task_id_hint`、`submitter_id_hint` 作为后续管理员认领的线索。
+- 为无法确定任务或提交人的渠道新增独立接入口 `POST /api/materials/pending-assignment`，复用现有文件校验和批量部分成功语义，把未归属材料收敛为显式状态，而不是继续靠直接失败或混入普通任务材料列表。
+- 调整材料仓储与任务内列表边界：只有 `assigned` 材料会参与任务维度查询和同任务文件哈希重复检测，确保待归属材料不会通过 `/api/tasks/{task_id}/materials` 暴露给普通成员视图。
+- 补充材料 API 测试，覆盖“无已解析身份时进入待归属状态”以及“带任务提示的待归属材料不会出现在任务材料列表中”两条最小回归路径。
+- 将 `TASKS.md` 中“增加待归属材料状态”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 19 个用例通过
+  - `uv run pytest tests/test_material_storage.py tests/test_invoices_api.py tests/test_tasks_api.py`
+    - 38 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 68 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“待归属材料”接入边界收敛为独立入口：现有 `POST /api/tasks/{task_id}/materials` 仍然坚持“任务已确定且提交人属于成员名单”这一显式不变量，不把原本应返回的成员校验错误静默降级为待归属。
+- 当前仓库尚未实现真实认证和管理员权限模型，因此本轮不伪造“管理员专用列表/处理接口”来声称完成权限控制；只保证待归属材料不会出现在任务内普通材料列表中，管理员认领和权限隔离的实际处理链路留给下一任务实现。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此本轮新增的 `materials.status`、`materials.task_id_hint`、`materials.submitter_id_hint` 以及空值约束调整只会自动体现在新建数据库上；已有旧库若缺少这些列，仍需后续迁移机制任务统一处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立待归属材料认领流程”，补上管理员将待归属材料绑定到任务和提交人的操作入口，并显式记录操作者与处理时间。
+
 ## 2026-04-28 02:04 - Support partial success for batch material upload
 
 ### 完成内容

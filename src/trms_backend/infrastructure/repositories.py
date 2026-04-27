@@ -29,6 +29,7 @@ from trms_backend.domain.invoices import (
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialRecord,
+    MaterialStatus,
     MaterialType,
     SubmissionChannel,
 )
@@ -134,7 +135,7 @@ class SqlAlchemyMaterialRepository:
 
     def create(self, data: MaterialCreate) -> MaterialRecord:
         with session_scope(self._session_factory) as session:
-            duplicate_of = self._find_duplicate_material_id(session, data.task_id, data.sha256)
+            duplicate_of = self._find_duplicate_material_id(session, data)
             row = MaterialRow(
                 id=str(uuid4()),
                 created_at=datetime.now(timezone.utc),
@@ -148,7 +149,10 @@ class SqlAlchemyMaterialRepository:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(
                 select(MaterialRow)
-                .where(MaterialRow.task_id == task_id)
+                .where(
+                    MaterialRow.task_id == task_id,
+                    MaterialRow.status == MaterialStatus.ASSIGNED.value,
+                )
                 .order_by(MaterialRow.created_at)
             ).all()
             return [_material_from_row(row) for row in rows]
@@ -158,10 +162,20 @@ class SqlAlchemyMaterialRepository:
             row = session.get(MaterialRow, material_id)
             return _material_from_row(row) if row else None
 
-    def _find_duplicate_material_id(self, session: Session, task_id: str, sha256: str) -> str | None:
+    def _find_duplicate_material_id(
+        self,
+        session: Session,
+        data: MaterialCreate,
+    ) -> str | None:
+        if data.status is not MaterialStatus.ASSIGNED or data.task_id is None:
+            return None
         return session.scalar(
             select(MaterialRow.id)
-            .where(MaterialRow.task_id == task_id, MaterialRow.sha256 == sha256)
+            .where(
+                MaterialRow.task_id == data.task_id,
+                MaterialRow.status == MaterialStatus.ASSIGNED.value,
+                MaterialRow.sha256 == data.sha256,
+            )
             .order_by(MaterialRow.created_at)
             .limit(1)
         )
@@ -378,8 +392,11 @@ def _global_invoice_config_from_row(row: GlobalInvoiceConfigRow) -> GlobalInvoic
 def _material_from_row(row: MaterialRow) -> MaterialRecord:
     return MaterialRecord(
         id=row.id,
+        status=MaterialStatus(row.status),
         task_id=row.task_id,
         submitter_id=row.submitter_id,
+        task_id_hint=row.task_id_hint,
+        submitter_id_hint=row.submitter_id_hint,
         channel=SubmissionChannel(row.channel),
         material_type=MaterialType(row.material_type),
         storage_key=row.storage_key,

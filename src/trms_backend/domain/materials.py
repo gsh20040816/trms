@@ -6,7 +6,7 @@ from threading import RLock
 from typing import Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES = (
     "application/pdf",
@@ -34,9 +34,17 @@ class MaterialType(StrEnum):
     OTHER_ATTACHMENT = "other_attachment"
 
 
+class MaterialStatus(StrEnum):
+    ASSIGNED = "assigned"
+    PENDING_ASSIGNMENT = "pending_assignment"
+
+
 class MaterialCreate(BaseModel):
-    task_id: str = Field(min_length=1)
-    submitter_id: str = Field(min_length=1)
+    status: MaterialStatus
+    task_id: str | None = None
+    submitter_id: str | None = None
+    task_id_hint: str | None = None
+    submitter_id_hint: str | None = None
     channel: SubmissionChannel
     material_type: MaterialType
     storage_key: str = Field(min_length=1)
@@ -45,11 +53,34 @@ class MaterialCreate(BaseModel):
     size_bytes: int = Field(ge=0)
     sha256: str = Field(min_length=64, max_length=64)
 
+    @field_validator("task_id", "submitter_id", "task_id_hint", "submitter_id_hint")
+    @classmethod
+    def normalize_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_assignment_state(self) -> MaterialCreate:
+        if self.status is MaterialStatus.ASSIGNED:
+            if self.task_id is None or self.submitter_id is None:
+                raise ValueError("assigned material requires task_id and submitter_id")
+            return self
+        if self.task_id is not None or self.submitter_id is not None:
+            raise ValueError(
+                "pending_assignment material must not expose resolved task_id or submitter_id"
+            )
+        return self
+
 
 class MaterialRecord(BaseModel):
     id: str
-    task_id: str
-    submitter_id: str
+    status: MaterialStatus
+    task_id: str | None
+    submitter_id: str | None
+    task_id_hint: str | None
+    submitter_id_hint: str | None
     channel: SubmissionChannel
     material_type: MaterialType
     storage_key: str
@@ -151,7 +182,7 @@ class InMemoryMaterialRepository:
 
     def create(self, data: MaterialCreate) -> MaterialRecord:
         with self._lock:
-            duplicate_of = self._find_duplicate_material_id(data.task_id, data.sha256)
+            duplicate_of = self._find_duplicate_material_id(data)
             material = MaterialRecord(
                 id=str(uuid4()),
                 created_at=datetime.now(timezone.utc),
@@ -164,7 +195,9 @@ class InMemoryMaterialRepository:
     def list_by_task(self, task_id: str) -> list[MaterialRecord]:
         with self._lock:
             materials = [
-                material for material in self._materials.values() if material.task_id == task_id
+                material
+                for material in self._materials.values()
+                if material.status is MaterialStatus.ASSIGNED and material.task_id == task_id
             ]
             return sorted(materials, key=lambda material: material.created_at)
 
@@ -172,9 +205,15 @@ class InMemoryMaterialRepository:
         with self._lock:
             return self._materials.get(material_id)
 
-    def _find_duplicate_material_id(self, task_id: str, sha256: str) -> str | None:
+    def _find_duplicate_material_id(self, data: MaterialCreate) -> str | None:
+        if data.status is not MaterialStatus.ASSIGNED or data.task_id is None:
+            return None
         for material in self._materials.values():
-            if material.task_id == task_id and material.sha256 == sha256:
+            if (
+                material.status is MaterialStatus.ASSIGNED
+                and material.task_id == data.task_id
+                and material.sha256 == data.sha256
+            ):
                 return material.id
         return None
 

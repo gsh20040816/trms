@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialFileStorage,
+    MaterialStatus,
     MaterialUploadEmptyFileError,
     MaterialUploadMissingFilenameError,
     MaterialUploadTooLargeError,
@@ -24,6 +25,8 @@ from trms_backend.domain.tasks import (
     TaskSubmitterNotMemberError,
     ensure_task_accepts_member_submission,
 )
+
+PENDING_ASSIGNMENT_STORAGE_NAMESPACE = "_pending_assignment"
 
 
 def _raise_material_upload_http_error(error: MaterialUploadValidationError) -> None:
@@ -70,9 +73,59 @@ def build_material_router(
     material_repository: MaterialRepository,
     material_file_storage: MaterialFileStorage,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/tasks/{task_id}/materials", tags=["materials"])
+    router = APIRouter(tags=["materials"])
 
-    @router.post("", status_code=status.HTTP_201_CREATED)
+    async def validate_uploaded_files(
+        files: list[UploadFile],
+    ) -> tuple[list[tuple[str, str | None, bytes]], list[dict[str, str | None]]]:
+        batch_mode = len(files) > 1
+        validated_uploads: list[tuple[str, str | None, bytes]] = []
+        failures: list[dict[str, str | None]] = []
+        for file in files:
+            content = await file.read()
+            try:
+                validate_material_upload(
+                    original_filename=file.filename,
+                    content_type=file.content_type,
+                    content=content,
+                )
+            except MaterialUploadValidationError as error:
+                if not batch_mode:
+                    _raise_material_upload_http_error(error)
+                failures.append(
+                    {
+                        "original_filename": file.filename,
+                        "error_code": _material_upload_error_code(error),
+                        "detail": str(error),
+                    }
+                )
+                continue
+            validated_uploads.append((file.filename or "", file.content_type, content))
+        return validated_uploads, failures
+
+    def build_batch_response(records: list[object], failures: list[dict[str, str | None]]):
+        response_body: dict[str, object] = {
+            "status": "success",
+            "items": records,
+        }
+        if not failures:
+            return response_body
+
+        response_body["failures"] = failures
+        if records:
+            response_body["status"] = "partial_success"
+            return JSONResponse(
+                status_code=status.HTTP_207_MULTI_STATUS,
+                content=jsonable_encoder(response_body),
+            )
+
+        response_body["status"] = "failed"
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content=jsonable_encoder(response_body),
+        )
+
+    @router.post("/api/tasks/{task_id}/materials", status_code=status.HTTP_201_CREATED)
     async def submit_materials(
         task_id: str,
         submitter_id: Annotated[str, Form(min_length=1)],
@@ -101,30 +154,7 @@ def build_material_router(
                 detail=str(error),
             ) from error
 
-        batch_mode = len(files) > 1
-        validated_uploads: list[tuple[str, str | None, bytes]] = []
-        failures: list[dict[str, str | None]] = []
-        for file in files:
-            content = await file.read()
-            try:
-                validate_material_upload(
-                    original_filename=file.filename,
-                    content_type=file.content_type,
-                    content=content,
-                )
-            except MaterialUploadValidationError as error:
-                if not batch_mode:
-                    _raise_material_upload_http_error(error)
-                failures.append(
-                    {
-                        "original_filename": file.filename,
-                        "error_code": _material_upload_error_code(error),
-                        "detail": str(error),
-                    }
-                )
-                continue
-            validated_uploads.append((file.filename or "", file.content_type, content))
-
+        validated_uploads, failures = await validate_uploaded_files(files)
         records = []
         for original_filename, content_type, content in validated_uploads:
             stored_file = material_file_storage.save(
@@ -136,8 +166,11 @@ def build_material_router(
             records.append(
                 material_repository.create(
                     MaterialCreate(
+                        status=MaterialStatus.ASSIGNED,
                         task_id=task_id,
                         submitter_id=submitter_id,
+                        task_id_hint=None,
+                        submitter_id_hint=None,
                         channel=channel,
                         material_type=material_type,
                         storage_key=stored_file.storage_key,
@@ -148,28 +181,47 @@ def build_material_router(
                     )
                 )
             )
-        response_body: dict[str, object] = {
-            "status": "success",
-            "items": records,
-        }
-        if not failures:
-            return response_body
+        return build_batch_response(records, failures)
 
-        response_body["failures"] = failures
-        if records:
-            response_body["status"] = "partial_success"
-            return JSONResponse(
-                status_code=status.HTTP_207_MULTI_STATUS,
-                content=jsonable_encoder(response_body),
+    @router.post("/api/materials/pending-assignment", status_code=status.HTTP_201_CREATED)
+    async def submit_pending_assignment_materials(
+        channel: Annotated[SubmissionChannel, Form()],
+        material_type: Annotated[MaterialType, Form()],
+        files: Annotated[list[UploadFile], File(min_length=1)],
+        task_id_hint: Annotated[str | None, Form()] = None,
+        submitter_id_hint: Annotated[str | None, Form()] = None,
+    ):
+        validated_uploads, failures = await validate_uploaded_files(files)
+
+        records = []
+        for original_filename, content_type, content in validated_uploads:
+            stored_file = material_file_storage.save(
+                task_id=PENDING_ASSIGNMENT_STORAGE_NAMESPACE,
+                original_filename=original_filename,
+                content_type=content_type,
+                content=content,
             )
+            records.append(
+                material_repository.create(
+                    MaterialCreate(
+                        status=MaterialStatus.PENDING_ASSIGNMENT,
+                        task_id=None,
+                        submitter_id=None,
+                        task_id_hint=task_id_hint,
+                        submitter_id_hint=submitter_id_hint,
+                        channel=channel,
+                        material_type=material_type,
+                        storage_key=stored_file.storage_key,
+                        original_filename=stored_file.original_filename,
+                        content_type=stored_file.content_type,
+                        size_bytes=stored_file.size_bytes,
+                        sha256=stored_file.sha256,
+                    )
+                )
+            )
+        return build_batch_response(records, failures)
 
-        response_body["status"] = "failed"
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content=jsonable_encoder(response_body),
-        )
-
-    @router.get("")
+    @router.get("/api/tasks/{task_id}/materials")
     def list_materials(task_id: str):
         task = task_repository.get(task_id)
         if task is None:
