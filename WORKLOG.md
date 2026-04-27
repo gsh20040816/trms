@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-04-28 03:25 - Add large-amount payment record validation skeleton
+
+### 完成内容
+- 为发票校验新增 `invoice_payment_record_required` 规则：当单张发票金额达到阈值时，若未关联 `payment_record` 类型附件，则返回 `failed`；低于阈值时返回 `not_applicable`；已关联支付记录时返回 `passed`。
+- 将该规则接入现有发票创建校验链，并在结构化 `evidence` 中记录发票金额、阈值、配置来源和已关联支付记录材料 ID，避免后续调用方只能依赖自然语言消息判断。
+- 在发票辅助材料关联/取消关联后，新增局部重算逻辑，仅刷新支付记录规则，保证成员补传支付记录后校验结果会立即变化，同时不覆盖此前“识别缺失需人工确认”的校验语义。
+- 补充发票 API 回归测试，覆盖“低于阈值不适用”“达到阈值且缺少支付记录失败”“补充支付记录后重算通过”三条路径。
+- 将 `TASKS.md` 中“实现金额超过阈值需要支付记录的校验骨架”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoice_validation.py`
+- `src/trms_backend/api/invoices.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有发票校验只覆盖抬头、税号和重复号码，虽然仓库已经有发票与辅助材料关联模型，但“大额发票必须附支付记录”这一主链路规则尚未落到统一校验结果里，导致系统无法显式暴露该类缺失材料问题。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 20 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 92 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“金额超过阈值”收敛为“`amount_cents >= 100000`”，即默认阈值为 1000 元；该默认值当前以代码常量 `trms_backend.domain.invoice_validation.PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS` 表达，后续若需要任务级或系统级配置，再在单独任务中抽出配置入口。
+- 本轮只判断“是否存在至少一份 `payment_record` 类型附件”，不比较支付记录金额，也不校验支付记录内容完整性；这些能力留给 `TASKS.md` 中后续“支付记录金额匹配校验”等任务处理。
+- 为避免附件关联操作把既有“识别缺失 -> pending”语义意外覆盖，本轮在附件增删后只局部重算支付记录规则，不对抬头、税号、重复号码规则做全量重跑。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现支付记录金额匹配校验”，把当前“有无支付记录”骨架推进到支付金额一致性校验。
+
 ## 2026-04-28 03:19 - Mark unrecognized invoice title and tax number validations as pending
 
 ### 完成内容

@@ -1,6 +1,10 @@
 from fastapi import APIRouter, HTTPException, status
 
-from trms_backend.domain.invoice_validation import validate_invoice
+from trms_backend.domain.invoice_validation import (
+    PAYMENT_RECORD_REQUIRED_RULE_CODE,
+    validate_invoice,
+    validate_payment_record_requirement,
+)
 from trms_backend.domain.invoices import (
     InvoiceManualEntryActorNotAllowedError,
     InvoiceRepository,
@@ -29,6 +33,29 @@ def build_invoice_router(
     recognition_task_repository: RecognitionTaskRepository,
 ) -> APIRouter:
     router = APIRouter(tags=["invoices"])
+
+    def load_supporting_materials(invoice_id: str) -> list:
+        supporting_materials = []
+        for link in invoice_repository.list_supporting_material_links(invoice_id):
+            material = material_repository.get(link.material_id)
+            if material is not None:
+                supporting_materials.append(material)
+        return supporting_materials
+
+    def recalculate_payment_record_validation(invoice_id: str) -> list:
+        invoice = invoice_repository.get(invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+        existing_validations = validation_repository.list_by_invoice(invoice_id)
+        updated_validations = [
+            item
+            for item in existing_validations
+            if item.rule_code != PAYMENT_RECORD_REQUIRED_RULE_CODE
+        ]
+        updated_validations.append(
+            validate_payment_record_requirement(invoice, load_supporting_materials(invoice.id))
+        )
+        return validation_repository.replace_for_invoice(invoice.id, updated_validations)
 
     @router.post("/api/materials/{material_id}/invoice", status_code=status.HTTP_201_CREATED)
     def create_invoice(material_id: str, payload: ManualInvoiceEntry):
@@ -92,18 +119,18 @@ def build_invoice_router(
                 "expense_type",
             },
         )
-        duplicate_invoice_id = invoice_repository.find_duplicate_invoice_id(
-            invoice.task_id,
-            invoice.invoice_number,
-            invoice.id,
-        )
         validations = validation_repository.replace_for_invoice(
             invoice.id,
             validate_invoice(
                 invoice,
                 task,
-                duplicate_invoice_id,
+                invoice_repository.find_duplicate_invoice_id(
+                    invoice.task_id,
+                    invoice.invoice_number,
+                    invoice.id,
+                ),
                 latest_effective_recognition,
+                supporting_materials=load_supporting_materials(invoice.id),
             ),
         )
         return {"invoice": invoice, "validations": validations}
@@ -148,6 +175,7 @@ def build_invoice_router(
             )
 
         invoice_repository.attach_supporting_material(invoice_id, material_id)
+        recalculate_payment_record_validation(invoice_id)
         return {"item": material}
 
     @router.get("/api/invoices/{invoice_id}/supporting-materials")
@@ -174,6 +202,7 @@ def build_invoice_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="supporting material link not found",
             )
+        recalculate_payment_record_validation(invoice_id)
         return {"status": "deleted"}
 
     return router

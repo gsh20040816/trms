@@ -7,8 +7,12 @@ from trms_backend.domain.invoices import (
     ValidationSeverity,
     ValidationStatus,
 )
+from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.recognitions import RecognitionTaskRecord
 from trms_backend.domain.tasks import ReimbursementTask
+
+PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS = 100_000
+PAYMENT_RECORD_REQUIRED_RULE_CODE = "invoice_payment_record_required"
 
 
 def validate_invoice(
@@ -16,8 +20,10 @@ def validate_invoice(
     task: ReimbursementTask,
     duplicate_invoice_id: str | None,
     recognition_task: RecognitionTaskRecord | None = None,
+    supporting_materials: list[MaterialRecord] | None = None,
 ) -> list[ValidationResult]:
     invoice_number_is_unique = duplicate_invoice_id is None
+    supporting_materials = supporting_materials or []
     return [
         _validate_invoice_title(invoice, task, recognition_task),
         _validate_invoice_tax_number(invoice, task, recognition_task),
@@ -35,6 +41,7 @@ def validate_invoice(
                 "duplicate_invoice_id": duplicate_invoice_id,
             },
         ),
+        validate_payment_record_requirement(invoice, supporting_materials),
     ]
 
 
@@ -127,7 +134,7 @@ def _validation_result(
     target_id: str,
     status: ValidationStatus,
     message: str,
-    evidence: dict[str, str | None],
+    evidence: dict[str, object | None],
 ) -> ValidationResult:
     return ValidationResult(
         id=str(uuid4()),
@@ -139,4 +146,71 @@ def _validation_result(
         message=message,
         evidence=evidence,
         created_at=datetime.now(timezone.utc),
+    )
+
+
+def validate_payment_record_requirement(
+    invoice: InvoiceRecord,
+    supporting_materials: list[MaterialRecord],
+) -> ValidationResult:
+    threshold_cents = PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    payment_record_material_ids = [
+        material.id
+        for material in supporting_materials
+        if material.material_type is MaterialType.PAYMENT_RECORD
+    ]
+    requires_payment_record = invoice.amount_cents >= threshold_cents
+    has_payment_record = len(payment_record_material_ids) > 0
+
+    if not requires_payment_record:
+        return _validation_result(
+            rule_code=PAYMENT_RECORD_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="发票金额未达到支付记录必需阈值",
+            evidence={
+                "amount_cents": invoice.amount_cents,
+                "threshold_amount_cents": threshold_cents,
+                "config_source": (
+                    "trms_backend.domain.invoice_validation."
+                    "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
+                ),
+                "requires_payment_record": False,
+                "payment_record_material_ids": payment_record_material_ids,
+            },
+        )
+
+    if has_payment_record:
+        return _validation_result(
+            rule_code=PAYMENT_RECORD_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="发票金额达到阈值，已关联支付记录",
+            evidence={
+                "amount_cents": invoice.amount_cents,
+                "threshold_amount_cents": threshold_cents,
+                "config_source": (
+                    "trms_backend.domain.invoice_validation."
+                    "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
+                ),
+                "requires_payment_record": True,
+                "payment_record_material_ids": payment_record_material_ids,
+            },
+        )
+
+    return _validation_result(
+        rule_code=PAYMENT_RECORD_REQUIRED_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="发票金额达到阈值，缺少支付记录",
+        evidence={
+            "amount_cents": invoice.amount_cents,
+            "threshold_amount_cents": threshold_cents,
+            "config_source": (
+                "trms_backend.domain.invoice_validation."
+                "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
+            ),
+            "requires_payment_record": True,
+            "payment_record_material_ids": payment_record_material_ids,
+        },
     )

@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.invoice_validation import (
+    PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+)
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
@@ -112,6 +115,18 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
     assert duplicate_validation["evidence"] == {
         "invoice_number": "INV-001",
         "duplicate_invoice_id": None,
+    }
+    payment_record_validation = validation_by_code(body, "invoice_payment_record_required")
+    assert payment_record_validation["status"] == "not_applicable"
+    assert payment_record_validation["evidence"] == {
+        "amount_cents": 12345,
+        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "config_source": (
+            "trms_backend.domain.invoice_validation."
+            "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
+        ),
+        "requires_payment_record": False,
+        "payment_record_material_ids": [],
     }
 
 
@@ -284,6 +299,76 @@ def test_create_invoice_reports_duplicate_invoice_number(tmp_path):
     assert "重复" in duplicate["message"]
     assert duplicate["evidence"]["invoice_number"] == "INV-001"
     assert duplicate["evidence"]["duplicate_invoice_id"] is not None
+
+
+def test_create_invoice_fails_payment_record_validation_when_amount_reaches_threshold(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {"amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS},
+    )
+
+    assert response.status_code == 201
+    payment_record_validation = validation_by_code(
+        response.json(), "invoice_payment_record_required"
+    )
+    assert payment_record_validation["status"] == "failed"
+    assert payment_record_validation["message"] == "发票金额达到阈值，缺少支付记录"
+    assert payment_record_validation["evidence"] == {
+        "amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "config_source": (
+            "trms_backend.domain.invoice_validation."
+            "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
+        ),
+        "requires_payment_record": True,
+        "payment_record_material_ids": [],
+    }
+
+
+def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {"amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS},
+    )
+    invoice_id = invoice_response.json()["invoice"]["id"]
+    payment_record_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="payment_record",
+    )
+
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+    )
+
+    assert attach_response.status_code == 200
+
+    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert validations_response.status_code == 200
+    payment_record_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == "invoice_payment_record_required"
+    )
+    assert payment_record_validation["status"] == "passed"
+    assert payment_record_validation["evidence"] == {
+        "amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "config_source": (
+            "trms_backend.domain.invoice_validation."
+            "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
+        ),
+        "requires_payment_record": True,
+        "payment_record_material_ids": [payment_record_material_id],
+    }
 
 
 def test_list_invoice_validations_returns_structured_evidence(tmp_path):
