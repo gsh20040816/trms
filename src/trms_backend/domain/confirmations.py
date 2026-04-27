@@ -14,12 +14,14 @@ class ConfirmationStatus(StrEnum):
 
 
 class ConfirmationSubmit(BaseModel):
+    actor_id: str = Field(min_length=1)
     member_id: str = Field(min_length=1)
     status: ConfirmationStatus
     dispute_reason: str | None = None
 
     @model_validator(mode="after")
     def validate_reason(self) -> ConfirmationSubmit:
+        self.actor_id = self.actor_id.strip()
         self.member_id = self.member_id.strip()
         if self.dispute_reason is not None:
             self.dispute_reason = self.dispute_reason.strip() or None

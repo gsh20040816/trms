@@ -69,7 +69,7 @@ def create_split_fixture(client: TestClient) -> tuple[str, str, dict[str, str]]:
 
     response = client.put(
         f"/api/splits/{split_ids['2250002']}/confirmation",
-        json={"member_id": "2250002", "status": "confirmed"},
+        json={"actor_id": "2250002", "member_id": "2250002", "status": "confirmed"},
     )
     assert response.status_code == 200
 

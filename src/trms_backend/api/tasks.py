@@ -216,6 +216,7 @@ def build_task_router(
         return confirmation_repository.upsert_for_split(
             split_id,
             ConfirmationSubmit(
+                actor_id=payload.administrator_id,
                 member_id=confirmation.member_id,
                 status=ConfirmationStatus.PENDING,
                 dispute_reason=confirmation.dispute_reason,

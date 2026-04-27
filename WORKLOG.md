@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-28 05:02 - Forbid proxy split confirmations by default
+
+### 完成内容
+- 在 `src/trms_backend/domain/confirmations.py` 为确认提交模型补充 `actor_id`，让“谁发起确认”成为显式输入，而不是继续隐含假设为成员本人。
+- 在 `src/trms_backend/api/confirmations.py` 增加默认代理确认拦截：
+  - `actor_id != member_id` 时直接返回 `403`，明确拒绝任何代成员确认路径；
+  - 仍保留“成员只能确认自己所属 split”的既有约束，避免通过伪造 `member_id` 越权确认他人费用。
+- 在 `src/trms_backend/api/tasks.py` 补齐管理员处理异议后重置为 `pending` 的内部确认构造，确保新增 `actor_id` 约束不会破坏现有异议处理链路。
+- 扩展 `tests/test_confirmations_api.py`，新增“管理员默认不能代成员确认”的回归测试，并同步更新确认相关测试请求体。
+- 将 `TASKS.md` 中“禁止管理员代确认默认路径”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/confirmations.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/confirmations.py`
+- `tests/test_confirmations_api.py`
+- `tests/test_expense_details_api.py`
+- `tests/test_expense_disputes_api.py`
+- `tests/test_overdue_confirmations_api.py`
+- `tests/test_splits_api.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有确认接口只接收 `member_id`，没有任何操作者上下文，服务端无法区分“成员本人确认”与“管理员或其他人代确认”：
+  - 只要请求体填入正确的 `member_id`，接口就会把调用者视为该成员本人；
+  - “禁止管理员代确认”因此只是一条隐含假设，而不是可验证的服务端约束；
+  - 一旦后续接入真实 Web/CLI 身份上下文，这个缺口会直接变成越权确认风险。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_confirmations_api.py tests/test_splits_api.py tests/test_expense_disputes_api.py tests/test_overdue_confirmations_api.py tests/test_tasks_api.py tests/test_expense_details_api.py`
+    - 57 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 128 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 第一阶段当前不保留“管理员代成员确认”的业务入口占位；在尚无审计日志与代确认原因记录能力前，默认直接禁止比保留半成品兼容层更安全，也更符合任务边界。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立管理员复核状态流转”，把现有确认、异议、校验和任务状态门禁收敛为显式复核闭环。
+
 ## 2026-04-28 04:57 - Identify overdue member confirmations
 
 ### 完成内容

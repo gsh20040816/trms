@@ -175,7 +175,7 @@ def test_replace_invoice_splits_resets_changed_member_confirmations_to_pending(t
     for member_id, split_id in initial_split_ids.items():
         response = client.put(
             f"/api/splits/{split_id}/confirmation",
-            json={"member_id": member_id, "status": "confirmed"},
+            json={"actor_id": member_id, "member_id": member_id, "status": "confirmed"},
         )
         assert response.status_code == 200
 
@@ -239,7 +239,7 @@ def test_replace_invoice_splits_keeps_unchanged_member_confirmation(tmp_path):
 
     response = client.put(
         f"/api/splits/{initial_split_ids['2250001']}/confirmation",
-        json={"member_id": "2250001", "status": "confirmed"},
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
     )
     assert response.status_code == 200
 

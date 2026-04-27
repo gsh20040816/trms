@@ -24,7 +24,7 @@ def test_confirm_own_split(tmp_path):
 
     response = client.put(
         f"/api/splits/{split_id}/confirmation",
-        json={"member_id": "2250001", "status": "confirmed"},
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
     )
 
     assert response.status_code == 200
@@ -41,6 +41,7 @@ def test_dispute_own_split(tmp_path):
     response = client.put(
         f"/api/splits/{split_id}/confirmation",
         json={
+            "actor_id": "2250001",
             "member_id": "2250001",
             "status": "disputed",
             "dispute_reason": "amount is wrong",
@@ -60,7 +61,7 @@ def test_dispute_requires_reason(tmp_path):
 
     response = client.put(
         f"/api/splits/{split_id}/confirmation",
-        json={"member_id": "2250001", "status": "disputed"},
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "disputed"},
     )
 
     assert response.status_code == 422
@@ -72,7 +73,7 @@ def test_member_cannot_submit_pending_confirmation_status(tmp_path):
 
     response = client.put(
         f"/api/splits/{split_id}/confirmation",
-        json={"member_id": "2250001", "status": "pending"},
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "pending"},
     )
 
     assert response.status_code == 422
@@ -84,11 +85,24 @@ def test_member_cannot_confirm_other_member_split(tmp_path):
 
     response = client.put(
         f"/api/splits/{split_id}/confirmation",
-        json={"member_id": "2250002", "status": "confirmed"},
+        json={"actor_id": "2250002", "member_id": "2250002", "status": "confirmed"},
     )
 
     assert response.status_code == 403
     assert response.json()["detail"] == "member can only confirm own split"
+
+
+def test_administrator_cannot_confirm_split_for_member_by_default(tmp_path):
+    client = make_client(tmp_path)
+    _, split_id = create_split(client)
+
+    response = client.put(
+        f"/api/splits/{split_id}/confirmation",
+        json={"actor_id": "admin-1", "member_id": "2250001", "status": "confirmed"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "proxy confirmation is not allowed"
 
 
 def test_list_invoice_confirmations(tmp_path):
@@ -96,7 +110,7 @@ def test_list_invoice_confirmations(tmp_path):
     invoice_id, split_id = create_split(client)
     confirmation_response = client.put(
         f"/api/splits/{split_id}/confirmation",
-        json={"member_id": "2250001", "status": "confirmed"},
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
     )
 
     response = client.get(f"/api/invoices/{invoice_id}/confirmations")

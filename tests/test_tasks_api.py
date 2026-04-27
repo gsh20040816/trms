@@ -95,7 +95,7 @@ def replace_invoice_splits(client: TestClient, invoice_id: str) -> str:
 def confirm_split(client: TestClient, split_id: str) -> None:
     response = client.put(
         f"/api/splits/{split_id}/confirmation",
-        json={"member_id": "2250001", "status": "confirmed"},
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
     )
     assert response.status_code == 200
 
@@ -494,7 +494,7 @@ def test_update_task_status_rejects_ready_to_export_when_split_amount_changes_af
     for member_id, split_id in split_ids.items():
         response = client.put(
             f"/api/splits/{split_id}/confirmation",
-            json={"member_id": member_id, "status": "confirmed"},
+            json={"actor_id": member_id, "member_id": member_id, "status": "confirmed"},
         )
         assert response.status_code == 200
 

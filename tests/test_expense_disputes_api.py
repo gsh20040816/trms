@@ -69,13 +69,14 @@ def create_disputed_split_fixture(client: TestClient) -> tuple[str, str, str]:
 
     response = client.put(
         f"/api/splits/{split_ids['2250001']}/confirmation",
-        json={"member_id": "2250001", "status": "confirmed"},
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
     )
     assert response.status_code == 200
 
     response = client.put(
         f"/api/splits/{split_ids['2250002']}/confirmation",
         json={
+            "actor_id": "2250002",
             "member_id": "2250002",
             "status": "disputed",
             "dispute_reason": "shared amount should be lower",

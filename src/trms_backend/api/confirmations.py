@@ -18,6 +18,12 @@ def build_confirmation_router(
         if split is None or not split.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="split not found")
 
+        if payload.actor_id != payload.member_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="proxy confirmation is not allowed",
+            )
+
         if payload.member_id != split.member_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
