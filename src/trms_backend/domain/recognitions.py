@@ -160,6 +160,9 @@ class RecognitionTaskRepository(Protocol):
     def get(self, recognition_task_id: str) -> RecognitionTaskRecord | None:
         raise NotImplementedError
 
+    def get_latest_effective_by_material(self, material_id: str) -> RecognitionTaskRecord | None:
+        raise NotImplementedError
+
     def list_by_material(self, material_id: str) -> list[RecognitionTaskRecord]:
         raise NotImplementedError
 

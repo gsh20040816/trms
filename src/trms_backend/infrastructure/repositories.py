@@ -418,6 +418,19 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
             row = session.get(RecognitionTaskRow, recognition_task_id)
             return _recognition_task_from_row(row) if row else None
 
+    def get_latest_effective_by_material(self, material_id: str) -> RecognitionTaskRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(RecognitionTaskRow)
+                .where(
+                    RecognitionTaskRow.material_id == material_id,
+                    RecognitionTaskRow.status != RecognitionTaskStatus.PENDING.value,
+                )
+                .order_by(RecognitionTaskRow.created_at.desc())
+                .limit(1)
+            )
+            return _recognition_task_from_row(row) if row else None
+
     def list_by_material(self, material_id: str) -> list[RecognitionTaskRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(
@@ -476,6 +489,7 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
                     created_at=now,
                     updated_at=now,
                 )
+            should_promote_pending_task = row.status == RecognitionTaskStatus.PENDING.value
             recognized_fields = {
                 field_name: RecognitionFieldResult.model_validate(field_result)
                 for field_name, field_result in (row.recognized_fields or {}).items()
@@ -511,6 +525,8 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
                         corrected_at=now,
                     )
                 )
+            if should_promote_pending_task and (recognized_fields or manual_corrections):
+                row.status = RecognitionTaskStatus.NEEDS_CONFIRMATION.value
             row.recognized_fields = _recognized_fields_to_json(
                 recognized_fields,
                 default_updated_at=now,

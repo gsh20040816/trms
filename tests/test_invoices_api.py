@@ -263,6 +263,63 @@ def test_manual_invoice_correction_updates_recognition_fields_and_keeps_diff_his
     assert tax_number_corrections[0]["after"]["value"] == "12100000425006117D"
 
 
+def test_manual_invoice_correction_on_retry_keeps_older_recognition_history_unchanged(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+    first_recognition_task_id = client.get(f"/api/materials/{material_id}/recognition-tasks").json()[
+        "items"
+    ][0]["id"]
+    first_result = {
+        "raw_response": {
+            "provider": "placeholder-ai",
+            "document_type": "invoice",
+        },
+        "recognized_fields": {
+            "buyer_name": {
+                "value": "Tongji ACM Lab",
+                "source": "ocr",
+                "confidence": 0.44,
+                "status": "needs_confirmation",
+            }
+        },
+    }
+    first_update = client.patch(
+        f"/api/recognition-tasks/{first_recognition_task_id}/status",
+        json={
+            "target_status": "needs_confirmation",
+            "result": first_result,
+        },
+    )
+
+    assert first_update.status_code == 200
+
+    retry_create = client.post(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert retry_create.status_code == 201
+    retry_task_id = retry_create.json()["item"]["id"]
+
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload(),
+    )
+
+    assert invoice_response.status_code == 201
+
+    listed = client.get(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert listed.status_code == 200
+    body = listed.json()
+    assert [item["id"] for item in body["items"]] == [first_recognition_task_id, retry_task_id]
+    assert body["items"][0]["recognized_fields"]["buyer_name"]["value"] == "Tongji ACM Lab"
+    assert body["items"][0]["recognized_fields"]["buyer_name"]["source"] == "ocr"
+    assert body["items"][0]["manual_corrections"] == []
+    assert body["items"][1]["status"] == "needs_confirmation"
+    assert body["items"][1]["recognized_fields"]["buyer_name"]["value"] == "同济大学"
+    assert body["items"][1]["recognized_fields"]["buyer_name"]["source"] == "manual"
+    assert body["items"][1]["manual_corrections"] != []
+    assert body["latest_effective"]["id"] == retry_task_id
+
+
 def test_create_invoice_rejects_expense_type_not_allowed_by_task(tmp_path):
     client = make_client(tmp_path)
     task_payload = valid_task_payload() | {"fee_categories": ["registration", "hotel"]}

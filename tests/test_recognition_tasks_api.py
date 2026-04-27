@@ -57,6 +57,7 @@ def test_uploaded_material_auto_creates_placeholder_recognition_task_marks_ai_ou
     material_id = upload_material(client, task_id)
 
     body = get_single_recognition_task(client, material_id)
+    listing = client.get(f"/api/materials/{material_id}/recognition-tasks")
 
     assert body["material_id"] == material_id
     assert body["status"] == "pending"
@@ -65,6 +66,7 @@ def test_uploaded_material_auto_creates_placeholder_recognition_task_marks_ai_ou
     assert body["raw_response"] is None
     assert body["recognized_fields"] == {}
     assert body["manual_corrections"] == []
+    assert listing.json()["latest_effective"] is None
 
 
 def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path):
@@ -81,6 +83,7 @@ def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path
 
     assert listed.status_code == 200
     items = listed.json()["items"]
+    assert listed.json()["latest_effective"] is None
     assert len(items) == 2
     assert items[0]["status"] == "pending"
     assert items[1]["id"] == created["id"]
@@ -236,6 +239,79 @@ def test_low_confidence_fields_require_needs_confirmation_and_are_persisted(tmp_
 
     assert listed.status_code == 200
     listed_body = listed.json()["items"][0]
+    assert listed.json()["latest_effective"]["id"] == recognition_task_id
     assert listed_body["raw_response"] == recognition_result["raw_response"]
     assert listed_body["recognized_fields"]["buyer_name"]["confidence"] == 0.42
     assert listed_body["recognized_fields"]["buyer_name"]["status"] == "needs_confirmation"
+
+
+def test_recognition_task_listing_returns_latest_effective_result_and_full_history(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    material_id = upload_material(client, task_id, filename="ticket-4.pdf")
+    first_task_id = get_single_recognition_task(client, material_id)["id"]
+
+    first_result = {
+        "raw_response": {"provider": "placeholder-ai", "document_type": "invoice"},
+        "recognized_fields": {
+            "invoice_number": {
+                "value": "INV-HISTORY-001",
+                "source": "ai",
+                "confidence": 0.97,
+                "status": "recognized",
+            }
+        },
+    }
+    first_update = client.patch(
+        f"/api/recognition-tasks/{first_task_id}/status",
+        json={
+            "target_status": "succeeded",
+            "result": first_result,
+        },
+    )
+
+    assert first_update.status_code == 200
+
+    retry_create = client.post(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert retry_create.status_code == 201
+    second_task_id = retry_create.json()["item"]["id"]
+
+    listed_after_retry = client.get(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert listed_after_retry.status_code == 200
+    retry_listing_body = listed_after_retry.json()
+    assert [item["id"] for item in retry_listing_body["items"]] == [first_task_id, second_task_id]
+    assert retry_listing_body["latest_effective"]["id"] == first_task_id
+    assert retry_listing_body["latest_effective"]["recognized_fields"]["invoice_number"]["value"] == (
+        "INV-HISTORY-001"
+    )
+
+    second_update = client.patch(
+        f"/api/recognition-tasks/{second_task_id}/status",
+        json={
+            "target_status": "failed",
+            "failure": {
+                "stage": "ai",
+                "reason": "retry attempt timed out",
+            },
+        },
+    )
+
+    assert second_update.status_code == 200
+
+    listed_after_failure = client.get(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert listed_after_failure.status_code == 200
+    failed_listing_body = listed_after_failure.json()
+    assert [item["id"] for item in failed_listing_body["items"]] == [first_task_id, second_task_id]
+    assert failed_listing_body["items"][0]["status"] == "succeeded"
+    assert failed_listing_body["items"][1]["status"] == "failed"
+    assert failed_listing_body["items"][0]["recognized_fields"]["invoice_number"]["value"] == (
+        "INV-HISTORY-001"
+    )
+    assert failed_listing_body["latest_effective"]["id"] == second_task_id
+    assert failed_listing_body["latest_effective"]["failure"] == {
+        "stage": "ai",
+        "reason": "retry attempt timed out",
+    }

@@ -33,7 +33,9 @@ def assert_single_pending_recognition_task(client: TestClient, material_id: str)
     response = client.get(f"/api/materials/{material_id}/recognition-tasks")
 
     assert response.status_code == 200
-    items = response.json()["items"]
+    body = response.json()
+    items = body["items"]
+    assert body["latest_effective"] is None
     assert len(items) == 1
     assert items[0]["material_id"] == material_id
     assert items[0]["status"] == "pending"

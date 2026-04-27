@@ -34,7 +34,12 @@ def build_recognition_router(
         if material is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
 
-        return {"items": recognition_task_repository.list_by_material(material_id)}
+        return {
+            "latest_effective": recognition_task_repository.get_latest_effective_by_material(
+                material_id
+            ),
+            "items": recognition_task_repository.list_by_material(material_id),
+        }
 
     @router.patch("/api/recognition-tasks/{recognition_task_id}/status")
     def update_recognition_task_status(

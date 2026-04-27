@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-28 03:24 - Preserve recognition attempt history and expose latest effective result
+
+### 完成内容
+- 为材料维度的识别任务查询补充 `latest_effective` 视图，在保留完整 `items` 历史列表的同时，显式返回最近一条已产出有效结果的识别尝试，避免调用方只能自己从历史里猜“当前应采用哪条结果”。
+- 修正人工更正落点：当同一材料已经创建了新的重试占位任务但仍停留在 `pending` 时，人工录入发票字段现在会把这次更正落到最新那次尝试，并将其状态提升为 `needs_confirmation`，不再把结构化字段静默写进纯占位任务。
+- 保留旧识别记录不被覆盖：新的识别失败、待确认或人工更正都只更新对应的新尝试，旧任务上的识别字段与审计历史保持原样，满足“同一材料多次识别尝试可追溯”的边界。
+- 补充识别与发票 API 回归测试，覆盖“仅有占位任务时 `latest_effective` 为空”“创建重试后仍能查询旧的最新有效结果”“新重试失败后最新有效结果切换到新任务”“人工更正发生在重试任务时旧历史保持不变”四条关键路径。
+- 将 `TASKS.md` 中“支持多次识别历史”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/domain/recognitions.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_invoices_api.py`
+- `tests/test_materials_api.py`
+- `tests/test_recognition_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_tasks_api.py`
+    - 7 个用例通过
+  - `uv run pytest tests/test_invoices_api.py`
+    - 15 个用例通过
+  - `uv run pytest tests/test_materials_api.py`
+    - 22 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 87 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“最新有效结果”定义为同一材料下最近一条状态已脱离 `pending` 的识别任务；纯占位重试任务在尚未产出结果前不会抢占该视图。
+- 当前人工更正接口仍按 `material_id` 工作，不支持显式指定“要修正哪一次识别尝试”；因此本轮保守地把更正落到最新创建的那次尝试上，并在它仍是占位任务时提升为 `needs_confirmation`，使其成为可审计的当前有效尝试。
+- 本轮不新增数据库表或列，只在现有 `recognition_tasks` 模型上补充查询与状态语义，因此不改变既有 `create_all` 迁移边界。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“扩展发票校验规则结果”，把当前发票校验输出从最小结果扩展为带 `rule_code`、目标对象、严重级别、状态和结构化证据的统一模型。
+
 ## 2026-04-28 03:02 - Expose recognition failures explicitly
 
 ### 完成内容
