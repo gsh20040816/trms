@@ -1,5 +1,35 @@
 # WORKLOG
 
+## 2026-04-28 01:41 - Enforce task member-only material submission
+
+### 完成内容
+- 在任务领域的成员提交通道校验中新增显式成员门禁：提交人不在任务 `member_ids` 内时，立即拒绝提交，而不是继续落库材料。
+- 在统一材料提交接口 `POST /api/tasks/{task_id}/materials` 接入该门禁；由于当前 Web、CLI、Telegram、Email 四个渠道都复用这条 API，本轮校验会统一覆盖四个渠道。
+- 补充 `tests/test_materials_api.py`，覆盖任务成员在四个渠道提交成功，以及非任务成员在四个渠道提交时返回明确 `409` 错误。
+- 将 `TASKS.md` 中“校验材料提交人必须属于任务成员”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/api/materials.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 9 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 55 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前仓库尚未实现 Telegram、邮件、CLI 的真实身份绑定和“待归属材料”流程，因此本轮采用保守边界：只要渠道已给出 `submitter_id`，就必须属于目标任务成员名单；无法识别身份后转待归属的路径，留给后续“增加待归属材料状态”和“建立待归属材料认领流程”任务建模。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加材料类型与附件类型字段”，先把材料主记录的类型边界建起来，再为后续支付记录、比赛通知等附件规则提供基础字段。
+
 ## 2026-04-28 01:37 - Enforce task status transition conditions
 
 ### 完成内容

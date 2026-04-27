@@ -139,6 +139,12 @@ class TaskSubmissionDeadlinePassedError(ValueError):
         super().__init__("task deadline has passed for member material submission")
 
 
+class TaskSubmitterNotMemberError(ValueError):
+    def __init__(self, submitter_id: str) -> None:
+        self.submitter_id = submitter_id
+        super().__init__(f"submitter is not a member of the task: {submitter_id}")
+
+
 class TaskReviewValidationError(ValueError):
     def __init__(self, reasons: list[str]) -> None:
         self.reasons = reasons
@@ -254,8 +260,11 @@ def ensure_task_allows_expense_type(task: ReimbursementTask, expense_type: Expen
 def ensure_task_accepts_member_submission(
     task: ReimbursementTask,
     *,
+    submitter_id: str | None = None,
     now: datetime | None = None,
 ) -> None:
+    if submitter_id is not None and submitter_id not in task.member_ids:
+        raise TaskSubmitterNotMemberError(submitter_id)
     if has_task_submission_deadline_passed(task, now=now):
         raise TaskSubmissionDeadlinePassedError(task.deadline)
 

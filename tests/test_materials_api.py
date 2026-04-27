@@ -42,6 +42,38 @@ def test_submit_material_to_open_task(tmp_path):
     assert material["duplicate_of"] is None
 
 
+def test_submit_material_allows_member_across_all_channels(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    for channel in ("web", "cli", "telegram", "email"):
+        response = client.post(
+            f"/api/tasks/{task_id}/materials",
+            data={"submitter_id": "2250001", "channel": channel},
+            files={"files": (f"{channel}.pdf", channel.encode(), "application/pdf")},
+        )
+
+        assert response.status_code == 201
+        material = response.json()["items"][0]
+        assert material["submitter_id"] == "2250001"
+        assert material["channel"] == channel
+
+
+def test_submit_material_rejects_non_member_across_all_channels(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    for channel in ("web", "cli", "telegram", "email"):
+        response = client.post(
+            f"/api/tasks/{task_id}/materials",
+            data={"submitter_id": "2250999", "channel": channel},
+            files={"files": (f"{channel}.pdf", channel.encode(), "application/pdf")},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "submitter is not a member of the task: 2250999"
+
+
 def test_submit_material_rejects_draft_task(tmp_path):
     client = make_client(tmp_path)
     task_id = client.post("/api/tasks", json=valid_task_payload()).json()["id"]

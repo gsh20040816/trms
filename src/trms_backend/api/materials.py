@@ -12,6 +12,7 @@ from trms_backend.domain.tasks import (
     TaskRepository,
     TaskStatus,
     TaskSubmissionDeadlinePassedError,
+    TaskSubmitterNotMemberError,
     ensure_task_accepts_member_submission,
 )
 
@@ -38,7 +39,12 @@ def build_material_router(
                 detail="task is not open for material submission",
             )
         try:
-            ensure_task_accepts_member_submission(task)
+            ensure_task_accepts_member_submission(task, submitter_id=submitter_id)
+        except TaskSubmitterNotMemberError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
         except TaskSubmissionDeadlinePassedError as error:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
