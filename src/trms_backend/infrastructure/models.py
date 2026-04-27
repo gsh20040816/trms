@@ -157,6 +157,7 @@ class ValidationResultRow(Base):
     severity: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     message: Mapped[str] = mapped_column(String(1024), nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

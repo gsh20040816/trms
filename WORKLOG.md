@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-28 03:12 - Extend invoice validation result schema with structured evidence
+
+### 完成内容
+- 扩展发票校验结果模型 `ValidationResult`，在原有 `rule_code`、`target_type`、`target_id`、`severity`、`status`、`message` 之外新增结构化 `evidence`，让规则输出既能给人看，也能给后续复核/聚合逻辑稳定消费。
+- 为现有三条发票规则补齐证据内容：抬头校验返回期望/实际抬头，税号校验返回期望/实际税号，重复发票校验返回发票号码和重复目标发票编号，不再只有自然语言消息。
+- 持久化层新增 `validation_results.evidence` JSON 列，并保证创建发票后的实时校验结果和 `GET /api/invoices/{invoice_id}/validations` 查询结果都能稳定返回结构化证据。
+- 补充发票 API 回归测试，覆盖“创建发票时返回完整结构化校验结果”“抬头/税号失败时证据准确”“重复发票时证据保留重复目标”“校验查询接口返回结构化证据”四条路径。
+- 将 `TASKS.md` 中“扩展发票校验规则结果”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoices.py`
+- `src/trms_backend/domain/invoice_validation.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有发票校验虽然已经有 `rule_code`、目标编号、严重级别和状态，但缺少结构化 `evidence`，调用方只能依赖 `message` 文本理解失败原因，无法稳定支持后续规则聚合、复核界面展示或按字段精确提示。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 16 个用例通过
+  - `uv run pytest tests/test_tasks_api.py`
+    - 29 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 88 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“目标对象”继续收敛为现有稳定字段 `target_type` + `target_id`，不额外引入新的嵌套 target 结构，避免在没有明确消费方之前制造重复表示。
+- `evidence` 先按 JSON 结构保存当前规则的最小必要证据；后续新增金额、附件完整性或时间地点规则时，可在同一字段下继续扩展更复杂的结构化证据。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此新增 `validation_results.evidence` 列会自动体现在新建数据库上；已有旧库若要保留数据，仍需按现有迁移策略单独处理，当前未对共享旧库执行迁移验证。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“未识别抬头或税号时输出待确认校验”，把当前“字段缺失/低置信度不能静默通过”的规则语义补齐到发票校验结果中。
+
 ## 2026-04-28 03:24 - Preserve recognition attempt history and expose latest effective result
 
 ### 完成内容

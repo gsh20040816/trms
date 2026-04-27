@@ -378,6 +378,7 @@ class SqlAlchemyValidationRepository(ValidationRepository):
                         severity=result.severity.value,
                         status=result.status.value,
                         message=result.message,
+                        evidence=result.evidence,
                         created_at=result.created_at,
                     )
                 )
@@ -712,6 +713,7 @@ def _validation_from_row(row: ValidationResultRow) -> ValidationResult:
         severity=ValidationSeverity(row.severity),
         status=ValidationStatus(row.status),
         message=row.message,
+        evidence=row.evidence or {},
         created_at=row.created_at,
     )
 

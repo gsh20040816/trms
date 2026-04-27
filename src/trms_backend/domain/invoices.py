@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -105,6 +105,7 @@ class ValidationResult(BaseModel):
     severity: ValidationSeverity
     status: ValidationStatus
     message: str
+    evidence: dict[str, Any]
     created_at: datetime
 
 

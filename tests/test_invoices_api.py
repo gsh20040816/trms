@@ -91,9 +91,28 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
     assert body["invoice"]["task_id"] == task_id
     assert body["invoice"]["material_id"] == material_id
     assert body["invoice"]["amount_cents"] == 12345
-    assert validation_by_code(body, "invoice_title_match")["status"] == "passed"
-    assert validation_by_code(body, "invoice_tax_number_match")["status"] == "passed"
-    assert validation_by_code(body, "invoice_number_unique")["status"] == "passed"
+    title_validation = validation_by_code(body, "invoice_title_match")
+    tax_validation = validation_by_code(body, "invoice_tax_number_match")
+    duplicate_validation = validation_by_code(body, "invoice_number_unique")
+
+    assert title_validation["target_type"] == "invoice"
+    assert title_validation["target_id"] == body["invoice"]["id"]
+    assert title_validation["severity"] == "blocker"
+    assert title_validation["status"] == "passed"
+    assert title_validation["evidence"] == {
+        "expected_buyer_name": "同济大学",
+        "actual_buyer_name": "同济大学",
+    }
+    assert tax_validation["status"] == "passed"
+    assert tax_validation["evidence"] == {
+        "expected_tax_number": "12100000425006117D",
+        "actual_tax_number": "12100000425006117D",
+    }
+    assert duplicate_validation["status"] == "passed"
+    assert duplicate_validation["evidence"] == {
+        "invoice_number": "INV-001",
+        "duplicate_invoice_id": None,
+    }
 
 
 def test_task_administrator_can_record_invoice_for_member_material(tmp_path):
@@ -137,7 +156,15 @@ def test_create_invoice_reports_title_and_tax_mismatch(tmp_path):
     assert response.status_code == 201
     body = response.json()
     assert validation_by_code(body, "invoice_title_match")["status"] == "failed"
+    assert validation_by_code(body, "invoice_title_match")["evidence"] == {
+        "expected_buyer_name": "同济大学",
+        "actual_buyer_name": "错误抬头",
+    }
     assert validation_by_code(body, "invoice_tax_number_match")["status"] == "failed"
+    assert validation_by_code(body, "invoice_tax_number_match")["evidence"] == {
+        "expected_tax_number": "12100000425006117D",
+        "actual_tax_number": "WRONG-TAX-NUMBER",
+    }
 
 
 def test_create_invoice_reports_duplicate_invoice_number(tmp_path):
@@ -152,6 +179,36 @@ def test_create_invoice_reports_duplicate_invoice_number(tmp_path):
     duplicate = validation_by_code(response.json(), "invoice_number_unique")
     assert duplicate["status"] == "failed"
     assert "重复" in duplicate["message"]
+    assert duplicate["evidence"]["invoice_number"] == "INV-001"
+    assert duplicate["evidence"]["duplicate_invoice_id"] is not None
+
+
+def test_list_invoice_validations_returns_structured_evidence(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+
+    create_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | {"buyer_name": "错误抬头"},
+    )
+
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["invoice"]["id"]
+
+    response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert response.status_code == 200
+    title_validation = next(
+        item for item in response.json()["items"] if item["rule_code"] == "invoice_title_match"
+    )
+    assert title_validation["target_type"] == "invoice"
+    assert title_validation["target_id"] == invoice_id
+    assert title_validation["severity"] == "blocker"
+    assert title_validation["status"] == "failed"
+    assert title_validation["evidence"] == {
+        "expected_buyer_name": "同济大学",
+        "actual_buyer_name": "错误抬头",
+    }
 
 
 def test_create_invoice_updates_existing_material_invoice_instead_of_creating_duplicate(tmp_path):
