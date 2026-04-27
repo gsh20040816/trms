@@ -12,3 +12,9 @@ uv run pytest
 uv run uvicorn trms_backend.main:app --reload
 ```
 
+默认使用本地 SQLite 文件 `trms.db`。如需连接 PostgreSQL，可设置 `DATABASE_URL`。
+
+```bash
+DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run uvicorn trms_backend.main:app --reload
+```
+

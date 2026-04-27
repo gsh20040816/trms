@@ -5,6 +5,10 @@ from fastapi.testclient import TestClient
 from trms_backend.main import create_app
 
 
+def make_client(tmp_path):
+    return TestClient(create_app(f"sqlite:///{tmp_path}/test.db"))
+
+
 def valid_task_payload():
     return {
         "competition_name": "ICPC Asia Regional",
@@ -22,8 +26,8 @@ def valid_task_payload():
     }
 
 
-def test_health_check():
-    client = TestClient(create_app())
+def test_health_check(tmp_path):
+    client = make_client(tmp_path)
 
     response = client.get("/health")
 
@@ -31,8 +35,8 @@ def test_health_check():
     assert response.json() == {"status": "ok"}
 
 
-def test_create_and_get_task():
-    client = TestClient(create_app())
+def test_create_and_get_task(tmp_path):
+    client = make_client(tmp_path)
 
     created = client.post("/api/tasks", json=valid_task_payload())
 
@@ -49,8 +53,8 @@ def test_create_and_get_task():
     assert fetched.json()["id"] == body["id"]
 
 
-def test_list_tasks_returns_created_tasks():
-    client = TestClient(create_app())
+def test_list_tasks_returns_created_tasks(tmp_path):
+    client = make_client(tmp_path)
     first = valid_task_payload()
     second = valid_task_payload() | {"competition_name": "CCPC Final"}
 
@@ -66,8 +70,8 @@ def test_list_tasks_returns_created_tasks():
     ]
 
 
-def test_rejects_empty_member_list():
-    client = TestClient(create_app())
+def test_rejects_empty_member_list(tmp_path):
+    client = make_client(tmp_path)
     payload = valid_task_payload() | {"member_ids": []}
 
     response = client.post("/api/tasks", json=payload)
@@ -75,8 +79,8 @@ def test_rejects_empty_member_list():
     assert response.status_code == 422
 
 
-def test_rejects_end_date_before_start_date():
-    client = TestClient(create_app())
+def test_rejects_end_date_before_start_date(tmp_path):
+    client = make_client(tmp_path)
     payload = valid_task_payload() | {
         "competition_start_date": "2026-11-03",
         "competition_end_date": "2026-11-01",
@@ -87,8 +91,8 @@ def test_rejects_end_date_before_start_date():
     assert response.status_code == 422
 
 
-def test_rejects_past_deadline():
-    client = TestClient(create_app())
+def test_rejects_past_deadline(tmp_path):
+    client = make_client(tmp_path)
     past_deadline = datetime(2025, 1, 1, tzinfo=UTC).isoformat()
     payload = valid_task_payload() | {"deadline": past_deadline}
 
@@ -97,8 +101,8 @@ def test_rejects_past_deadline():
     assert response.status_code == 422
 
 
-def test_get_missing_task_returns_404():
-    client = TestClient(create_app())
+def test_get_missing_task_returns_404(tmp_path):
+    client = make_client(tmp_path)
 
     response = client.get("/api/tasks/missing")
 
@@ -106,8 +110,8 @@ def test_get_missing_task_returns_404():
     assert response.json()["detail"] == "task not found"
 
 
-def test_update_task_status_allows_valid_transition():
-    client = TestClient(create_app())
+def test_update_task_status_allows_valid_transition(tmp_path):
+    client = make_client(tmp_path)
     created = client.post("/api/tasks", json=valid_task_payload()).json()
 
     response = client.patch(
@@ -119,8 +123,8 @@ def test_update_task_status_allows_valid_transition():
     assert response.json()["status"] == "open"
 
 
-def test_update_task_status_rejects_invalid_transition():
-    client = TestClient(create_app())
+def test_update_task_status_rejects_invalid_transition(tmp_path):
+    client = make_client(tmp_path)
     created = client.post("/api/tasks", json=valid_task_payload()).json()
 
     response = client.patch(
@@ -132,8 +136,8 @@ def test_update_task_status_rejects_invalid_transition():
     assert "cannot transition task" in response.json()["detail"]
 
 
-def test_update_missing_task_status_returns_404():
-    client = TestClient(create_app())
+def test_update_missing_task_status_returns_404(tmp_path):
+    client = make_client(tmp_path)
 
     response = client.patch(
         "/api/tasks/missing/status",
@@ -142,3 +146,15 @@ def test_update_missing_task_status_returns_404():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "task not found"
+
+
+def test_task_persists_across_app_instances(tmp_path):
+    database_url = f"sqlite:///{tmp_path}/test.db"
+    first_client = TestClient(create_app(database_url))
+    task = first_client.post("/api/tasks", json=valid_task_payload()).json()
+
+    second_client = TestClient(create_app(database_url))
+    response = second_client.get(f"/api/tasks/{task['id']}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == task["id"]

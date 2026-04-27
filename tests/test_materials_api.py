@@ -5,14 +5,18 @@ from trms_backend.main import create_app
 from test_tasks_api import valid_task_payload
 
 
+def make_client(tmp_path):
+    return TestClient(create_app(f"sqlite:///{tmp_path}/test.db"))
+
+
 def create_open_task(client: TestClient) -> str:
     created = client.post("/api/tasks", json=valid_task_payload()).json()
     client.patch(f"/api/tasks/{created['id']}/status", json={"target_status": "open"})
     return created["id"]
 
 
-def test_submit_material_to_open_task():
-    client = TestClient(create_app())
+def test_submit_material_to_open_task(tmp_path):
+    client = make_client(tmp_path)
     task_id = create_open_task(client)
 
     response = client.post(
@@ -31,8 +35,8 @@ def test_submit_material_to_open_task():
     assert material["duplicate_of"] is None
 
 
-def test_submit_material_rejects_draft_task():
-    client = TestClient(create_app())
+def test_submit_material_rejects_draft_task(tmp_path):
+    client = make_client(tmp_path)
     task_id = client.post("/api/tasks", json=valid_task_payload()).json()["id"]
 
     response = client.post(
@@ -45,8 +49,8 @@ def test_submit_material_rejects_draft_task():
     assert response.json()["detail"] == "task is not open for material submission"
 
 
-def test_submit_material_marks_duplicate_file_in_same_task():
-    client = TestClient(create_app())
+def test_submit_material_marks_duplicate_file_in_same_task(tmp_path):
+    client = make_client(tmp_path)
     task_id = create_open_task(client)
     files = {"files": ("ticket.pdf", b"same-content", "application/pdf")}
     first = client.post(
@@ -66,8 +70,8 @@ def test_submit_material_marks_duplicate_file_in_same_task():
     assert duplicate["duplicate_of"] == first["id"]
 
 
-def test_list_materials_by_task():
-    client = TestClient(create_app())
+def test_list_materials_by_task(tmp_path):
+    client = make_client(tmp_path)
     task_id = create_open_task(client)
     client.post(
         f"/api/tasks/{task_id}/materials",
@@ -87,8 +91,8 @@ def test_list_materials_by_task():
     ]
 
 
-def test_list_materials_rejects_missing_task():
-    client = TestClient(create_app())
+def test_list_materials_rejects_missing_task(tmp_path):
+    client = make_client(tmp_path)
 
     response = client.get("/api/tasks/missing/materials")
 

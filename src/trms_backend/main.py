@@ -1,15 +1,24 @@
+import os
+
 from fastapi import FastAPI
 
 from trms_backend.api.materials import build_material_router
 from trms_backend.api.tasks import build_task_router
-from trms_backend.domain.materials import InMemoryMaterialRepository
-from trms_backend.domain.tasks import InMemoryTaskRepository
+from trms_backend.infrastructure.database import build_session_factory, init_database
+from trms_backend.infrastructure.repositories import (
+    SqlAlchemyMaterialRepository,
+    SqlAlchemyTaskRepository,
+)
 
 
-def create_app() -> FastAPI:
+def create_app(database_url: str | None = None) -> FastAPI:
     app = FastAPI(title="TRMS API")
-    task_repository = InMemoryTaskRepository()
-    material_repository = InMemoryMaterialRepository()
+    session_factory = build_session_factory(
+        database_url or os.getenv("DATABASE_URL", "sqlite:///./trms.db")
+    )
+    init_database(session_factory)
+    task_repository = SqlAlchemyTaskRepository(session_factory)
+    material_repository = SqlAlchemyMaterialRepository(session_factory)
 
     @app.get("/health")
     def health():
