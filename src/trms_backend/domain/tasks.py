@@ -125,6 +125,12 @@ class TaskExpenseTypeNotAllowedError(ValueError):
         )
 
 
+class TaskSubmissionDeadlinePassedError(ValueError):
+    def __init__(self, deadline: datetime) -> None:
+        self.deadline = deadline
+        super().__init__("task deadline has passed for member material submission")
+
+
 class ReimbursementTask(BaseModel):
     id: str
     status: TaskStatus
@@ -224,6 +230,19 @@ def _has_non_blank_items(values: list[str]) -> bool:
 def ensure_task_allows_expense_type(task: ReimbursementTask, expense_type: ExpenseType) -> None:
     if expense_type.value not in task.fee_categories:
         raise TaskExpenseTypeNotAllowedError(expense_type, task.fee_categories)
+
+
+def ensure_task_accepts_member_submission(
+    task: ReimbursementTask,
+    *,
+    now: datetime | None = None,
+) -> None:
+    deadline = task.deadline
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    reference_time = now or datetime.now(timezone.utc)
+    if deadline <= reference_time:
+        raise TaskSubmissionDeadlinePassedError(deadline)
 
 
 _SUPPORTED_FEE_CATEGORIES = frozenset(expense_type.value for expense_type in ExpenseType)

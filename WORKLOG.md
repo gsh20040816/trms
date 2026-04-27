@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-04-28 01:28 - Enforce task submission deadline boundary
+
+### 完成内容
+- 在任务领域新增成员材料提交截止判断 `ensure_task_accepts_member_submission(...)`，统一定义 `deadline <= 当前时间` 即不再允许成员继续提交。
+- 在材料提交接口增加截止时间门禁：任务即使仍处于 `open` 状态，只要已过截止时间，就返回明确 `409` 错误，而不是继续接收材料。
+- 补充 `tests/test_materials_api.py`，覆盖已过截止时间的拒绝路径，以及“刚好等于截止时刻”这一边界行为。
+- 将 `TASKS.md` 中“增加任务截止时间状态约束”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/api/materials.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 7 个用例通过
+  - `uv run pytest tests/test_tasks_api.py`
+    - 23 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 47 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前仓库还没有独立的管理员补交通道或管理员身份上下文；因此本轮采用保守边界，只对现有成员材料提交通道加截止限制，不为不存在的管理员路径隐式放行。
+- “任务自动关闭”仍留给后续 `TASKS.md` 中的“建立任务自动关闭检查边界”处理；本轮只修复“任务状态仍为 open 时，超期成员仍可提交”的缺口。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立任务自动关闭检查边界”，为到期仍处于 `open` 的任务提供显式检查入口或服务。
+
 ## 2026-04-28 01:25 - Enforce task fee category constraints
 
 ### 完成内容

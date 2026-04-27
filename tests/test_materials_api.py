@@ -1,8 +1,15 @@
+from datetime import UTC, datetime, timedelta
+
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.tasks import (
+    ReimbursementTask,
+    TaskSubmissionDeadlinePassedError,
+    ensure_task_accepts_member_submission,
+)
 from trms_backend.main import create_app
 
-from test_tasks_api import valid_task_payload
+from test_tasks_api import update_task_row, valid_task_payload
 
 
 def make_client(tmp_path):
@@ -68,6 +75,41 @@ def test_submit_material_marks_duplicate_file_in_same_task(tmp_path):
     assert response.status_code == 201
     duplicate = response.json()["items"][0]
     assert duplicate["duplicate_of"] == first["id"]
+
+
+def test_submit_material_rejects_task_after_deadline(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    update_task_row(
+        tmp_path,
+        task_id,
+        deadline=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={"submitter_id": "2250001", "channel": "web"},
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "task deadline has passed for member material submission"
+
+
+def test_member_submission_deadline_boundary_rejects_equal_now(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    task = client.get(f"/api/tasks/{task_id}").json()
+    deadline = datetime(2026, 12, 1, tzinfo=UTC)
+    task["deadline"] = deadline.isoformat()
+    reimbursement_task = ReimbursementTask.model_validate(task)
+
+    try:
+        ensure_task_accepts_member_submission(reimbursement_task, now=deadline)
+    except TaskSubmissionDeadlinePassedError as error:
+        assert str(error) == "task deadline has passed for member material submission"
+    else:
+        raise AssertionError("expected deadline-equality submission rejection")
 
 
 def test_list_materials_by_task(tmp_path):

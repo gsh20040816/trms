@@ -8,7 +8,12 @@ from trms_backend.domain.materials import (
     MaterialRepository,
     SubmissionChannel,
 )
-from trms_backend.domain.tasks import TaskRepository, TaskStatus
+from trms_backend.domain.tasks import (
+    TaskRepository,
+    TaskStatus,
+    TaskSubmissionDeadlinePassedError,
+    ensure_task_accepts_member_submission,
+)
 
 
 def build_material_router(
@@ -32,6 +37,13 @@ def build_material_router(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="task is not open for material submission",
             )
+        try:
+            ensure_task_accepts_member_submission(task)
+        except TaskSubmissionDeadlinePassedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
 
         records = []
         for file in files:
@@ -59,4 +71,3 @@ def build_material_router(
         return {"items": material_repository.list_by_task(task_id)}
 
     return router
-
