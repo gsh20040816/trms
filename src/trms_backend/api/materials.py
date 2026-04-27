@@ -1,10 +1,10 @@
-from hashlib import sha256
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from trms_backend.domain.materials import (
     MaterialCreate,
+    MaterialFileStorage,
     MaterialRepository,
     MaterialType,
     SubmissionChannel,
@@ -21,6 +21,7 @@ from trms_backend.domain.tasks import (
 def build_material_router(
     task_repository: TaskRepository,
     material_repository: MaterialRepository,
+    material_file_storage: MaterialFileStorage,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks/{task_id}/materials", tags=["materials"])
 
@@ -56,6 +57,12 @@ def build_material_router(
         records = []
         for file in files:
             content = await file.read()
+            stored_file = material_file_storage.save(
+                task_id=task_id,
+                original_filename=file.filename or "unnamed",
+                content_type=file.content_type,
+                content=content,
+            )
             records.append(
                 material_repository.create(
                     MaterialCreate(
@@ -63,10 +70,10 @@ def build_material_router(
                         submitter_id=submitter_id,
                         channel=channel,
                         material_type=material_type,
-                        original_filename=file.filename or "unnamed",
-                        content_type=file.content_type,
-                        size_bytes=len(content),
-                        sha256=sha256(content).hexdigest(),
+                        original_filename=stored_file.original_filename,
+                        content_type=stored_file.content_type,
+                        size_bytes=stored_file.size_bytes,
+                        sha256=stored_file.sha256,
                     )
                 )
             )

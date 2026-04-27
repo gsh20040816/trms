@@ -7,13 +7,19 @@ from trms_backend.domain.tasks import (
     TaskSubmissionDeadlinePassedError,
     ensure_task_accepts_member_submission,
 )
+from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 from test_tasks_api import update_task_row, valid_task_payload
 
 
 def make_client(tmp_path):
-    return TestClient(create_app(f"sqlite:///{tmp_path}/test.db"))
+    return TestClient(
+        create_app(
+            f"sqlite:///{tmp_path}/test.db",
+            material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
+        )
+    )
 
 
 def create_open_task(client: TestClient) -> str:

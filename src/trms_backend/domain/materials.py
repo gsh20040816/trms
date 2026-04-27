@@ -50,6 +50,14 @@ class MaterialRecord(BaseModel):
     created_at: datetime
 
 
+class StoredMaterialFile(BaseModel):
+    storage_key: str = Field(min_length=1)
+    original_filename: str = Field(min_length=1)
+    content_type: str | None = None
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(min_length=64, max_length=64)
+
+
 class MaterialRepository(Protocol):
     def create(self, data: MaterialCreate) -> MaterialRecord:
         raise NotImplementedError
@@ -58,6 +66,18 @@ class MaterialRepository(Protocol):
         raise NotImplementedError
 
     def list_by_task(self, task_id: str) -> list[MaterialRecord]:
+        raise NotImplementedError
+
+
+class MaterialFileStorage(Protocol):
+    def save(
+        self,
+        *,
+        task_id: str,
+        original_filename: str,
+        content_type: str | None,
+        content: bytes,
+    ) -> StoredMaterialFile:
         raise NotImplementedError
 
 

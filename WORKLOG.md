@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-04-28 01:51 - Establish material file storage abstraction
+
+### 完成内容
+- 为材料上传链路新增 `MaterialFileStorage` / `StoredMaterialFile` 抽象，并提供默认本地实现 `LocalMaterialFileStorage`，把“原始文件保存”从 API 逻辑中拆出，形成可替换的基础设施边界。
+- 调整 `POST /api/tasks/{task_id}/materials`：上传时先通过存储接口落盘，再把返回的文件元数据写入材料记录，避免继续出现“只算哈希、不保存原始文件”的行为。
+- 默认本地存储使用唯一 `storage_key` 生成策略，同一任务下重复上传同名文件时不会互相覆盖；同时会规范化文件名，避免路径片段直接进入落盘路径。
+- 补充 `tests/test_material_storage.py`，覆盖同名文件重复保存不覆盖、文件元数据记录正确；并为涉及材料上传的 API 测试注入临时存储目录，避免验证过程污染仓库工作树。
+- 将 `TASKS.md` 中“建立材料文件保存抽象”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/infrastructure/storage.py`
+- `tests/test_material_storage.py`
+- `tests/test_materials_api.py`
+- `tests/test_invoices_api.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_material_storage.py tests/test_materials_api.py tests/test_invoices_api.py tests/test_tasks_api.py`
+    - 48 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 59 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮只建立“文件存储接口 + 默认本地实现 + 上传链路接入”，暂不把 `storage_key` 持久化到 `materials` 表；这是下一项“保存原始文件存储位置”任务的边界，避免本轮跨任务扩散修改。
+- 默认运行时本地存储目录使用 `MATERIAL_STORAGE_DIR` 环境变量或 `./data/materials`；测试场景统一改用 `tmp_path` 下的临时目录，避免把验证产物写进仓库。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“保存原始文件存储位置”，把 `storage_key` 作为不可变定位信息持久化到材料记录中，使后续识别、导出和审计链路可以稳定引用原始文件。
+
 ## 2026-04-28 01:46 - Add material type classification field
 
 ### 完成内容

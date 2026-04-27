@@ -5,11 +5,18 @@ from fastapi.testclient import TestClient
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 from trms_backend.infrastructure.database import build_session_factory, session_scope
 from trms_backend.infrastructure.models import TaskRow
+from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 
 def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = None):
-    return TestClient(create_app(f"sqlite:///{tmp_path}/test.db", global_invoice_config))
+    return TestClient(
+        create_app(
+            f"sqlite:///{tmp_path}/test.db",
+            global_invoice_config,
+            LocalMaterialFileStorage(tmp_path / "material-storage"),
+        )
+    )
 
 
 def update_task_row(tmp_path, task_id: str, **updates):
@@ -557,10 +564,17 @@ def test_run_task_deadline_check_ignores_non_open_tasks(tmp_path):
 
 def test_task_persists_across_app_instances(tmp_path):
     database_url = f"sqlite:///{tmp_path}/test.db"
-    first_client = TestClient(create_app(database_url))
+    first_client = TestClient(
+        create_app(database_url, material_file_storage=LocalMaterialFileStorage(tmp_path / "first"))
+    )
     task = first_client.post("/api/tasks", json=valid_task_payload()).json()
 
-    second_client = TestClient(create_app(database_url))
+    second_client = TestClient(
+        create_app(
+            database_url,
+            material_file_storage=LocalMaterialFileStorage(tmp_path / "second"),
+        )
+    )
     response = second_client.get(f"/api/tasks/{task['id']}")
 
     assert response.status_code == 200
