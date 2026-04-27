@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-28 06:21 - Add missing materials export
+
+### 完成内容
+- 在 `src/trms_backend/domain/exports.py` 增加缺失材料清单导出模型与 CSV 渲染逻辑：
+  - 按成员、费用类型、发票号码导出缺失材料项；
+  - 输出所需材料类型、来源规则码和原始提示消息；
+  - 将 `missing_materials` 导出能力声明为已实现的 CSV 导出。
+- 在 `src/trms_backend/api/exports.py` 增加 `GET /api/tasks/{task_id}/exports/missing-materials`：
+  - 仅允许任务管理员访问；
+  - 仅允许任务处于 `ready_to_export` 或 `completed` 时导出；
+  - 以 `text/csv` 响应返回缺失材料清单。
+- 在 `src/trms_backend/domain/missing_materials.py` 扩展缺失材料规则映射：
+  - 继续支持支付记录和比赛通知；
+  - 新增航空行程单与网约车行程信息缺失项聚合。
+- 在 `tests/test_exports_api.py` 和 `tests/test_missing_materials.py` 增加回归测试，覆盖：
+  - 导出能力声明包含缺失材料 CSV；
+  - 非空清单可导出支付记录、比赛通知、行程信息；
+  - 空清单仅输出表头；
+  - 缺失材料聚合支持行程信息相关规则。
+- 将 `TASKS.md` 中“导出缺失材料清单”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/missing_materials.py`
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/api/exports.py`
+- `tests/test_missing_materials.py`
+- `tests/test_exports_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有导出链路已经补齐汇总表、成员明细表和发票明细表，但管理员仍无法把“哪些成员缺什么材料”直接导出为可操作清单。
+- 需求文档 FR-010 与架构文档 5.8 节都要求系统生成缺失材料清单；如果继续缺少该导出物，管理员仍需手工从校验结果中逐条筛缺口，无法形成可直接催补的名单。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_missing_materials.py`
+    - 3 个用例通过
+  - `uv run pytest tests/test_exports_api.py`
+    - 13 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 155 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前缺失材料领域模型没有独立的“行程信息”材料类型；本轮保守把航空行程单和网约车行程信息统一映射为 `itinerary` 导出类型，同时保留来源规则码和原始消息，避免在本轮扩展新的材料类型枚举。
+- 空清单导出仍返回带表头的 CSV，而不是空文件，便于管理员直接在表格工具中确认“当前无缺失项”。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“生成财务填报草稿”，复用当前导出模块边界继续补齐导出产物。
+
 ## 2026-04-28 06:14 - Add invoice detail export
 
 ### 完成内容

@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
 from trms_backend.domain.invoices import ExpenseType, InvoiceRecord, ValidationResult, ValidationStatus
-from trms_backend.domain.materials import MaterialRecord
+from trms_backend.domain.materials import MaterialRecord, MaterialType
+from trms_backend.domain.missing_materials import aggregate_task_missing_materials
 from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.tasks import ReimbursementTask, TaskStatus
 
@@ -48,8 +49,8 @@ class TaskExportBoundary(BaseModel):
     supported_exports: list[TaskExportCapability]
     note: str = Field(
         default=(
-            "reimbursement summary/member details/invoice details CSV export is available; export jobs "
-            "and other persisted artifacts remain placeholders"
+            "reimbursement summary/member details/invoice details/missing materials CSV export is "
+            "available; export jobs and other persisted artifacts remain placeholders"
         )
     )
 
@@ -230,6 +231,24 @@ class InvoiceDetailsExport(BaseModel):
     filename: str
     generated_at: datetime
     rows: list[InvoiceDetailRow]
+
+
+class MissingMaterialExportRow(BaseModel):
+    member_id: str | None = None
+    expense_type: ExpenseType
+    invoice_number: str
+    required_material_type: MaterialType
+    source_rule_code: str
+    message: str
+
+
+class MissingMaterialsExport(BaseModel):
+    task_id: str
+    administrator_id: str = Field(min_length=1)
+    format: ExportArtifactFormat
+    filename: str
+    generated_at: datetime
+    rows: list[MissingMaterialExportRow]
 
 
 class TaskExportJobRepository(Protocol):
@@ -610,6 +629,88 @@ def render_invoice_details_csv(export: InvoiceDetailsExport) -> str:
     return buffer.getvalue()
 
 
+def build_missing_materials_export(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    format: ExportArtifactFormat,
+    invoices: list[InvoiceRecord],
+    materials_by_id: dict[str, MaterialRecord],
+    validations_by_invoice_id: dict[str, list[ValidationResult]],
+    generated_at: datetime | None = None,
+) -> MissingMaterialsExport:
+    boundary = build_task_export_boundary(task, actor_id=actor_id)
+    if not boundary.export_allowed:
+        raise TaskExportJobNotReadyError(boundary.blocking_reasons)
+    ensure_export_format_implemented(
+        ExportArtifactKind.MISSING_MATERIALS,
+        format,
+    )
+
+    missing_materials = aggregate_task_missing_materials(
+        task_id=task.id,
+        invoices=invoices,
+        materials_by_id=materials_by_id,
+        validations_by_invoice_id=validations_by_invoice_id,
+    )
+    rows = [
+        MissingMaterialExportRow(
+            member_id=item.member_id,
+            expense_type=item.expense_type,
+            invoice_number=item.invoice_number,
+            required_material_type=item.required_material_type,
+            source_rule_code=item.source_rule_code,
+            message=item.message,
+        )
+        for item in missing_materials.items
+    ]
+    rows.sort(
+        key=lambda row: (
+            row.member_id or "",
+            row.expense_type.value,
+            row.invoice_number,
+            row.required_material_type.value,
+        )
+    )
+
+    generated_at = generated_at or datetime.now(timezone.utc)
+    return MissingMaterialsExport(
+        task_id=task.id,
+        administrator_id=boundary.administrator_id,
+        format=format,
+        filename=f"{task.id}-missing-materials.{format.value}",
+        generated_at=generated_at,
+        rows=rows,
+    )
+
+
+def render_missing_materials_csv(export: MissingMaterialsExport) -> str:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "member_id",
+            "expense_type",
+            "invoice_number",
+            "required_material_type",
+            "source_rule_code",
+            "message",
+        ]
+    )
+    for row in export.rows:
+        writer.writerow(
+            [
+                row.member_id or "",
+                row.expense_type.value,
+                row.invoice_number,
+                row.required_material_type.value,
+                row.source_rule_code,
+                row.message,
+            ]
+        )
+    return buffer.getvalue()
+
+
 def update_task_export_job_status(
     task: ReimbursementTask,
     *,
@@ -677,6 +778,8 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
     TaskExportCapability(
         kind=ExportArtifactKind.MISSING_MATERIALS,
         formats=[ExportArtifactFormat.XLSX, ExportArtifactFormat.CSV],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.CSV],
     ),
     TaskExportCapability(
         kind=ExportArtifactKind.FINANCE_DRAFT,

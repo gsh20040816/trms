@@ -24,6 +24,12 @@ def create_task(client: TestClient) -> str:
     return response.json()["id"]
 
 
+def create_task_with_overrides(client: TestClient, **overrides) -> str:
+    response = client.post("/api/tasks", json=valid_task_payload() | overrides)
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
 def create_export_job(
     client: TestClient,
     task_id: str,
@@ -60,6 +66,28 @@ def upload_invoice_material(
             "material_type": "invoice",
         },
         files={"files": (filename, filename.encode(), "application/pdf")},
+    )
+    assert response.status_code == 201
+    return response.json()["items"][0]["id"]
+
+
+def upload_supporting_material(
+    client: TestClient,
+    task_id: str,
+    *,
+    submitter_id: str,
+    material_type: str,
+    filename: str,
+    content_type: str = "application/pdf",
+) -> str:
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": submitter_id,
+            "channel": "web",
+            "material_type": material_type,
+        },
+        files={"files": (filename, filename.encode(), content_type)},
     )
     assert response.status_code == 201
     return response.json()["items"][0]["id"]
@@ -129,8 +157,8 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["blocking_reasons"] == []
     assert body["execution_mode"] == "async_placeholder"
     assert body["note"] == (
-        "reimbursement summary/member details/invoice details CSV export is available; export jobs and "
-        "other persisted artifacts remain placeholders"
+        "reimbursement summary/member details/invoice details/missing materials CSV export is available; "
+        "export jobs and other persisted artifacts remain placeholders"
     )
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}
     assert set(supported_by_kind) == {
@@ -150,17 +178,22 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert supported_by_kind["invoice_details"]["formats"] == ["xlsx", "csv"]
     assert supported_by_kind["invoice_details"]["implemented"] is True
     assert supported_by_kind["invoice_details"]["implemented_formats"] == ["csv"]
+    assert supported_by_kind["missing_materials"]["formats"] == ["xlsx", "csv"]
+    assert supported_by_kind["missing_materials"]["implemented"] is True
+    assert supported_by_kind["missing_materials"]["implemented_formats"] == ["csv"]
     assert supported_by_kind["finance_draft"]["formats"] == ["xlsx", "json"]
     assert supported_by_kind["merged_pdf"]["formats"] == ["pdf"]
     assert all(
         item["implemented"] is False
         for item in body["supported_exports"]
-        if item["kind"] not in {"reimbursement_summary", "member_details", "invoice_details"}
+        if item["kind"]
+        not in {"reimbursement_summary", "member_details", "invoice_details", "missing_materials"}
     )
     assert all(
         item["implemented_formats"] == []
         for item in body["supported_exports"]
-        if item["kind"] not in {"reimbursement_summary", "member_details", "invoice_details"}
+        if item["kind"]
+        not in {"reimbursement_summary", "member_details", "invoice_details", "missing_materials"}
     )
 
 
@@ -429,6 +462,139 @@ def test_task_administrator_can_export_invoice_details_csv_with_validation_summa
     assert "发票号码与" in rows[1]["abnormal_validation_messages"]
     assert "重复" in rows[1]["abnormal_validation_messages"]
     assert "缺少比赛通知" in rows[1]["abnormal_validation_messages"]
+
+
+def test_task_administrator_can_export_missing_materials_csv(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task_with_overrides(
+        client,
+        fee_categories=["registration", "railway", "airfare"],
+    )
+    update_task_row(tmp_path, task_id, status="open")
+
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="payment-required.pdf",
+        invoice_overrides={
+            "invoice_number": "PAY-001",
+            "amount_cents": 150000,
+            "expense_type": "railway",
+        },
+        split_items=[{"member_id": "2250001", "amount_cents": 150000}],
+    )
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250002",
+        filename="registration.pdf",
+        invoice_overrides={
+            "invoice_number": "REG-001",
+            "amount_cents": 20000,
+            "expense_type": "registration",
+            "seller_name": "比赛平台",
+        },
+        split_items=[{"member_id": "2250002", "amount_cents": 20000}],
+    )
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250003",
+        filename="airfare.pdf",
+        invoice_overrides={
+            "invoice_number": "AIR-001",
+            "amount_cents": 80000,
+            "expense_type": "airfare",
+            "seller_name": "航空公司",
+        },
+        split_items=[{"member_id": "2250003", "amount_cents": 80000}],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/missing-materials",
+        params={"actor_id": "admin-1", "format": "csv"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="{task_id}-missing-materials.csv"'
+    )
+
+    rows = list(csv.DictReader(StringIO(response.text)))
+    assert rows == [
+        {
+            "member_id": "2250001",
+            "expense_type": "railway",
+            "invoice_number": "PAY-001",
+            "required_material_type": "payment_record",
+            "source_rule_code": "invoice_payment_record_required",
+            "message": "发票金额达到阈值，缺少支付记录",
+        },
+        {
+            "member_id": "2250002",
+            "expense_type": "registration",
+            "invoice_number": "REG-001",
+            "required_material_type": "competition_notice",
+            "source_rule_code": "invoice_competition_notice_required",
+            "message": "参赛费缺少比赛通知",
+        },
+        {
+            "member_id": "2250003",
+            "expense_type": "airfare",
+            "invoice_number": "AIR-001",
+            "required_material_type": "itinerary",
+            "source_rule_code": "invoice_airfare_itinerary_required",
+            "message": "航空费用缺少行程单",
+        },
+    ]
+
+
+def test_task_administrator_can_export_empty_missing_materials_csv(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    invoice_id = create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="registration.pdf",
+        invoice_overrides={
+            "invoice_number": "REG-001",
+            "amount_cents": 20000,
+            "expense_type": "registration",
+            "seller_name": "比赛平台",
+        },
+        split_items=[{"member_id": "2250001", "amount_cents": 20000}],
+    )
+    competition_notice_material_id = upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="competition_notice",
+        filename="notice.pdf",
+    )
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{competition_notice_material_id}"
+    )
+    assert attach_response.status_code == 200
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/missing-materials",
+        params={"actor_id": "admin-1", "format": "csv"},
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.text.strip()
+        == "member_id,expense_type,invoice_number,required_material_type,source_rule_code,message"
+    )
+    rows = list(csv.DictReader(StringIO(response.text)))
+    assert rows == []
 
 
 def test_export_capabilities_report_blocking_reason_before_final_confirmation(tmp_path):

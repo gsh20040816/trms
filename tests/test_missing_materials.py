@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 
 from trms_backend.domain.invoice_validation import (
+    AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+    LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
     validate_competition_notice_requirement,
+    validate_airfare_itinerary_requirement,
     validate_payment_record_requirement,
 )
 from trms_backend.domain.invoices import (
@@ -182,3 +185,70 @@ def test_aggregate_task_missing_materials_ignores_non_missing_or_unsupported_val
 
     assert missing_materials.items == []
     assert missing_materials.members == []
+
+
+def test_aggregate_task_missing_materials_includes_trip_information_requirements():
+    created_at = datetime(2026, 4, 28, 4, 7, tzinfo=timezone.utc)
+    task_id = "task-1"
+    airfare_material = make_material(
+        "material-1",
+        task_id=task_id,
+        submitter_id="2250001",
+        created_at=created_at,
+    )
+    rideshare_material = make_material(
+        "material-2",
+        task_id=task_id,
+        submitter_id="2250002",
+        created_at=created_at.replace(minute=8),
+    )
+    airfare_invoice = make_invoice(
+        "invoice-1",
+        task_id=task_id,
+        material_id=airfare_material.id,
+        invoice_number="AIR-001",
+        amount_cents=180_000,
+        expense_type=ExpenseType.AIRFARE,
+        created_at=created_at,
+    )
+    rideshare_invoice = make_invoice(
+        "invoice-2",
+        task_id=task_id,
+        material_id=rideshare_material.id,
+        invoice_number="TAXI-001",
+        amount_cents=3_000,
+        expense_type=ExpenseType.LOCAL_TRANSPORT,
+        created_at=created_at.replace(minute=8),
+    )
+    rideshare_missing_trip = ValidationResult(
+        id="validation-1",
+        rule_code=LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+        target_type="invoice",
+        target_id=rideshare_invoice.id,
+        severity=ValidationSeverity.BLOCKER,
+        status=ValidationStatus.FAILED,
+        message="网约车费用缺少行程信息",
+        evidence={"trip_information_materials": []},
+        created_at=created_at.replace(minute=9),
+    )
+
+    missing_materials = aggregate_task_missing_materials(
+        task_id=task_id,
+        invoices=[airfare_invoice, rideshare_invoice],
+        materials_by_id={
+            airfare_material.id: airfare_material,
+            rideshare_material.id: rideshare_material,
+        },
+        validations_by_invoice_id={
+            airfare_invoice.id: [validate_airfare_itinerary_requirement(airfare_invoice, [])],
+            rideshare_invoice.id: [rideshare_missing_trip],
+        },
+    )
+
+    assert [
+        (item.source_rule_code, item.required_material_type.value, item.message)
+        for item in missing_materials.items
+    ] == [
+        (AIRFARE_ITINERARY_REQUIRED_RULE_CODE, "itinerary", "航空费用缺少行程单"),
+        (LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE, "itinerary", "网约车费用缺少行程信息"),
+    ]
