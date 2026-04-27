@@ -20,6 +20,22 @@ COMPETITION_NOTICE_REQUIRED_RULE_CODE = "invoice_competition_notice_required"
 AIRFARE_ITINERARY_REQUIRED_RULE_CODE = "invoice_airfare_itinerary_required"
 AIRFARE_CABIN_PROOF_RULE_CODE = "invoice_airfare_cabin_proof_required"
 AIRFARE_CABIN_FIELD_NAMES = ("cabin_class", "seat_class", "cabin")
+LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE = "invoice_local_transport_rideshare_trip_required"
+RIDESHARE_INDICATOR_FIELD_NAMES = (
+    "is_rideshare",
+    "transport_mode",
+    "transport_type",
+    "ride_service_type",
+)
+RIDESHARE_TRUE_VALUES = frozenset({"rideshare", "ride_hailing", "online_taxi", "网约车"})
+RIDESHARE_FALSE_VALUES = frozenset({"taxi", "bus", "metro", "subway", "railway", "非网约车"})
+RIDESHARE_TRIP_FIELD_GROUPS = (
+    ("trip_route",),
+    ("trip_itinerary",),
+    ("trip_start_location", "trip_end_location"),
+    ("pickup_location", "dropoff_location"),
+    ("start_location", "end_location"),
+)
 
 
 def validate_invoice(
@@ -59,6 +75,12 @@ def validate_invoice(
         validate_competition_notice_requirement(invoice, supporting_materials),
         validate_airfare_itinerary_requirement(invoice, supporting_materials),
         validate_airfare_cabin_requirement(
+            invoice,
+            recognition_task,
+            supporting_materials,
+            supporting_material_recognitions,
+        ),
+        validate_local_transport_rideshare_trip_requirement(
             invoice,
             recognition_task,
             supporting_materials,
@@ -504,6 +526,81 @@ def validate_airfare_cabin_requirement(
     )
 
 
+def validate_local_transport_rideshare_trip_requirement(
+    invoice: InvoiceRecord,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> ValidationResult:
+    requires_local_transport_validation = invoice.expense_type is ExpenseType.LOCAL_TRANSPORT
+    rideshare_detections = _collect_rideshare_detections(
+        invoice,
+        recognition_task,
+        supporting_materials,
+        supporting_material_recognitions,
+    )
+    trip_information_materials = _collect_trip_information_materials(
+        invoice,
+        recognition_task,
+        supporting_materials,
+        supporting_material_recognitions,
+    )
+    evidence = {
+        "expense_type": invoice.expense_type.value,
+        "invoice_material_id": invoice.material_id,
+        "rideshare_indicator_field_names": list(RIDESHARE_INDICATOR_FIELD_NAMES),
+        "trip_field_groups": [list(group) for group in RIDESHARE_TRIP_FIELD_GROUPS],
+        "requires_local_transport_validation": requires_local_transport_validation,
+        "rideshare_detections": rideshare_detections,
+        "trip_information_materials": trip_information_materials,
+    }
+
+    if not requires_local_transport_validation:
+        return _validation_result(
+            rule_code=LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前费用类型不要求网约车行程信息校验",
+            evidence=evidence,
+        )
+
+    rideshare_decision = _decide_rideshare_requirement(rideshare_detections)
+    if rideshare_decision is None:
+        return _validation_result(
+            rule_code=LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PENDING,
+            message="市内交通无法判断是否为网约车，需人工确认",
+            evidence=evidence,
+        )
+
+    if rideshare_decision is False:
+        return _validation_result(
+            rule_code=LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前市内交通识别结果显示非网约车，无需补充行程信息",
+            evidence=evidence,
+        )
+
+    if trip_information_materials:
+        return _validation_result(
+            rule_code=LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="网约车费用已具备行程信息",
+            evidence=evidence,
+        )
+
+    return _validation_result(
+        rule_code=LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="网约车费用缺少行程信息",
+        evidence=evidence,
+    )
+
+
 def _extract_recognized_amount_cents(
     recognition_task: RecognitionTaskRecord | None,
 ) -> int | None:
@@ -586,6 +683,148 @@ def _extract_recognized_field_match(
         return {
             "field_name": field_name,
             "field_value": field_result.value,
+            "recognition_task_id": recognition_task.id,
+            "recognition_task_status": recognition_task.status.value,
+        }
+    return None
+
+
+def _collect_rideshare_detections(
+    invoice: InvoiceRecord,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> list[dict[str, object | None]]:
+    detections: list[dict[str, object | None]] = []
+
+    primary_detection = _extract_rideshare_detection(
+        material_id=invoice.material_id,
+        material_type=MaterialType.INVOICE,
+        recognition_task=recognition_task,
+    )
+    if primary_detection is not None:
+        detections.append(primary_detection)
+
+    for material in supporting_materials:
+        detection = _extract_rideshare_detection(
+            material_id=material.id,
+            material_type=material.material_type,
+            recognition_task=supporting_material_recognitions.get(material.id),
+        )
+        if detection is not None:
+            detections.append(detection)
+
+    return detections
+
+
+def _extract_rideshare_detection(
+    *,
+    material_id: str,
+    material_type: MaterialType,
+    recognition_task: RecognitionTaskRecord | None,
+) -> dict[str, object | None] | None:
+    if recognition_task is None:
+        return None
+    for field_name in RIDESHARE_INDICATOR_FIELD_NAMES:
+        field_result = recognition_task.recognized_fields.get(field_name)
+        if field_result is None:
+            continue
+        normalized = _normalize_rideshare_indicator_value(field_result.value)
+        if normalized is None:
+            continue
+        return {
+            "material_id": material_id,
+            "material_type": material_type.value,
+            "field_name": field_name,
+            "field_value": field_result.value,
+            "is_rideshare": normalized,
+            "recognition_task_id": recognition_task.id,
+            "recognition_task_status": recognition_task.status.value,
+        }
+    return None
+
+
+def _normalize_rideshare_indicator_value(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        if normalized in RIDESHARE_TRUE_VALUES:
+            return True
+        if normalized in RIDESHARE_FALSE_VALUES:
+            return False
+    return None
+
+
+def _decide_rideshare_requirement(
+    rideshare_detections: list[dict[str, object | None]],
+) -> bool | None:
+    if not rideshare_detections:
+        return None
+    rideshare_values = {
+        item["is_rideshare"]
+        for item in rideshare_detections
+        if isinstance(item.get("is_rideshare"), bool)
+    }
+    if rideshare_values == {True}:
+        return True
+    if rideshare_values == {False}:
+        return False
+    return None
+
+
+def _collect_trip_information_materials(
+    invoice: InvoiceRecord,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> list[dict[str, object | None]]:
+    trip_information_materials: list[dict[str, object | None]] = []
+
+    primary_material_trip_info = _extract_trip_information_match(
+        material_id=invoice.material_id,
+        material_type=MaterialType.INVOICE,
+        recognition_task=recognition_task,
+    )
+    if primary_material_trip_info is not None:
+        trip_information_materials.append(primary_material_trip_info)
+
+    for material in supporting_materials:
+        trip_info = _extract_trip_information_match(
+            material_id=material.id,
+            material_type=material.material_type,
+            recognition_task=supporting_material_recognitions.get(material.id),
+        )
+        if trip_info is not None:
+            trip_information_materials.append(trip_info)
+
+    return trip_information_materials
+
+
+def _extract_trip_information_match(
+    *,
+    material_id: str,
+    material_type: MaterialType,
+    recognition_task: RecognitionTaskRecord | None,
+) -> dict[str, object | None] | None:
+    if recognition_task is None:
+        return None
+    for field_group in RIDESHARE_TRIP_FIELD_GROUPS:
+        matched_values: dict[str, object] = {}
+        for field_name in field_group:
+            field_result = recognition_task.recognized_fields.get(field_name)
+            if field_result is None or not _has_meaningful_field_value(field_result.value):
+                matched_values = {}
+                break
+            matched_values[field_name] = field_result.value
+        if not matched_values:
+            continue
+        return {
+            "material_id": material_id,
+            "material_type": material_type.value,
+            "matched_fields": matched_values,
             "recognition_task_id": recognition_task.id,
             "recognition_task_status": recognition_task.status.value,
         }

@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-04-28 03:50 - Implement rideshare trip information validation for local transport invoices
+
+### 完成内容
+- 为发票校验新增 `invoice_local_transport_rideshare_trip_required` 规则：当费用类型为 `local_transport` 时，系统先根据识别结果判断是否为网约车；若无法判断，则返回 `pending`；若已识别为网约车但缺少行程信息，则返回 `failed`；若已具备行程信息，则返回 `passed`。
+- 将网约车规则接入发票创建时的即时校验链路，并纳入发票辅助材料关联/取消关联后的局部重算，保证成员补挂订单截图等辅助材料后，校验结果会同步刷新。
+- 补充发票 API 回归测试，覆盖“非市内交通不适用”“无法判断是否为网约车返回待确认”“已识别为网约车但缺少行程信息失败”“补挂含上下车地点的订单截图后通过”四条主路径。
+- 将 `TASKS.md` 中“实现网约车行程信息校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoice_validation.py`
+- `src/trms_backend/api/invoices.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库已经具备统一的发票校验结果模型、辅助材料关联模型和附件重算入口，但附件完整性规则仍缺少“市内交通是否为网约车”与“网约车是否具备行程信息”这条 Must 级规则，导致系统无法显式暴露该类缺失材料问题，也无法区分“材料不足”与“识别结论仍不确定”。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 30 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 102 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前仓库尚无单独的“网约车”领域字段或专用附件类型，因此本轮保守收敛为：只基于识别结果中的 `is_rideshare`、`transport_mode`、`transport_type`、`ride_service_type` 判断是否为网约车；若这些字段都缺失，系统返回 `pending`，不静默假定“不是网约车”。
+- 本轮将“行程信息”收敛为识别结果中至少具备以下任一信息组：`trip_route`、`trip_itinerary`、`trip_start_location + trip_end_location`、`pickup_location + dropoff_location`、`start_location + end_location`。若后续需要更细的字段标准，应在单独任务中固化识别 schema。
+- 网约车规则当前只在发票创建、辅助材料关联和取消关联时刷新；若后续需要在订单截图或其他辅助材料识别结果更新后自动触发相关发票重校验，应作为单独任务补齐。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现比赛时间范围校验”，继续补齐比赛范围类规则。
+
 ## 2026-04-28 03:44 - Implement airfare attachment completeness validation
 
 ### 完成内容

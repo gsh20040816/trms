@@ -4,12 +4,14 @@ from trms_backend.domain.invoice_validation import (
     AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
+    LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
     PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
     PAYMENT_RECORD_REQUIRED_RULE_CODE,
     validate_airfare_cabin_requirement,
     validate_airfare_itinerary_requirement,
     validate_invoice,
     validate_competition_notice_requirement,
+    validate_local_transport_rideshare_trip_requirement,
     validate_payment_record_amount_match,
     validate_payment_record_requirement,
 )
@@ -76,6 +78,7 @@ def build_invoice_router(
                 AIRFARE_CABIN_PROOF_RULE_CODE,
                 AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
                 COMPETITION_NOTICE_REQUIRED_RULE_CODE,
+                LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
                 PAYMENT_RECORD_REQUIRED_RULE_CODE,
                 PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
             }
@@ -85,6 +88,12 @@ def build_invoice_router(
                 validate_competition_notice_requirement(invoice, supporting_materials),
                 validate_airfare_itinerary_requirement(invoice, supporting_materials),
                 validate_airfare_cabin_requirement(
+                    invoice,
+                    invoice_material_recognition,
+                    supporting_materials,
+                    supporting_material_recognitions,
+                ),
+                validate_local_transport_rideshare_trip_requirement(
                     invoice,
                     invoice_material_recognition,
                     supporting_materials,

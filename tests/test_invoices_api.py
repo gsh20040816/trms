@@ -4,6 +4,7 @@ from trms_backend.domain.invoice_validation import (
     AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
+    LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
     PAYMENT_RECORD_AMOUNT_MATCH_MODE,
     PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
 )
@@ -33,6 +34,13 @@ def create_airfare_material(client: TestClient) -> tuple[str, str]:
     task = client.post("/api/tasks", json=task_payload).json()
     client.patch(f"/api/tasks/{task['id']}/status", json={"target_status": "open"})
     return task["id"], upload_material(client, task["id"], filename="airfare.pdf")
+
+
+def create_local_transport_material(client: TestClient) -> tuple[str, str]:
+    task_payload = valid_task_payload() | {"fee_categories": ["local_transport"]}
+    task = client.post("/api/tasks", json=task_payload).json()
+    client.patch(f"/api/tasks/{task['id']}/status", json={"target_status": "open"})
+    return task["id"], upload_material(client, task["id"], filename="local-transport.pdf")
 
 
 def upload_material(client: TestClient, task_id: str, filename: str = "ticket.pdf") -> str:
@@ -236,6 +244,30 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         "itinerary_material_ids": [],
         "order_screenshot_material_ids": [],
         "recognized_cabin_materials": [],
+    }
+    local_transport_validation = validation_by_code(
+        body, LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE
+    )
+    assert local_transport_validation["status"] == "not_applicable"
+    assert local_transport_validation["evidence"] == {
+        "expense_type": "railway",
+        "invoice_material_id": material_id,
+        "rideshare_indicator_field_names": [
+            "is_rideshare",
+            "transport_mode",
+            "transport_type",
+            "ride_service_type",
+        ],
+        "trip_field_groups": [
+            ["trip_route"],
+            ["trip_itinerary"],
+            ["trip_start_location", "trip_end_location"],
+            ["pickup_location", "dropoff_location"],
+            ["start_location", "end_location"],
+        ],
+        "requires_local_transport_validation": False,
+        "rideshare_detections": [],
+        "trip_information_materials": [],
     }
 
 
@@ -505,6 +537,230 @@ def test_create_airfare_invoice_fails_when_itinerary_and_cabin_proof_are_missing
         "itinerary_material_ids": [],
         "order_screenshot_material_ids": [],
         "recognized_cabin_materials": [],
+    }
+
+
+def test_create_local_transport_invoice_marks_pending_when_rideshare_cannot_be_determined(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    _, material_id = create_local_transport_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "seller_name": "上海市交通服务商",
+            "expense_type": "local_transport",
+        },
+    )
+
+    assert response.status_code == 201
+    local_transport_validation = validation_by_code(
+        response.json(),
+        LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+    )
+    assert local_transport_validation["status"] == "pending"
+    assert local_transport_validation["message"] == "市内交通无法判断是否为网约车，需人工确认"
+    assert local_transport_validation["evidence"] == {
+        "expense_type": "local_transport",
+        "invoice_material_id": material_id,
+        "rideshare_indicator_field_names": [
+            "is_rideshare",
+            "transport_mode",
+            "transport_type",
+            "ride_service_type",
+        ],
+        "trip_field_groups": [
+            ["trip_route"],
+            ["trip_itinerary"],
+            ["trip_start_location", "trip_end_location"],
+            ["pickup_location", "dropoff_location"],
+            ["start_location", "end_location"],
+        ],
+        "requires_local_transport_validation": True,
+        "rideshare_detections": [],
+        "trip_information_materials": [],
+    }
+
+
+def test_create_rideshare_invoice_fails_when_trip_information_is_missing(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_local_transport_material(client)
+    set_recognition_result(
+        client,
+        material_id,
+        document_type="invoice",
+        recognized_fields={
+            "transport_mode": {
+                "value": "rideshare",
+                "source": "ai",
+                "confidence": 0.96,
+                "status": "recognized",
+            }
+        },
+    )
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "seller_name": "滴滴出行",
+            "expense_type": "local_transport",
+        },
+    )
+
+    assert response.status_code == 201
+    local_transport_validation = validation_by_code(
+        response.json(),
+        LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+    )
+    assert local_transport_validation["status"] == "failed"
+    assert local_transport_validation["message"] == "网约车费用缺少行程信息"
+    assert local_transport_validation["evidence"] == {
+        "expense_type": "local_transport",
+        "invoice_material_id": material_id,
+        "rideshare_indicator_field_names": [
+            "is_rideshare",
+            "transport_mode",
+            "transport_type",
+            "ride_service_type",
+        ],
+        "trip_field_groups": [
+            ["trip_route"],
+            ["trip_itinerary"],
+            ["trip_start_location", "trip_end_location"],
+            ["pickup_location", "dropoff_location"],
+            ["start_location", "end_location"],
+        ],
+        "requires_local_transport_validation": True,
+        "rideshare_detections": [
+            {
+                "material_id": material_id,
+                "material_type": "invoice",
+                "field_name": "transport_mode",
+                "field_value": "rideshare",
+                "is_rideshare": True,
+                "recognition_task_id": local_transport_validation["evidence"][
+                    "rideshare_detections"
+                ][0]["recognition_task_id"],
+                "recognition_task_status": "succeeded",
+            }
+        ],
+        "trip_information_materials": [],
+    }
+
+
+def test_attach_order_screenshot_revalidates_rideshare_invoice_to_pass(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_local_transport_material(client)
+    set_recognition_result(
+        client,
+        material_id,
+        document_type="invoice",
+        recognized_fields={
+            "is_rideshare": {
+                "value": True,
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            }
+        },
+    )
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "seller_name": "滴滴出行",
+            "expense_type": "local_transport",
+        },
+    )
+    invoice_id = invoice_response.json()["invoice"]["id"]
+    order_screenshot_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="order_screenshot",
+        filename="rideshare-order.png",
+        content_type="image/png",
+    )
+    recognition_task_id = set_recognition_result(
+        client,
+        order_screenshot_material_id,
+        document_type="order_screenshot",
+        recognized_fields={
+            "pickup_location": {
+                "value": "嘉定校区",
+                "source": "ai",
+                "confidence": 0.93,
+                "status": "recognized",
+            },
+            "dropoff_location": {
+                "value": "虹桥火车站",
+                "source": "ai",
+                "confidence": 0.93,
+                "status": "recognized",
+            },
+        },
+    )
+
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{order_screenshot_material_id}"
+    )
+
+    assert attach_response.status_code == 200
+
+    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert validations_response.status_code == 200
+    local_transport_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE
+    )
+    assert local_transport_validation["status"] == "passed"
+    assert local_transport_validation["message"] == "网约车费用已具备行程信息"
+    assert local_transport_validation["evidence"] == {
+        "expense_type": "local_transport",
+        "invoice_material_id": material_id,
+        "rideshare_indicator_field_names": [
+            "is_rideshare",
+            "transport_mode",
+            "transport_type",
+            "ride_service_type",
+        ],
+        "trip_field_groups": [
+            ["trip_route"],
+            ["trip_itinerary"],
+            ["trip_start_location", "trip_end_location"],
+            ["pickup_location", "dropoff_location"],
+            ["start_location", "end_location"],
+        ],
+        "requires_local_transport_validation": True,
+        "rideshare_detections": [
+            {
+                "material_id": material_id,
+                "material_type": "invoice",
+                "field_name": "is_rideshare",
+                "field_value": True,
+                "is_rideshare": True,
+                "recognition_task_id": local_transport_validation["evidence"][
+                    "rideshare_detections"
+                ][0]["recognition_task_id"],
+                "recognition_task_status": "succeeded",
+            }
+        ],
+        "trip_information_materials": [
+            {
+                "material_id": order_screenshot_material_id,
+                "material_type": "order_screenshot",
+                "matched_fields": {
+                    "pickup_location": "嘉定校区",
+                    "dropoff_location": "虹桥火车站",
+                },
+                "recognition_task_id": recognition_task_id,
+                "recognition_task_status": "succeeded",
+            }
+        ],
     }
 
 
