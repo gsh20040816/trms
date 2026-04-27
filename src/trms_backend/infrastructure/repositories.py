@@ -19,13 +19,20 @@ from trms_backend.domain.materials import (
     MaterialRecord,
     SubmissionChannel,
 )
+from trms_backend.domain.splits import ExpenseSplitItem, ExpenseSplitRecord, ExpenseSplitRepository
 from trms_backend.domain.tasks import (
     ReimbursementTask,
     TaskCreate,
     TaskStatus,
 )
 from trms_backend.infrastructure.database import session_scope
-from trms_backend.infrastructure.models import InvoiceRow, MaterialRow, TaskRow, ValidationResultRow
+from trms_backend.infrastructure.models import (
+    ExpenseSplitRow,
+    InvoiceRow,
+    MaterialRow,
+    TaskRow,
+    ValidationResultRow,
+)
 
 
 class SqlAlchemyTaskRepository:
@@ -198,6 +205,43 @@ class SqlAlchemyValidationRepository(ValidationRepository):
             return [_validation_from_row(row) for row in rows]
 
 
+class SqlAlchemyExpenseSplitRepository(ExpenseSplitRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def replace_for_invoice(
+        self,
+        invoice_id: str,
+        items: list[ExpenseSplitItem],
+    ) -> list[ExpenseSplitRecord]:
+        now = datetime.now(timezone.utc)
+        rows = [
+            ExpenseSplitRow(
+                id=str(uuid4()),
+                invoice_id=invoice_id,
+                member_id=item.member_id,
+                amount_cents=item.amount_cents,
+                note=item.note,
+                created_at=now,
+                updated_at=now,
+            )
+            for item in items
+        ]
+        with session_scope(self._session_factory) as session:
+            session.execute(delete(ExpenseSplitRow).where(ExpenseSplitRow.invoice_id == invoice_id))
+            session.add_all(rows)
+        return [_split_from_row(row) for row in rows]
+
+    def list_by_invoice(self, invoice_id: str) -> list[ExpenseSplitRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(ExpenseSplitRow)
+                .where(ExpenseSplitRow.invoice_id == invoice_id)
+                .order_by(ExpenseSplitRow.created_at)
+            ).all()
+            return [_split_from_row(row) for row in rows]
+
+
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
     return ReimbursementTask(
         id=row.id,
@@ -262,4 +306,16 @@ def _validation_from_row(row: ValidationResultRow) -> ValidationResult:
         status=ValidationStatus(row.status),
         message=row.message,
         created_at=row.created_at,
+    )
+
+
+def _split_from_row(row: ExpenseSplitRow) -> ExpenseSplitRecord:
+    return ExpenseSplitRecord(
+        id=row.id,
+        invoice_id=row.invoice_id,
+        member_id=row.member_id,
+        amount_cents=row.amount_cents,
+        note=row.note,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )

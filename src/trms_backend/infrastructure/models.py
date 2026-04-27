@@ -89,3 +89,21 @@ class ValidationResultRow(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     message: Mapped[str] = mapped_column(String(1024), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ExpenseSplitRow(Base):
+    __tablename__ = "expense_splits"
+    __table_args__ = (Index("ix_expense_split_invoice_member", "invoice_id", "member_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    invoice_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("invoices.id"),
+        nullable=False,
+        index=True,
+    )
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
