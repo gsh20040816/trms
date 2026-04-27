@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-28 04:57 - Identify overdue member confirmations
+
+### 完成内容
+- 新增 `src/trms_backend/domain/overdue_confirmations.py`，把“任务截止后仍未完成当前版本费用确认”的识别逻辑收敛为独立只读聚合：
+  - 仅允许任务管理员查询；
+  - 基于任务当前有效分摊和当前版本确认记录判断逾期；
+  - 对缺失确认、显式 `pending` 和 `disputed` 三类未确认状态分别暴露，不再把它们混同为“已确认”或静默忽略。
+- 在 `src/trms_backend/api/tasks.py` 新增 `GET /api/tasks/{task_id}/overdue-confirmations`，返回逾期确认清单、逾期成员列表和确认截止时间。
+- 新增 `tests/test_overdue_confirmations_api.py`，覆盖：
+  - 截止后管理员可查询逾期未确认成员；
+  - 截止前查询返回空清单；
+  - 非管理员查询返回 `403`。
+- 将 `TASKS.md` 中“支持成员逾期未确认识别”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/overdue_confirmations.py`
+- `tests/test_overdue_confirmations_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有仓库虽然已经有“当前有效确认”和“历史确认”的版本边界，但仍缺少一个任务级聚合入口去显式回答“截止后还有哪些成员没确认当前费用明细”：
+  - 管理员无法直接区分哪些成员是缺失确认、哪些成员是确认失效后回到 `pending`；
+  - 未确认状态只能隐含在复核门禁错误里，不能被主动查询；
+  - 这会让后续复核提醒和自动提醒任务缺少明确的数据入口。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_overdue_confirmations_api.py`
+    - 3 个用例通过
+  - `uv run pytest tests/test_tasks_api.py tests/test_expense_details_api.py tests/test_confirmations_api.py tests/test_splits_api.py`
+    - 50 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 127 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前仓库尚无独立“确认截止时间”配置，本轮保守使用 `task.deadline` 作为逾期判断边界；若后续新增确认截止规则，应优先替换该聚合中的截止来源，而不是在调用方拼接特判。
+- 本轮把 `disputed` 也视为“尚未完成最终确认”的逾期状态之一，因为它在管理员复核前同样不能进入可导出状态。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“禁止管理员代确认默认路径”，把当前“只有成员本人可提交确认”的边界补齐为显式的管理员默认禁止语义和回归测试。
+
 ## 2026-04-28 04:51 - Introduce expense detail version tracking
 
 ### 完成内容

@@ -17,6 +17,10 @@ from trms_backend.domain.expense_disputes import (
     build_expense_dispute_list,
     ensure_task_administrator,
 )
+from trms_backend.domain.overdue_confirmations import (
+    OverdueConfirmationActorNotAllowedError,
+    build_overdue_confirmation_list,
+)
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
@@ -136,6 +140,38 @@ def build_task_router(
                 confirmations_by_split_id=confirmations_by_split_id,
             )
         except ExpenseDisputeActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/overdue-confirmations")
+    def list_task_overdue_confirmations(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        invoices = invoice_repository.list_by_task(task_id)
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        confirmations_by_split_id = {}
+        for invoice in invoices:
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        try:
+            return build_overdue_confirmation_list(
+                task,
+                administrator_id=actor_id,
+                invoices=invoices,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_split_id=confirmations_by_split_id,
+            )
+        except OverdueConfirmationActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),
