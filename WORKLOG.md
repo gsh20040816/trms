@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-04-28 04:02 - Implement competition location range validation
+
+### 完成内容
+- 为发票校验新增 `invoice_competition_location_range` 规则，默认对 `railway`、`airfare`、`local_transport`、`hotel` 四类与比赛行程直接相关的费用执行地点范围检查。
+- 规则会从发票主材料及已关联辅助材料的最新有效识别结果中提取地点信息，支持按 `transaction_location`、`location`、`trip_route` 以及 `departure/arrival`、`pickup/dropoff` 等字段组做基础匹配。
+- 当任一地点信息与任务 `competition_location` 做基础归一化匹配时返回 `passed`；存在地点信息但均不匹配时返回 `failed`；完全缺少地点信息时返回 `pending`，显式暴露“无法判断”的状态。
+- 将地点规则接入发票创建时的统一校验链路，并纳入发票辅助材料关联/取消关联后的局部重算，保证成员后补行程单、订单截图等地点材料后，相关 warning 结果可同步刷新。
+- 补充发票 API 回归测试，覆盖“地点缺失返回待确认”“往返路径包含比赛城市时通过”“路线与比赛地点无关时 warning 失败”三条主路径。
+- 将 `TASKS.md` 中“实现比赛地点范围校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoice_validation.py`
+- `src/trms_backend/api/invoices.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库已经覆盖比赛时间范围校验，但 FR-006 的地点范围规则仍未进入统一校验结果，也没有利用现有识别结果和辅助材料关联模型对出发地、到达地或往返路径做基础判断，导致系统无法显式提示“地点缺失需人工确认”或“路线明显与比赛地点不相关”。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 34 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 106 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 需求文档只要求“基础匹配”，未定义更细的行政区、机场三字码、火车站别名或中转策略；本轮保守收敛为基于归一化文本的包含匹配，不引入额外城市词典或地理编码依赖。
+- 当存在多份地点证据时，本轮只要任一材料能与比赛地点形成基础匹配即返回 `passed`；其余不匹配地点仍保留在结构化证据中，但不单独升级为冲突状态。若后续需要“匹配与不匹配同时出现时返回待确认”，应在单独任务中细化冲突策略。
+- 当前地点规则只在发票创建、辅助材料关联和取消关联时刷新；若后续需要在识别任务状态更新后自动反推相关发票重校验，应在单独任务中补齐，而不是在本轮扩散为新的通用机制。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立缺失材料清单模型”，把现有支付记录、比赛通知和时间/地点 warning 结果继续聚合为可复核清单。
+
 ## 2026-04-28 03:59 - Implement competition time range validation
 
 ### 完成内容

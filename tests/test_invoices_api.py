@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from trms_backend.domain.invoice_validation import (
     AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+    COMPETITION_LOCATION_RANGE_RULE_CODE,
     COMPETITION_TIME_RANGE_RULE_CODE,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
@@ -292,6 +293,44 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         "transaction_date": "2026-11-01",
         "issue_date": "2026-11-04",
         "time_source": "transaction_time",
+    }
+    competition_location_validation = validation_by_code(
+        body, COMPETITION_LOCATION_RANGE_RULE_CODE
+    )
+    assert competition_location_validation["severity"] == "warning"
+    assert competition_location_validation["status"] == "pending"
+    assert competition_location_validation["message"] == (
+        "缺少可用于比赛地点范围校验的地点信息，需人工确认"
+    )
+    assert competition_location_validation["evidence"] == {
+        "expense_type": "railway",
+        "supported_expense_types": [
+            "railway",
+            "airfare",
+            "local_transport",
+            "hotel",
+        ],
+        "requires_competition_location_validation": True,
+        "competition_location": "Shanghai",
+        "location_field_groups": [
+            ["transaction_location"],
+            ["transaction_city"],
+            ["location"],
+            ["city"],
+            ["merchant_location"],
+            ["hotel_city"],
+            ["trip_route"],
+            ["trip_itinerary"],
+            ["departure_location", "arrival_location"],
+            ["departure_city", "arrival_city"],
+            ["origin_location", "destination_location"],
+            ["from_location", "to_location"],
+            ["trip_start_location", "trip_end_location"],
+            ["pickup_location", "dropoff_location"],
+            ["start_location", "end_location"],
+        ],
+        "matched_location_materials": [],
+        "unmatched_location_materials": [],
     }
 
 
@@ -584,6 +623,164 @@ def test_create_invoice_warns_when_transaction_time_is_outside_default_competiti
         "transaction_date": "2026-10-29",
         "issue_date": "2026-11-04",
         "time_source": "transaction_time",
+    }
+
+
+def test_create_invoice_passes_competition_location_validation_when_route_matches_task_city(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+    recognition_task_id = set_recognition_result(
+        client,
+        material_id,
+        document_type="invoice",
+        recognized_fields={
+            "departure_location": {
+                "value": "Nanjing South Railway Station",
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            },
+            "arrival_location": {
+                "value": "Shanghai Hongqiao Railway Station",
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            },
+        },
+    )
+
+    response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+
+    assert response.status_code == 201
+    competition_location_validation = validation_by_code(
+        response.json(),
+        COMPETITION_LOCATION_RANGE_RULE_CODE,
+    )
+    assert competition_location_validation["severity"] == "warning"
+    assert competition_location_validation["status"] == "passed"
+    assert competition_location_validation["message"] == "交易地点与比赛地点或往返路径基础匹配"
+    assert competition_location_validation["evidence"] == {
+        "expense_type": "railway",
+        "supported_expense_types": [
+            "railway",
+            "airfare",
+            "local_transport",
+            "hotel",
+        ],
+        "requires_competition_location_validation": True,
+        "competition_location": "Shanghai",
+        "location_field_groups": [
+            ["transaction_location"],
+            ["transaction_city"],
+            ["location"],
+            ["city"],
+            ["merchant_location"],
+            ["hotel_city"],
+            ["trip_route"],
+            ["trip_itinerary"],
+            ["departure_location", "arrival_location"],
+            ["departure_city", "arrival_city"],
+            ["origin_location", "destination_location"],
+            ["from_location", "to_location"],
+            ["trip_start_location", "trip_end_location"],
+            ["pickup_location", "dropoff_location"],
+            ["start_location", "end_location"],
+        ],
+        "matched_location_materials": [
+            {
+                "material_id": material_id,
+                "material_type": "invoice",
+                "matched_fields": {
+                    "departure_location": "Nanjing South Railway Station",
+                    "arrival_location": "Shanghai Hongqiao Railway Station",
+                },
+                "competition_location_match": True,
+                "recognition_task_id": recognition_task_id,
+                "recognition_task_status": "succeeded",
+            }
+        ],
+        "unmatched_location_materials": [],
+    }
+
+
+def test_create_invoice_warns_when_competition_location_does_not_match_route(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+    recognition_task_id = set_recognition_result(
+        client,
+        material_id,
+        document_type="invoice",
+        recognized_fields={
+            "departure_location": {
+                "value": "Nanjing South Railway Station",
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            },
+            "arrival_location": {
+                "value": "Suzhou Railway Station",
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            },
+        },
+    )
+
+    response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+
+    assert response.status_code == 201
+    competition_location_validation = validation_by_code(
+        response.json(),
+        COMPETITION_LOCATION_RANGE_RULE_CODE,
+    )
+    assert competition_location_validation["severity"] == "warning"
+    assert competition_location_validation["status"] == "failed"
+    assert competition_location_validation["message"] == (
+        "交易地点与比赛地点或往返路径不匹配，需人工确认"
+    )
+    assert competition_location_validation["evidence"] == {
+        "expense_type": "railway",
+        "supported_expense_types": [
+            "railway",
+            "airfare",
+            "local_transport",
+            "hotel",
+        ],
+        "requires_competition_location_validation": True,
+        "competition_location": "Shanghai",
+        "location_field_groups": [
+            ["transaction_location"],
+            ["transaction_city"],
+            ["location"],
+            ["city"],
+            ["merchant_location"],
+            ["hotel_city"],
+            ["trip_route"],
+            ["trip_itinerary"],
+            ["departure_location", "arrival_location"],
+            ["departure_city", "arrival_city"],
+            ["origin_location", "destination_location"],
+            ["from_location", "to_location"],
+            ["trip_start_location", "trip_end_location"],
+            ["pickup_location", "dropoff_location"],
+            ["start_location", "end_location"],
+        ],
+        "matched_location_materials": [],
+        "unmatched_location_materials": [
+            {
+                "material_id": material_id,
+                "material_type": "invoice",
+                "matched_fields": {
+                    "departure_location": "Nanjing South Railway Station",
+                    "arrival_location": "Suzhou Railway Station",
+                },
+                "competition_location_match": False,
+                "recognition_task_id": recognition_task_id,
+                "recognition_task_status": "succeeded",
+            }
+        ],
     }
 
 

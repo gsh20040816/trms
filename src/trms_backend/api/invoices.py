@@ -3,12 +3,14 @@ from fastapi import APIRouter, HTTPException, status
 from trms_backend.domain.invoice_validation import (
     AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+    COMPETITION_LOCATION_RANGE_RULE_CODE,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
     PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
     PAYMENT_RECORD_REQUIRED_RULE_CODE,
     validate_airfare_cabin_requirement,
     validate_airfare_itinerary_requirement,
+    validate_competition_location_range,
     validate_invoice,
     validate_competition_notice_requirement,
     validate_local_transport_rideshare_trip_requirement,
@@ -62,6 +64,9 @@ def build_invoice_router(
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         invoice_material_recognition = recognition_task_repository.get_latest_effective_by_material(
             invoice.material_id
         )
@@ -77,6 +82,7 @@ def build_invoice_router(
             not in {
                 AIRFARE_CABIN_PROOF_RULE_CODE,
                 AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+                COMPETITION_LOCATION_RANGE_RULE_CODE,
                 COMPETITION_NOTICE_REQUIRED_RULE_CODE,
                 LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
                 PAYMENT_RECORD_REQUIRED_RULE_CODE,
@@ -95,6 +101,13 @@ def build_invoice_router(
                 ),
                 validate_local_transport_rideshare_trip_requirement(
                     invoice,
+                    invoice_material_recognition,
+                    supporting_materials,
+                    supporting_material_recognitions,
+                ),
+                validate_competition_location_range(
+                    invoice,
+                    task,
                     invoice_material_recognition,
                     supporting_materials,
                     supporting_material_recognitions,

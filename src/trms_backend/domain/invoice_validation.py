@@ -22,6 +22,7 @@ AIRFARE_CABIN_PROOF_RULE_CODE = "invoice_airfare_cabin_proof_required"
 AIRFARE_CABIN_FIELD_NAMES = ("cabin_class", "seat_class", "cabin")
 LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE = "invoice_local_transport_rideshare_trip_required"
 COMPETITION_TIME_RANGE_RULE_CODE = "invoice_competition_time_range"
+COMPETITION_LOCATION_RANGE_RULE_CODE = "invoice_competition_location_range"
 COMPETITION_TIME_BUFFER_DAYS_BEFORE = 1
 COMPETITION_TIME_BUFFER_DAYS_AFTER = 1
 COMPETITION_TIME_SUPPORTED_EXPENSE_TYPES = (
@@ -29,6 +30,24 @@ COMPETITION_TIME_SUPPORTED_EXPENSE_TYPES = (
     ExpenseType.AIRFARE,
     ExpenseType.LOCAL_TRANSPORT,
     ExpenseType.HOTEL,
+)
+COMPETITION_LOCATION_SUPPORTED_EXPENSE_TYPES = COMPETITION_TIME_SUPPORTED_EXPENSE_TYPES
+COMPETITION_LOCATION_FIELD_GROUPS = (
+    ("transaction_location",),
+    ("transaction_city",),
+    ("location",),
+    ("city",),
+    ("merchant_location",),
+    ("hotel_city",),
+    ("trip_route",),
+    ("trip_itinerary",),
+    ("departure_location", "arrival_location"),
+    ("departure_city", "arrival_city"),
+    ("origin_location", "destination_location"),
+    ("from_location", "to_location"),
+    ("trip_start_location", "trip_end_location"),
+    ("pickup_location", "dropoff_location"),
+    ("start_location", "end_location"),
 )
 RIDESHARE_INDICATOR_FIELD_NAMES = (
     "is_rideshare",
@@ -96,6 +115,13 @@ def validate_invoice(
             supporting_material_recognitions,
         ),
         validate_competition_time_range(invoice, task),
+        validate_competition_location_range(
+            invoice,
+            task,
+            recognition_task,
+            supporting_materials,
+            supporting_material_recognitions,
+        ),
     ]
 
 
@@ -688,6 +714,81 @@ def validate_competition_time_range(
     )
 
 
+def validate_competition_location_range(
+    invoice: InvoiceRecord,
+    task: ReimbursementTask,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> ValidationResult:
+    requires_competition_location_validation = (
+        invoice.expense_type in COMPETITION_LOCATION_SUPPORTED_EXPENSE_TYPES
+    )
+    location_candidates = _collect_competition_location_candidates(
+        invoice,
+        recognition_task,
+        supporting_materials,
+        supporting_material_recognitions,
+        task.competition_location,
+    )
+    matched_location_materials = [
+        item for item in location_candidates if item["competition_location_match"] is True
+    ]
+    unmatched_location_materials = [
+        item for item in location_candidates if item["competition_location_match"] is False
+    ]
+    evidence = {
+        "expense_type": invoice.expense_type.value,
+        "supported_expense_types": [
+            expense_type.value for expense_type in COMPETITION_LOCATION_SUPPORTED_EXPENSE_TYPES
+        ],
+        "requires_competition_location_validation": requires_competition_location_validation,
+        "competition_location": task.competition_location,
+        "location_field_groups": [list(group) for group in COMPETITION_LOCATION_FIELD_GROUPS],
+        "matched_location_materials": matched_location_materials,
+        "unmatched_location_materials": unmatched_location_materials,
+    }
+
+    if not requires_competition_location_validation:
+        return _validation_result(
+            rule_code=COMPETITION_LOCATION_RANGE_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前费用类型不要求比赛地点范围校验",
+            evidence=evidence,
+            severity=ValidationSeverity.WARNING,
+        )
+
+    if not location_candidates:
+        return _validation_result(
+            rule_code=COMPETITION_LOCATION_RANGE_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PENDING,
+            message="缺少可用于比赛地点范围校验的地点信息，需人工确认",
+            evidence=evidence,
+            severity=ValidationSeverity.WARNING,
+        )
+
+    if matched_location_materials:
+        return _validation_result(
+            rule_code=COMPETITION_LOCATION_RANGE_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="交易地点与比赛地点或往返路径基础匹配",
+            evidence=evidence,
+            severity=ValidationSeverity.WARNING,
+        )
+
+    return _validation_result(
+        rule_code=COMPETITION_LOCATION_RANGE_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="交易地点与比赛地点或往返路径不匹配，需人工确认",
+        evidence=evidence,
+        severity=ValidationSeverity.WARNING,
+    )
+
+
 def _extract_transaction_date(transaction_time: datetime | None) -> date | None:
     if transaction_time is None:
         return None
@@ -922,6 +1023,113 @@ def _extract_trip_information_match(
             "recognition_task_status": recognition_task.status.value,
         }
     return None
+
+
+def _collect_competition_location_candidates(
+    invoice: InvoiceRecord,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+    competition_location: str,
+) -> list[dict[str, object | None]]:
+    candidates: list[dict[str, object | None]] = []
+
+    primary_candidate = _extract_competition_location_candidate(
+        material_id=invoice.material_id,
+        material_type=MaterialType.INVOICE,
+        recognition_task=recognition_task,
+        competition_location=competition_location,
+    )
+    if primary_candidate is not None:
+        candidates.append(primary_candidate)
+
+    for material in supporting_materials:
+        candidate = _extract_competition_location_candidate(
+            material_id=material.id,
+            material_type=material.material_type,
+            recognition_task=supporting_material_recognitions.get(material.id),
+            competition_location=competition_location,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+
+    return candidates
+
+
+def _extract_competition_location_candidate(
+    *,
+    material_id: str,
+    material_type: MaterialType,
+    recognition_task: RecognitionTaskRecord | None,
+    competition_location: str,
+) -> dict[str, object | None] | None:
+    if recognition_task is None:
+        return None
+
+    first_available_candidate: dict[str, object | None] | None = None
+    for field_group in COMPETITION_LOCATION_FIELD_GROUPS:
+        matched_values = _extract_field_group_values(recognition_task, field_group)
+        if not matched_values:
+            continue
+        candidate = {
+            "material_id": material_id,
+            "material_type": material_type.value,
+            "matched_fields": matched_values,
+            "competition_location_match": _competition_location_matches_group(
+                competition_location,
+                matched_values,
+            ),
+            "recognition_task_id": recognition_task.id,
+            "recognition_task_status": recognition_task.status.value,
+        }
+        if candidate["competition_location_match"] is True:
+            return candidate
+        if first_available_candidate is None:
+            first_available_candidate = candidate
+    return first_available_candidate
+
+
+def _extract_field_group_values(
+    recognition_task: RecognitionTaskRecord,
+    field_group: tuple[str, ...],
+) -> dict[str, object]:
+    matched_values: dict[str, object] = {}
+    for field_name in field_group:
+        field_result = recognition_task.recognized_fields.get(field_name)
+        if field_result is None or not _has_meaningful_field_value(field_result.value):
+            return {}
+        matched_values[field_name] = field_result.value
+    return matched_values
+
+
+def _competition_location_matches_group(
+    competition_location: str,
+    field_values: dict[str, object],
+) -> bool:
+    return any(
+        _competition_location_matches_value(competition_location, field_value)
+        for field_value in field_values.values()
+    )
+
+
+def _competition_location_matches_value(
+    competition_location: str,
+    value: object,
+) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized_competition_location = _normalize_location_text(competition_location)
+    normalized_value = _normalize_location_text(value)
+    if not normalized_competition_location or not normalized_value:
+        return False
+    return (
+        normalized_competition_location in normalized_value
+        or normalized_value in normalized_competition_location
+    )
+
+
+def _normalize_location_text(value: str) -> str:
+    return "".join(character for character in value.casefold() if character.isalnum())
 
 
 def _has_meaningful_field_value(value: object) -> bool:
