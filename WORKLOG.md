@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-04-28 07:08 - Bootstrap web frontend skeleton
+
+### 完成内容
+- 在 `web/` 下建立独立 React + TypeScript + Vite 工程骨架：
+  - 新增前端入口 `web/src/main.tsx`；
+  - 新增路由边界 `web/src/app/routes.tsx`，为成员、管理员、系统管理员三类入口保留独立路径；
+  - 新增 API 客户端边界 `web/src/lib/api/client.ts`，统一封装基础 URL、JSON 请求和错误抛出，不在前端静默吞掉服务端错误。
+- 建立最小前端验证链路：
+  - 新增 `eslint`、`vitest`、`vite build` 配置；
+  - 新增前端路由骨架测试 `web/src/app/App.test.tsx`；
+  - 扩展 `scripts/verify.sh`，在检测到 `web/package.json` 后自动进入 `web/` 执行 `npm run lint`、`npm test` 和 `npm run build`。
+- 更新 `README.md` 记录前端本地安装、启动与统一验证方式。
+- 将 `TASKS.md` 中“建立 Web 前端项目骨架”标记为已完成。
+
+### 修改文件
+- `web/package-lock.json`
+- `web/package.json`
+- `web/tsconfig.json`
+- `web/tsconfig.app.json`
+- `web/tsconfig.node.json`
+- `web/vite.config.ts`
+- `web/eslint.config.js`
+- `web/index.html`
+- `web/src/main.tsx`
+- `web/src/app/App.tsx`
+- `web/src/app/router.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/app/role-routes.tsx`
+- `web/src/app/App.test.tsx`
+- `web/src/components/RoleShell.tsx`
+- `web/src/lib/api/client.ts`
+- `web/src/styles.css`
+- `web/src/vite-env.d.ts`
+- `web/src/test/setup.ts`
+- `scripts/verify.sh`
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库虽然已经确认前端技术栈和目录边界，但仍完全缺少 `web/` 工程、路由入口和前端 API 访问边界。
+- 如果继续推进管理员列表或成员上传页面，而不先固化前端工程和统一验证方式，后续每个页面任务都会在工程初始化、脚本命名和错误处理边界上重复返工。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，2 个前端测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前任务只建立前端工程骨架，不引入真实登录态、业务 API 类型明细或具体业务页面。
+- 路由先按成员、管理员、系统管理员三类入口拆分路径；真实鉴权门禁和角色切换占位将在下一任务实现。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立前端 API 类型与错误处理边界”，把任务、材料、发票、分摊、确认、校验和导出的类型定义补齐到前端。
+
 ## 2026-04-28 06:48 - Confirm web frontend stack boundary
 
 ### 完成内容

@@ -55,15 +55,21 @@ run_python_checks() {
 }
 
 run_node_checks() {
+  local target_dir="$1"
+  local label="$2"
+
   if ! have_cmd npm; then
     log "跳过 Node 检查：未找到 npm"
     return
   fi
 
-  log "运行 npm lint/test/build（如果存在）"
-  npm run lint --if-present
-  npm test --if-present
-  npm run build --if-present
+  log "运行 ${label} npm lint/test/build（如果存在）"
+  (
+    cd "$target_dir"
+    npm run lint --if-present
+    npm test --if-present
+    npm run build --if-present
+  )
 }
 
 run_rust_checks() {
@@ -131,7 +137,12 @@ fi
 
 if [[ -f package.json ]]; then
   recognized=1
-  run_node_checks
+  run_node_checks "." "根目录"
+fi
+
+if [[ -f web/package.json ]]; then
+  recognized=1
+  run_node_checks "web" "web 前端"
 fi
 
 if [[ -f Cargo.toml ]]; then

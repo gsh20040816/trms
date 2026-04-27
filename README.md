@@ -18,3 +18,12 @@ uv run uvicorn trms_backend.main:app --reload
 DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run uvicorn trms_backend.main:app --reload
 ```
 
+## Web 前端
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+前端工程使用 React + TypeScript + Vite。仓库根目录执行 `./scripts/verify.sh` 时，如存在 `web/package.json`，会自动进入 `web/` 执行 `npm run lint`、`npm test` 和 `npm run build`。
