@@ -32,6 +32,7 @@ def test_replace_invoice_splits(tmp_path):
 
     assert response.status_code == 200
     assert [item["amount_cents"] for item in response.json()["items"]] == [6000, 6345]
+    assert [item["version"] for item in response.json()["items"]] == [1, 1]
 
 
 def test_replace_invoice_splits_rejects_amount_mismatch(tmp_path):
@@ -192,15 +193,31 @@ def test_replace_invoice_splits_resets_changed_member_confirmations_to_pending(t
     assert replace_response.status_code == 200
     replaced_items = replace_response.json()["items"]
     assert {item["member_id"]: item["id"] for item in replaced_items} == initial_split_ids
+    assert {item["member_id"]: item["version"] for item in replaced_items} == {
+        "2250001": 2,
+        "2250002": 2,
+    }
 
     confirmation_response = client.get(f"/api/invoices/{invoice_id}/confirmations")
 
     assert confirmation_response.status_code == 200
-    confirmations = {
-        item["member_id"]: item for item in confirmation_response.json()["items"]
+    current_confirmations = {
+        item["member_id"]: item
+        for item in confirmation_response.json()["items"]
+        if item["is_current"]
     }
-    assert confirmations["2250001"]["status"] == "pending"
-    assert confirmations["2250002"]["status"] == "pending"
+    assert current_confirmations["2250001"]["status"] == "pending"
+    assert current_confirmations["2250001"]["split_version"] == 2
+    assert current_confirmations["2250002"]["status"] == "pending"
+    assert current_confirmations["2250002"]["split_version"] == 2
+
+    historical_confirmations = [
+        item for item in confirmation_response.json()["items"] if not item["is_current"]
+    ]
+    assert {(item["member_id"], item["split_version"], item["status"]) for item in historical_confirmations} == {
+        ("2250001", 1, "confirmed"),
+        ("2250002", 1, "confirmed"),
+    }
 
 
 def test_replace_invoice_splits_keeps_unchanged_member_confirmation(tmp_path):
@@ -241,6 +258,10 @@ def test_replace_invoice_splits_keeps_unchanged_member_confirmation(tmp_path):
     replaced_items = replace_response.json()["items"]
     replaced_split_ids = {item["member_id"]: item["id"] for item in replaced_items}
     assert replaced_split_ids["2250001"] == initial_split_ids["2250001"]
+    assert {item["member_id"]: item["version"] for item in replaced_items} == {
+        "2250001": 1,
+        "2250003": 1,
+    }
 
     confirmation_response = client.get(f"/api/invoices/{invoice_id}/confirmations")
 

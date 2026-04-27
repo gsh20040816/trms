@@ -15,7 +15,7 @@ def build_confirmation_router(
     @router.put("/api/splits/{split_id}/confirmation")
     def submit_confirmation(split_id: str, payload: MemberConfirmationSubmit):
         split = split_repository.get(split_id)
-        if split is None:
+        if split is None or not split.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="split not found")
 
         if payload.member_id != split.member_id:

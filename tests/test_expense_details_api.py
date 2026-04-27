@@ -92,9 +92,11 @@ def test_member_can_list_only_own_expense_details(tmp_path):
     assert body["total_amount_cents"] == 6345
     assert len(body["items"]) == 1
     assert body["items"][0]["member_id"] == "2250002"
+    assert body["items"][0]["split_version"] == 1
     assert body["items"][0]["amount_cents"] == 6345
     assert body["items"][0]["invoice"]["id"] == invoice_id
     assert body["items"][0]["confirmation"]["status"] == "confirmed"
+    assert body["items"][0]["confirmation"]["split_version"] == 1
 
 
 def test_task_member_without_related_splits_gets_empty_expense_details(tmp_path):

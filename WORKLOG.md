@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-28 04:51 - Introduce expense detail version tracking
+
+### 完成内容
+- 在 `src/trms_backend/infrastructure/models.py` 为 `expense_splits` 增加 `version`、`is_active` 字段，为 `confirmations` 增加 `split_version` 和费用快照字段，使确认记录不再只依赖“当前一条 split”。
+- 在 `src/trms_backend/infrastructure/repositories.py` 调整分摊替换语义：
+  - 同一成员金额或备注变化时递增当前分摊版本；
+  - 若旧版本已有确认，则为新版本创建显式 `pending` 确认；
+  - 被移除的旧分摊不再物理删除，而是归档为非活跃记录，保留历史确认可追溯性。
+- 在 `src/trms_backend/domain/confirmations.py`、`src/trms_backend/domain/splits.py`、`src/trms_backend/domain/expense_details.py` 扩展领域模型，显式暴露分摊版本、当前有效标记和确认快照版本。
+- 在 `src/trms_backend/api/tasks.py` 把费用明细、异议处理和任务复核门禁统一改为只消费“当前有效确认”；同时保留 `GET /api/invoices/{invoice_id}/confirmations` 返回历史确认，并通过 `is_current` 区分当前与历史。
+- 扩展 `tests/test_splits_api.py`、`tests/test_confirmations_api.py`、`tests/test_expense_details_api.py`，覆盖：
+  - 分摊变更后版本号递增；
+  - 当前确认与历史确认可区分；
+  - 费用明细查询返回当前版本及其确认版本。
+- 将 `TASKS.md` 中“引入费用明细版本号”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/confirmations.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/confirmations.py`
+- `src/trms_backend/domain/expense_details.py`
+- `src/trms_backend/domain/splits.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_confirmations_api.py`
+- `tests/test_expense_details_api.py`
+- `tests/test_splits_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有实现把成员确认直接绑在 `split_id` 上，且分摊变化时要么原地覆盖确认状态，要么直接删除旧分摊和确认：
+  - 无法表达“同一费用明细已经进入第几个版本”；
+  - 旧确认一旦被覆盖或删除，就不能区分“当前有效确认”和“历史确认”；
+  - 这与需求中“成员确认绑定到具体费用明细版本”的约束不一致，也会让后续逾期未确认识别、复核审计等任务缺少可靠基础。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_splits_api.py tests/test_confirmations_api.py tests/test_expense_details_api.py tests/test_expense_disputes_api.py tests/test_tasks_api.py`
+    - 53 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 124 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“费用明细版本”收敛为“当前活跃分摊记录上的递增版本号 + 确认记录内保存的版本快照”，不额外引入独立版本表。
+- 对于被移除的分摊，本轮采用“归档旧 split，不再对外暴露为当前明细”的方式保留历史；当前业务接口仍只返回活跃分摊。
+- 分摊版本变更后，仅当旧版本已存在确认记录时，才自动为新版本创建显式 `pending`；新增成员分摊仍保持“当前缺少确认”的语义。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“支持成员逾期未确认识别”，直接基于当前版本确认集合统计任务内未确认成员，避免再依赖历史确认推断。
+
 ## 2026-04-28 04:42 - Invalidate changed split confirmations explicitly
 
 ### 完成内容

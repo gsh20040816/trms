@@ -38,6 +38,7 @@ class ExpenseDetailInvoiceSnapshot(BaseModel):
 class ExpenseDetailConfirmationSnapshot(BaseModel):
     id: str
     member_id: str
+    split_version: int
     status: ConfirmationStatus
     dispute_reason: str | None
     confirmed_at: datetime
@@ -46,6 +47,7 @@ class ExpenseDetailConfirmationSnapshot(BaseModel):
 
 class ExpenseDetailItem(BaseModel):
     split_id: str
+    split_version: int
     member_id: str
     amount_cents: int
     note: str | None
@@ -96,6 +98,7 @@ def build_expense_detail_list(
             items.append(
                 ExpenseDetailItem(
                     split_id=split.id,
+                    split_version=split.version,
                     member_id=split.member_id,
                     amount_cents=split.amount_cents,
                     note=split.note,
@@ -118,6 +121,7 @@ def build_expense_detail_list(
                         ExpenseDetailConfirmationSnapshot(
                             id=confirmation.id,
                             member_id=confirmation.member_id,
+                            split_version=confirmation.split_version,
                             status=confirmation.status,
                             dispute_reason=confirmation.dispute_reason,
                             confirmed_at=confirmation.confirmed_at,

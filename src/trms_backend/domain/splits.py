@@ -38,6 +38,8 @@ class ExpenseSplitRecord(BaseModel):
     member_id: str
     amount_cents: int
     note: str | None
+    version: int
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

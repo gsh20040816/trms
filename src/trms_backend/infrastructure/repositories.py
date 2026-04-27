@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from trms_backend.domain.confirmations import (
@@ -572,12 +571,15 @@ class SqlAlchemyExpenseSplitRepository(ExpenseSplitRepository):
     ) -> list[ExpenseSplitRecord]:
         now = datetime.now(timezone.utc)
         with session_scope(self._session_factory) as session:
-            existing_rows = session.scalars(
+            active_rows = session.scalars(
                 select(ExpenseSplitRow)
-                .where(ExpenseSplitRow.invoice_id == invoice_id)
+                .where(
+                    ExpenseSplitRow.invoice_id == invoice_id,
+                    ExpenseSplitRow.is_active.is_(True),
+                )
                 .order_by(ExpenseSplitRow.created_at)
             ).all()
-            existing_rows_by_member_id = {row.member_id: row for row in existing_rows}
+            existing_rows_by_member_id = {row.member_id: row for row in active_rows}
 
             rows: list[ExpenseSplitRow] = []
             for item in items:
@@ -589,6 +591,8 @@ class SqlAlchemyExpenseSplitRepository(ExpenseSplitRepository):
                         member_id=item.member_id,
                         amount_cents=item.amount_cents,
                         note=item.note,
+                        version=1,
+                        is_active=True,
                         created_at=now,
                         updated_at=now,
                     )
@@ -599,36 +603,54 @@ class SqlAlchemyExpenseSplitRepository(ExpenseSplitRepository):
                 split_changed = (
                     existing_row.amount_cents != item.amount_cents or existing_row.note != item.note
                 )
-                existing_row.amount_cents = item.amount_cents
-                existing_row.note = item.note
                 if split_changed:
-                    existing_row.updated_at = now
-                    confirmation_row = session.scalar(
-                        select(ConfirmationRow).where(
+                    previous_version = existing_row.version
+                    had_current_confirmation = session.scalar(
+                        select(ConfirmationRow.id).where(
                             ConfirmationRow.split_id == existing_row.id,
                             ConfirmationRow.member_id == existing_row.member_id,
+                            ConfirmationRow.split_version == previous_version,
                         )
                     )
-                    if confirmation_row is not None:
-                        confirmation_row.status = ConfirmationStatus.PENDING.value
-                        confirmation_row.updated_at = now
-                        session.add(confirmation_row)
+                    existing_row.version = previous_version + 1
+                    existing_row.amount_cents = item.amount_cents
+                    existing_row.note = item.note
+                    existing_row.updated_at = now
+                    if had_current_confirmation is not None:
+                        session.add(
+                            ConfirmationRow(
+                                id=str(uuid4()),
+                                split_id=existing_row.id,
+                                member_id=existing_row.member_id,
+                                split_version=existing_row.version,
+                                split_amount_cents=item.amount_cents,
+                                split_note=item.note,
+                                status=ConfirmationStatus.PENDING.value,
+                                dispute_reason=None,
+                                confirmed_at=now,
+                                updated_at=now,
+                            )
+                        )
+                else:
+                    existing_row.amount_cents = item.amount_cents
+                    existing_row.note = item.note
                 session.add(existing_row)
                 rows.append(existing_row)
 
-            removed_split_ids = [row.id for row in existing_rows_by_member_id.values()]
-            if removed_split_ids:
-                session.execute(
-                    delete(ConfirmationRow).where(ConfirmationRow.split_id.in_(removed_split_ids))
-                )
-                session.execute(delete(ExpenseSplitRow).where(ExpenseSplitRow.id.in_(removed_split_ids)))
+            for removed_row in existing_rows_by_member_id.values():
+                removed_row.is_active = False
+                removed_row.updated_at = now
+                session.add(removed_row)
         return [_split_from_row(row) for row in rows]
 
     def list_by_invoice(self, invoice_id: str) -> list[ExpenseSplitRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(
                 select(ExpenseSplitRow)
-                .where(ExpenseSplitRow.invoice_id == invoice_id)
+                .where(
+                    ExpenseSplitRow.invoice_id == invoice_id,
+                    ExpenseSplitRow.is_active.is_(True),
+                )
                 .order_by(ExpenseSplitRow.created_at)
             ).all()
             return [_split_from_row(row) for row in rows]
@@ -645,10 +667,24 @@ class SqlAlchemyConfirmationRepository(ConfirmationRepository):
 
     def get_by_split(self, split_id: str) -> ConfirmationRecord | None:
         with session_scope(self._session_factory) as session:
+            split_row = session.get(ExpenseSplitRow, split_id)
+            if split_row is None or not split_row.is_active:
+                return None
             row = session.scalar(
-                select(ConfirmationRow).where(ConfirmationRow.split_id == split_id)
+                select(ConfirmationRow).where(
+                    ConfirmationRow.split_id == split_id,
+                    ConfirmationRow.member_id == split_row.member_id,
+                    ConfirmationRow.split_version == split_row.version,
+                )
             )
-            return _confirmation_from_row(row) if row else None
+            return (
+                _confirmation_from_row(
+                    row,
+                    is_current=True,
+                )
+                if row
+                else None
+            )
 
     def upsert_for_split(
         self,
@@ -657,10 +693,14 @@ class SqlAlchemyConfirmationRepository(ConfirmationRepository):
     ) -> ConfirmationRecord:
         now = datetime.now(timezone.utc)
         with session_scope(self._session_factory) as session:
+            split_row = session.get(ExpenseSplitRow, split_id)
+            if split_row is None or not split_row.is_active:
+                raise ValueError("split not found")
             row = session.scalar(
                 select(ConfirmationRow).where(
                     ConfirmationRow.split_id == split_id,
                     ConfirmationRow.member_id == payload.member_id,
+                    ConfirmationRow.split_version == split_row.version,
                 )
             )
             if row is None:
@@ -668,27 +708,73 @@ class SqlAlchemyConfirmationRepository(ConfirmationRepository):
                     id=str(uuid4()),
                     split_id=split_id,
                     member_id=payload.member_id,
+                    split_version=split_row.version,
+                    split_amount_cents=split_row.amount_cents,
+                    split_note=split_row.note,
                     confirmed_at=now,
                     updated_at=now,
                     status=payload.status.value,
                     dispute_reason=payload.dispute_reason,
                 )
             else:
+                row.split_amount_cents = split_row.amount_cents
+                row.split_note = split_row.note
                 row.status = payload.status.value
                 row.dispute_reason = payload.dispute_reason
                 row.updated_at = now
             session.add(row)
-        return _confirmation_from_row(row)
+        return _confirmation_from_row(row, is_current=True)
+
+    def list_current_by_invoice(self, invoice_id: str) -> list[ConfirmationRecord]:
+        with session_scope(self._session_factory) as session:
+            split_rows = session.scalars(
+                select(ExpenseSplitRow)
+                .where(
+                    ExpenseSplitRow.invoice_id == invoice_id,
+                    ExpenseSplitRow.is_active.is_(True),
+                )
+                .order_by(ExpenseSplitRow.created_at)
+            ).all()
+            split_rows_by_id = {row.id: row for row in split_rows}
+            rows = session.scalars(
+                select(ConfirmationRow)
+                .join(ExpenseSplitRow, ConfirmationRow.split_id == ExpenseSplitRow.id)
+                .where(
+                    ExpenseSplitRow.invoice_id == invoice_id,
+                    ExpenseSplitRow.is_active.is_(True),
+                )
+                .order_by(ConfirmationRow.confirmed_at)
+            ).all()
+            return [
+                _confirmation_from_row(row, is_current=True)
+                for row in rows
+                if row.split_version == split_rows_by_id[row.split_id].version
+            ]
 
     def list_by_invoice(self, invoice_id: str) -> list[ConfirmationRecord]:
         with session_scope(self._session_factory) as session:
+            split_rows = session.scalars(
+                select(ExpenseSplitRow)
+                .where(ExpenseSplitRow.invoice_id == invoice_id)
+                .order_by(ExpenseSplitRow.created_at)
+            ).all()
+            split_rows_by_id = {row.id: row for row in split_rows}
             rows = session.scalars(
                 select(ConfirmationRow)
                 .join(ExpenseSplitRow, ConfirmationRow.split_id == ExpenseSplitRow.id)
                 .where(ExpenseSplitRow.invoice_id == invoice_id)
                 .order_by(ConfirmationRow.confirmed_at)
             ).all()
-            return [_confirmation_from_row(row) for row in rows]
+            return [
+                _confirmation_from_row(
+                    row,
+                    is_current=(
+                        split_rows_by_id[row.split_id].is_active
+                        and row.split_version == split_rows_by_id[row.split_id].version
+                    ),
+                )
+                for row in rows
+            ]
 
 
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
@@ -846,16 +932,22 @@ def _split_from_row(row: ExpenseSplitRow) -> ExpenseSplitRecord:
         member_id=row.member_id,
         amount_cents=row.amount_cents,
         note=row.note,
+        version=row.version,
+        is_active=row.is_active,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
 
 
-def _confirmation_from_row(row: ConfirmationRow) -> ConfirmationRecord:
+def _confirmation_from_row(row: ConfirmationRow, *, is_current: bool) -> ConfirmationRecord:
     return ConfirmationRecord(
         id=row.id,
         split_id=row.split_id,
         member_id=row.member_id,
+        split_version=row.split_version,
+        split_amount_cents=row.split_amount_cents,
+        split_note=row.split_note,
+        is_current=is_current,
         status=ConfirmationStatus(row.status),
         dispute_reason=row.dispute_reason,
         confirmed_at=row.confirmed_at,

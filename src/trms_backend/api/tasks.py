@@ -92,7 +92,7 @@ def build_task_router(
         }
         confirmations_by_split_id = {}
         for invoice in invoices:
-            for confirmation in confirmation_repository.list_by_invoice(invoice.id):
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
         try:
@@ -124,7 +124,7 @@ def build_task_router(
         }
         confirmations_by_split_id = {}
         for invoice in invoices:
-            for confirmation in confirmation_repository.list_by_invoice(invoice.id):
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
         try:
@@ -160,7 +160,7 @@ def build_task_router(
             ) from error
 
         split = split_repository.get(split_id)
-        if split is None:
+        if split is None or not split.is_active:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="split not found")
 
         invoice = invoice_repository.get(split.invoice_id)
@@ -232,7 +232,7 @@ def build_task_router(
             }
             confirmations_by_split_id = {}
             for invoice in invoices:
-                for confirmation in confirmation_repository.list_by_invoice(invoice.id):
+                for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                     confirmations_by_split_id[confirmation.split_id] = confirmation
             try:
                 ensure_task_can_enter_ready_to_export(

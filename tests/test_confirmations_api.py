@@ -30,6 +30,8 @@ def test_confirm_own_split(tmp_path):
     assert response.status_code == 200
     assert response.json()["status"] == "confirmed"
     assert response.json()["member_id"] == "2250001"
+    assert response.json()["split_version"] == 1
+    assert response.json()["is_current"] is True
 
 
 def test_dispute_own_split(tmp_path):
@@ -48,6 +50,8 @@ def test_dispute_own_split(tmp_path):
     assert response.status_code == 200
     assert response.json()["status"] == "disputed"
     assert response.json()["dispute_reason"] == "amount is wrong"
+    assert response.json()["split_version"] == 1
+    assert response.json()["is_current"] is True
 
 
 def test_dispute_requires_reason(tmp_path):
@@ -90,7 +94,7 @@ def test_member_cannot_confirm_other_member_split(tmp_path):
 def test_list_invoice_confirmations(tmp_path):
     client = make_client(tmp_path)
     invoice_id, split_id = create_split(client)
-    client.put(
+    confirmation_response = client.put(
         f"/api/splits/{split_id}/confirmation",
         json={"member_id": "2250001", "status": "confirmed"},
     )
@@ -98,4 +102,10 @@ def test_list_invoice_confirmations(tmp_path):
     response = client.get(f"/api/invoices/{invoice_id}/confirmations")
 
     assert response.status_code == 200
-    assert [item["member_id"] for item in response.json()["items"]] == ["2250001"]
+    assert response.json()["items"] == [
+        {
+            **confirmation_response.json(),
+            "confirmed_at": response.json()["items"][0]["confirmed_at"],
+            "updated_at": response.json()["items"][0]["updated_at"],
+        }
+    ]

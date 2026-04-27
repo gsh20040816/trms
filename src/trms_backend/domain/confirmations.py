@@ -49,6 +49,10 @@ class ConfirmationRecord(BaseModel):
     id: str
     split_id: str
     member_id: str
+    split_version: int
+    split_amount_cents: int
+    split_note: str | None
+    is_current: bool
     status: ConfirmationStatus
     dispute_reason: str | None
     confirmed_at: datetime
@@ -64,6 +68,9 @@ class ConfirmationRepository(Protocol):
         split_id: str,
         payload: ConfirmationSubmit,
     ) -> ConfirmationRecord:
+        raise NotImplementedError
+
+    def list_current_by_invoice(self, invoice_id: str) -> list[ConfirmationRecord]:
         raise NotImplementedError
 
     def list_by_invoice(self, invoice_id: str) -> list[ConfirmationRecord]:
