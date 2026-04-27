@@ -1,16 +1,22 @@
 from fastapi import APIRouter, HTTPException, status
 
+from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigRepository
+from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
+from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import (
     TaskCreateInput,
+    TaskCompletionValidationError,
     MissingTaskInvoiceConfigError,
     TaskMembersUpdate,
     TaskRepository,
     TaskPublishValidationError,
+    TaskReviewValidationError,
     TaskStatus,
     TaskStatusUpdate,
     can_transition,
     close_expired_open_tasks,
+    ensure_task_can_enter_ready_to_export,
     ensure_task_can_publish,
     resolve_task_create,
 )
@@ -19,6 +25,10 @@ from trms_backend.domain.tasks import (
 def build_task_router(
     repository: TaskRepository,
     global_invoice_config_repository: GlobalInvoiceConfigRepository,
+    invoice_repository: InvoiceRepository,
+    validation_repository: ValidationRepository,
+    split_repository: ExpenseSplitRepository,
+    confirmation_repository: ConfirmationRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -86,6 +96,37 @@ def build_task_router(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=str(error),
                 ) from error
+
+        if payload.target_status == TaskStatus.READY_TO_EXPORT:
+            invoices = invoice_repository.list_by_task(task.id)
+            validations_by_invoice_id = {
+                invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+            }
+            splits_by_invoice_id = {
+                invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+            }
+            confirmations_by_split_id = {}
+            for invoice in invoices:
+                for confirmation in confirmation_repository.list_by_invoice(invoice.id):
+                    confirmations_by_split_id[confirmation.split_id] = confirmation
+            try:
+                ensure_task_can_enter_ready_to_export(
+                    invoices,
+                    validations_by_invoice_id=validations_by_invoice_id,
+                    splits_by_invoice_id=splits_by_invoice_id,
+                    confirmations_by_split_id=confirmations_by_split_id,
+                )
+            except TaskReviewValidationError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(error),
+                ) from error
+
+        if payload.target_status == TaskStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(TaskCompletionValidationError()),
+            )
 
         return repository.update_status(task_id, payload.target_status)
 

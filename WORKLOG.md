@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-04-28 01:37 - Enforce task status transition conditions
+
+### 完成内容
+- 在任务领域新增 `ready_to_export` 的最小复核门禁：对当前仓库已经落库的事实做保守检查，要求发票必须已有校验结果、不得存在 blocker 级失败或待确认校验、每张发票必须已有费用分摊、每条分摊必须已有成员确认且不能处于异议状态。
+- 在任务状态更新接口接入上述复核门禁；当任务尝试从 `reviewing` 进入 `ready_to_export` 且条件不满足时，返回明确 `409` 错误，而不是只依赖状态图放行。
+- 对 `completed` 增加保守完成门禁：由于当前仓库尚未实现导出模块和“导出完成”持久化事实，本轮统一拒绝进入 `completed`，避免在没有导出证据时伪装流程已完成。
+- 补充 `tests/test_tasks_api.py`，覆盖复核条件满足时可进入 `ready_to_export`、blocker 校验失败拒绝进入、成员确认缺失拒绝进入，以及未记录导出完成前拒绝进入 `completed`。
+- 将 `TASKS.md` 中“增加任务状态流转条件检查”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/main.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 29 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 53 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前“复核条件满足”只按仓库内已实现且可验证的事实收敛：发票校验、费用分摊和成员确认；待归属材料、导出记录、管理员人工处理 blocker 等更完整的复核事实，留给后续对应任务建模后再接入。
+- 在导出模块和导出任务模型落地前，本轮将 `completed` 视为不可达状态；这样比无条件放行更符合“completed 只能在导出完成后进入”的要求，也避免产生虚假的流程完成状态。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“校验材料提交人必须属于任务成员”，把 Web、CLI、Telegram、Email 共用的成员归属门禁补上。
+
 ## 2026-04-28 01:32 - Add task deadline check boundary
 
 ### 完成内容

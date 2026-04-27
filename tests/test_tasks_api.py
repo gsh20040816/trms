@@ -39,6 +39,72 @@ def valid_task_payload():
     }
 
 
+def upload_material(client: TestClient, task_id: str, filename: str = "ticket.pdf") -> str:
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={"submitter_id": "2250001", "channel": "web"},
+        files={"files": (filename, b"fake-pdf-content", "application/pdf")},
+    )
+    assert response.status_code == 201
+    return response.json()["items"][0]["id"]
+
+
+def valid_invoice_payload():
+    return {
+        "invoice_number": "INV-001",
+        "issue_date": "2026-11-04",
+        "transaction_time": "2026-11-01T08:00:00Z",
+        "buyer_name": "同济大学",
+        "tax_number": "12100000425006117D",
+        "seller_name": "铁路服务商",
+        "amount_cents": 12345,
+        "expense_type": "railway",
+    }
+
+
+def create_invoice(client: TestClient, material_id: str, **overrides) -> str:
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | overrides,
+    )
+    assert response.status_code == 201
+    return response.json()["invoice"]["id"]
+
+
+def replace_invoice_splits(client: TestClient, invoice_id: str) -> str:
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={"items": [{"member_id": "2250001", "amount_cents": 12345}]},
+    )
+    assert response.status_code == 200
+    return response.json()["items"][0]["id"]
+
+
+def confirm_split(client: TestClient, split_id: str) -> None:
+    response = client.put(
+        f"/api/splits/{split_id}/confirmation",
+        json={"member_id": "2250001", "status": "confirmed"},
+    )
+    assert response.status_code == 200
+
+
+def open_task(client: TestClient, task_id: str) -> None:
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "open"},
+    )
+    assert response.status_code == 200
+
+
+def move_open_task_to_reviewing(client: TestClient, task_id: str) -> None:
+    for target_status in ("closed", "reviewing"):
+        response = client.patch(
+            f"/api/tasks/{task_id}/status",
+            json={"target_status": target_status},
+        )
+        assert response.status_code == 200
+
+
 def test_health_check(tmp_path):
     client = make_client(tmp_path)
 
@@ -328,6 +394,93 @@ def test_update_task_status_rejects_invalid_transition(tmp_path):
 
     assert response.status_code == 409
     assert "cannot transition task" in response.json()["detail"]
+
+
+def test_update_task_status_allows_ready_to_export_after_review_conditions_met(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(client, material_id)
+    split_id = replace_invoice_splits(client, invoice_id)
+    confirm_split(client, split_id)
+    move_open_task_to_reviewing(client, task["id"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready_to_export"
+
+
+def test_update_task_status_rejects_ready_to_export_when_blocker_validation_fails(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(client, material_id, buyer_name="错误抬头")
+    split_id = replace_invoice_splits(client, invoice_id)
+    confirm_split(client, split_id)
+    move_open_task_to_reviewing(client, task["id"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        f"task review is incomplete: blocker validations are not resolved for invoices: {invoice_id}"
+    )
+
+
+def test_update_task_status_rejects_ready_to_export_when_member_confirmation_missing(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(client, material_id)
+    split_id = replace_invoice_splits(client, invoice_id)
+    move_open_task_to_reviewing(client, task["id"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task review is incomplete: "
+        f"member confirmations are still missing for splits: {split_id}"
+    )
+
+
+def test_update_task_status_rejects_completed_before_export_completion_is_recorded(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(client, material_id)
+    split_id = replace_invoice_splits(client, invoice_id)
+    confirm_split(client, split_id)
+    move_open_task_to_reviewing(client, task["id"])
+    ready = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+    assert ready.status_code == 200
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "completed"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task cannot transition to completed before export completion is recorded"
+    )
 
 
 def test_update_missing_task_status_returns_404(tmp_path):

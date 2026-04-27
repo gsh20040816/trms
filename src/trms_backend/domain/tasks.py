@@ -7,8 +7,16 @@ from typing import Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
-from trms_backend.domain.invoices import ExpenseType
+from trms_backend.domain.invoices import (
+    ExpenseType,
+    InvoiceRecord,
+    ValidationResult,
+    ValidationSeverity,
+    ValidationStatus,
+)
+from trms_backend.domain.splits import ExpenseSplitRecord
 
 
 class TaskStatus(StrEnum):
@@ -131,6 +139,17 @@ class TaskSubmissionDeadlinePassedError(ValueError):
         super().__init__("task deadline has passed for member material submission")
 
 
+class TaskReviewValidationError(ValueError):
+    def __init__(self, reasons: list[str]) -> None:
+        self.reasons = reasons
+        super().__init__("task review is incomplete: " + "; ".join(reasons))
+
+
+class TaskCompletionValidationError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("task cannot transition to completed before export completion is recorded")
+
+
 class ReimbursementTask(BaseModel):
     id: str
     status: TaskStatus
@@ -251,6 +270,67 @@ def has_task_submission_deadline_passed(
         deadline = deadline.replace(tzinfo=timezone.utc)
     reference_time = now or datetime.now(timezone.utc)
     return deadline <= reference_time
+
+
+def ensure_task_can_enter_ready_to_export(
+    invoices: list[InvoiceRecord],
+    *,
+    validations_by_invoice_id: dict[str, list[ValidationResult]],
+    splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
+    confirmations_by_split_id: dict[str, ConfirmationRecord],
+) -> None:
+    invoices_missing_validations: list[str] = []
+    invoices_with_blocker_issues: list[str] = []
+    invoices_missing_splits: list[str] = []
+    splits_missing_confirmation: list[str] = []
+    disputed_splits: list[str] = []
+
+    for invoice in invoices:
+        validations = validations_by_invoice_id.get(invoice.id, [])
+        if not validations:
+            invoices_missing_validations.append(invoice.id)
+        elif any(
+            result.severity == ValidationSeverity.BLOCKER
+            and result.status in {ValidationStatus.FAILED, ValidationStatus.PENDING}
+            for result in validations
+        ):
+            invoices_with_blocker_issues.append(invoice.id)
+
+        splits = splits_by_invoice_id.get(invoice.id, [])
+        if not splits:
+            invoices_missing_splits.append(invoice.id)
+            continue
+
+        for split in splits:
+            confirmation = confirmations_by_split_id.get(split.id)
+            if confirmation is None:
+                splits_missing_confirmation.append(split.id)
+                continue
+            if confirmation.status == ConfirmationStatus.DISPUTED:
+                disputed_splits.append(split.id)
+
+    reasons: list[str] = []
+    if invoices_missing_validations:
+        reasons.append(
+            "missing invoice validations for invoices: "
+            + ", ".join(invoices_missing_validations)
+        )
+    if invoices_with_blocker_issues:
+        reasons.append(
+            "blocker validations are not resolved for invoices: "
+            + ", ".join(invoices_with_blocker_issues)
+        )
+    if invoices_missing_splits:
+        reasons.append("missing expense splits for invoices: " + ", ".join(invoices_missing_splits))
+    if splits_missing_confirmation:
+        reasons.append(
+            "member confirmations are still missing for splits: "
+            + ", ".join(splits_missing_confirmation)
+        )
+    if disputed_splits:
+        reasons.append("member confirmations are disputed for splits: " + ", ".join(disputed_splits))
+    if reasons:
+        raise TaskReviewValidationError(reasons)
 
 
 def close_expired_open_tasks(

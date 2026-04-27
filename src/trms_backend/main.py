@@ -43,7 +43,16 @@ def create_app(
     def health():
         return {"status": "ok"}
 
-    app.include_router(build_task_router(task_repository, global_invoice_config_repository))
+    app.include_router(
+        build_task_router(
+            task_repository,
+            global_invoice_config_repository,
+            invoice_repository,
+            validation_repository,
+            split_repository,
+            confirmation_repository,
+        )
+    )
     app.include_router(build_material_router(task_repository, material_repository))
     app.include_router(
         build_invoice_router(
