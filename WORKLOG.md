@@ -1,5 +1,29 @@
 # WORKLOG
 
+## 2026-04-28 00:45 - Harden backend health check coverage
+
+### 完成内容
+- 为 `/health` 新增独立 API 测试文件，明确覆盖健康检查接口返回 `200` 和 `{"status": "ok"}`。
+- 确认统一验证脚本 `./scripts/verify.sh` 会运行 pytest，因此会覆盖新增的健康检查测试。
+- 记录后端本地启动命令：`uv run uvicorn trms_backend.main:app --reload`。
+
+### 修改文件
+- `tests/test_health_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py::test_health_check`
+  - `uv run pytest tests/test_health_api.py`
+  - `./scripts/verify.sh`
+
+### 假设
+- 当前 `/health` 的语义是后端进程级健康检查，只保证应用可响应，不额外执行数据库连通性探测。
+
+### 后续建议
+- 下一轮可继续处理 `TASKS.md` 中“梳理当前 API 能力清单”，只记录现有接口与 FR-001 至 FR-015 的覆盖关系，不改业务逻辑。
+
 ## 2026-04-28 00:42 - Confirm project stack and run commands
 
 ### 完成内容
