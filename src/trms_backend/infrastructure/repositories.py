@@ -158,6 +158,18 @@ class SqlAlchemyMaterialRepository:
             session.add(row)
         return _material_from_row(row)
 
+    def list_pending_assignment_by_task_hint(self, task_id: str) -> list[MaterialRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(MaterialRow)
+                .where(
+                    MaterialRow.status == MaterialStatus.PENDING_ASSIGNMENT.value,
+                    MaterialRow.task_id_hint == task_id,
+                )
+                .order_by(MaterialRow.created_at)
+            ).all()
+            return [_material_from_row(row) for row in rows]
+
     def claim_pending_assignment(
         self,
         *,

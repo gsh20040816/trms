@@ -292,6 +292,7 @@ def ensure_task_can_enter_ready_to_export(
     validations_by_invoice_id: dict[str, list[ValidationResult]],
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
     confirmations_by_split_id: dict[str, ConfirmationRecord],
+    pending_assignment_material_ids: list[str],
 ) -> None:
     invoices_missing_validations: list[str] = []
     invoices_with_blocker_issues: list[str] = []
@@ -352,6 +353,13 @@ def ensure_task_can_enter_ready_to_export(
         )
     if disputed_splits:
         reasons.append("member confirmations are disputed for splits: " + ", ".join(disputed_splits))
+    if pending_assignment_material_ids:
+        reasons.append(
+            "pending-assignment materials must be claimed before final confirmation "
+            f"(count: {len(pending_assignment_material_ids)}, material_ids: "
+            + ", ".join(pending_assignment_material_ids)
+            + ")"
+        )
     if reasons:
         raise TaskReviewValidationError(reasons)
 

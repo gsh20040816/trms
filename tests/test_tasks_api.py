@@ -515,6 +515,43 @@ def test_update_task_status_rejects_ready_to_export_when_member_confirmation_mis
     )
 
 
+def test_update_task_status_rejects_ready_to_export_when_pending_assignment_material_exists(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(client, material_id)
+    split_id = replace_invoice_splits(client, invoice_id)
+    confirm_split(client, split_id)
+    pending_assignment_response = client.post(
+        "/api/materials/pending-assignment",
+        data={
+            "task_id_hint": task["id"],
+            "submitter_id_hint": "2250002",
+            "channel": "email",
+            "material_type": "other_attachment",
+        },
+        files={"files": ("notice.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert pending_assignment_response.status_code == 201
+    pending_material_id = pending_assignment_response.json()["items"][0]["id"]
+    move_open_task_to_reviewing(client, task["id"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task review is incomplete: "
+        "pending-assignment materials must be claimed before final confirmation "
+        f"(count: 1, material_ids: {pending_material_id})"
+    )
+
+
 def test_update_task_status_rejects_ready_to_export_when_split_amount_changes_after_confirmation(
     tmp_path,
 ):

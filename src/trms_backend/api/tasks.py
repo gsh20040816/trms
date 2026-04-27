@@ -331,6 +331,10 @@ def build_task_router(
             splits_by_invoice_id = {
                 invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
             }
+            pending_assignment_material_ids = [
+                material.id
+                for material in material_repository.list_pending_assignment_by_task_hint(task.id)
+            ]
             confirmations_by_split_id = {}
             for invoice in invoices:
                 for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
@@ -341,6 +345,7 @@ def build_task_router(
                     validations_by_invoice_id=validations_by_invoice_id,
                     splits_by_invoice_id=splits_by_invoice_id,
                     confirmations_by_split_id=confirmations_by_split_id,
+                    pending_assignment_material_ids=pending_assignment_material_ids,
                 )
             except TaskReviewValidationError as error:
                 raise HTTPException(

@@ -137,6 +137,9 @@ class MaterialRepository(Protocol):
     def create(self, data: MaterialCreate) -> MaterialRecord:
         raise NotImplementedError
 
+    def list_pending_assignment_by_task_hint(self, task_id: str) -> list[MaterialRecord]:
+        raise NotImplementedError
+
     def claim_pending_assignment(
         self,
         *,
@@ -205,6 +208,16 @@ class InMemoryMaterialRepository:
             )
             self._materials[material.id] = material
             return material
+
+    def list_pending_assignment_by_task_hint(self, task_id: str) -> list[MaterialRecord]:
+        with self._lock:
+            materials = [
+                material
+                for material in self._materials.values()
+                if material.status is MaterialStatus.PENDING_ASSIGNMENT
+                and material.task_id_hint == task_id
+            ]
+            return sorted(materials, key=lambda material: material.created_at)
 
     def claim_pending_assignment(
         self,

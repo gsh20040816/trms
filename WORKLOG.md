@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-28 05:19 - Block ready-to-export when pending-assignment materials exist
+
+### 完成内容
+- 在 `src/trms_backend/domain/materials.py` 和 `src/trms_backend/infrastructure/repositories.py` 增加“按 `task_id_hint` 查询待归属材料”的只读仓储能力。
+- 在 `src/trms_backend/api/tasks.py` 把待归属材料检查接入 `ready_to_export` 门禁；当任务仍有待归属材料时，拒绝进入可导出状态。
+- 在 `src/trms_backend/domain/tasks.py` 扩展最终确认校验，错误信息显式返回待处理材料数量和材料编号。
+- 在 `tests/test_tasks_api.py` 新增回归测试，覆盖“存在待归属材料时不能最终确认”路径。
+- 将 `TASKS.md` 中“阻止存在待归属材料的最终确认”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 仓库此前已经实现了 `pending_assignment` 材料状态和管理员认领流程，但管理员把任务从 `reviewing` 置为 `ready_to_export` 时，门禁只检查发票校验、分摊和成员确认：
+  - 待归属材料虽然被正确隐藏在普通任务材料列表之外，却不会阻止最终确认；
+  - 这与需求文档和架构文档中“最终确认前不得存在待归属材料”的约束不一致；
+  - 因此会出现“仍有未处理渠道材料，但任务已被视为可导出”的状态漏洞。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 33 个用例通过
+  - `uv run pytest tests/test_materials_api.py`
+    - 22 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 133 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前只把 `task_id_hint == task.id` 的待归属材料视为“该任务存在待处理材料”的确定证据；没有任务提示的待归属材料本轮不阻断任何具体任务的最终确认，因为系统尚无更可靠的任务归属推断链路。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“阻止存在未确认成员的最终确认”，继续把管理员最终确认门禁从“分摊级确认缺失”收敛为更明确的任务级成员确认约束。
+
 ## 2026-04-28 05:14 - Add administrator review summary API
 
 ### 完成内容
