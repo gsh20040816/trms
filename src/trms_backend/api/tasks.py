@@ -1,19 +1,32 @@
 from fastapi import APIRouter, HTTPException, status
 
+from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigRepository
 from trms_backend.domain.tasks import (
-    TaskCreate,
+    TaskCreateInput,
+    MissingTaskInvoiceConfigError,
     TaskRepository,
     TaskStatusUpdate,
     can_transition,
+    resolve_task_create,
 )
 
 
-def build_task_router(repository: TaskRepository) -> APIRouter:
+def build_task_router(
+    repository: TaskRepository,
+    global_invoice_config_repository: GlobalInvoiceConfigRepository,
+) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
     @router.post("", status_code=status.HTTP_201_CREATED)
-    def create_task(payload: TaskCreate):
-        return repository.create(payload)
+    def create_task(payload: TaskCreateInput):
+        try:
+            task_create = resolve_task_create(payload, global_invoice_config_repository.get())
+        except MissingTaskInvoiceConfigError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from error
+        return repository.create(task_create)
 
     @router.get("")
     def list_tasks():

@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 
 
 class TaskStatus(StrEnum):
@@ -18,7 +19,7 @@ class TaskStatus(StrEnum):
     COMPLETED = "completed"
 
 
-class TaskCreate(BaseModel):
+class _TaskCreateBase(BaseModel):
     competition_name: str = Field(min_length=1)
     competition_location: str = Field(min_length=1)
     competition_start_date: date
@@ -29,8 +30,6 @@ class TaskCreate(BaseModel):
     administrator_id: str = Field(min_length=1)
     project_info: str = Field(min_length=1)
     reimburser_info: str = Field(min_length=1)
-    invoice_title: str = Field(min_length=1)
-    tax_number: str = Field(min_length=1)
 
     @field_validator("member_ids", "fee_categories")
     @classmethod
@@ -54,8 +53,35 @@ class TaskCreate(BaseModel):
         return self
 
 
+class TaskCreateInput(_TaskCreateBase):
+    invoice_title: str | None = None
+    tax_number: str | None = None
+
+    @field_validator("invoice_title", "tax_number")
+    @classmethod
+    def reject_blank_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
+class TaskCreate(_TaskCreateBase):
+    invoice_title: str = Field(min_length=1)
+    tax_number: str = Field(min_length=1)
+
+
 class TaskStatusUpdate(BaseModel):
     target_status: TaskStatus
+
+
+class MissingTaskInvoiceConfigError(ValueError):
+    def __init__(self, missing_fields: list[str]) -> None:
+        self.missing_fields = missing_fields
+        joined_fields = ", ".join(missing_fields)
+        super().__init__(f"missing invoice configuration fields: {joined_fields}")
 
 
 class ReimbursementTask(BaseModel):
@@ -89,6 +115,34 @@ class TaskRepository(Protocol):
 
     def update_status(self, task_id: str, target_status: TaskStatus) -> ReimbursementTask | None:
         raise NotImplementedError
+
+
+def resolve_task_create(
+    payload: TaskCreateInput,
+    global_invoice_config: GlobalInvoiceConfig | None,
+) -> TaskCreate:
+    invoice_title = payload.invoice_title
+    if invoice_title is None and global_invoice_config is not None:
+        invoice_title = global_invoice_config.invoice_title
+
+    tax_number = payload.tax_number
+    if tax_number is None and global_invoice_config is not None:
+        tax_number = global_invoice_config.tax_number
+
+    missing_fields: list[str] = []
+    if invoice_title is None:
+        missing_fields.append("invoice_title")
+    if tax_number is None:
+        missing_fields.append("tax_number")
+    if missing_fields:
+        raise MissingTaskInvoiceConfigError(missing_fields)
+
+    data = payload.model_dump(exclude={"invoice_title", "tax_number"})
+    return TaskCreate(
+        **data,
+        invoice_title=invoice_title,
+        tax_number=tax_number,
+    )
 
 
 ALLOWED_STATUS_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {

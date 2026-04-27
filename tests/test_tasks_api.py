@@ -2,11 +2,12 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 from trms_backend.main import create_app
 
 
-def make_client(tmp_path):
-    return TestClient(create_app(f"sqlite:///{tmp_path}/test.db"))
+def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = None):
+    return TestClient(create_app(f"sqlite:///{tmp_path}/test.db", global_invoice_config))
 
 
 def valid_task_payload():
@@ -51,6 +52,61 @@ def test_create_and_get_task(tmp_path):
 
     assert fetched.status_code == 200
     assert fetched.json()["id"] == body["id"]
+
+
+def test_create_task_inherits_global_invoice_config(tmp_path):
+    client = make_client(
+        tmp_path,
+        GlobalInvoiceConfig(
+            invoice_title="同济大学电子与信息工程学院",
+            tax_number="GLOBAL-TAX-NUMBER",
+        ),
+    )
+    payload = valid_task_payload()
+    payload.pop("invoice_title")
+    payload.pop("tax_number")
+
+    response = client.post("/api/tasks", json=payload)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["invoice_title"] == "同济大学电子与信息工程学院"
+    assert body["tax_number"] == "GLOBAL-TAX-NUMBER"
+
+
+def test_create_task_allows_task_level_invoice_override(tmp_path):
+    client = make_client(
+        tmp_path,
+        GlobalInvoiceConfig(
+            invoice_title="默认抬头",
+            tax_number="DEFAULT-TAX",
+        ),
+    )
+    payload = valid_task_payload() | {
+        "invoice_title": "比赛专用抬头",
+        "tax_number": "TASK-TAX-NUMBER",
+    }
+
+    response = client.post("/api/tasks", json=payload)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["invoice_title"] == "比赛专用抬头"
+    assert body["tax_number"] == "TASK-TAX-NUMBER"
+
+
+def test_create_task_rejects_missing_invoice_config_without_global_default(tmp_path):
+    client = make_client(tmp_path)
+    payload = valid_task_payload()
+    payload.pop("invoice_title")
+    payload.pop("tax_number")
+
+    response = client.post("/api/tasks", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "missing invoice configuration fields: invoice_title, tax_number"
+    )
 
 
 def test_list_tasks_returns_created_tasks(tmp_path):

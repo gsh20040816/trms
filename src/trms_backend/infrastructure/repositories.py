@@ -11,6 +11,10 @@ from trms_backend.domain.confirmations import (
     ConfirmationStatus,
     ConfirmationSubmit,
 )
+from trms_backend.domain.global_invoice_config import (
+    GlobalInvoiceConfig,
+    GlobalInvoiceConfigRepository,
+)
 from trms_backend.domain.invoices import (
     ExpenseType,
     InvoiceCreate,
@@ -35,11 +39,42 @@ from trms_backend.infrastructure.database import session_scope
 from trms_backend.infrastructure.models import (
     ConfirmationRow,
     ExpenseSplitRow,
+    GlobalInvoiceConfigRow,
     InvoiceRow,
     MaterialRow,
     TaskRow,
     ValidationResultRow,
 )
+
+
+class SqlAlchemyGlobalInvoiceConfigRepository(GlobalInvoiceConfigRepository):
+    _default_id = "default"
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def get(self) -> GlobalInvoiceConfig | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(GlobalInvoiceConfigRow, self._default_id)
+            return _global_invoice_config_from_row(row) if row else None
+
+    def set(self, config: GlobalInvoiceConfig) -> GlobalInvoiceConfig:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            row = session.get(GlobalInvoiceConfigRow, self._default_id)
+            if row is None:
+                row = GlobalInvoiceConfigRow(
+                    id=self._default_id,
+                    created_at=now,
+                    updated_at=now,
+                    **config.model_dump(),
+                )
+            else:
+                row.invoice_title = config.invoice_title
+                row.tax_number = config.tax_number
+                row.updated_at = now
+            session.add(row)
+        return _global_invoice_config_from_row(row)
 
 
 class SqlAlchemyTaskRepository:
@@ -317,6 +352,13 @@ def _task_from_row(row: TaskRow) -> ReimbursementTask:
         tax_number=row.tax_number,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _global_invoice_config_from_row(row: GlobalInvoiceConfigRow) -> GlobalInvoiceConfig:
+    return GlobalInvoiceConfig(
+        invoice_title=row.invoice_title,
+        tax_number=row.tax_number,
     )
 
 
