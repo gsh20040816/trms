@@ -1,9 +1,12 @@
+import csv
+from io import StringIO
+
 from fastapi.testclient import TestClient
 
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import update_task_row, valid_task_payload
+from test_tasks_api import update_task_row, valid_invoice_payload, valid_task_payload
 
 
 def make_client(tmp_path):
@@ -42,6 +45,58 @@ def create_export_job(
     return response.json()
 
 
+def upload_invoice_material(
+    client: TestClient,
+    task_id: str,
+    *,
+    submitter_id: str,
+    filename: str,
+) -> str:
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": submitter_id,
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": (filename, filename.encode(), "application/pdf")},
+    )
+    assert response.status_code == 201
+    return response.json()["items"][0]["id"]
+
+
+def create_invoice_with_splits(
+    client: TestClient,
+    task_id: str,
+    *,
+    submitter_id: str,
+    filename: str,
+    invoice_overrides: dict | None = None,
+    split_items: list[dict] | None = None,
+) -> str:
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id=submitter_id,
+        filename=filename,
+    )
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=(valid_invoice_payload() | {"actor_id": submitter_id} | (invoice_overrides or {})),
+    )
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": submitter_id,
+            "items": split_items or [{"member_id": submitter_id, "amount_cents": 12345}],
+        },
+    )
+    assert response.status_code == 200
+    return invoice_id
+
+
 def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
@@ -61,8 +116,8 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["blocking_reasons"] == []
     assert body["execution_mode"] == "async_placeholder"
     assert body["note"] == (
-        "export module boundary is established; real export jobs and files are not "
-        "generated yet"
+        "reimbursement summary CSV export is available; export jobs and other persisted "
+        "artifacts remain placeholders"
     )
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}
     assert set(supported_by_kind) == {
@@ -74,9 +129,105 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
         "merged_pdf",
     }
     assert supported_by_kind["reimbursement_summary"]["formats"] == ["xlsx", "csv"]
+    assert supported_by_kind["reimbursement_summary"]["implemented"] is True
+    assert supported_by_kind["reimbursement_summary"]["implemented_formats"] == ["csv"]
     assert supported_by_kind["finance_draft"]["formats"] == ["xlsx", "json"]
     assert supported_by_kind["merged_pdf"]["formats"] == ["pdf"]
-    assert all(item["implemented"] is False for item in body["supported_exports"])
+    assert all(
+        item["implemented"] is False
+        for item in body["supported_exports"]
+        if item["kind"] != "reimbursement_summary"
+    )
+    assert all(
+        item["implemented_formats"] == []
+        for item in body["supported_exports"]
+        if item["kind"] != "reimbursement_summary"
+    )
+
+
+def test_task_administrator_can_export_reimbursement_summary_csv(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="railway-a.pdf",
+        split_items=[
+            {"member_id": "2250001", "amount_cents": 6000},
+            {"member_id": "2250002", "amount_cents": 6345},
+        ],
+    )
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250003",
+        filename="registration.pdf",
+        invoice_overrides={
+            "invoice_number": "INV-002",
+            "amount_cents": 20000,
+            "expense_type": "registration",
+            "seller_name": "比赛平台",
+        },
+        split_items=[{"member_id": "2250003", "amount_cents": 20000}],
+    )
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="railway-b.pdf",
+        invoice_overrides={
+            "invoice_number": "INV-003",
+            "amount_cents": 1555,
+        },
+        split_items=[{"member_id": "2250001", "amount_cents": 1555}],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/reimbursement-summary",
+        params={"actor_id": "admin-1", "format": "csv"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="{task_id}-reimbursement-summary.csv"'
+    )
+
+    rows = list(csv.DictReader(StringIO(response.text)))
+    assert rows == [
+        {
+            "expense_type": "registration",
+            "total_amount_cents": "20000",
+            "2250001": "0",
+            "2250002": "0",
+            "2250003": "20000",
+        },
+        {
+            "expense_type": "railway",
+            "total_amount_cents": "13900",
+            "2250001": "7555",
+            "2250002": "6345",
+            "2250003": "0",
+        },
+        {
+            "expense_type": "hotel",
+            "total_amount_cents": "0",
+            "2250001": "0",
+            "2250002": "0",
+            "2250003": "0",
+        },
+        {
+            "expense_type": "grand_total",
+            "total_amount_cents": "33900",
+            "2250001": "7555",
+            "2250002": "6345",
+            "2250003": "20000",
+        },
+    ]
 
 
 def test_export_capabilities_report_blocking_reason_before_final_confirmation(tmp_path):
@@ -103,6 +254,20 @@ def test_non_administrator_cannot_get_export_capabilities(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/capabilities",
         params={"actor_id": "2250001"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "actor is not allowed to manage exports for this task"
+
+
+def test_non_administrator_cannot_export_reimbursement_summary(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/reimbursement-summary",
+        params={"actor_id": "2250001", "format": "csv"},
     )
 
     assert response.status_code == 403

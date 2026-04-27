@@ -74,7 +74,14 @@ def create_app(
             confirmation_repository,
         )
     )
-    app.include_router(build_export_router(task_repository, export_job_repository))
+    app.include_router(
+        build_export_router(
+            task_repository,
+            export_job_repository,
+            invoice_repository,
+            split_repository,
+        )
+    )
     app.include_router(
         build_material_router(task_repository, material_repository, material_file_storage, recognition_task_repository)
     )

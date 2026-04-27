@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+import csv
+from io import StringIO
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from trms_backend.domain.invoices import ExpenseType, InvoiceRecord
+from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.tasks import ReimbursementTask, TaskStatus
 
 
@@ -29,6 +33,7 @@ class TaskExportCapability(BaseModel):
     kind: ExportArtifactKind
     formats: list[ExportArtifactFormat] = Field(min_length=1)
     implemented: bool = False
+    implemented_formats: list[ExportArtifactFormat] = Field(default_factory=list)
 
 
 class TaskExportBoundary(BaseModel):
@@ -41,8 +46,8 @@ class TaskExportBoundary(BaseModel):
     supported_exports: list[TaskExportCapability]
     note: str = Field(
         default=(
-            "export module boundary is established; real export jobs and files are not "
-            "generated yet"
+            "reimbursement summary CSV export is available; export jobs and other persisted "
+            "artifacts remain placeholders"
         )
     )
 
@@ -155,6 +160,35 @@ class TaskExportJobStatusTransitionError(ValueError):
         )
 
 
+class TaskExportFormatNotImplementedError(ValueError):
+    def __init__(
+        self,
+        kind: ExportArtifactKind,
+        format: ExportArtifactFormat,
+    ) -> None:
+        super().__init__(
+            f"export format {format.value} is not implemented yet for {kind.value}"
+        )
+
+
+class ReimbursementSummaryRow(BaseModel):
+    expense_type: ExpenseType
+    total_amount_cents: int = Field(ge=0)
+    member_amounts_cents: dict[str, int]
+
+
+class ReimbursementSummaryExport(BaseModel):
+    task_id: str
+    administrator_id: str = Field(min_length=1)
+    format: ExportArtifactFormat
+    filename: str
+    generated_at: datetime
+    member_ids: list[str]
+    rows: list[ReimbursementSummaryRow]
+    grand_total_amount_cents: int = Field(ge=0)
+    grand_total_amounts_cents_by_member: dict[str, int]
+
+
 class TaskExportJobRepository(Protocol):
     def create(
         self,
@@ -245,6 +279,96 @@ def list_task_export_jobs(
     return repository.list_by_task(task.id)
 
 
+def build_reimbursement_summary_export(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    format: ExportArtifactFormat,
+    invoices: list[InvoiceRecord],
+    splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
+    generated_at: datetime | None = None,
+) -> ReimbursementSummaryExport:
+    boundary = build_task_export_boundary(task, actor_id=actor_id)
+    if not boundary.export_allowed:
+        raise TaskExportJobNotReadyError(boundary.blocking_reasons)
+    ensure_export_format_implemented(
+        ExportArtifactKind.REIMBURSEMENT_SUMMARY,
+        format,
+    )
+
+    member_ids = list(task.member_ids)
+    member_totals = {member_id: 0 for member_id in member_ids}
+    row_totals_by_expense_type = {
+        ExpenseType(expense_type): {member_id: 0 for member_id in member_ids}
+        for expense_type in task.fee_categories
+    }
+
+    for invoice in invoices:
+        if invoice.task_id != task.id:
+            continue
+        row_totals = row_totals_by_expense_type.setdefault(
+            invoice.expense_type,
+            {member_id: 0 for member_id in member_ids},
+        )
+        for split in splits_by_invoice_id.get(invoice.id, []):
+            if split.member_id not in row_totals:
+                row_totals[split.member_id] = 0
+            if split.member_id not in member_totals:
+                member_totals[split.member_id] = 0
+            row_totals[split.member_id] += split.amount_cents
+            member_totals[split.member_id] += split.amount_cents
+
+    rows: list[ReimbursementSummaryRow] = []
+    ordered_expense_types = list(row_totals_by_expense_type)
+    for expense_type in ordered_expense_types:
+        member_amounts_cents = row_totals_by_expense_type[expense_type]
+        rows.append(
+            ReimbursementSummaryRow(
+                expense_type=expense_type,
+                total_amount_cents=sum(member_amounts_cents.values()),
+                member_amounts_cents=dict(member_amounts_cents),
+            )
+        )
+
+    generated_at = generated_at or datetime.now(timezone.utc)
+    return ReimbursementSummaryExport(
+        task_id=task.id,
+        administrator_id=boundary.administrator_id,
+        format=format,
+        filename=f"{task.id}-reimbursement-summary.{format.value}",
+        generated_at=generated_at,
+        member_ids=member_ids,
+        rows=rows,
+        grand_total_amount_cents=sum(member_totals.values()),
+        grand_total_amounts_cents_by_member=member_totals,
+    )
+
+
+def render_reimbursement_summary_csv(export: ReimbursementSummaryExport) -> str:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["expense_type", "total_amount_cents", *export.member_ids])
+    for row in export.rows:
+        writer.writerow(
+            [
+                row.expense_type.value,
+                row.total_amount_cents,
+                *[row.member_amounts_cents.get(member_id, 0) for member_id in export.member_ids],
+            ]
+        )
+    writer.writerow(
+        [
+            "grand_total",
+            export.grand_total_amount_cents,
+            *[
+                export.grand_total_amounts_cents_by_member.get(member_id, 0)
+                for member_id in export.member_ids
+            ],
+        ]
+    )
+    return buffer.getvalue()
+
+
 def update_task_export_job_status(
     task: ReimbursementTask,
     *,
@@ -281,10 +405,21 @@ def _ensure_export_format_supported(
         raise TaskExportFormatNotSupportedError(kind, format)
 
 
+def ensure_export_format_implemented(
+    kind: ExportArtifactKind,
+    format: ExportArtifactFormat,
+) -> None:
+    implemented_formats = _IMPLEMENTED_EXPORT_FORMATS_BY_KIND[kind]
+    if format not in implemented_formats:
+        raise TaskExportFormatNotImplementedError(kind, format)
+
+
 _SUPPORTED_EXPORT_CAPABILITIES = [
     TaskExportCapability(
         kind=ExportArtifactKind.REIMBURSEMENT_SUMMARY,
         formats=[ExportArtifactFormat.XLSX, ExportArtifactFormat.CSV],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.CSV],
     ),
     TaskExportCapability(
         kind=ExportArtifactKind.MEMBER_DETAILS,
@@ -310,6 +445,11 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
 
 _SUPPORTED_EXPORT_FORMATS_BY_KIND = {
     capability.kind: set(capability.formats) for capability in _SUPPORTED_EXPORT_CAPABILITIES
+}
+
+_IMPLEMENTED_EXPORT_FORMATS_BY_KIND = {
+    capability.kind: set(capability.implemented_formats)
+    for capability in _SUPPORTED_EXPORT_CAPABILITIES
 }
 
 _ALLOWED_EXPORT_JOB_TRANSITIONS: dict[

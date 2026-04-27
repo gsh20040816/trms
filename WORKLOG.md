@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-28 06:01 - Add reimbursement summary export
+
+### 完成内容
+- 在 `src/trms_backend/domain/exports.py` 增加报销汇总表导出模型和 CSV 渲染逻辑：
+  - 基于任务当前有效分摊，按费用类型聚合总金额；
+  - 同时按成员列输出每个费用类型下的分摊金额；
+  - 增加 `implemented_formats` 能力声明，明确当前仅实现 `reimbursement_summary` 的 CSV 导出。
+- 在 `src/trms_backend/api/exports.py` 增加 `GET /api/tasks/{task_id}/exports/reimbursement-summary`：
+  - 仅允许任务管理员访问；
+  - 仅允许任务处于 `ready_to_export` 或 `completed` 时导出；
+  - 以 `text/csv` 响应返回汇总表，并带导出文件名。
+- 在 `src/trms_backend/main.py` 为导出路由注入发票和分摊仓储依赖。
+- 在 `tests/test_exports_api.py` 增加回归测试，覆盖：
+  - 导出能力声明更新；
+  - 汇总 CSV 的费用类型/成员金额聚合正确；
+  - 非管理员禁止导出汇总表。
+- 将 `TASKS.md` 中“导出报销汇总表”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/main.py`
+- `tests/test_exports_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有导出模块只有能力边界和导出任务占位，仍缺少第一个真实可验证的导出物。
+- 需求文档 FR-010、验收项 AC-013 和架构文档 5.8 节都要求系统能输出报销汇总表；如果继续只保留导出任务占位，导出链路就没有任何实际产物，无法验证“按费用类型统计金额”的核心能力。
+- 因此本轮先落地最小闭环：直接基于已实现的发票和分摊数据生成 CSV 汇总表，不提前引入对象存储落盘、任务版本绑定或 XLSX 生成。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py`
+    - 9 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 150 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“报销汇总表”定义为按任务成员列展开、按费用类型汇总金额的 CSV 矩阵；这是对 AC-013 中“按费用类型和成员统计”的最小实现。
+- 当前只实现同步 CSV 响应，不把导出结果持久化到对象存储，也不把导出任务状态自动推进到 `succeeded`；这些能力留给后续“成员明细表”“发票明细表”“绑定导出结果到任务版本”等任务处理。
+- 对于任务已配置但当前无金额的费用类别，导出中仍保留零金额行，避免管理员误判该类别被漏统。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“导出成员报销明细表”，直接复用本轮导出模块边界和 CSV 响应模式，继续补齐真实导出物。
+
 ## 2026-04-28 05:52 - Add export job model
 
 ### 完成内容
