@@ -1,0 +1,62 @@
+from hashlib import sha256
+from typing import Annotated
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+
+from trms_backend.domain.materials import (
+    MaterialCreate,
+    MaterialRepository,
+    SubmissionChannel,
+)
+from trms_backend.domain.tasks import TaskRepository, TaskStatus
+
+
+def build_material_router(
+    task_repository: TaskRepository,
+    material_repository: MaterialRepository,
+) -> APIRouter:
+    router = APIRouter(prefix="/api/tasks/{task_id}/materials", tags=["materials"])
+
+    @router.post("", status_code=status.HTTP_201_CREATED)
+    async def submit_materials(
+        task_id: str,
+        submitter_id: Annotated[str, Form(min_length=1)],
+        channel: Annotated[SubmissionChannel, Form()],
+        files: Annotated[list[UploadFile], File(min_length=1)],
+    ):
+        task = task_repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        if task.status != TaskStatus.OPEN:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="task is not open for material submission",
+            )
+
+        records = []
+        for file in files:
+            content = await file.read()
+            records.append(
+                material_repository.create(
+                    MaterialCreate(
+                        task_id=task_id,
+                        submitter_id=submitter_id,
+                        channel=channel,
+                        original_filename=file.filename or "unnamed",
+                        content_type=file.content_type,
+                        size_bytes=len(content),
+                        sha256=sha256(content).hexdigest(),
+                    )
+                )
+            )
+        return {"items": records}
+
+    @router.get("")
+    def list_materials(task_id: str):
+        task = task_repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        return {"items": material_repository.list_by_task(task_id)}
+
+    return router
+
