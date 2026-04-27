@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-28 04:21 - Restrict expense split submission actors
+
+### 完成内容
+- 为分摊替换请求新增 `actor_id`，把“谁在提交分摊”显式纳入 API 输入，而不是继续允许任何知道发票 ID 的调用方直接改写分摊。
+- 在 `src/trms_backend/domain/splits.py` 新增最小权限判断：仅允许任务管理员、发票主材料提交人，以及当前或目标分摊中的归属成员提交分摊变更。
+- 在 `src/trms_backend/api/splits.py` 接入上述权限校验，并通过发票主材料 `submitter_id`、任务 `administrator_id` 和现有/目标分摊成员集合共同判断是否越权。
+- 补充分摊 API 回归测试，覆盖三条关键路径：
+  - 归属成员可直接提交分摊；
+  - 任务管理员可提交分摊；
+  - 无关成员提交分摊返回 `403`。
+- 将 `TASKS.md` 中“完善费用分摊提交权限”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/splits.py`
+- `src/trms_backend/api/splits.py`
+- `src/trms_backend/main.py`
+- `tests/test_splits_api.py`
+- `tests/test_confirmations_api.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有 `PUT /api/invoices/{invoice_id}/splits` 只校验“分摊成员属于任务成员”和“金额合计等于发票金额”，完全没有操作者权限边界，导致任何知道发票 ID 的成员甚至任务外调用方都能直接替换无关发票分摊，和需求文档、架构文档里的成员隔离原则不一致。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_splits_api.py`
+    - 8 个用例通过
+  - `uv run pytest tests/test_confirmations_api.py`
+    - 5 个用例通过
+  - `uv run pytest tests/test_tasks_api.py`
+    - 29 个用例通过
+
+### 假设
+- 在“建立最小请求身份上下文占位”任务完成前，本轮保守采用显式 `actor_id` 作为最小身份输入，不提前扩散为统一鉴权中间件。
+- “归属成员可提交分摊”当前收敛为：操作者只要属于现有分摊成员或本次目标分摊成员集合之一，即可提交变更；若后续业务要求更细的“仅本人份额可改”或“多人共同确认后才能改”，应在后续权限任务中单独细化。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立个人费用明细查询接口”，继续补齐成员只能查看本人费用、管理员可查看任务内全量费用的查询边界。
+
 ## 2026-04-28 04:17 - Revalidate invoices after material recognition updates
 
 ### 完成内容

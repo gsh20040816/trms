@@ -13,7 +13,7 @@ def create_split(client: TestClient) -> tuple[str, str]:
     invoice_id = create_invoice(client)
     response = client.put(
         f"/api/invoices/{invoice_id}/splits",
-        json={"items": [{"member_id": "2250001", "amount_cents": 12345}]},
+        json={"actor_id": "2250001", "items": [{"member_id": "2250001", "amount_cents": 12345}]},
     )
     return invoice_id, response.json()["items"][0]["id"]
 
@@ -87,4 +87,3 @@ def test_list_invoice_confirmations(tmp_path):
 
     assert response.status_code == 200
     assert [item["member_id"] for item in response.json()["items"]] == ["2250001"]
-

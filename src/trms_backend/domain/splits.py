@@ -20,10 +20,12 @@ class ExpenseSplitItem(BaseModel):
 
 
 class ExpenseSplitReplace(BaseModel):
+    actor_id: str = Field(min_length=1)
     items: list[ExpenseSplitItem] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def reject_duplicate_members(self) -> ExpenseSplitReplace:
+    def normalize_and_reject_duplicate_members(self) -> ExpenseSplitReplace:
+        self.actor_id = self.actor_id.strip()
         member_ids = [item.member_id for item in self.items]
         if len(member_ids) != len(set(member_ids)):
             raise ValueError("split member_id must be unique")
@@ -53,3 +55,29 @@ class ExpenseSplitRepository(Protocol):
 
     def get(self, split_id: str) -> ExpenseSplitRecord | None:
         raise NotImplementedError
+
+
+class ExpenseSplitActorNotAllowedError(ValueError):
+    def __init__(self) -> None:
+        super().__init__(
+            "only the invoice submitter, split member, or task administrator can submit splits"
+        )
+
+
+def ensure_split_actor_allowed(
+    *,
+    actor_id: str,
+    submitter_id: str | None,
+    administrator_id: str,
+    existing_member_ids: set[str],
+    target_member_ids: set[str],
+) -> None:
+    if actor_id == administrator_id:
+        return
+    if submitter_id is not None and actor_id == submitter_id:
+        return
+    if actor_id in existing_member_ids:
+        return
+    if actor_id in target_member_ids:
+        return
+    raise ExpenseSplitActorNotAllowedError()

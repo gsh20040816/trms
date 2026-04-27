@@ -84,7 +84,14 @@ def create_app(
             recognition_task_repository,
         )
     )
-    app.include_router(build_split_router(task_repository, invoice_repository, split_repository))
+    app.include_router(
+        build_split_router(
+            task_repository,
+            material_repository,
+            invoice_repository,
+            split_repository,
+        )
+    )
     app.include_router(
         build_confirmation_router(invoice_repository, split_repository, confirmation_repository)
     )

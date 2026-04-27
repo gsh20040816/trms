@@ -86,7 +86,7 @@ def create_invoice(client: TestClient, material_id: str, **overrides) -> str:
 def replace_invoice_splits(client: TestClient, invoice_id: str) -> str:
     response = client.put(
         f"/api/invoices/{invoice_id}/splits",
-        json={"items": [{"member_id": "2250001", "amount_cents": 12345}]},
+        json={"actor_id": "2250001", "items": [{"member_id": "2250001", "amount_cents": 12345}]},
     )
     assert response.status_code == 200
     return response.json()["items"][0]["id"]

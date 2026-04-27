@@ -22,6 +22,7 @@ def test_replace_invoice_splits(tmp_path):
     response = client.put(
         f"/api/invoices/{invoice_id}/splits",
         json={
+            "actor_id": "2250001",
             "items": [
                 {"member_id": "2250001", "amount_cents": 6000},
                 {"member_id": "2250002", "amount_cents": 6345, "note": "team shared"},
@@ -39,7 +40,7 @@ def test_replace_invoice_splits_rejects_amount_mismatch(tmp_path):
 
     response = client.put(
         f"/api/invoices/{invoice_id}/splits",
-        json={"items": [{"member_id": "2250001", "amount_cents": 100}]},
+        json={"actor_id": "2250001", "items": [{"member_id": "2250001", "amount_cents": 100}]},
     )
 
     assert response.status_code == 409
@@ -52,7 +53,10 @@ def test_replace_invoice_splits_rejects_non_member(tmp_path):
 
     response = client.put(
         f"/api/invoices/{invoice_id}/splits",
-        json={"items": [{"member_id": "not-in-task", "amount_cents": 12345}]},
+        json={
+            "actor_id": "2250001",
+            "items": [{"member_id": "not-in-task", "amount_cents": 12345}],
+        },
     )
 
     assert response.status_code == 409
@@ -66,6 +70,7 @@ def test_replace_invoice_splits_rejects_duplicate_member(tmp_path):
     response = client.put(
         f"/api/invoices/{invoice_id}/splits",
         json={
+            "actor_id": "2250001",
             "items": [
                 {"member_id": "2250001", "amount_cents": 6000},
                 {"member_id": "2250001", "amount_cents": 6345},
@@ -81,7 +86,7 @@ def test_list_invoice_splits(tmp_path):
     invoice_id = create_invoice(client)
     client.put(
         f"/api/invoices/{invoice_id}/splits",
-        json={"items": [{"member_id": "2250001", "amount_cents": 12345}]},
+        json={"actor_id": "2250001", "items": [{"member_id": "2250001", "amount_cents": 12345}]},
     )
 
     response = client.get(f"/api/invoices/{invoice_id}/splits")
@@ -89,3 +94,61 @@ def test_list_invoice_splits(tmp_path):
     assert response.status_code == 200
     assert [item["member_id"] for item in response.json()["items"]] == ["2250001"]
 
+
+def test_split_member_can_replace_invoice_splits(tmp_path):
+    client = make_client(tmp_path)
+    invoice_id = create_invoice(client)
+
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250002",
+            "items": [
+                {"member_id": "2250002", "amount_cents": 6000},
+                {"member_id": "2250003", "amount_cents": 6345},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["member_id"] for item in response.json()["items"]] == ["2250002", "2250003"]
+
+
+def test_task_administrator_can_replace_invoice_splits(tmp_path):
+    client = make_client(tmp_path)
+    invoice_id = create_invoice(client)
+
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "admin-1",
+            "items": [
+                {"member_id": "2250002", "amount_cents": 6000},
+                {"member_id": "2250003", "amount_cents": 6345},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["member_id"] for item in response.json()["items"]] == ["2250002", "2250003"]
+
+
+def test_unrelated_member_cannot_replace_invoice_splits(tmp_path):
+    client = make_client(tmp_path)
+    invoice_id = create_invoice(client)
+
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "outsider-1",
+            "items": [
+                {"member_id": "2250002", "amount_cents": 6000},
+                {"member_id": "2250003", "amount_cents": 6345},
+            ],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "only the invoice submitter, split member, or task administrator can submit splits"
+    )
