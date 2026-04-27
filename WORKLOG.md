@@ -1,5 +1,36 @@
 # WORKLOG
 
+## 2026-04-28 01:25 - Enforce task fee category constraints
+
+### 完成内容
+- 在任务领域层为 `fee_categories` 增加受支持类别校验，只允许当前系统已定义的费用类别进入任务配置。
+- 在发票创建接口增加任务级费用类别门禁：发票 `expense_type` 若不属于任务允许类别，返回明确 `409` 错误，而不是先落库再依赖后续校验发现问题。
+- 补充 `tests/test_tasks_api.py`，覆盖任务配置非法费用类别的失败路径。
+- 补充 `tests/test_invoices_api.py`，覆盖任务未允许某费用类型时拒绝创建发票的失败路径。
+- 将 `TASKS.md` 中“增加任务费用类别约束”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/api/invoices.py`
+- `tests/test_tasks_api.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 23 个用例通过
+  - `uv run pytest tests/test_invoices_api.py`
+    - 6 个用例通过
+
+### 假设
+- 本轮把“任务允许配置受支持的费用类别”收敛到当前 `ExpenseType` 枚举集合，不额外引入独立的费用类别配置表；如后续需要任务外可配置类别，应单独建模后再扩展。
+- 发票费用类型与任务允许类别不一致时返回 `409`，因为发票载荷本身是全局合法枚举，但与目标任务配置冲突。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加任务截止时间状态约束”，优先明确超期后成员提交通道的拒绝规则与边界时间测试。
+
 ## 2026-04-28 01:22 - Add task member management API
 
 ### 完成内容

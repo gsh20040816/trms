@@ -87,6 +87,22 @@ def test_create_invoice_reports_duplicate_invoice_number(tmp_path):
     assert "重复" in duplicate["message"]
 
 
+def test_create_invoice_rejects_expense_type_not_allowed_by_task(tmp_path):
+    client = make_client(tmp_path)
+    task_payload = valid_task_payload() | {"fee_categories": ["registration", "hotel"]}
+    task = client.post("/api/tasks", json=task_payload).json()
+    client.patch(f"/api/tasks/{task['id']}/status", json={"target_status": "open"})
+    material_id = upload_material(client, task["id"])
+
+    response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "invoice expense type railway is not allowed for task; "
+        "allowed fee categories: registration, hotel"
+    )
+
+
 def test_list_invoices_by_task(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)

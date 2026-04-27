@@ -3,7 +3,11 @@ from fastapi import APIRouter, HTTPException, status
 from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import InvoiceCreate, InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
-from trms_backend.domain.tasks import TaskRepository
+from trms_backend.domain.tasks import (
+    TaskExpenseTypeNotAllowedError,
+    TaskRepository,
+    ensure_task_allows_expense_type,
+)
 
 
 def build_invoice_router(
@@ -23,6 +27,13 @@ def build_invoice_router(
         task = task_repository.get(material.task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        try:
+            ensure_task_allows_expense_type(task, payload.expense_type)
+        except TaskExpenseTypeNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
 
         invoice = invoice_repository.create(material.task_id, material_id, payload)
         duplicate_invoice_id = invoice_repository.find_duplicate_invoice_id(
@@ -51,4 +62,3 @@ def build_invoice_router(
         return {"items": validation_repository.list_by_invoice(invoice_id)}
 
     return router
-

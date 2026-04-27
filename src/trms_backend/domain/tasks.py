@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
+from trms_backend.domain.invoices import ExpenseType
 
 
 class TaskStatus(StrEnum):
@@ -38,6 +39,15 @@ class _TaskCreateBase(BaseModel):
         if any(not value for value in normalized):
             raise ValueError("list items must not be blank")
         return normalized
+
+    @field_validator("fee_categories")
+    @classmethod
+    def validate_supported_fee_categories(cls, values: list[str]) -> list[str]:
+        invalid_categories = [value for value in values if value not in _SUPPORTED_FEE_CATEGORIES]
+        if invalid_categories:
+            joined_categories = ", ".join(invalid_categories)
+            raise ValueError(f"unsupported fee categories: {joined_categories}")
+        return values
 
     @model_validator(mode="after")
     def validate_dates(self) -> TaskCreate:
@@ -101,6 +111,18 @@ class TaskPublishValidationError(ValueError):
         self.missing_fields = missing_fields
         joined_fields = ", ".join(missing_fields)
         super().__init__(f"task is missing required publish fields: {joined_fields}")
+
+
+class TaskExpenseTypeNotAllowedError(ValueError):
+    def __init__(self, expense_type: ExpenseType, allowed_fee_categories: list[str]) -> None:
+        self.expense_type = expense_type
+        self.allowed_fee_categories = allowed_fee_categories
+        allowed_categories = ", ".join(allowed_fee_categories)
+        super().__init__(
+            "invoice expense type "
+            f"{expense_type.value} is not allowed for task; allowed fee categories: "
+            f"{allowed_categories}"
+        )
 
 
 class ReimbursementTask(BaseModel):
@@ -197,6 +219,14 @@ def ensure_task_can_publish(task: ReimbursementTask) -> None:
 
 def _has_non_blank_items(values: list[str]) -> bool:
     return bool(values) and all(value.strip() for value in values)
+
+
+def ensure_task_allows_expense_type(task: ReimbursementTask, expense_type: ExpenseType) -> None:
+    if expense_type.value not in task.fee_categories:
+        raise TaskExpenseTypeNotAllowedError(expense_type, task.fee_categories)
+
+
+_SUPPORTED_FEE_CATEGORIES = frozenset(expense_type.value for expense_type in ExpenseType)
 
 
 class InMemoryTaskRepository:

@@ -147,6 +147,16 @@ def test_rejects_empty_member_list(tmp_path):
     assert response.status_code == 422
 
 
+def test_rejects_unsupported_fee_categories(tmp_path):
+    client = make_client(tmp_path)
+    payload = valid_task_payload() | {"fee_categories": ["registration", "meals"]}
+
+    response = client.post("/api/tasks", json=payload)
+
+    assert response.status_code == 422
+    assert "unsupported fee categories: meals" in response.text
+
+
 def test_rejects_end_date_before_start_date(tmp_path):
     client = make_client(tmp_path)
     payload = valid_task_payload() | {
