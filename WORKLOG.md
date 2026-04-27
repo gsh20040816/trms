@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-04-28 05:45 - Add export module boundary skeleton
+
+### 完成内容
+- 新增 `src/trms_backend/domain/exports.py`，建立导出模块领域边界，定义：
+  - 第一阶段支持的导出物类型与格式枚举；
+  - 管理员访问约束；
+  - 任务处于 `ready_to_export` 或 `completed` 时才允许真实导出的占位门禁语义。
+- 新增 `src/trms_backend/api/exports.py`，提供 `GET /api/tasks/{task_id}/exports/capabilities` 接口，返回导出能力说明、当前任务是否允许导出以及阻塞原因。
+- 在 `src/trms_backend/main.py` 挂载导出路由，使导出模块具备独立 API 边界，但本轮不生成真实文件、不创建导出任务。
+- 新增 `tests/test_exports_api.py`，覆盖：
+  - 管理员可查询导出能力；
+  - 未到最终可导出状态时返回明确阻塞原因；
+  - 非管理员禁止访问。
+- 将 `TASKS.md` 中“建立导出模块边界骨架”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/main.py`
+- `tests/test_exports_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 需求文档 FR-010 和架构文档 5.8 节都把导出视为独立模块，并明确要求导出入口、输出物类型和异步执行边界。
+- 当前仓库虽然已经有 `ready_to_export` / `completed` 任务状态，但完全没有导出模块边界：
+  - 没有独立的导出领域对象或接口；
+  - 后续“导出任务模型”“汇总表导出”“PDF 合并”没有可复用的挂载点；
+  - 导出权限与状态门禁也没有最小可验证表达。
+- 因此本轮先补“可调用的导出边界”，而不是直接越级实现持久化任务或真实文件生成。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py`
+    - 3 个用例通过
+  - `uv run pytest tests/test_tasks_api.py`
+    - 38 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 144 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把导出能力边界设计为“能力查询接口”，只暴露支持的导出物、格式和当前任务门禁，不提前创建任何导出任务记录，避免与下一项“建立导出任务模型”重叠。
+- 当前将“允许真实导出”的最小前置条件定义为任务状态已经进入 `ready_to_export` 或 `completed`；更细粒度的版本绑定、任务幂等和对象存储落盘留待后续任务实现。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立导出任务模型”，在现有导出模块边界上增加 `pending`、`running`、`succeeded`、`failed` 的持久化任务骨架。
+
 ## 2026-04-28 05:47 - Add automatic reminder task placeholders
 
 ### 完成内容

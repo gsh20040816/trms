@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 
 from trms_backend.api.confirmations import build_confirmation_router
+from trms_backend.api.exports import build_export_router
 from trms_backend.api.invoices import build_invoice_router
 from trms_backend.api.materials import build_material_router
 from trms_backend.api.recognitions import build_recognition_router
@@ -71,6 +72,7 @@ def create_app(
             confirmation_repository,
         )
     )
+    app.include_router(build_export_router(task_repository))
     app.include_router(
         build_material_router(task_repository, material_repository, material_file_storage, recognition_task_repository)
     )
