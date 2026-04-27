@@ -74,7 +74,7 @@ PROMPT
 
   set +e
   codex --ask-for-approval never exec \
-    --sandbox workspace-write \
+    --sandbox danger-full-access \
     --output-last-message "$final_file" \
     "$prompt" >"$log_file" 2>&1
   codex_status=$?

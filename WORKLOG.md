@@ -1,5 +1,28 @@
 # WORKLOG
 
+## 2026-04-28 00:38 - Run Codex nightly with full filesystem access
+
+### 完成内容
+- 按要求调整 `scripts/codex-nightly.sh`，夜间 Codex 子进程改为使用 `danger-full-access` 沙箱策略。
+- 保留 `--ask-for-approval never`，继续满足无人值守执行需求。
+
+### 修改文件
+- `scripts/codex-nightly.sh`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `codex --ask-for-approval never exec --sandbox danger-full-access --help`
+  - `bash -n scripts/codex-nightly.sh`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 31 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 用户所说“full access”对应当前 Codex CLI 的 `--sandbox danger-full-access`，不是跳过审批与沙箱的 `--dangerously-bypass-approvals-and-sandbox`。
+- 工作区开始时已有 `.gitignore`、`TASKS.md`、`WORKLOG.md`、`scripts/verify.sh` 和 `.codex` 的未提交改动；除本次追加日志外，本轮不处理这些既有改动。
+
 ## 2026-04-28 00:37 - Fix Codex nightly approval flag
 
 ### 完成内容
