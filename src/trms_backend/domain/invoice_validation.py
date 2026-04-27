@@ -17,6 +17,9 @@ PAYMENT_RECORD_REQUIRED_RULE_CODE = "invoice_payment_record_required"
 PAYMENT_RECORD_AMOUNT_MATCH_MODE = "exact_sum"
 PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE = "invoice_payment_record_amount_match"
 COMPETITION_NOTICE_REQUIRED_RULE_CODE = "invoice_competition_notice_required"
+AIRFARE_ITINERARY_REQUIRED_RULE_CODE = "invoice_airfare_itinerary_required"
+AIRFARE_CABIN_PROOF_RULE_CODE = "invoice_airfare_cabin_proof_required"
+AIRFARE_CABIN_FIELD_NAMES = ("cabin_class", "seat_class", "cabin")
 
 
 def validate_invoice(
@@ -54,6 +57,13 @@ def validate_invoice(
             supporting_material_recognitions,
         ),
         validate_competition_notice_requirement(invoice, supporting_materials),
+        validate_airfare_itinerary_requirement(invoice, supporting_materials),
+        validate_airfare_cabin_requirement(
+            invoice,
+            recognition_task,
+            supporting_materials,
+            supporting_material_recognitions,
+        ),
     ]
 
 
@@ -379,6 +389,121 @@ def validate_competition_notice_requirement(
     )
 
 
+def validate_airfare_itinerary_requirement(
+    invoice: InvoiceRecord,
+    supporting_materials: list[MaterialRecord],
+) -> ValidationResult:
+    itinerary_material_ids = [
+        material.id
+        for material in supporting_materials
+        if material.material_type is MaterialType.ITINERARY
+    ]
+    requires_itinerary = invoice.expense_type is ExpenseType.AIRFARE
+    evidence = {
+        "expense_type": invoice.expense_type.value,
+        "invoice_material_id": invoice.material_id,
+        "required_material_type": MaterialType.ITINERARY.value,
+        "requires_itinerary": requires_itinerary,
+        "invoice_material_present": True,
+        "itinerary_material_ids": itinerary_material_ids,
+    }
+
+    if not requires_itinerary:
+        return _validation_result(
+            rule_code=AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前费用类型不要求航空行程单",
+            evidence=evidence,
+        )
+
+    if itinerary_material_ids:
+        return _validation_result(
+            rule_code=AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="航空费用已关联行程单",
+            evidence=evidence,
+        )
+
+    return _validation_result(
+        rule_code=AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="航空费用缺少行程单",
+        evidence=evidence,
+    )
+
+
+def validate_airfare_cabin_requirement(
+    invoice: InvoiceRecord,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> ValidationResult:
+    itinerary_material_ids = [
+        material.id
+        for material in supporting_materials
+        if material.material_type is MaterialType.ITINERARY
+    ]
+    order_screenshot_material_ids = [
+        material.id
+        for material in supporting_materials
+        if material.material_type is MaterialType.ORDER_SCREENSHOT
+    ]
+    requires_cabin_proof = invoice.expense_type is ExpenseType.AIRFARE
+    recognized_cabin_materials = _collect_airfare_cabin_evidence(
+        invoice,
+        recognition_task,
+        supporting_materials,
+        supporting_material_recognitions,
+    )
+    evidence = {
+        "expense_type": invoice.expense_type.value,
+        "invoice_material_id": invoice.material_id,
+        "cabin_field_names": list(AIRFARE_CABIN_FIELD_NAMES),
+        "requires_cabin_proof": requires_cabin_proof,
+        "itinerary_material_ids": itinerary_material_ids,
+        "order_screenshot_material_ids": order_screenshot_material_ids,
+        "recognized_cabin_materials": recognized_cabin_materials,
+    }
+
+    if not requires_cabin_proof:
+        return _validation_result(
+            rule_code=AIRFARE_CABIN_PROOF_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前费用类型不要求航空舱位校验",
+            evidence=evidence,
+        )
+
+    if recognized_cabin_materials:
+        return _validation_result(
+            rule_code=AIRFARE_CABIN_PROOF_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="航空费用已具备舱位信息",
+            evidence=evidence,
+        )
+
+    if order_screenshot_material_ids:
+        return _validation_result(
+            rule_code=AIRFARE_CABIN_PROOF_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PENDING,
+            message="航空费用未识别到舱位信息，需结合订单截图人工确认",
+            evidence=evidence,
+        )
+
+    return _validation_result(
+        rule_code=AIRFARE_CABIN_PROOF_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="航空费用缺少舱位信息，且未关联订单截图",
+        evidence=evidence,
+    )
+
+
 def _extract_recognized_amount_cents(
     recognition_task: RecognitionTaskRecord | None,
 ) -> int | None:
@@ -405,3 +530,73 @@ def _coerce_amount_cents(value: object) -> int | None:
             parsed = int(normalized)
             return parsed if parsed > 0 else None
     return None
+
+
+def _collect_airfare_cabin_evidence(
+    invoice: InvoiceRecord,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> list[dict[str, object | None]]:
+    recognized_cabin_materials: list[dict[str, object | None]] = []
+
+    primary_material_match = _extract_recognized_field_match(
+        recognition_task,
+        AIRFARE_CABIN_FIELD_NAMES,
+    )
+    if primary_material_match is not None:
+        recognized_cabin_materials.append(
+            {
+                "material_id": invoice.material_id,
+                "material_type": MaterialType.INVOICE.value,
+                **primary_material_match,
+            }
+        )
+
+    for material in supporting_materials:
+        if material.material_type not in {MaterialType.ITINERARY, MaterialType.ORDER_SCREENSHOT}:
+            continue
+        field_match = _extract_recognized_field_match(
+            supporting_material_recognitions.get(material.id),
+            AIRFARE_CABIN_FIELD_NAMES,
+        )
+        if field_match is None:
+            continue
+        recognized_cabin_materials.append(
+            {
+                "material_id": material.id,
+                "material_type": material.material_type.value,
+                **field_match,
+            }
+        )
+
+    return recognized_cabin_materials
+
+
+def _extract_recognized_field_match(
+    recognition_task: RecognitionTaskRecord | None,
+    field_names: tuple[str, ...],
+) -> dict[str, object | None] | None:
+    if recognition_task is None:
+        return None
+    for field_name in field_names:
+        field_result = recognition_task.recognized_fields.get(field_name)
+        if field_result is None or not _has_meaningful_field_value(field_result.value):
+            continue
+        return {
+            "field_name": field_name,
+            "field_value": field_result.value,
+            "recognition_task_id": recognition_task.id,
+            "recognition_task_status": recognition_task.status.value,
+        }
+    return None
+
+
+def _has_meaningful_field_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, bool):
+        return value
+    return True

@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-04-28 03:44 - Implement airfare attachment completeness validation
+
+### 完成内容
+- 为发票校验新增两条航空费用规则：`invoice_airfare_itinerary_required` 和 `invoice_airfare_cabin_proof_required`。前者用于校验航空费用是否已关联行程单，后者用于校验是否存在可用的舱位信息，或在缺少舱位信息时是否至少补充了订单截图。
+- 将航空规则接入发票创建时的即时校验链路，并纳入发票辅助材料关联/取消关联后的局部重算，保证成员补挂行程单或订单截图后，校验结果会同步刷新。
+- 补充发票 API 回归测试，覆盖“非航空费用不适用”“航空费用缺少行程单与舱位信息失败”“补挂带舱位信息的行程单后通过”“缺少舱位信息但已补订单截图时转为待确认”四条主路径。
+- 将 `TASKS.md` 中“实现航空费用附件完整性校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoice_validation.py`
+- `src/trms_backend/api/invoices.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库已经有统一的发票校验结果模型、辅助材料关联模型和局部重算入口，但附件完整性规则只覆盖了支付记录和比赛通知，尚未把航空费用所需的行程单、舱位信息和订单截图边界落到统一校验结果中，因此系统无法显式暴露这类 Must 级缺失材料问题。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 27 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 99 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 由于当前实现是“先有发票材料，再创建发票记录”的发票中心模型，`TASKS.md` 中“航空费用缺少发票或行程单”在现有代码路径里若直接按字面实现会退化为恒真条件。本轮保守收敛为：航空费用发票除主发票材料外，仍必须额外关联至少一份 `itinerary` 类型材料，借此形成可执行、可测试的附件完整性闭环。
+- 舱位信息当前只从最新有效识别结果中的 `cabin_class`、`seat_class`、`cabin` 三个字段名读取；若这些字段都缺失但已关联订单截图，则返回 `pending`，表示“材料已补，但仍需人工确认”，而不是静默通过。
+- 本轮只在发票创建、辅助材料关联和取消关联时刷新航空规则；如果后续需要在行程单或订单截图识别结果更新后自动触发相关发票重校验，应作为单独任务补齐。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现网约车行程信息校验”，继续补齐费用类型对应的附件完整性规则。
+
 ## 2026-04-28 03:35 - Implement competition notice validation for registration invoices
 
 ### 完成内容
