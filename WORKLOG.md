@@ -1,5 +1,27 @@
 # WORKLOG
 
+## 2026-04-28 00:50 - Expand task backlog from requirements
+
+### 完成内容
+- 按需求分析文档 V0.2 的 FR-001 至 FR-015、CLI 能力、非功能需求、权限需求、异常场景和第一阶段交付物，扩展 `TASKS.md`。
+- 按架构设计文档 V0.1 的模块边界、安全审计、可观测性、测试策略和验收映射，把大需求拆成单轮可验证任务。
+- 保留已完成的 P0 任务状态；FR-011 Browser Use 自动录入仅记录为第一阶段 Won't-have 边界和后续评估任务，不实现自动录入。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 32 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 用户消息中的 `TASKL` 理解为 `TASKS.md` 任务清单。
+- 本轮只写入任务队列，不修改业务代码。
+
 ## 2026-04-28 00:45 - Harden backend health check coverage
 
 ### 完成内容
