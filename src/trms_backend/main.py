@@ -64,14 +64,17 @@ def create_app(
         )
     )
     app.include_router(
-        build_material_router(
+        build_material_router(task_repository, material_repository, material_file_storage, recognition_task_repository)
+    )
+    app.include_router(
+        build_recognition_router(
             task_repository,
             material_repository,
-            material_file_storage,
+            invoice_repository,
+            validation_repository,
             recognition_task_repository,
         )
     )
-    app.include_router(build_recognition_router(material_repository, recognition_task_repository))
     app.include_router(
         build_invoice_router(
             task_repository,

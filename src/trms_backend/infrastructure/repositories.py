@@ -279,10 +279,33 @@ class SqlAlchemyInvoiceRepository:
             row = session.get(InvoiceRow, invoice_id)
             return _invoice_from_row(row) if row else None
 
+    def get_by_material(self, material_id: str) -> InvoiceRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(InvoiceRow)
+                .where(InvoiceRow.material_id == material_id)
+                .order_by(InvoiceRow.created_at)
+                .limit(1)
+            )
+            return _invoice_from_row(row) if row else None
+
     def list_by_task(self, task_id: str) -> list[InvoiceRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(
                 select(InvoiceRow).where(InvoiceRow.task_id == task_id).order_by(InvoiceRow.created_at)
+            ).all()
+            return [_invoice_from_row(row) for row in rows]
+
+    def list_by_supporting_material(self, material_id: str) -> list[InvoiceRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(InvoiceRow)
+                .join(
+                    InvoiceSupportingMaterialLinkRow,
+                    InvoiceSupportingMaterialLinkRow.invoice_id == InvoiceRow.id,
+                )
+                .where(InvoiceSupportingMaterialLinkRow.material_id == material_id)
+                .order_by(InvoiceSupportingMaterialLinkRow.created_at, InvoiceRow.created_at)
             ).all()
             return [_invoice_from_row(row) for row in rows]
 

@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
+from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
+from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import (
     RecognitionTaskCreate,
@@ -8,10 +10,14 @@ from trms_backend.domain.recognitions import (
     RecognitionTaskStatusUpdate,
     ensure_recognition_task_can_transition,
 )
+from trms_backend.domain.tasks import TaskRepository
 
 
 def build_recognition_router(
+    task_repository: TaskRepository,
     material_repository: MaterialRepository,
+    invoice_repository: InvoiceRepository,
+    validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
 ) -> APIRouter:
     router = APIRouter(tags=["recognitions"])
@@ -68,6 +74,14 @@ def build_recognition_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="recognition task not found",
             )
+        refresh_validations_for_material(
+            updated.material_id,
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            validation_repository=validation_repository,
+            recognition_task_repository=recognition_task_repository,
+        )
         return {"item": updated}
 
     return router

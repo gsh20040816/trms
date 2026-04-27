@@ -1,22 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
-from trms_backend.domain.invoice_validation import (
-    AIRFARE_CABIN_PROOF_RULE_CODE,
-    AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
-    COMPETITION_LOCATION_RANGE_RULE_CODE,
-    COMPETITION_NOTICE_REQUIRED_RULE_CODE,
-    LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
-    PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
-    PAYMENT_RECORD_REQUIRED_RULE_CODE,
-    validate_airfare_cabin_requirement,
-    validate_airfare_itinerary_requirement,
-    validate_competition_location_range,
-    validate_invoice,
-    validate_competition_notice_requirement,
-    validate_local_transport_rideshare_trip_requirement,
-    validate_payment_record_amount_match,
-    validate_payment_record_requirement,
-)
+from trms_backend.api.invoice_validation_refresh import refresh_invoice_validations
+from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import (
     InvoiceManualEntryActorNotAllowedError,
     InvoiceRepository,
@@ -59,68 +44,6 @@ def build_invoice_router(
             material.id: recognition_task_repository.get_latest_effective_by_material(material.id)
             for material in supporting_materials
         }
-
-    def recalculate_supporting_material_validations(invoice_id: str) -> list:
-        invoice = invoice_repository.get(invoice_id)
-        if invoice is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
-        task = task_repository.get(invoice.task_id)
-        if task is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        invoice_material_recognition = recognition_task_repository.get_latest_effective_by_material(
-            invoice.material_id
-        )
-        supporting_materials = load_supporting_materials(invoice.id)
-        supporting_material_recognitions = load_supporting_material_recognitions(
-            supporting_materials
-        )
-        existing_validations = validation_repository.list_by_invoice(invoice_id)
-        updated_validations = [
-            item
-            for item in existing_validations
-            if item.rule_code
-            not in {
-                AIRFARE_CABIN_PROOF_RULE_CODE,
-                AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
-                COMPETITION_LOCATION_RANGE_RULE_CODE,
-                COMPETITION_NOTICE_REQUIRED_RULE_CODE,
-                LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
-                PAYMENT_RECORD_REQUIRED_RULE_CODE,
-                PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
-            }
-        ]
-        updated_validations.extend(
-            [
-                validate_competition_notice_requirement(invoice, supporting_materials),
-                validate_airfare_itinerary_requirement(invoice, supporting_materials),
-                validate_airfare_cabin_requirement(
-                    invoice,
-                    invoice_material_recognition,
-                    supporting_materials,
-                    supporting_material_recognitions,
-                ),
-                validate_local_transport_rideshare_trip_requirement(
-                    invoice,
-                    invoice_material_recognition,
-                    supporting_materials,
-                    supporting_material_recognitions,
-                ),
-                validate_competition_location_range(
-                    invoice,
-                    task,
-                    invoice_material_recognition,
-                    supporting_materials,
-                    supporting_material_recognitions,
-                ),
-                validate_payment_record_requirement(invoice, supporting_materials),
-                validate_payment_record_amount_match(
-                    invoice,
-                    supporting_materials,
-                    supporting_material_recognitions,
-                ),
-            ]
-        )
-        return validation_repository.replace_for_invoice(invoice.id, updated_validations)
 
     @router.post("/api/materials/{material_id}/invoice", status_code=status.HTTP_201_CREATED)
     def create_invoice(material_id: str, payload: ManualInvoiceEntry):
@@ -245,7 +168,14 @@ def build_invoice_router(
             )
 
         invoice_repository.attach_supporting_material(invoice_id, material_id)
-        recalculate_supporting_material_validations(invoice_id)
+        refresh_invoice_validations(
+            invoice_id,
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            validation_repository=validation_repository,
+            recognition_task_repository=recognition_task_repository,
+        )
         return {"item": material}
 
     @router.get("/api/invoices/{invoice_id}/supporting-materials")
@@ -272,7 +202,14 @@ def build_invoice_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="supporting material link not found",
             )
-        recalculate_supporting_material_validations(invoice_id)
+        refresh_invoice_validations(
+            invoice_id,
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            validation_repository=validation_repository,
+            recognition_task_repository=recognition_task_repository,
+        )
         return {"status": "deleted"}
 
     return router

@@ -1369,6 +1369,100 @@ def test_attach_payment_record_fails_amount_match_when_total_differs_from_invoic
     )
 
 
+def test_retry_payment_record_recognition_revalidates_failed_amount_match_to_pass(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {"amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS},
+    )
+    invoice_id = invoice_response.json()["invoice"]["id"]
+    payment_record_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="payment_record",
+    )
+    set_recognition_amount_cents(
+        client,
+        payment_record_material_id,
+        amount_cents=PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS - 1,
+    )
+
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+    )
+
+    assert attach_response.status_code == 200
+
+    failed_validations = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert failed_validations.status_code == 200
+    assert next(
+        item
+        for item in failed_validations.json()["items"]
+        if item["rule_code"] == "invoice_payment_record_amount_match"
+    )["status"] == "failed"
+
+    retry_create = client.post(f"/api/materials/{payment_record_material_id}/recognition-tasks")
+
+    assert retry_create.status_code == 201
+    retry_task_id = retry_create.json()["item"]["id"]
+    retry_update = client.patch(
+        f"/api/recognition-tasks/{retry_task_id}/status",
+        json={
+            "target_status": "succeeded",
+            "result": {
+                "raw_response": {
+                    "provider": "placeholder-ai",
+                    "document_type": "payment_record",
+                },
+                "recognized_fields": {
+                    "amount_cents": {
+                        "value": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+                        "source": "ai",
+                        "confidence": 0.98,
+                        "status": "recognized",
+                    }
+                },
+            },
+        },
+    )
+
+    assert retry_update.status_code == 200
+
+    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert validations_response.status_code == 200
+    payment_amount_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == "invoice_payment_record_amount_match"
+    )
+    assert payment_amount_validation["status"] == "passed"
+    assert payment_amount_validation["message"] == "支付记录金额与发票金额一致"
+    assert payment_amount_validation["evidence"] == {
+        "invoice_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
+        "config_source": (
+            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
+        ),
+        "requires_payment_record": True,
+        "payment_record_material_ids": [payment_record_material_id],
+        "matched_payment_records": [
+            {
+                "material_id": payment_record_material_id,
+                "recognized_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+                "recognition_task_id": retry_task_id,
+                "recognition_task_status": "succeeded",
+            }
+        ],
+        "missing_amount_materials": [],
+        "payment_record_amount_total_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+    }
+
+
 def test_attach_payment_record_marks_amount_match_pending_when_amount_missing(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)
@@ -1424,6 +1518,97 @@ def test_attach_payment_record_marks_amount_match_pending_when_amount_missing(tm
         ],
         "payment_record_amount_total_cents": 0,
     }
+
+
+def test_retry_invoice_recognition_revalidates_failed_competition_location_to_pass(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+    set_recognition_result(
+        client,
+        material_id,
+        document_type="invoice",
+        recognized_fields={
+            "departure_location": {
+                "value": "Nanjing South Railway Station",
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            },
+            "arrival_location": {
+                "value": "Suzhou Railway Station",
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            },
+        },
+    )
+
+    create_response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["invoice"]["id"]
+    assert validation_by_code(
+        create_response.json(),
+        COMPETITION_LOCATION_RANGE_RULE_CODE,
+    )["status"] == "failed"
+
+    retry_create = client.post(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert retry_create.status_code == 201
+    retry_task_id = retry_create.json()["item"]["id"]
+    retry_update = client.patch(
+        f"/api/recognition-tasks/{retry_task_id}/status",
+        json={
+            "target_status": "succeeded",
+            "result": {
+                "raw_response": {
+                    "provider": "placeholder-ai",
+                    "document_type": "invoice",
+                },
+                "recognized_fields": {
+                    "departure_location": {
+                        "value": "Nanjing South Railway Station",
+                        "source": "ai",
+                        "confidence": 0.95,
+                        "status": "recognized",
+                    },
+                    "arrival_location": {
+                        "value": "Shanghai Hongqiao Railway Station",
+                        "source": "ai",
+                        "confidence": 0.95,
+                        "status": "recognized",
+                    },
+                },
+            },
+        },
+    )
+
+    assert retry_update.status_code == 200
+
+    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert validations_response.status_code == 200
+    competition_location_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == COMPETITION_LOCATION_RANGE_RULE_CODE
+    )
+    assert competition_location_validation["status"] == "passed"
+    assert competition_location_validation["message"] == "交易地点与比赛地点或往返路径基础匹配"
+    assert competition_location_validation["evidence"]["matched_location_materials"] == [
+        {
+            "material_id": material_id,
+            "material_type": "invoice",
+            "matched_fields": {
+                "departure_location": "Nanjing South Railway Station",
+                "arrival_location": "Shanghai Hongqiao Railway Station",
+            },
+            "competition_location_match": True,
+            "recognition_task_id": retry_task_id,
+            "recognition_task_status": "succeeded",
+        }
+    ]
+    assert competition_location_validation["evidence"]["unmatched_location_materials"] == []
 
 
 def test_list_invoice_validations_returns_structured_evidence(tmp_path):

@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-04-28 04:17 - Revalidate invoices after material recognition updates
+
+### 完成内容
+- 新增 `src/trms_backend/api/invoice_validation_refresh.py`，抽出统一的发票校验刷新逻辑，按当前主材料识别结果、辅助材料关联和最新有效识别结果重新生成整张发票的校验集合。
+- 为发票仓储补充“按主材料查询发票”和“按辅助材料反查关联发票”能力，使识别任务更新后可以定位受影响的发票，而不依赖手工重新挂载附件。
+- 将识别任务状态更新接口接入上述刷新链路：无论补充的是主发票材料还是已关联辅助材料，只要新的识别结果生效，就会立即重算相关发票校验，避免继续沿用旧的失败或待确认结果。
+- 保持“创建发票时按识别前快照给出待确认/失败语义”的现有行为不变，避免把人工录入字段误当成 AI 已识别字段，造成原有抬头、税号待确认语义回归。
+- 补充发票 API 回归测试，覆盖两条关键路径：
+  - 支付记录首次识别金额错误导致金额匹配失败，重试识别后自动转为通过；
+  - 主发票材料地点识别首次不匹配导致 warning 失败，重试识别后自动转为通过。
+- 将 `TASKS.md` 中“支持材料补充后重新校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/invoice_validation_refresh.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/domain/invoices.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有代码只会在“创建发票”和“挂载/解绑辅助材料”两个动作时刷新校验结果；一旦材料已经关联，后续识别任务重试或补充出新的结构化字段，相关发票不会被重新计算，旧的失败/待确认结果会继续残留，和材料当前事实脱节。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 36 个用例通过
+  - `uv run pytest tests/test_recognition_tasks_api.py`
+    - 7 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 110 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“材料补充后重新校验”收敛为“识别任务状态更新后，自动刷新所有直接依赖该材料的发票校验”；其中包括主发票材料本身，以及通过辅助材料关联表反查到的发票。
+- 当前仍只刷新与该材料直接关联的发票，不扩散为任务级批量重算或后台调度任务；若后续需要跨发票、跨任务的批量重建，应作为独立任务处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“完善费用分摊提交权限”，继续补齐分摊与成员确认阶段的权限边界。
+
 ## 2026-04-28 04:07 - Add missing material aggregation model
 
 ### 完成内容

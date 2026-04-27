@@ -121,7 +121,13 @@ class InvoiceRepository(Protocol):
     def get(self, invoice_id: str) -> InvoiceRecord | None:
         raise NotImplementedError
 
+    def get_by_material(self, material_id: str) -> InvoiceRecord | None:
+        raise NotImplementedError
+
     def list_by_task(self, task_id: str) -> list[InvoiceRecord]:
+        raise NotImplementedError
+
+    def list_by_supporting_material(self, material_id: str) -> list[InvoiceRecord]:
         raise NotImplementedError
 
     def attach_supporting_material(
