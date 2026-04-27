@@ -23,7 +23,13 @@ from trms_backend.domain.overdue_confirmations import (
 )
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
+from trms_backend.domain.materials import MaterialRepository
+from trms_backend.domain.recognitions import RecognitionTaskRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
+from trms_backend.domain.task_review_summary import (
+    TaskReviewSummaryActorNotAllowedError,
+    build_task_review_summary,
+)
 from trms_backend.domain.tasks import (
     TaskCreateInput,
     TaskCompletionValidationError,
@@ -45,8 +51,10 @@ from trms_backend.domain.tasks import (
 def build_task_router(
     repository: TaskRepository,
     global_invoice_config_repository: GlobalInvoiceConfigRepository,
+    material_repository: MaterialRepository,
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
+    recognition_task_repository: RecognitionTaskRepository,
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
 ) -> APIRouter:
@@ -172,6 +180,62 @@ def build_task_router(
                 confirmations_by_split_id=confirmations_by_split_id,
             )
         except OverdueConfirmationActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/review-summary")
+    def get_task_review_summary(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        materials = material_repository.list_by_task(task_id)
+        latest_recognitions_by_material_id = {}
+        for material in materials:
+            recognition_tasks = recognition_task_repository.list_by_material(material.id)
+            latest_recognitions_by_material_id[material.id] = (
+                recognition_tasks[-1] if recognition_tasks else None
+            )
+
+        invoices = invoice_repository.list_by_task(task_id)
+        invoice_by_material_id = {invoice.material_id: invoice for invoice in invoices}
+        supporting_invoice_ids_by_material_id: dict[str, list[str]] = {}
+        supporting_material_ids_by_invoice_id: dict[str, list[str]] = {}
+        validations_by_invoice_id = {}
+        splits_by_invoice_id = {}
+        confirmations_by_split_id = {}
+        for invoice in invoices:
+            supporting_links = invoice_repository.list_supporting_material_links(invoice.id)
+            supporting_material_ids = [link.material_id for link in supporting_links]
+            supporting_material_ids_by_invoice_id[invoice.id] = supporting_material_ids
+            for material_id in supporting_material_ids:
+                supporting_invoice_ids_by_material_id.setdefault(material_id, []).append(invoice.id)
+
+            validations_by_invoice_id[invoice.id] = validation_repository.list_by_invoice(invoice.id)
+            splits_by_invoice_id[invoice.id] = split_repository.list_by_invoice(invoice.id)
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        try:
+            return build_task_review_summary(
+                task,
+                administrator_id=actor_id,
+                materials=materials,
+                latest_recognitions_by_material_id=latest_recognitions_by_material_id,
+                invoices=invoices,
+                invoice_by_material_id=invoice_by_material_id,
+                supporting_invoice_ids_by_material_id=supporting_invoice_ids_by_material_id,
+                supporting_material_ids_by_invoice_id=supporting_material_ids_by_invoice_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_split_id=confirmations_by_split_id,
+            )
+        except TaskReviewSummaryActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),

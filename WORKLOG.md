@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-28 05:14 - Add administrator review summary API
+
+### 完成内容
+- 新增 `GET /api/tasks/{task_id}/review-summary` 管理员复核汇总接口，聚合返回：
+  - 任务内材料及其最新识别状态；
+  - 材料对应发票或被哪些发票作为辅助材料引用；
+  - 发票校验结果；
+  - 发票分摊及当前确认状态。
+- 新增 `src/trms_backend/domain/task_review_summary.py`，把复核汇总的只读聚合、管理员权限校验和统计计数收敛为独立领域模型。
+- 调整 `src/trms_backend/api/tasks.py` 和 `src/trms_backend/main.py`，为任务路由注入材料仓储和识别仓储，接入复核汇总接口。
+- 新增 `tests/test_task_review_summary_api.py`，覆盖管理员成功查询和普通成员禁止访问两条最小回归路径。
+- 将 `TASKS.md` 中“建立复核汇总查询接口”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/task_review_summary.py`
+- `src/trms_backend/main.py`
+- `tests/test_task_review_summary_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有仓库已经分别具备材料列表、识别任务、发票校验、费用分摊、费用明细和异议查询能力，但这些数据仍分散在多个接口和仓储调用里：
+  - 管理员无法通过单一入口查看某个任务在复核阶段的整体状态；
+  - 现有 `expense-details`、`expense-disputes`、`overdue-confirmations` 只能覆盖复核面的一部分；
+  - `TASKS.md` 要求的“复核汇总查询接口”因此尚未闭合，即使底层数据已基本齐备。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_task_review_summary_api.py`
+    - 2 个用例通过
+  - `uv run pytest tests/test_tasks_api.py tests/test_expense_details_api.py tests/test_expense_disputes_api.py tests/test_overdue_confirmations_api.py`
+    - 42 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 132 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守将“复核汇总”定义为管理员复核阶段所需的只读聚合视图，不在该接口中继续叠加待归属材料阻断、未确认成员阻断、补材料提醒等后续任务逻辑。
+- 材料识别状态使用“该材料最新一次识别任务”的结果，而不是“最新有效识别结果”，因为复核界面需要优先暴露当前最新识别尝试是否失败、待确认或仍在处理中。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“阻止存在待归属材料的最终确认”，把复核入口的只读汇总继续收敛为最终确认门禁。
+
 ## 2026-04-28 05:07 - Close administrator review state flow task
 
 ### 完成内容

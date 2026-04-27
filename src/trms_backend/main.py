@@ -57,8 +57,10 @@ def create_app(
         build_task_router(
             task_repository,
             global_invoice_config_repository,
+            material_repository,
             invoice_repository,
             validation_repository,
+            recognition_task_repository,
             split_repository,
             confirmation_repository,
         )
