@@ -21,6 +21,7 @@ from trms_backend.domain.invoices import (
     ExpenseType,
     InvoiceCreate,
     InvoiceRecord,
+    InvoiceSupportingMaterialLinkRecord,
     ValidationRepository,
     ValidationResult,
     ValidationSeverity,
@@ -45,6 +46,7 @@ from trms_backend.infrastructure.models import (
     ExpenseSplitRow,
     GlobalInvoiceConfigRow,
     InvoiceRow,
+    InvoiceSupportingMaterialLinkRow,
     MaterialRow,
     TaskRow,
     ValidationResultRow,
@@ -248,6 +250,53 @@ class SqlAlchemyInvoiceRepository:
                 select(InvoiceRow).where(InvoiceRow.task_id == task_id).order_by(InvoiceRow.created_at)
             ).all()
             return [_invoice_from_row(row) for row in rows]
+
+    def attach_supporting_material(
+        self,
+        invoice_id: str,
+        material_id: str,
+    ) -> InvoiceSupportingMaterialLinkRecord:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(InvoiceSupportingMaterialLinkRow).where(
+                    InvoiceSupportingMaterialLinkRow.invoice_id == invoice_id,
+                    InvoiceSupportingMaterialLinkRow.material_id == material_id,
+                )
+            )
+            if row is None:
+                row = InvoiceSupportingMaterialLinkRow(
+                    id=str(uuid4()),
+                    invoice_id=invoice_id,
+                    material_id=material_id,
+                    created_at=datetime.now(timezone.utc),
+                )
+            session.add(row)
+        return _invoice_supporting_material_link_from_row(row)
+
+    def detach_supporting_material(self, invoice_id: str, material_id: str) -> bool:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(InvoiceSupportingMaterialLinkRow).where(
+                    InvoiceSupportingMaterialLinkRow.invoice_id == invoice_id,
+                    InvoiceSupportingMaterialLinkRow.material_id == material_id,
+                )
+            )
+            if row is None:
+                return False
+            session.delete(row)
+        return True
+
+    def list_supporting_material_links(
+        self,
+        invoice_id: str,
+    ) -> list[InvoiceSupportingMaterialLinkRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(InvoiceSupportingMaterialLinkRow)
+                .where(InvoiceSupportingMaterialLinkRow.invoice_id == invoice_id)
+                .order_by(InvoiceSupportingMaterialLinkRow.created_at)
+            ).all()
+            return [_invoice_supporting_material_link_from_row(row) for row in rows]
 
     def find_duplicate_invoice_id(
         self,
@@ -464,6 +513,17 @@ def _invoice_from_row(row: InvoiceRow) -> InvoiceRecord:
         expense_type=ExpenseType(row.expense_type),
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _invoice_supporting_material_link_from_row(
+    row: InvoiceSupportingMaterialLinkRow,
+) -> InvoiceSupportingMaterialLinkRecord:
+    return InvoiceSupportingMaterialLinkRecord(
+        id=row.id,
+        invoice_id=row.invoice_id,
+        material_id=row.material_id,
+        created_at=row.created_at,
     )
 
 

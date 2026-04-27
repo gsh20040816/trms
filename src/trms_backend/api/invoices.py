@@ -2,7 +2,11 @@ from fastapi import APIRouter, HTTPException, status
 
 from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import InvoiceCreate, InvoiceRepository, ValidationRepository
-from trms_backend.domain.materials import MaterialRepository
+from trms_backend.domain.materials import (
+    MaterialRepository,
+    MaterialStatus,
+    MaterialType,
+)
 from trms_backend.domain.tasks import (
     TaskExpenseTypeNotAllowedError,
     TaskRepository,
@@ -23,6 +27,16 @@ def build_invoice_router(
         material = material_repository.get(material_id)
         if material is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        if material.status is not MaterialStatus.ASSIGNED or material.task_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="material is not assigned to a task",
+            )
+        if material.material_type is not MaterialType.INVOICE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="invoice can only be created from invoice material",
+            )
 
         task = task_repository.get(material.task_id)
         if task is None:
@@ -60,5 +74,59 @@ def build_invoice_router(
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
         return {"items": validation_repository.list_by_invoice(invoice_id)}
+
+    @router.put("/api/invoices/{invoice_id}/supporting-materials/{material_id}")
+    def attach_supporting_material(invoice_id: str, material_id: str):
+        invoice = invoice_repository.get(invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+
+        material = material_repository.get(material_id)
+        if material is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        if material.status is not MaterialStatus.ASSIGNED or material.task_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="supporting material must be assigned to a task",
+            )
+        if material.task_id != invoice.task_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="supporting material belongs to a different task",
+            )
+        if material.material_type is MaterialType.INVOICE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="supporting material must not be invoice type",
+            )
+
+        invoice_repository.attach_supporting_material(invoice_id, material_id)
+        return {"item": material}
+
+    @router.get("/api/invoices/{invoice_id}/supporting-materials")
+    def list_supporting_materials(invoice_id: str):
+        invoice = invoice_repository.get(invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+
+        items = []
+        for link in invoice_repository.list_supporting_material_links(invoice_id):
+            material = material_repository.get(link.material_id)
+            if material is not None:
+                items.append(material)
+        return {"items": items}
+
+    @router.delete("/api/invoices/{invoice_id}/supporting-materials/{material_id}")
+    def detach_supporting_material(invoice_id: str, material_id: str):
+        invoice = invoice_repository.get(invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+        deleted = invoice_repository.detach_supporting_material(invoice_id, material_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="supporting material link not found",
+            )
+        return {"status": "deleted"}
 
     return router

@@ -65,6 +65,13 @@ class InvoiceRecord(BaseModel):
     updated_at: datetime
 
 
+class InvoiceSupportingMaterialLinkRecord(BaseModel):
+    id: str
+    invoice_id: str
+    material_id: str
+    created_at: datetime
+
+
 class ValidationResult(BaseModel):
     id: str
     rule_code: str
@@ -86,6 +93,22 @@ class InvoiceRepository(Protocol):
     def list_by_task(self, task_id: str) -> list[InvoiceRecord]:
         raise NotImplementedError
 
+    def attach_supporting_material(
+        self,
+        invoice_id: str,
+        material_id: str,
+    ) -> InvoiceSupportingMaterialLinkRecord:
+        raise NotImplementedError
+
+    def detach_supporting_material(self, invoice_id: str, material_id: str) -> bool:
+        raise NotImplementedError
+
+    def list_supporting_material_links(
+        self,
+        invoice_id: str,
+    ) -> list[InvoiceSupportingMaterialLinkRecord]:
+        raise NotImplementedError
+
     def find_duplicate_invoice_id(
         self,
         task_id: str,
@@ -105,4 +128,3 @@ class ValidationRepository(Protocol):
 
     def list_by_invoice(self, invoice_id: str) -> list[ValidationResult]:
         raise NotImplementedError
-

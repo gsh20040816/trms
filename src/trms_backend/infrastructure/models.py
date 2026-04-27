@@ -94,6 +94,34 @@ class InvoiceRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class InvoiceSupportingMaterialLinkRow(Base):
+    __tablename__ = "invoice_supporting_material_links"
+    __table_args__ = (
+        Index(
+            "ix_invoice_supporting_material_link_unique",
+            "invoice_id",
+            "material_id",
+            unique=True,
+        ),
+        Index("ix_invoice_supporting_material_link_material", "material_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    invoice_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("invoices.id"),
+        nullable=False,
+        index=True,
+    )
+    material_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("materials.id"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ValidationResultRow(Base):
     __tablename__ = "validation_results"
     __table_args__ = (Index("ix_validation_target", "target_type", "target_id"),)

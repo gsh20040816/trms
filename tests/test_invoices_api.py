@@ -34,6 +34,26 @@ def upload_material(client: TestClient, task_id: str, filename: str = "ticket.pd
     return response.json()["items"][0]["id"]
 
 
+def upload_supporting_material(
+    client: TestClient,
+    task_id: str,
+    *,
+    material_type: str = "payment_record",
+    filename: str = "payment.png",
+    content_type: str = "image/png",
+) -> str:
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": material_type,
+        },
+        files={"files": (filename, filename.encode(), content_type)},
+    )
+    return response.json()["items"][0]["id"]
+
+
 def valid_invoice_payload():
     return {
         "invoice_number": "INV-001",
@@ -131,3 +151,86 @@ def test_create_invoice_rejects_missing_material(tmp_path):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "material not found"
+
+
+def test_create_invoice_rejects_non_invoice_material(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    client.patch(f"/api/tasks/{task['id']}/status", json={"target_status": "open"})
+    material_id = upload_supporting_material(client, task["id"], material_type="payment_record")
+
+    response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "invoice can only be created from invoice material"
+
+
+def test_attach_supporting_material_allows_same_attachment_for_multiple_invoices(tmp_path):
+    client = make_client(tmp_path)
+    task_id, first_material_id = create_material(client)
+    second_material_id = upload_material(client, task_id, "ticket-2.pdf")
+    supporting_material_id = upload_supporting_material(client, task_id)
+    first_invoice_id = client.post(
+        f"/api/materials/{first_material_id}/invoice",
+        json=valid_invoice_payload(),
+    ).json()["invoice"]["id"]
+    second_invoice_id = client.post(
+        f"/api/materials/{second_material_id}/invoice",
+        json=valid_invoice_payload() | {"invoice_number": "INV-002"},
+    ).json()["invoice"]["id"]
+
+    first_response = client.put(
+        f"/api/invoices/{first_invoice_id}/supporting-materials/{supporting_material_id}"
+    )
+    second_response = client.put(
+        f"/api/invoices/{second_invoice_id}/supporting-materials/{supporting_material_id}"
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    listed_first = client.get(f"/api/invoices/{first_invoice_id}/supporting-materials")
+    listed_second = client.get(f"/api/invoices/{second_invoice_id}/supporting-materials")
+
+    assert listed_first.status_code == 200
+    assert listed_second.status_code == 200
+    assert [item["id"] for item in listed_first.json()["items"]] == [supporting_material_id]
+    assert [item["id"] for item in listed_second.json()["items"]] == [supporting_material_id]
+
+
+def test_detach_supporting_material_removes_invoice_association(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    invoice_id = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload(),
+    ).json()["invoice"]["id"]
+    supporting_material_id = upload_supporting_material(client, task_id)
+    client.put(f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}")
+
+    response = client.delete(f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+
+    listed = client.get(f"/api/invoices/{invoice_id}/supporting-materials")
+
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+
+
+def test_attach_supporting_material_rejects_invoice_type_material(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    invoice_id = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload(),
+    ).json()["invoice"]["id"]
+    another_invoice_material_id = upload_material(client, task_id, "ticket-2.pdf")
+
+    response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{another_invoice_material_id}"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "supporting material must not be invoice type"

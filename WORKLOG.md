@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-04-28 03:10 - Establish invoice supporting-material associations
+
+### 完成内容
+- 为发票补充显式辅助材料关联模型 `invoice_supporting_material_links`，支持把支付记录、比赛通知、行程单、订单截图及其他非发票材料关联到指定发票，并保留关联创建时间。
+- 在发票 API 新增最小关联操作：`PUT /api/invoices/{invoice_id}/supporting-materials/{material_id}`、`GET /api/invoices/{invoice_id}/supporting-materials` 和 `DELETE /api/invoices/{invoice_id}/supporting-materials/{material_id}`，覆盖建立关联、查询关联和取消关联三条主路径。
+- 为避免模型语义混乱，补充发票来源约束：只有 `material_type=invoice` 且已归属到任务的材料才能创建发票；辅助材料关联仅允许同任务、已归属、非发票类型材料。
+- 补充发票 API 回归测试，覆盖“同一辅助材料可关联多张同任务发票”的第一阶段规则，以及取消关联、拒绝把发票型材料当作辅助材料、拒绝从非发票材料创建发票等边界。
+- 将 `TASKS.md` 中“建立发票与辅助材料关联模型”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoices.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 10 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 75 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“一个附件是否可关联多张发票”收敛为允许同一辅助材料关联多张同任务发票；原因是第一阶段附件完整性校验更关心“某张发票是否具备所需佐证”，而不是强制每个佐证文件只能服务单张发票。若后续业务证明某些材料类型必须一对一，应在规则层按材料类型单独收紧，而不是把当前关联模型做成不可扩展的一刀切限制。
+- 当前关联对象限定为已归属任务的非发票材料，不允许把原始发票材料再次作为“辅助材料”挂到其他发票下，避免把“发票主单据”和“辅助佐证”两种语义混在同一关系里。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此本轮新增的 `invoice_supporting_material_links` 表只会自动体现在新建数据库上；已有旧库若需要保留数据，仍需后续迁移机制统一处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立 AI 识别任务占位模型”，先补识别任务状态骨架和“AI 输出不是最终事实来源”的显式边界，再决定如何触发上传后的异步识别占位。
+
 ## 2026-04-28 02:43 - Confirm cross-channel duplicate material detection
 
 ### 完成内容
