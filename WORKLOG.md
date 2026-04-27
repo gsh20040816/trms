@@ -1,5 +1,32 @@
 # WORKLOG
 
+## 2026-04-28 02:43 - Confirm cross-channel duplicate material detection
+
+### 完成内容
+- 补充材料上传回归测试，显式覆盖“同一任务内先经 Web、后经 CLI 提交相同文件内容但不同文件名”时仍按 `sha256` 标记重复，避免后续实现误把渠道或文件名引入判重条件。
+- 基于现有仓储实现确认当前重复文件检测边界：判重仅依赖 `task_id + sha256 + assigned`，不依赖渠道字段，也不依赖原始文件名；因此本轮不扩展业务逻辑，只把该能力固化为可验证约束。
+- 将 `TASKS.md` 中“增加跨渠道重复文件检测”标记为已完成。
+
+### 修改文件
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 22 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 71 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前第一阶段把“跨渠道重复文件检测”收敛为同一任务下基于原始文件 `sha256` 的重复标记；它解决的是重复上传归档问题，不等同于发票号码重复校验，也不试图判断“内容相似但二进制不完全相同”的近重复文件。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立发票与辅助材料关联模型”，把支付记录、比赛通知、行程单、订单截图等附件与发票的关联关系显式建模，为后续附件完整性校验提供基础。
+
 ## 2026-04-28 02:28 - Add pending-assignment material claim flow
 
 ### 完成内容

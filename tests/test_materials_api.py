@@ -290,7 +290,7 @@ def test_submit_material_rejects_draft_task(tmp_path):
     assert response.json()["detail"] == "task is not open for material submission"
 
 
-def test_submit_material_marks_duplicate_file_in_same_task(tmp_path):
+def test_submit_material_marks_duplicate_file_across_channels_in_same_task(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)
     files = {"files": ("ticket.pdf", b"same-content", "application/pdf")}
@@ -298,7 +298,7 @@ def test_submit_material_marks_duplicate_file_in_same_task(tmp_path):
         f"/api/tasks/{task_id}/materials",
         data={
             "submitter_id": "2250001",
-            "channel": "cli",
+            "channel": "web",
             "material_type": "invoice",
         },
         files=files,
@@ -316,6 +316,8 @@ def test_submit_material_marks_duplicate_file_in_same_task(tmp_path):
 
     assert response.status_code == 201
     duplicate = response.json()["items"][0]
+    assert first["channel"] == "web"
+    assert duplicate["channel"] == "cli"
     assert duplicate["duplicate_of"] == first["id"]
 
 
