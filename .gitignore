@@ -14,3 +14,4 @@ node_modules/
 !.env.example
 trms.db
 .codex-nightly/
+.codex
