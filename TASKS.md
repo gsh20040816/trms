@@ -10,7 +10,7 @@
     - `scripts/verify.sh` 和 `scripts/codex-nightly.sh` 已建立
     - 基础脚本语法检查和 `git diff --check` 已纳入验证
 
-- [ ] 确认项目技术栈和启动方式
+- [x] 确认项目技术栈和启动方式
   - Done when:
     - `WORKLOG.md` 记录当前识别到的技术栈、入口和测试命令
     - `scripts/verify.sh` 能在本地执行完整基础验证

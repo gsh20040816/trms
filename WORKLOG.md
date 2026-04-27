@@ -1,5 +1,33 @@
 # WORKLOG
 
+## 2026-04-28 00:42 - Confirm project stack and run commands
+
+### 完成内容
+- 确认当前代码切片是 Python 3.12 后端项目，使用 FastAPI、Pydantic、SQLAlchemy、uvicorn、pytest 和 uv。
+- 确认后端应用入口为 `trms_backend.main:app`，应用工厂为 `trms_backend.main:create_app`。
+- 确认默认数据库为本地 SQLite `sqlite:///./trms.db`，可通过 `DATABASE_URL` 切换到 PostgreSQL 连接。
+- 确认本地启动命令为 `uv run uvicorn trms_backend.main:app --reload`。
+- 确认测试命令为 `uv run pytest`，统一基础验证命令为 `./scripts/verify.sh`。
+- 确认 `./scripts/verify.sh` 当前会运行 Python 编译检查、pytest，并执行 `git diff --check`；其他语言检查仅在对应工程文件存在时启用。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 31 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前 `pyproject.toml` 和 README 中声明的 uv 工作流是本项目现阶段的标准本地开发方式。
+- 本轮只完成技术栈与启动方式确认，不实现任何新业务功能。
+
+### 后续建议
+- 下一轮可继续处理 `TASKS.md` 中“固化后端健康检查验证”，为 `/health` 接口补齐明确测试覆盖并记录后端启动命令。
+
 ## 2026-04-28 00:38 - Run Codex nightly with full filesystem access
 
 ### 完成内容
