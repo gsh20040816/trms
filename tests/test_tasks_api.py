@@ -1,0 +1,107 @@
+from datetime import UTC, date, datetime
+
+from fastapi.testclient import TestClient
+
+from trms_backend.main import create_app
+
+
+def valid_task_payload():
+    return {
+        "competition_name": "ICPC Asia Regional",
+        "competition_location": "Shanghai",
+        "competition_start_date": "2026-11-01",
+        "competition_end_date": "2026-11-03",
+        "deadline": "2026-12-01T00:00:00Z",
+        "member_ids": ["2250001", "2250002", "2250003"],
+        "fee_categories": ["registration", "railway", "hotel"],
+        "administrator_id": "admin-1",
+        "project_info": "ACM competition project",
+        "reimburser_info": "Lab reimbursement owner",
+        "invoice_title": "同济大学",
+        "tax_number": "12100000425006117D",
+    }
+
+
+def test_health_check():
+    client = TestClient(create_app())
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_create_and_get_task():
+    client = TestClient(create_app())
+
+    created = client.post("/api/tasks", json=valid_task_payload())
+
+    assert created.status_code == 201
+    body = created.json()
+    assert body["id"]
+    assert body["status"] == "draft"
+    assert body["competition_name"] == "ICPC Asia Regional"
+    assert body["invoice_title"] == "同济大学"
+
+    fetched = client.get(f"/api/tasks/{body['id']}")
+
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == body["id"]
+
+
+def test_list_tasks_returns_created_tasks():
+    client = TestClient(create_app())
+    first = valid_task_payload()
+    second = valid_task_payload() | {"competition_name": "CCPC Final"}
+
+    client.post("/api/tasks", json=first)
+    client.post("/api/tasks", json=second)
+
+    response = client.get("/api/tasks")
+
+    assert response.status_code == 200
+    assert [task["competition_name"] for task in response.json()] == [
+        "ICPC Asia Regional",
+        "CCPC Final",
+    ]
+
+
+def test_rejects_empty_member_list():
+    client = TestClient(create_app())
+    payload = valid_task_payload() | {"member_ids": []}
+
+    response = client.post("/api/tasks", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_rejects_end_date_before_start_date():
+    client = TestClient(create_app())
+    payload = valid_task_payload() | {
+        "competition_start_date": "2026-11-03",
+        "competition_end_date": "2026-11-01",
+    }
+
+    response = client.post("/api/tasks", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_rejects_past_deadline():
+    client = TestClient(create_app())
+    past_deadline = datetime(2025, 1, 1, tzinfo=UTC).isoformat()
+    payload = valid_task_payload() | {"deadline": past_deadline}
+
+    response = client.post("/api/tasks", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_get_missing_task_returns_404():
+    client = TestClient(create_app())
+
+    response = client.get("/api/tasks/missing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "task not found"
+
