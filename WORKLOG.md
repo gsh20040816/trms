@@ -1,5 +1,32 @@
 # WORKLOG
 
+## 2026-04-28 00:37 - Fix Codex nightly approval flag
+
+### 完成内容
+- 修复 `scripts/codex-nightly.sh` 中 Codex CLI 参数顺序。
+- 当前 Codex CLI 的 `--ask-for-approval` 是顶层 `codex` 参数，不能放在 `exec` 子命令之后。
+
+### 修改文件
+- `scripts/codex-nightly.sh`
+- `WORKLOG.md`
+
+### 验证结果
+- 已复现：
+  - `codex exec --ask-for-approval never --help` 失败，报错 `unexpected argument '--ask-for-approval' found`
+- 已通过：
+  - `codex --ask-for-approval never exec --help`
+  - `bash -n scripts/codex-nightly.sh`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 31 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 夜间脚本仍应保持无人值守执行语义，即审批策略为 `never`，沙箱仍为 `workspace-write`。
+
+### 后续建议
+- 如果后续 Codex CLI 再调整参数结构，应优先用 `codex exec --help` 和 `codex --help` 同时确认顶层参数与子命令参数边界。
+
 ## 2026-04-28 00:16 - Bootstrap Codex worker framework
 
 ### 完成内容

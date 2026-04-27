@@ -73,8 +73,7 @@ PROMPT
 )"
 
   set +e
-  codex exec \
-    --ask-for-approval never \
+  codex --ask-for-approval never exec \
     --sandbox workspace-write \
     --output-last-message "$final_file" \
     "$prompt" >"$log_file" 2>&1
