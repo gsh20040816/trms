@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from trms_backend.domain.invoice_validation import (
+    PAYMENT_RECORD_AMOUNT_MATCH_MODE,
     PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
 )
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
@@ -55,6 +56,41 @@ def upload_supporting_material(
         files={"files": (filename, filename.encode(), content_type)},
     )
     return response.json()["items"][0]["id"]
+
+
+def set_recognition_amount_cents(
+    client: TestClient,
+    material_id: str,
+    *,
+    amount_cents: int | None,
+    target_status: str = "succeeded",
+):
+    recognition_task_id = client.get(f"/api/materials/{material_id}/recognition-tasks").json()["items"][0][
+        "id"
+    ]
+    recognized_fields = {}
+    if amount_cents is not None:
+        recognized_fields["amount_cents"] = {
+            "value": amount_cents,
+            "source": "ai",
+            "confidence": 0.98,
+            "status": "recognized",
+        }
+    response = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        json={
+            "target_status": target_status,
+            "result": {
+                "raw_response": {
+                    "provider": "placeholder-ai",
+                    "document_type": "payment_record",
+                },
+                "recognized_fields": recognized_fields,
+            },
+        },
+    )
+    assert response.status_code == 200
+    return recognition_task_id
 
 
 def valid_invoice_payload():
@@ -127,6 +163,21 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         ),
         "requires_payment_record": False,
         "payment_record_material_ids": [],
+    }
+    payment_amount_validation = validation_by_code(body, "invoice_payment_record_amount_match")
+    assert payment_amount_validation["status"] == "not_applicable"
+    assert payment_amount_validation["evidence"] == {
+        "invoice_amount_cents": 12345,
+        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
+        "config_source": (
+            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
+        ),
+        "requires_payment_record": False,
+        "payment_record_material_ids": [],
+        "matched_payment_records": [],
+        "missing_amount_materials": [],
+        "payment_record_amount_total_cents": None,
     }
 
 
@@ -327,6 +378,11 @@ def test_create_invoice_fails_payment_record_validation_when_amount_reaches_thre
         "requires_payment_record": True,
         "payment_record_material_ids": [],
     }
+    payment_amount_validation = validation_by_code(
+        response.json(), "invoice_payment_record_amount_match"
+    )
+    assert payment_amount_validation["status"] == "not_applicable"
+    assert payment_amount_validation["message"] == "尚未关联支付记录，暂不执行金额匹配"
 
 
 def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path):
@@ -342,6 +398,11 @@ def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path
         client,
         task_id,
         material_type="payment_record",
+    )
+    recognition_task_id = set_recognition_amount_cents(
+        client,
+        payment_record_material_id,
+        amount_cents=PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
     )
 
     attach_response = client.put(
@@ -368,6 +429,131 @@ def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path
         ),
         "requires_payment_record": True,
         "payment_record_material_ids": [payment_record_material_id],
+    }
+    payment_amount_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == "invoice_payment_record_amount_match"
+    )
+    assert payment_amount_validation["status"] == "passed"
+    assert payment_amount_validation["message"] == "支付记录金额与发票金额一致"
+    assert payment_amount_validation["evidence"] == {
+        "invoice_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
+        "config_source": (
+            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
+        ),
+        "requires_payment_record": True,
+        "payment_record_material_ids": [payment_record_material_id],
+        "matched_payment_records": [
+            {
+                "material_id": payment_record_material_id,
+                "recognized_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+                "recognition_task_id": recognition_task_id,
+                "recognition_task_status": "succeeded",
+            }
+        ],
+        "missing_amount_materials": [],
+        "payment_record_amount_total_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+    }
+
+
+def test_attach_payment_record_fails_amount_match_when_total_differs_from_invoice(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {"amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS},
+    )
+    invoice_id = invoice_response.json()["invoice"]["id"]
+    payment_record_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="payment_record",
+    )
+    set_recognition_amount_cents(
+        client,
+        payment_record_material_id,
+        amount_cents=PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS - 1,
+    )
+
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+    )
+
+    assert attach_response.status_code == 200
+
+    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert validations_response.status_code == 200
+    payment_amount_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == "invoice_payment_record_amount_match"
+    )
+    assert payment_amount_validation["status"] == "failed"
+    assert payment_amount_validation["message"] == "支付记录金额合计与发票金额不一致"
+    assert payment_amount_validation["evidence"]["payment_record_amount_total_cents"] == (
+        PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS - 1
+    )
+
+
+def test_attach_payment_record_marks_amount_match_pending_when_amount_missing(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {"amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS},
+    )
+    invoice_id = invoice_response.json()["invoice"]["id"]
+    payment_record_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="payment_record",
+    )
+    recognition_task_id = set_recognition_amount_cents(
+        client,
+        payment_record_material_id,
+        amount_cents=None,
+    )
+
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+    )
+
+    assert attach_response.status_code == 200
+
+    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert validations_response.status_code == 200
+    payment_amount_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == "invoice_payment_record_amount_match"
+    )
+    assert payment_amount_validation["status"] == "pending"
+    assert payment_amount_validation["message"] == "支付记录金额缺失，需人工确认"
+    assert payment_amount_validation["evidence"] == {
+        "invoice_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
+        "config_source": (
+            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
+        ),
+        "requires_payment_record": True,
+        "payment_record_material_ids": [payment_record_material_id],
+        "matched_payment_records": [],
+        "missing_amount_materials": [
+            {
+                "material_id": payment_record_material_id,
+                "recognition_task_id": recognition_task_id,
+                "recognition_task_status": "succeeded",
+            }
+        ],
+        "payment_record_amount_total_cents": 0,
     }
 
 

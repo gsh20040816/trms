@@ -13,6 +13,8 @@ from trms_backend.domain.tasks import ReimbursementTask
 
 PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS = 100_000
 PAYMENT_RECORD_REQUIRED_RULE_CODE = "invoice_payment_record_required"
+PAYMENT_RECORD_AMOUNT_MATCH_MODE = "exact_sum"
+PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE = "invoice_payment_record_amount_match"
 
 
 def validate_invoice(
@@ -21,9 +23,11 @@ def validate_invoice(
     duplicate_invoice_id: str | None,
     recognition_task: RecognitionTaskRecord | None = None,
     supporting_materials: list[MaterialRecord] | None = None,
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None] | None = None,
 ) -> list[ValidationResult]:
     invoice_number_is_unique = duplicate_invoice_id is None
     supporting_materials = supporting_materials or []
+    supporting_material_recognitions = supporting_material_recognitions or {}
     return [
         _validate_invoice_title(invoice, task, recognition_task),
         _validate_invoice_tax_number(invoice, task, recognition_task),
@@ -42,6 +46,11 @@ def validate_invoice(
             },
         ),
         validate_payment_record_requirement(invoice, supporting_materials),
+        validate_payment_record_amount_match(
+            invoice,
+            supporting_materials,
+            supporting_material_recognitions,
+        ),
     ]
 
 
@@ -214,3 +223,138 @@ def validate_payment_record_requirement(
             "payment_record_material_ids": payment_record_material_ids,
         },
     )
+
+
+def validate_payment_record_amount_match(
+    invoice: InvoiceRecord,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> ValidationResult:
+    threshold_cents = PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    payment_record_materials = [
+        material
+        for material in supporting_materials
+        if material.material_type is MaterialType.PAYMENT_RECORD
+    ]
+    payment_record_material_ids = [material.id for material in payment_record_materials]
+    requires_payment_record = invoice.amount_cents >= threshold_cents
+    evidence = {
+        "invoice_amount_cents": invoice.amount_cents,
+        "threshold_amount_cents": threshold_cents,
+        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
+        "config_source": (
+            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
+        ),
+        "requires_payment_record": requires_payment_record,
+        "payment_record_material_ids": payment_record_material_ids,
+        "matched_payment_records": [],
+        "missing_amount_materials": [],
+        "payment_record_amount_total_cents": None,
+    }
+
+    if not requires_payment_record:
+        return _validation_result(
+            rule_code=PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="发票金额未达到支付记录金额匹配阈值",
+            evidence=evidence,
+        )
+
+    if not payment_record_material_ids:
+        return _validation_result(
+            rule_code=PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="尚未关联支付记录，暂不执行金额匹配",
+            evidence=evidence,
+        )
+
+    matched_payment_records: list[dict[str, object | None]] = []
+    missing_amount_materials: list[dict[str, object | None]] = []
+    total_amount_cents = 0
+    for material in payment_record_materials:
+        recognition_task = supporting_material_recognitions.get(material.id)
+        recognized_amount_cents = _extract_recognized_amount_cents(recognition_task)
+        if recognized_amount_cents is None:
+            missing_amount_materials.append(
+                {
+                    "material_id": material.id,
+                    "recognition_task_id": (
+                        recognition_task.id if recognition_task is not None else None
+                    ),
+                    "recognition_task_status": (
+                        recognition_task.status.value if recognition_task is not None else None
+                    ),
+                }
+            )
+            continue
+        matched_payment_records.append(
+            {
+                "material_id": material.id,
+                "recognized_amount_cents": recognized_amount_cents,
+                "recognition_task_id": recognition_task.id if recognition_task is not None else None,
+                "recognition_task_status": (
+                    recognition_task.status.value if recognition_task is not None else None
+                ),
+            }
+        )
+        total_amount_cents += recognized_amount_cents
+
+    evidence["matched_payment_records"] = matched_payment_records
+    evidence["missing_amount_materials"] = missing_amount_materials
+    evidence["payment_record_amount_total_cents"] = total_amount_cents
+
+    if missing_amount_materials:
+        return _validation_result(
+            rule_code=PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PENDING,
+            message="支付记录金额缺失，需人工确认",
+            evidence=evidence,
+        )
+
+    if total_amount_cents == invoice.amount_cents:
+        return _validation_result(
+            rule_code=PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="支付记录金额与发票金额一致",
+            evidence=evidence,
+        )
+
+    return _validation_result(
+        rule_code=PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="支付记录金额合计与发票金额不一致",
+        evidence=evidence,
+    )
+
+
+def _extract_recognized_amount_cents(
+    recognition_task: RecognitionTaskRecord | None,
+) -> int | None:
+    if recognition_task is None:
+        return None
+    amount_field = recognition_task.recognized_fields.get("amount_cents")
+    if amount_field is None:
+        return None
+    return _coerce_amount_cents(amount_field.value)
+
+
+def _coerce_amount_cents(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        if value.is_integer() and value > 0:
+            return int(value)
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized.isdigit():
+            parsed = int(normalized)
+            return parsed if parsed > 0 else None
+    return None

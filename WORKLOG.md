@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-04-28 03:31 - Implement payment record amount match validation
+
+### 完成内容
+- 为发票校验新增 `invoice_payment_record_amount_match` 规则：仅在单张发票金额达到支付记录阈值且已关联 `payment_record` 类型附件时生效，默认按“支付记录金额求和后与发票金额精确匹配”执行比对。
+- 金额匹配规则会读取每个已关联支付记录材料的最新有效识别结果中的 `amount_cents` 字段；金额一致时返回 `passed`，金额不一致时返回 `failed`，金额缺失时返回 `pending`，避免把“已有关联但金额还没识别出来”误报为通过或失败。
+- 将该规则接入发票创建和支付记录附件关联/取消关联后的局部重算链路，与既有 `invoice_payment_record_required` 一起刷新，但不覆盖抬头、税号、重复号码等无关校验结果。
+- 补充发票 API 回归测试，覆盖“未达阈值不适用”“达到阈值但未关联支付记录时不执行金额匹配”“支付记录金额一致通过”“金额不一致失败”“金额缺失待确认”五条路径。
+- 将 `TASKS.md` 中“实现支付记录金额匹配校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoice_validation.py`
+- `src/trms_backend/api/invoices.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库已经能校验“大额发票必须关联支付记录”，但支付记录只停留在“存在性”层面，没有把支付记录识别出的金额接入统一校验结果，因此系统无法显式判断“附件已经补齐，但金额仍不一致或尚未识别”的关键复核场景。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 22 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 94 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮默认将“金额匹配”收敛为 `trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE = "exact_sum"`，即所有已关联支付记录材料的识别金额求和后，必须与发票金额精确相等；后续如需容差、单条匹配或任务级配置，应在单独任务中扩展。
+- 支付记录金额来源暂时只读取辅助材料最新有效识别结果中的 `amount_cents` 字段，不新增单独的支付记录领域模型；若识别结果缺少该字段，则返回 `pending`，由后续人工补录或识别增强任务处理。
+- 本轮只在发票创建、支付记录附件关联和取消关联时刷新该规则；若后续需要在支付记录识别结果更新后自动重算，应单独补“识别完成触发相关发票重校验”的任务，而不是在本轮顺手扩散实现。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现参赛费比赛通知校验”，继续补齐费用类型对应的附件完整性规则。
+
 ## 2026-04-28 03:25 - Add large-amount payment record validation skeleton
 
 ### 完成内容
