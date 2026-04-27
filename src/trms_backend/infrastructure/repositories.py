@@ -2,8 +2,18 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
+from trms_backend.domain.invoices import (
+    ExpenseType,
+    InvoiceCreate,
+    InvoiceRecord,
+    ValidationRepository,
+    ValidationResult,
+    ValidationSeverity,
+    ValidationStatus,
+)
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialRecord,
@@ -15,7 +25,7 @@ from trms_backend.domain.tasks import (
     TaskStatus,
 )
 from trms_backend.infrastructure.database import session_scope
-from trms_backend.infrastructure.models import MaterialRow, TaskRow
+from trms_backend.infrastructure.models import InvoiceRow, MaterialRow, TaskRow, ValidationResultRow
 
 
 class SqlAlchemyTaskRepository:
@@ -81,6 +91,11 @@ class SqlAlchemyMaterialRepository:
             ).all()
             return [_material_from_row(row) for row in rows]
 
+    def get(self, material_id: str) -> MaterialRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(MaterialRow, material_id)
+            return _material_from_row(row) if row else None
+
     def _find_duplicate_material_id(self, session: Session, task_id: str, sha256: str) -> str | None:
         return session.scalar(
             select(MaterialRow.id)
@@ -88,6 +103,99 @@ class SqlAlchemyMaterialRepository:
             .order_by(MaterialRow.created_at)
             .limit(1)
         )
+
+
+class SqlAlchemyInvoiceRepository:
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(self, task_id: str, material_id: str, data: InvoiceCreate) -> InvoiceRecord:
+        now = datetime.now(timezone.utc)
+        row = InvoiceRow(
+            id=str(uuid4()),
+            task_id=task_id,
+            material_id=material_id,
+            created_at=now,
+            updated_at=now,
+            **data.model_dump(),
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _invoice_from_row(row)
+
+    def get(self, invoice_id: str) -> InvoiceRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(InvoiceRow, invoice_id)
+            return _invoice_from_row(row) if row else None
+
+    def list_by_task(self, task_id: str) -> list[InvoiceRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(InvoiceRow).where(InvoiceRow.task_id == task_id).order_by(InvoiceRow.created_at)
+            ).all()
+            return [_invoice_from_row(row) for row in rows]
+
+    def find_duplicate_invoice_id(
+        self,
+        task_id: str,
+        invoice_number: str,
+        exclude_invoice_id: str,
+    ) -> str | None:
+        with session_scope(self._session_factory) as session:
+            return session.scalar(
+                select(InvoiceRow.id)
+                .where(
+                    InvoiceRow.task_id == task_id,
+                    InvoiceRow.invoice_number == invoice_number,
+                    InvoiceRow.id != exclude_invoice_id,
+                )
+                .order_by(InvoiceRow.created_at)
+                .limit(1)
+            )
+
+
+class SqlAlchemyValidationRepository(ValidationRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def replace_for_invoice(
+        self,
+        invoice_id: str,
+        results: list[ValidationResult],
+    ) -> list[ValidationResult]:
+        with session_scope(self._session_factory) as session:
+            session.execute(
+                delete(ValidationResultRow).where(
+                    ValidationResultRow.target_type == "invoice",
+                    ValidationResultRow.target_id == invoice_id,
+                )
+            )
+            for result in results:
+                session.add(
+                    ValidationResultRow(
+                        id=result.id,
+                        rule_code=result.rule_code,
+                        target_type=result.target_type,
+                        target_id=result.target_id,
+                        severity=result.severity.value,
+                        status=result.status.value,
+                        message=result.message,
+                        created_at=result.created_at,
+                    )
+                )
+        return results
+
+    def list_by_invoice(self, invoice_id: str) -> list[ValidationResult]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(ValidationResultRow)
+                .where(
+                    ValidationResultRow.target_type == "invoice",
+                    ValidationResultRow.target_id == invoice_id,
+                )
+                .order_by(ValidationResultRow.created_at)
+            ).all()
+            return [_validation_from_row(row) for row in rows]
 
 
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
@@ -125,3 +233,33 @@ def _material_from_row(row: MaterialRow) -> MaterialRecord:
         created_at=row.created_at,
     )
 
+
+def _invoice_from_row(row: InvoiceRow) -> InvoiceRecord:
+    return InvoiceRecord(
+        id=row.id,
+        task_id=row.task_id,
+        material_id=row.material_id,
+        invoice_number=row.invoice_number,
+        issue_date=row.issue_date,
+        transaction_time=row.transaction_time,
+        buyer_name=row.buyer_name,
+        tax_number=row.tax_number,
+        seller_name=row.seller_name,
+        amount_cents=row.amount_cents,
+        expense_type=ExpenseType(row.expense_type),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _validation_from_row(row: ValidationResultRow) -> ValidationResult:
+    return ValidationResult(
+        id=row.id,
+        rule_code=row.rule_code,
+        target_type=row.target_type,
+        target_id=row.target_id,
+        severity=ValidationSeverity(row.severity),
+        status=ValidationStatus(row.status),
+        message=row.message,
+        created_at=row.created_at,
+    )

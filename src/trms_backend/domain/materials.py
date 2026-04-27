@@ -43,6 +43,9 @@ class MaterialRepository(Protocol):
     def create(self, data: MaterialCreate) -> MaterialRecord:
         raise NotImplementedError
 
+    def get(self, material_id: str) -> MaterialRecord | None:
+        raise NotImplementedError
+
     def list_by_task(self, task_id: str) -> list[MaterialRecord]:
         raise NotImplementedError
 
@@ -71,9 +74,12 @@ class InMemoryMaterialRepository:
             ]
             return sorted(materials, key=lambda material: material.created_at)
 
+    def get(self, material_id: str) -> MaterialRecord | None:
+        with self._lock:
+            return self._materials.get(material_id)
+
     def _find_duplicate_material_id(self, task_id: str, sha256: str) -> str | None:
         for material in self._materials.values():
             if material.task_id == task_id and material.sha256 == sha256:
                 return material.id
         return None
-

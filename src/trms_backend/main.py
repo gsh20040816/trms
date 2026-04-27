@@ -2,12 +2,15 @@ import os
 
 from fastapi import FastAPI
 
+from trms_backend.api.invoices import build_invoice_router
 from trms_backend.api.materials import build_material_router
 from trms_backend.api.tasks import build_task_router
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
+    SqlAlchemyInvoiceRepository,
     SqlAlchemyMaterialRepository,
     SqlAlchemyTaskRepository,
+    SqlAlchemyValidationRepository,
 )
 
 
@@ -19,6 +22,8 @@ def create_app(database_url: str | None = None) -> FastAPI:
     init_database(session_factory)
     task_repository = SqlAlchemyTaskRepository(session_factory)
     material_repository = SqlAlchemyMaterialRepository(session_factory)
+    invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
+    validation_repository = SqlAlchemyValidationRepository(session_factory)
 
     @app.get("/health")
     def health():
@@ -26,6 +31,14 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     app.include_router(build_task_router(task_repository))
     app.include_router(build_material_router(task_repository, material_repository))
+    app.include_router(
+        build_invoice_router(
+            task_repository,
+            material_repository,
+            invoice_repository,
+            validation_repository,
+        )
+    )
     return app
 
 

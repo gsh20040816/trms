@@ -46,3 +46,46 @@ class MaterialRow(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     duplicate_of: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class InvoiceRow(Base):
+    __tablename__ = "invoices"
+    __table_args__ = (Index("ix_invoice_task_number", "task_id", "invoice_number"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reimbursement_tasks.id"),
+        nullable=False,
+        index=True,
+    )
+    material_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("materials.id"),
+        nullable=False,
+        index=True,
+    )
+    invoice_number: Mapped[str] = mapped_column(String(128), nullable=False)
+    issue_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    transaction_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    buyer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tax_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    seller_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    expense_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ValidationResultRow(Base):
+    __tablename__ = "validation_results"
+    __table_args__ = (Index("ix_validation_target", "target_type", "target_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    rule_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    message: Mapped[str] = mapped_column(String(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from enum import StrEnum
+from typing import Protocol
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class ExpenseType(StrEnum):
+    REGISTRATION = "registration"
+    RAILWAY = "railway"
+    AIRFARE = "airfare"
+    LOCAL_TRANSPORT = "local_transport"
+    HOTEL = "hotel"
+    OTHER = "other"
+
+
+class ValidationSeverity(StrEnum):
+    BLOCKER = "blocker"
+    WARNING = "warning"
+    INFO = "info"
+
+
+class ValidationStatus(StrEnum):
+    PASSED = "passed"
+    FAILED = "failed"
+    PENDING = "pending"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class InvoiceCreate(BaseModel):
+    invoice_number: str = Field(min_length=1)
+    issue_date: date | None = None
+    transaction_time: datetime | None = None
+    buyer_name: str = Field(min_length=1)
+    tax_number: str = Field(min_length=1)
+    seller_name: str | None = None
+    amount_cents: int = Field(gt=0)
+    expense_type: ExpenseType
+
+    @model_validator(mode="after")
+    def normalize_text(self) -> InvoiceCreate:
+        self.invoice_number = self.invoice_number.strip()
+        self.buyer_name = self.buyer_name.strip()
+        self.tax_number = self.tax_number.strip()
+        if self.seller_name is not None:
+            self.seller_name = self.seller_name.strip() or None
+        return self
+
+
+class InvoiceRecord(BaseModel):
+    id: str
+    task_id: str
+    material_id: str
+    invoice_number: str
+    issue_date: date | None
+    transaction_time: datetime | None
+    buyer_name: str
+    tax_number: str
+    seller_name: str | None
+    amount_cents: int
+    expense_type: ExpenseType
+    created_at: datetime
+    updated_at: datetime
+
+
+class ValidationResult(BaseModel):
+    id: str
+    rule_code: str
+    target_type: str
+    target_id: str
+    severity: ValidationSeverity
+    status: ValidationStatus
+    message: str
+    created_at: datetime
+
+
+class InvoiceRepository(Protocol):
+    def create(self, task_id: str, material_id: str, data: InvoiceCreate) -> InvoiceRecord:
+        raise NotImplementedError
+
+    def get(self, invoice_id: str) -> InvoiceRecord | None:
+        raise NotImplementedError
+
+    def list_by_task(self, task_id: str) -> list[InvoiceRecord]:
+        raise NotImplementedError
+
+    def find_duplicate_invoice_id(
+        self,
+        task_id: str,
+        invoice_number: str,
+        exclude_invoice_id: str,
+    ) -> str | None:
+        raise NotImplementedError
+
+
+class ValidationRepository(Protocol):
+    def replace_for_invoice(
+        self,
+        invoice_id: str,
+        results: list[ValidationResult],
+    ) -> list[ValidationResult]:
+        raise NotImplementedError
+
+    def list_by_invoice(self, invoice_id: str) -> list[ValidationResult]:
+        raise NotImplementedError
+
