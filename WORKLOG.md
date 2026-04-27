@@ -1,5 +1,26 @@
 # WORKLOG
 
+## 2026-04-28 00:55 - Add frontend backlog tasks
+
+### 完成内容
+- 补充 `TASKS.md` 的 Web 前端与管理员后台任务。
+- 覆盖架构文档建议的 React、TypeScript、Vite 前端边界，以及成员提交入口、管理员任务管理、复核、缺失材料、费用确认和导出入口。
+- 增加前端权限可见性、表单/上传组件测试和主流程 E2E 占位任务。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 32 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前仓库尚无前端工程，本轮只补齐任务队列，不创建前端项目。
+
 ## 2026-04-28 00:50 - Expand task backlog from requirements
 
 ### 完成内容
