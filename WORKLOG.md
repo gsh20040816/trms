@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-28 06:48 - Confirm web frontend stack boundary
+
+### 完成内容
+- 确认第一阶段 Web 前端继续采用架构文档建议的 `React + TypeScript + Vite`，管理后台组件库采用 `Ant Design` 方向，不在本轮引入其他前端框架分支。
+- 明确前端工程边界：
+  - 前端目录规划为仓库根目录下独立 `web/`；
+  - 前端作为单独 Node 工程维护自身 `package.json`，不与当前 Python 根工程混写；
+  - 成员提交入口和管理员后台共用同一个 Web 工程，通过路由做角色入口隔离，而不是拆成两个前端项目。
+- 明确后续命令边界：
+  - 安装：`cd web && npm install`
+  - 启动：`cd web && npm run dev`
+  - 构建：`cd web && npm run build`
+  - 测试：`cd web && npm test`
+  - 代码检查：`cd web && npm run lint`
+- 将 `TASKS.md` 中“确认 Web 前端技术栈和工程边界”标记为已完成。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库只有后端 FastAPI 工程，没有任何 Web 前端目录、Node 工程边界或命令约定。
+- 如果直接进入“建立 Web 前端项目骨架”而不先固化技术栈和目录边界，下一轮很容易在目录命名、组件库选择和验证命令上反复返工，污染后续页面任务的最小改动边界。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `git diff --check` 通过
+- 说明：
+  - 当前仓库尚未创建 `web/` 前端工程，因此前端启动、构建、测试和 lint 命令本轮只完成边界确认，未实际执行；这符合本任务“不实现业务页面”的约束。
+
+### 假设
+- 采用单一 `web/` 工程同时承载成员端和管理员端，优先降低第一阶段工程复杂度；若后续出现完全不同的认证域或部署边界，再评估拆分多前端工程。
+- 本轮不新增 `package.json`，因此 `scripts/verify.sh` 仍只验证现有 Python 工程；待下一轮建立前端骨架时，再把前端 lint/test/build 接入统一验证。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立 Web 前端项目骨架”，在 `web/` 下补最小 Vite + React + TypeScript 入口，并同步扩展 `./scripts/verify.sh` 的前端验证路径。
+
 ## 2026-04-28 06:45 - Bind export jobs to task data version
 
 ### 完成内容
