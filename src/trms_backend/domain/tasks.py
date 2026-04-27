@@ -77,6 +77,18 @@ class TaskStatusUpdate(BaseModel):
     target_status: TaskStatus
 
 
+class TaskMembersUpdate(BaseModel):
+    member_ids: list[str] = Field(min_length=1)
+
+    @field_validator("member_ids")
+    @classmethod
+    def reject_blank_items(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(not value for value in normalized):
+            raise ValueError("list items must not be blank")
+        return normalized
+
+
 class MissingTaskInvoiceConfigError(ValueError):
     def __init__(self, missing_fields: list[str]) -> None:
         self.missing_fields = missing_fields
@@ -121,6 +133,9 @@ class TaskRepository(Protocol):
         raise NotImplementedError
 
     def update_status(self, task_id: str, target_status: TaskStatus) -> ReimbursementTask | None:
+        raise NotImplementedError
+
+    def update_member_ids(self, task_id: str, member_ids: list[str]) -> ReimbursementTask | None:
         raise NotImplementedError
 
 
@@ -219,6 +234,21 @@ class InMemoryTaskRepository:
             updated = task.model_copy(
                 update={
                     "status": target_status,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            )
+            self._tasks[task_id] = updated
+            return updated
+
+    def update_member_ids(self, task_id: str, member_ids: list[str]) -> ReimbursementTask | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+
+            updated = task.model_copy(
+                update={
+                    "member_ids": member_ids,
                     "updated_at": datetime.now(timezone.utc),
                 }
             )

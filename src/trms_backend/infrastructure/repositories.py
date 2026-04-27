@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -110,6 +112,16 @@ class SqlAlchemyTaskRepository:
             if row is None:
                 return None
             row.status = target_status.value
+            row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+        return _task_from_row(row)
+
+    def update_member_ids(self, task_id: str, member_ids: list[str]) -> ReimbursementTask | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(TaskRow, task_id)
+            if row is None:
+                return None
+            row.member_ids = member_ids
             row.updated_at = datetime.now(timezone.utc)
             session.add(row)
         return _task_from_row(row)

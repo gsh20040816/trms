@@ -4,6 +4,7 @@ from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigReposit
 from trms_backend.domain.tasks import (
     TaskCreateInput,
     MissingTaskInvoiceConfigError,
+    TaskMembersUpdate,
     TaskRepository,
     TaskPublishValidationError,
     TaskStatus,
@@ -41,6 +42,28 @@ def build_task_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         return task
+
+    @router.get("/{task_id}/members")
+    def get_task_members(task_id: str):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        return {"items": task.member_ids}
+
+    @router.put("/{task_id}/members")
+    def update_task_members(task_id: str, payload: TaskMembersUpdate):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        if task.status != TaskStatus.DRAFT:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="task members can only be updated while task is draft",
+            )
+        updated = repository.update_member_ids(task_id, payload.member_ids)
+        if updated is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        return {"items": updated.member_ids}
 
     @router.patch("/{task_id}/status")
     def update_task_status(task_id: str, payload: TaskStatusUpdate):

@@ -178,6 +178,62 @@ def test_get_missing_task_returns_404(tmp_path):
     assert response.json()["detail"] == "task not found"
 
 
+def test_get_task_members_returns_member_list(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+
+    response = client.get(f"/api/tasks/{created['id']}/members")
+
+    assert response.status_code == 200
+    assert response.json() == {"items": ["2250001", "2250002", "2250003"]}
+
+
+def test_update_task_members_allows_replace_in_draft(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+
+    response = client.put(
+        f"/api/tasks/{created['id']}/members",
+        json={"member_ids": ["2250001", "2250003", "2250999"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": ["2250001", "2250003", "2250999"]}
+
+    fetched = client.get(f"/api/tasks/{created['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["member_ids"] == ["2250001", "2250003", "2250999"]
+
+
+def test_update_task_members_rejects_non_draft_task(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+    )
+
+    response = client.put(
+        f"/api/tasks/{created['id']}/members",
+        json={"member_ids": ["2250001", "2250999"]},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "task members can only be updated while task is draft"
+
+
+def test_update_missing_task_members_returns_404(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.put(
+        "/api/tasks/missing/members",
+        json={"member_ids": ["2250001"]},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "task not found"
+
+
 def test_update_task_status_allows_valid_transition(tmp_path):
     client = make_client(tmp_path)
     created = client.post("/api/tasks", json=valid_task_payload()).json()
