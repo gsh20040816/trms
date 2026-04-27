@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-28 02:49 - Establish manual invoice entry boundary
+
+### 完成内容
+- 将 `POST /api/materials/{material_id}/invoice` 收敛为显式人工录入入口：请求体新增 `actor_id`，只有材料提交人本人或该任务管理员可以录入/覆盖发票字段，避免“任何人都能替任意材料写发票”的权限空洞。
+- 将同一材料的发票写入语义改为按 `material_id` upsert：重复人工录入不会再为同一材料创建多条发票记录，而是覆盖原记录并刷新 `updated_at`，为后续人工更正链路保留稳定主键边界。
+- 保留现有基础校验链：每次人工录入或重复录入后，仍会重新执行抬头匹配、税号匹配和同任务发票号码重复校验，不把“人工覆盖”伪装成跳过校验。
+- 补充发票 API 回归测试，覆盖“成员本人录入成功”“任务管理员代录入成功”“无关用户越权失败”“同一材料重复录入更新原记录而非新增重复行”四条关键路径。
+- 将 `TASKS.md` 中“建立人工录入发票字段边界”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoices.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_invoices_api.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 13 个用例通过
+  - `uv run pytest tests/test_splits_api.py`
+    - 5 个用例通过
+  - `uv run pytest tests/test_confirmations_api.py`
+    - 5 个用例通过
+  - `uv run pytest tests/test_tasks_api.py`
+    - 29 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 84 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前仓库仍未实现统一登录态与认证上下文，因此本轮把“管理员或成员可录入”收敛为显式 `actor_id` 边界：允许材料提交人本人或任务 `administrator_id` 录入，其他人拒绝；这不是完整鉴权，只是当前第一阶段最小可验证权限模型。
+- 需求和现有数据模型都把“发票结构化信息”视为材料的一份当前有效表示，因此本轮将同一材料的重复人工录入定义为覆盖更新，而不是继续新增第二条发票记录；字段级修改差异与来源审计留给下一项“增加人工更正识别字段记录”处理。
+- 当前任务不额外限制任务状态；只要材料已归属到任务且录入者身份满足最小边界，就允许人工录入或覆盖发票字段。若后续需求要求“仅开放中/复核中允许修改”，应在单独任务中补充状态门禁。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加人工更正识别字段记录”，在当前 upsert 边界之上补充字段来源、修改时间和更正前后差异追溯。
+
 ## 2026-04-28 02:42 - Establish recognition task trigger boundary
 
 ### 完成内容

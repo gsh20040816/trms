@@ -56,6 +56,7 @@ def upload_supporting_material(
 
 def valid_invoice_payload():
     return {
+        "actor_id": "2250001",
         "invoice_number": "INV-001",
         "issue_date": "2026-11-04",
         "transaction_time": "2026-11-01T08:00:00Z",
@@ -87,6 +88,34 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
     assert validation_by_code(body, "invoice_number_unique")["status"] == "passed"
 
 
+def test_task_administrator_can_record_invoice_for_member_material(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | {"actor_id": "admin-1"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["invoice"]["task_id"] == task_id
+
+
+def test_create_invoice_rejects_actor_outside_submitter_and_administrator(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | {"actor_id": "outsider-1"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "only the material submitter or task administrator can record invoice fields"
+    )
+
+
 def test_create_invoice_reports_title_and_tax_mismatch(tmp_path):
     client = make_client(tmp_path)
     _, material_id = create_material(client)
@@ -115,6 +144,35 @@ def test_create_invoice_reports_duplicate_invoice_number(tmp_path):
     duplicate = validation_by_code(response.json(), "invoice_number_unique")
     assert duplicate["status"] == "failed"
     assert "重复" in duplicate["message"]
+
+
+def test_create_invoice_updates_existing_material_invoice_instead_of_creating_duplicate(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    first_response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+    first_invoice_id = first_response.json()["invoice"]["id"]
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "amount_cents": 54321,
+            "buyer_name": "错误抬头",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["invoice"]["id"] == first_invoice_id
+    assert body["invoice"]["amount_cents"] == 54321
+    assert validation_by_code(body, "invoice_title_match")["status"] == "failed"
+
+    listed = client.get(f"/api/tasks/{task_id}/invoices")
+
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 1
+    assert listed.json()["items"][0]["id"] == first_invoice_id
+    assert listed.json()["items"][0]["amount_cents"] == 54321
 
 
 def test_create_invoice_rejects_expense_type_not_allowed_by_task(tmp_path):

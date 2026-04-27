@@ -62,6 +62,7 @@ def upload_material(client: TestClient, task_id: str, filename: str = "ticket.pd
 
 def valid_invoice_payload():
     return {
+        "actor_id": "2250001",
         "invoice_number": "INV-001",
         "issue_date": "2026-11-04",
         "transaction_time": "2026-11-01T08:00:00Z",

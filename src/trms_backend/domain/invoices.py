@@ -49,6 +49,31 @@ class InvoiceCreate(BaseModel):
         return self
 
 
+class ManualInvoiceEntry(BaseModel):
+    actor_id: str = Field(min_length=1)
+    invoice_number: str = Field(min_length=1)
+    issue_date: date | None = None
+    transaction_time: datetime | None = None
+    buyer_name: str = Field(min_length=1)
+    tax_number: str = Field(min_length=1)
+    seller_name: str | None = None
+    amount_cents: int = Field(gt=0)
+    expense_type: ExpenseType
+
+    @model_validator(mode="after")
+    def normalize_text(self) -> ManualInvoiceEntry:
+        self.actor_id = self.actor_id.strip()
+        self.invoice_number = self.invoice_number.strip()
+        self.buyer_name = self.buyer_name.strip()
+        self.tax_number = self.tax_number.strip()
+        if self.seller_name is not None:
+            self.seller_name = self.seller_name.strip() or None
+        return self
+
+    def to_invoice_create(self) -> InvoiceCreate:
+        return InvoiceCreate.model_validate(self.model_dump(exclude={"actor_id"}))
+
+
 class InvoiceRecord(BaseModel):
     id: str
     task_id: str
@@ -84,7 +109,12 @@ class ValidationResult(BaseModel):
 
 
 class InvoiceRepository(Protocol):
-    def create(self, task_id: str, material_id: str, data: InvoiceCreate) -> InvoiceRecord:
+    def upsert_for_material(
+        self,
+        task_id: str,
+        material_id: str,
+        data: InvoiceCreate,
+    ) -> InvoiceRecord:
         raise NotImplementedError
 
     def get(self, invoice_id: str) -> InvoiceRecord | None:
@@ -128,3 +158,23 @@ class ValidationRepository(Protocol):
 
     def list_by_invoice(self, invoice_id: str) -> list[ValidationResult]:
         raise NotImplementedError
+
+
+class InvoiceManualEntryActorNotAllowedError(ValueError):
+    def __init__(self) -> None:
+        super().__init__(
+            "only the material submitter or task administrator can record invoice fields"
+        )
+
+
+def ensure_manual_invoice_entry_actor_allowed(
+    *,
+    actor_id: str,
+    submitter_id: str | None,
+    administrator_id: str,
+) -> None:
+    if actor_id == administrator_id:
+        return
+    if submitter_id is not None and actor_id == submitter_id:
+        return
+    raise InvoiceManualEntryActorNotAllowedError()

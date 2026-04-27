@@ -1,7 +1,13 @@
 from fastapi import APIRouter, HTTPException, status
 
 from trms_backend.domain.invoice_validation import validate_invoice
-from trms_backend.domain.invoices import InvoiceCreate, InvoiceRepository, ValidationRepository
+from trms_backend.domain.invoices import (
+    InvoiceManualEntryActorNotAllowedError,
+    InvoiceRepository,
+    ManualInvoiceEntry,
+    ValidationRepository,
+    ensure_manual_invoice_entry_actor_allowed,
+)
 from trms_backend.domain.materials import (
     MaterialRepository,
     MaterialStatus,
@@ -23,7 +29,7 @@ def build_invoice_router(
     router = APIRouter(tags=["invoices"])
 
     @router.post("/api/materials/{material_id}/invoice", status_code=status.HTTP_201_CREATED)
-    def create_invoice(material_id: str, payload: InvoiceCreate):
+    def create_invoice(material_id: str, payload: ManualInvoiceEntry):
         material = material_repository.get(material_id)
         if material is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
@@ -42,6 +48,17 @@ def build_invoice_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         try:
+            ensure_manual_invoice_entry_actor_allowed(
+                actor_id=payload.actor_id,
+                submitter_id=material.submitter_id,
+                administrator_id=task.administrator_id,
+            )
+        except InvoiceManualEntryActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        try:
             ensure_task_allows_expense_type(task, payload.expense_type)
         except TaskExpenseTypeNotAllowedError as error:
             raise HTTPException(
@@ -49,7 +66,11 @@ def build_invoice_router(
                 detail=str(error),
             ) from error
 
-        invoice = invoice_repository.create(material.task_id, material_id, payload)
+        invoice = invoice_repository.upsert_for_material(
+            material.task_id,
+            material_id,
+            payload.to_invoice_create(),
+        )
         duplicate_invoice_id = invoice_repository.find_duplicate_invoice_id(
             invoice.task_id,
             invoice.invoice_number,

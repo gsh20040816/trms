@@ -234,17 +234,40 @@ class SqlAlchemyInvoiceRepository:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
-    def create(self, task_id: str, material_id: str, data: InvoiceCreate) -> InvoiceRecord:
+    def upsert_for_material(
+        self,
+        task_id: str,
+        material_id: str,
+        data: InvoiceCreate,
+    ) -> InvoiceRecord:
         now = datetime.now(timezone.utc)
-        row = InvoiceRow(
-            id=str(uuid4()),
-            task_id=task_id,
-            material_id=material_id,
-            created_at=now,
-            updated_at=now,
-            **data.model_dump(),
-        )
         with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(InvoiceRow)
+                .where(InvoiceRow.material_id == material_id)
+                .order_by(InvoiceRow.created_at)
+                .limit(1)
+            )
+            if row is None:
+                row = InvoiceRow(
+                    id=str(uuid4()),
+                    task_id=task_id,
+                    material_id=material_id,
+                    created_at=now,
+                    updated_at=now,
+                    **data.model_dump(),
+                )
+            else:
+                row.task_id = task_id
+                row.invoice_number = data.invoice_number
+                row.issue_date = data.issue_date
+                row.transaction_time = data.transaction_time
+                row.buyer_name = data.buyer_name
+                row.tax_number = data.tax_number
+                row.seller_name = data.seller_name
+                row.amount_cents = data.amount_cents
+                row.expense_type = data.expense_type.value
+                row.updated_at = now
             session.add(row)
         return _invoice_from_row(row)
 
