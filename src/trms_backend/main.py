@@ -16,6 +16,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyInvoiceRepository,
     SqlAlchemyExpenseSplitRepository,
     SqlAlchemyGlobalInvoiceConfigRepository,
+    SqlAlchemyMaterialReminderRepository,
     SqlAlchemyMaterialRepository,
     SqlAlchemyRecognitionTaskRepository,
     SqlAlchemyTaskRepository,
@@ -43,6 +44,7 @@ def create_app(
         material_file_storage = LocalMaterialFileStorage(
             os.getenv("MATERIAL_STORAGE_DIR", "./data/materials")
         )
+    material_reminder_repository = SqlAlchemyMaterialReminderRepository(session_factory)
     invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
@@ -57,6 +59,7 @@ def create_app(
         build_task_router(
             task_repository,
             global_invoice_config_repository,
+            material_reminder_repository,
             material_repository,
             invoice_repository,
             validation_repository,

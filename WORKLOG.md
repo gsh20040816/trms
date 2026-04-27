@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-04-28 05:29 - Record administrator material reminders
+
+### 完成内容
+- 新增 `src/trms_backend/domain/material_reminders.py`，建立管理员手动补材料提醒记录的领域模型、管理员权限校验和任务成员约束。
+- 在 `src/trms_backend/api/tasks.py` 增加：
+  - `POST /api/tasks/{task_id}/material-reminders`，用于管理员记录提醒；
+  - `GET /api/tasks/{task_id}/material-reminders`，用于查询该任务下的提醒记录。
+- 在 `src/trms_backend/infrastructure/models.py` 与 `src/trms_backend/infrastructure/repositories.py` 增加提醒记录表和 SQLAlchemy 仓储实现。
+- 在 `tests/test_tasks_api.py` 新增回归测试，覆盖管理员创建与查询、非管理员拒绝、目标成员不属于任务拒绝。
+- 将 `TASKS.md` 中“支持管理员补材料提醒记录”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/material_reminders.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 需求文档 FR-009 和架构文档的管理员复核模块都要求“管理员可手动提醒成员补材料”，但当前仓库只有缺失材料、逾期确认和复核汇总等只读能力，没有任何提醒记录入口：
+  - 管理员无法把“已提醒谁、提醒了什么、何时提醒”的事实落库；
+  - 后续自动提醒任务也缺少可并列的人工提醒基线；
+  - 因此复核链路里“提醒补材料”仍停留在文档要求，没有最小可验证实现。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 38 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 138 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“提醒可查询”限定为任务管理员可查询手动提醒记录；成员侧查看提醒和系统自动提醒仍留给后续任务，不在本轮提前扩展接口权限或通知渠道。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立系统自动提醒占位”，在不接入真实通知渠道的前提下，把缺失材料和未确认状态转成幂等的提醒任务骨架。
+
 ## 2026-04-28 05:31 - Close final-confirmation gate for unconfirmed members
 
 ### 完成内容

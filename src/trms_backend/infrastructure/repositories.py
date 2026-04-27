@@ -26,6 +26,11 @@ from trms_backend.domain.invoices import (
     ValidationSeverity,
     ValidationStatus,
 )
+from trms_backend.domain.material_reminders import (
+    MaterialReminderCreate,
+    MaterialReminderRecord,
+    MaterialReminderRepository,
+)
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialRecord,
@@ -57,6 +62,7 @@ from trms_backend.infrastructure.models import (
     GlobalInvoiceConfigRow,
     InvoiceRow,
     InvoiceSupportingMaterialLinkRow,
+    MaterialReminderRow,
     MaterialRow,
     RecognitionTaskRow,
     TaskRow,
@@ -789,6 +795,33 @@ class SqlAlchemyConfirmationRepository(ConfirmationRepository):
             ]
 
 
+class SqlAlchemyMaterialReminderRepository(MaterialReminderRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(self, *, task_id: str, data: MaterialReminderCreate) -> MaterialReminderRecord:
+        row = MaterialReminderRow(
+            id=str(uuid4()),
+            task_id=task_id,
+            administrator_id=data.administrator_id,
+            member_id=data.member_id,
+            content=data.content,
+            created_at=datetime.now(timezone.utc),
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _material_reminder_from_row(row)
+
+    def list_by_task(self, task_id: str) -> list[MaterialReminderRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(MaterialReminderRow)
+                .where(MaterialReminderRow.task_id == task_id)
+                .order_by(MaterialReminderRow.created_at)
+            ).all()
+            return [_material_reminder_from_row(row) for row in rows]
+
+
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
     return ReimbursementTask(
         id=row.id,
@@ -965,3 +998,20 @@ def _confirmation_from_row(row: ConfirmationRow, *, is_current: bool) -> Confirm
         confirmed_at=row.confirmed_at,
         updated_at=row.updated_at,
     )
+
+
+def _material_reminder_from_row(row: MaterialReminderRow) -> MaterialReminderRecord:
+    return MaterialReminderRecord(
+        id=row.id,
+        task_id=row.task_id,
+        administrator_id=row.administrator_id,
+        member_id=row.member_id,
+        content=row.content,
+        created_at=_ensure_utc_datetime(row.created_at),
+    )
+
+
+def _ensure_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)

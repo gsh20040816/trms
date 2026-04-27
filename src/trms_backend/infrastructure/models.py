@@ -208,3 +208,23 @@ class ConfirmationRow(Base):
     dispute_reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MaterialReminderRow(Base):
+    __tablename__ = "material_reminders"
+    __table_args__ = (
+        Index("ix_material_reminder_task_created_at", "task_id", "created_at"),
+        Index("ix_material_reminder_task_member", "task_id", "member_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reimbursement_tasks.id"),
+        nullable=False,
+        index=True,
+    )
+    administrator_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(String(2000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

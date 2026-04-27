@@ -23,6 +23,13 @@ from trms_backend.domain.overdue_confirmations import (
 )
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
+from trms_backend.domain.material_reminders import (
+    MaterialReminderCreate,
+    MaterialReminderRepository,
+    TaskMaterialReminderActorNotAllowedError,
+    create_task_material_reminder,
+    list_task_material_reminders,
+)
 from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import RecognitionTaskRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
@@ -51,6 +58,7 @@ from trms_backend.domain.tasks import (
 def build_task_router(
     repository: TaskRepository,
     global_invoice_config_repository: GlobalInvoiceConfigRepository,
+    material_reminder_repository: MaterialReminderRepository,
     material_repository: MaterialRepository,
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
@@ -88,6 +96,52 @@ def build_task_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         return {"items": task.member_ids}
+
+    @router.post("/{task_id}/material-reminders", status_code=status.HTTP_201_CREATED)
+    def create_material_reminder(task_id: str, payload: MaterialReminderCreate):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        try:
+            return create_task_material_reminder(
+                task,
+                reminder_repository=material_reminder_repository,
+                payload=payload,
+            )
+        except TaskMaterialReminderActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/material-reminders")
+    def list_material_reminders(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        try:
+            return {
+                "items": list_task_material_reminders(
+                    task,
+                    reminder_repository=material_reminder_repository,
+                    actor_id=actor_id,
+                )
+            }
+        except TaskMaterialReminderActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
 
     @router.get("/{task_id}/expense-details")
     def list_task_expense_details(

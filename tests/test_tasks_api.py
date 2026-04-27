@@ -276,6 +276,92 @@ def test_get_task_members_returns_member_list(tmp_path):
     assert response.json() == {"items": ["2250001", "2250002", "2250003"]}
 
 
+def test_administrator_can_record_and_list_material_reminders(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/material-reminders",
+        json={
+            "administrator_id": "admin-1",
+            "member_id": "2250002",
+            "content": "请补充支付记录和比赛通知。",
+        },
+    )
+
+    assert create_response.status_code == 201
+    reminder = create_response.json()
+    assert reminder["task_id"] == task["id"]
+    assert reminder["administrator_id"] == "admin-1"
+    assert reminder["member_id"] == "2250002"
+    assert reminder["content"] == "请补充支付记录和比赛通知。"
+    assert reminder["created_at"]
+
+    list_response = client.get(
+        f"/api/tasks/{task['id']}/material-reminders",
+        params={"actor_id": "admin-1"},
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json() == {"items": [reminder]}
+
+
+def test_create_material_reminder_rejects_non_administrator(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+
+    response = client.post(
+        f"/api/tasks/{task['id']}/material-reminders",
+        json={
+            "administrator_id": "2250001",
+            "member_id": "2250002",
+            "content": "请补充支付记录。",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "actor is not allowed to manage material reminders for this task"
+
+
+def test_create_material_reminder_rejects_member_outside_task(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+
+    response = client.post(
+        f"/api/tasks/{task['id']}/material-reminders",
+        json={
+            "administrator_id": "admin-1",
+            "member_id": "2250999",
+            "content": "请补充订单截图。",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "submitter is not a member of the task: 2250999"
+
+
+def test_list_material_reminders_rejects_non_administrator(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/material-reminders",
+        json={
+            "administrator_id": "admin-1",
+            "member_id": "2250002",
+            "content": "请补充比赛通知。",
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.get(
+        f"/api/tasks/{task['id']}/material-reminders",
+        params={"actor_id": "2250002"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "actor is not allowed to manage material reminders for this task"
+
+
 def test_update_task_members_allows_replace_in_draft(tmp_path):
     client = make_client(tmp_path)
     created = client.post("/api/tasks", json=valid_task_payload()).json()
