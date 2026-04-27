@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from trms_backend.domain.confirmations import ConfirmationRepository, ConfirmationSubmit
+from trms_backend.domain.confirmations import ConfirmationRepository, MemberConfirmationSubmit
 from trms_backend.domain.invoices import InvoiceRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
 
@@ -13,7 +13,7 @@ def build_confirmation_router(
     router = APIRouter(tags=["confirmations"])
 
     @router.put("/api/splits/{split_id}/confirmation")
-    def submit_confirmation(split_id: str, payload: ConfirmationSubmit):
+    def submit_confirmation(split_id: str, payload: MemberConfirmationSubmit):
         split = split_repository.get(split_id)
         if split is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="split not found")
@@ -34,4 +34,3 @@ def build_confirmation_router(
         return {"items": confirmation_repository.list_by_invoice(invoice_id)}
 
     return router
-

@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-04-28 04:35 - Support expense dispute review workflow
+
+### 完成内容
+- 在 `src/trms_backend/domain/confirmations.py` 为确认记录补上显式 `pending` 状态，并拆分成员提交模型，禁止成员直接把自己的费用明细提交为 `pending`。
+- 在 `src/trms_backend/domain/expense_disputes.py` 新增任务级异议聚合模型，明确“异议列表只对任务管理员开放”的查询边界。
+- 在 `src/trms_backend/api/tasks.py` 新增两条管理员接口：
+  - `GET /api/tasks/{task_id}/expense-disputes`：按任务聚合当前仍处于 `disputed` 的费用明细；
+  - `POST /api/tasks/{task_id}/expense-disputes/{split_id}/resolve`：管理员处理异议后，将该确认状态重置为显式 `pending`，要求成员重新确认。
+- 在 `src/trms_backend/domain/tasks.py` 更新复核门禁：`pending` 确认和缺失确认一样都会阻止任务进入 `ready_to_export`，避免管理员处理异议后被误当作已完成确认。
+- 补充 `tests/test_expense_disputes_api.py`，并扩展 `tests/test_confirmations_api.py`，覆盖以下关键路径：
+  - 成员仍可提交 `disputed`，但不能伪造 `pending`；
+  - 管理员可查看任务内异议清单；
+  - 管理员处理异议后，该明细回到 `pending`，并继续阻止任务进入 `ready_to_export`。
+- 将 `TASKS.md` 中“支持成员费用异议处理状态”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/confirmations.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/confirmations.py`
+- `src/trms_backend/domain/expense_disputes.py`
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_confirmations_api.py`
+- `tests/test_expense_disputes_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有实现虽然已经支持成员把单条分摊标记为 `disputed`，但确认状态模型只有 `confirmed` 和 `disputed`，把“待确认”隐含为“根本没有确认记录”。这会导致管理员处理异议后没有可持久化的“重新等待成员确认”状态边界，也无法区分“从未确认”与“异议已处理、等待重确认”。
+- 同时，仓库缺少一个按任务聚合当前异议明细的管理员入口，管理员只能间接查看全部费用明细，无法围绕“异议处理”形成最小闭环。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_confirmations_api.py tests/test_expense_disputes_api.py tests/test_expense_details_api.py tests/test_tasks_api.py`
+    - 42 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 121 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“管理员处理异议”定义为“把当前确认记录重置为显式 `pending`，并保留原异议说明供后续重新确认时参考”，不提前引入独立的异议工单、处理备注或历史状态流。
+- 当前异议查询入口只开放给任务管理员，不扩展到系统管理员或全局审计视图；更高层的审计与提醒能力留给后续任务处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现费用分摊确认失效规则”，把管理员改金额或替换分摊后的确认失效逻辑统一收敛到现在新增的显式 `pending` 状态上。
+
 ## 2026-04-28 04:28 - Add task expense detail query API
 
 ### 完成内容

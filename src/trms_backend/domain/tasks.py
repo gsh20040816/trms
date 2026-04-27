@@ -297,6 +297,7 @@ def ensure_task_can_enter_ready_to_export(
     invoices_with_blocker_issues: list[str] = []
     invoices_missing_splits: list[str] = []
     splits_missing_confirmation: list[str] = []
+    splits_pending_confirmation: list[str] = []
     disputed_splits: list[str] = []
 
     for invoice in invoices:
@@ -320,6 +321,9 @@ def ensure_task_can_enter_ready_to_export(
             if confirmation is None:
                 splits_missing_confirmation.append(split.id)
                 continue
+            if confirmation.status == ConfirmationStatus.PENDING:
+                splits_pending_confirmation.append(split.id)
+                continue
             if confirmation.status == ConfirmationStatus.DISPUTED:
                 disputed_splits.append(split.id)
 
@@ -340,6 +344,11 @@ def ensure_task_can_enter_ready_to_export(
         reasons.append(
             "member confirmations are still missing for splits: "
             + ", ".join(splits_missing_confirmation)
+        )
+    if splits_pending_confirmation:
+        reasons.append(
+            "member confirmations are still pending for splits: "
+            + ", ".join(splits_pending_confirmation)
         )
     if disputed_splits:
         reasons.append("member confirmations are disputed for splits: " + ", ".join(disputed_splits))

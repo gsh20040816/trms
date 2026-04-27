@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ConfirmationStatus(StrEnum):
+    PENDING = "pending"
     CONFIRMED = "confirmed"
     DISPUTED = "disputed"
 
@@ -27,6 +28,23 @@ class ConfirmationSubmit(BaseModel):
         return self
 
 
+class MemberConfirmationSubmit(ConfirmationSubmit):
+    @model_validator(mode="after")
+    def validate_member_status(self) -> MemberConfirmationSubmit:
+        if self.status == ConfirmationStatus.PENDING:
+            raise ValueError("member cannot submit pending confirmation status")
+        return self
+
+
+class ConfirmationDisputeResolve(BaseModel):
+    administrator_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def normalize_administrator_id(self) -> ConfirmationDisputeResolve:
+        self.administrator_id = self.administrator_id.strip()
+        return self
+
+
 class ConfirmationRecord(BaseModel):
     id: str
     split_id: str
@@ -38,6 +56,9 @@ class ConfirmationRecord(BaseModel):
 
 
 class ConfirmationRepository(Protocol):
+    def get_by_split(self, split_id: str) -> ConfirmationRecord | None:
+        raise NotImplementedError
+
     def upsert_for_split(
         self,
         split_id: str,
@@ -47,4 +68,3 @@ class ConfirmationRepository(Protocol):
 
     def list_by_invoice(self, invoice_id: str) -> list[ConfirmationRecord]:
         raise NotImplementedError
-

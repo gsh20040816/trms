@@ -607,6 +607,13 @@ class SqlAlchemyConfirmationRepository(ConfirmationRepository):
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
+    def get_by_split(self, split_id: str) -> ConfirmationRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(ConfirmationRow).where(ConfirmationRow.split_id == split_id)
+            )
+            return _confirmation_from_row(row) if row else None
+
     def upsert_for_split(
         self,
         split_id: str,

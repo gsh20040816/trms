@@ -62,6 +62,18 @@ def test_dispute_requires_reason(tmp_path):
     assert response.status_code == 422
 
 
+def test_member_cannot_submit_pending_confirmation_status(tmp_path):
+    client = make_client(tmp_path)
+    _, split_id = create_split(client)
+
+    response = client.put(
+        f"/api/splits/{split_id}/confirmation",
+        json={"member_id": "2250001", "status": "pending"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_member_cannot_confirm_other_member_split(tmp_path):
     client = make_client(tmp_path)
     _, split_id = create_split(client)

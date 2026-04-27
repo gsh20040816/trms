@@ -2,10 +2,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from trms_backend.domain.confirmations import ConfirmationRepository
+from trms_backend.domain.confirmations import (
+    ConfirmationDisputeResolve,
+    ConfirmationRepository,
+    ConfirmationStatus,
+    ConfirmationSubmit,
+)
 from trms_backend.domain.expense_details import (
     ExpenseDetailActorNotAllowedError,
     build_expense_detail_list,
+)
+from trms_backend.domain.expense_disputes import (
+    ExpenseDisputeActorNotAllowedError,
+    build_expense_dispute_list,
+    ensure_task_administrator,
 )
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
@@ -98,6 +108,83 @@ def build_task_router(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),
             ) from error
+
+    @router.get("/{task_id}/expense-disputes")
+    def list_task_expense_disputes(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        invoices = invoice_repository.list_by_task(task_id)
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        confirmations_by_split_id = {}
+        for invoice in invoices:
+            for confirmation in confirmation_repository.list_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        try:
+            return build_expense_dispute_list(
+                task,
+                administrator_id=actor_id,
+                invoices=invoices,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_split_id=confirmations_by_split_id,
+            )
+        except ExpenseDisputeActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.post("/{task_id}/expense-disputes/{split_id}/resolve")
+    def resolve_task_expense_dispute(
+        task_id: str,
+        split_id: str,
+        payload: ConfirmationDisputeResolve,
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        try:
+            ensure_task_administrator(task, actor_id=payload.administrator_id)
+        except ExpenseDisputeActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+        split = split_repository.get(split_id)
+        if split is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="split not found")
+
+        invoice = invoice_repository.get(split.invoice_id)
+        if invoice is None or invoice.task_id != task_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="split not found for task",
+            )
+
+        confirmation = confirmation_repository.get_by_split(split_id)
+        if confirmation is None or confirmation.status is not ConfirmationStatus.DISPUTED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="only disputed confirmations can be resolved back to pending",
+            )
+
+        return confirmation_repository.upsert_for_split(
+            split_id,
+            ConfirmationSubmit(
+                member_id=confirmation.member_id,
+                status=ConfirmationStatus.PENDING,
+                dispute_reason=confirmation.dispute_reason,
+            ),
+        )
 
     @router.put("/{task_id}/members")
     def update_task_members(task_id: str, payload: TaskMembersUpdate):

@@ -1,0 +1,170 @@
+from fastapi.testclient import TestClient
+
+from trms_backend.infrastructure.storage import LocalMaterialFileStorage
+from trms_backend.main import create_app
+
+from test_invoices_api import valid_invoice_payload
+from test_tasks_api import valid_task_payload
+
+
+def make_client(tmp_path):
+    return TestClient(
+        create_app(
+            f"sqlite:///{tmp_path}/test.db",
+            material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
+        )
+    )
+
+
+def create_task(client: TestClient) -> str:
+    response = client.post("/api/tasks", json=valid_task_payload())
+    task_id = response.json()["id"]
+    response = client.patch(f"/api/tasks/{task_id}/status", json={"target_status": "open"})
+    assert response.status_code == 200
+    return task_id
+
+
+def upload_invoice_material(
+    client: TestClient,
+    task_id: str,
+    *,
+    submitter_id: str = "2250001",
+    filename: str = "ticket.pdf",
+) -> str:
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": submitter_id,
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": (filename, filename.encode(), "application/pdf")},
+    )
+    assert response.status_code == 201
+    return response.json()["items"][0]["id"]
+
+
+def create_disputed_split_fixture(client: TestClient) -> tuple[str, str, str]:
+    task_id = create_task(client)
+    material_id = upload_invoice_material(client, task_id)
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload(),
+    )
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000, "note": "self paid"},
+                {"member_id": "2250002", "amount_cents": 6345, "note": "team shared"},
+            ],
+        },
+    )
+    assert response.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in response.json()["items"]}
+
+    response = client.put(
+        f"/api/splits/{split_ids['2250001']}/confirmation",
+        json={"member_id": "2250001", "status": "confirmed"},
+    )
+    assert response.status_code == 200
+
+    response = client.put(
+        f"/api/splits/{split_ids['2250002']}/confirmation",
+        json={
+            "member_id": "2250002",
+            "status": "disputed",
+            "dispute_reason": "shared amount should be lower",
+        },
+    )
+    assert response.status_code == 200
+
+    return task_id, invoice_id, split_ids["2250002"]
+
+
+def move_task_to_reviewing(client: TestClient, task_id: str) -> None:
+    for target_status in ("closed", "reviewing"):
+        response = client.patch(
+            f"/api/tasks/{task_id}/status",
+            json={"target_status": target_status},
+        )
+        assert response.status_code == 200
+
+
+def test_task_administrator_can_list_expense_disputes(tmp_path):
+    client = make_client(tmp_path)
+    task_id, invoice_id, split_id = create_disputed_split_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/expense-disputes",
+        params={"actor_id": "admin-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_id"] == task_id
+    assert body["administrator_id"] == "admin-1"
+    assert body["total_count"] == 1
+    item = body["items"][0]
+    assert item["split_id"] == split_id
+    assert item["member_id"] == "2250002"
+    assert item["amount_cents"] == 6345
+    assert item["note"] == "team shared"
+    assert item["dispute_reason"] == "shared amount should be lower"
+    assert item["disputed_at"]
+    assert item["updated_at"]
+    assert item["invoice"]["id"] == invoice_id
+    assert item["invoice"]["invoice_number"] == "INV-001"
+    assert item["invoice"]["expense_type"] == "railway"
+
+
+def test_non_administrator_cannot_list_expense_disputes(tmp_path):
+    client = make_client(tmp_path)
+    task_id, _, _ = create_disputed_split_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/expense-disputes",
+        params={"actor_id": "2250002"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "actor is not allowed to view or resolve expense disputes for this task"
+    )
+
+
+def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(tmp_path):
+    client = make_client(tmp_path)
+    task_id, _, split_id = create_disputed_split_fixture(client)
+    move_task_to_reviewing(client, task_id)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/expense-disputes/{split_id}/resolve",
+        json={"administrator_id": "admin-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    assert response.json()["dispute_reason"] == "shared amount should be lower"
+
+    expense_detail_response = client.get(
+        f"/api/tasks/{task_id}/expense-details",
+        params={"actor_id": "2250002"},
+    )
+    assert expense_detail_response.status_code == 200
+    assert expense_detail_response.json()["items"][0]["confirmation"]["status"] == "pending"
+
+    ready_to_export_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert ready_to_export_response.status_code == 409
+    assert ready_to_export_response.json()["detail"] == (
+        "task review is incomplete: "
+        f"member confirmations are still pending for splits: {split_id}"
+    )
