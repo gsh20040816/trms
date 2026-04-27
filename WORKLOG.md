@@ -1,5 +1,59 @@
 # WORKLOG
 
+## 2026-04-28 05:52 - Add export job model
+
+### 完成内容
+- 在 `src/trms_backend/domain/exports.py` 扩展导出领域模型，新增：
+  - 导出任务状态 `pending`、`running`、`succeeded`、`failed`；
+  - 导出任务创建请求、状态更新和持久化记录模型；
+  - 导出格式约束、管理员权限校验、导出前置状态门禁和状态流转校验。
+- 在 `src/trms_backend/infrastructure/models.py` 与 `src/trms_backend/infrastructure/repositories.py` 增加 `export_jobs` 表和 SQLAlchemy 仓储，实现导出任务创建、查询、按任务列出和状态更新。
+- 在 `src/trms_backend/api/exports.py` 增加：
+  - `POST /api/tasks/{task_id}/exports`，用于管理员创建导出任务占位；
+  - `GET /api/tasks/{task_id}/exports`，用于管理员查询导出任务；
+  - `PATCH /api/tasks/exports/{export_job_id}/status`，用于更新导出任务占位状态。
+- 在 `src/trms_backend/main.py` 注入导出任务仓储。
+- 在 `tests/test_exports_api.py` 增加回归测试，覆盖：
+  - 导出任务创建与列表持久化；
+  - `pending`、`running`、`succeeded`、`failed` 状态覆盖；
+  - 未进入 `ready_to_export` / `completed` 时禁止创建导出任务；
+  - 非管理员禁止创建、查询和更新导出任务。
+- 将 `TASKS.md` 中“建立导出任务模型”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_exports_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 上一轮只建立了“导出能力查询边界”，但需求文档 FR-010 和架构文档 5.8 节都明确要求导出以异步任务形式存在，并记录导出类型、参数、操作者和生成时间。
+- 当前仓库虽然已经有导出能力入口，但仍缺少可持久化的导出任务对象：
+  - 无法表达导出任务正在排队、执行成功或失败；
+  - 后续汇总表、明细表、财务草稿和 PDF 合并都没有统一的任务挂载点；
+  - 也无法为后续真实导出执行保留最小审计事实。
+- 因此本轮先补“导出任务模型 + API + 持久化”，而不提前实现真实文件生成。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py`
+    - 7 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 148 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把导出任务状态更新暴露为占位 API，仅记录导出流程状态和失败原因，不提前落地导出文件、对象存储路径或任务版本绑定；这些内容留给后续“导出具体产物”和“绑定导出结果到任务版本”任务处理。
+- 当前只允许任务已进入 `ready_to_export` 或 `completed` 时创建导出任务，占位模型与现有导出门禁保持一致，避免在最终确认前静默开启导出链路。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“导出报销汇总表”，直接复用本轮导出任务模型作为挂载点，把第一种具体导出物闭合出来。
+
 ## 2026-04-28 05:45 - Add export module boundary skeleton
 
 ### 完成内容

@@ -15,6 +15,7 @@ from trms_backend.infrastructure.database import build_session_factory, init_dat
 from trms_backend.infrastructure.repositories import (
     SqlAlchemyAutomaticReminderTaskRepository,
     SqlAlchemyConfirmationRepository,
+    SqlAlchemyExportJobRepository,
     SqlAlchemyInvoiceRepository,
     SqlAlchemyExpenseSplitRepository,
     SqlAlchemyGlobalInvoiceConfigRepository,
@@ -48,6 +49,7 @@ def create_app(
         )
     material_reminder_repository = SqlAlchemyMaterialReminderRepository(session_factory)
     automatic_reminder_task_repository = SqlAlchemyAutomaticReminderTaskRepository(session_factory)
+    export_job_repository = SqlAlchemyExportJobRepository(session_factory)
     invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
@@ -72,7 +74,7 @@ def create_app(
             confirmation_repository,
         )
     )
-    app.include_router(build_export_router(task_repository))
+    app.include_router(build_export_router(task_repository, export_job_repository))
     app.include_router(
         build_material_router(task_repository, material_repository, material_file_storage, recognition_task_repository)
     )

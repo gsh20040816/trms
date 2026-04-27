@@ -19,6 +19,14 @@ from trms_backend.domain.confirmations import (
     ConfirmationStatus,
     ConfirmationSubmit,
 )
+from trms_backend.domain.exports import (
+    ExportArtifactFormat,
+    ExportArtifactKind,
+    TaskExportJobCreate,
+    TaskExportJobRecord,
+    TaskExportJobRepository,
+    TaskExportJobStatus,
+)
 from trms_backend.domain.global_invoice_config import (
     GlobalInvoiceConfig,
     GlobalInvoiceConfigRepository,
@@ -67,6 +75,7 @@ from trms_backend.infrastructure.models import (
     AutomaticReminderTaskRow,
     ConfirmationRow,
     ExpenseSplitRow,
+    ExportJobRow,
     GlobalInvoiceConfigRow,
     InvoiceRow,
     InvoiceSupportingMaterialLinkRow,
@@ -883,6 +892,73 @@ class SqlAlchemyAutomaticReminderTaskRepository(AutomaticReminderTaskRepository)
             return [_automatic_reminder_task_from_row(row) for row in rows]
 
 
+class SqlAlchemyExportJobRepository(TaskExportJobRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(
+        self,
+        *,
+        task_id: str,
+        data: TaskExportJobCreate,
+    ) -> TaskExportJobRecord:
+        now = datetime.now(timezone.utc)
+        row = ExportJobRow(
+            id=str(uuid4()),
+            task_id=task_id,
+            requested_by=data.requested_by,
+            kind=data.kind.value,
+            format=data.format.value,
+            status=TaskExportJobStatus.PENDING.value,
+            parameters=data.parameters,
+            failure_reason=None,
+            created_at=now,
+            updated_at=now,
+            started_at=None,
+            finished_at=None,
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _export_job_from_row(row)
+
+    def get(self, export_job_id: str) -> TaskExportJobRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(ExportJobRow, export_job_id)
+            return _export_job_from_row(row) if row else None
+
+    def list_by_task(self, task_id: str) -> list[TaskExportJobRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(ExportJobRow)
+                .where(ExportJobRow.task_id == task_id)
+                .order_by(ExportJobRow.created_at)
+            ).all()
+            return [_export_job_from_row(row) for row in rows]
+
+    def update_status(
+        self,
+        export_job_id: str,
+        *,
+        target_status: TaskExportJobStatus,
+        failure_reason: str | None = None,
+    ) -> TaskExportJobRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(ExportJobRow, export_job_id)
+            if row is None:
+                return None
+
+            now = datetime.now(timezone.utc)
+            row.status = target_status.value
+            row.updated_at = now
+            if target_status is TaskExportJobStatus.RUNNING and row.started_at is None:
+                row.started_at = now
+            if target_status in {TaskExportJobStatus.SUCCEEDED, TaskExportJobStatus.FAILED}:
+                row.finished_at = now
+            row.failure_reason = failure_reason if target_status is TaskExportJobStatus.FAILED else None
+            session.add(row)
+        return _export_job_from_row(row)
+
+
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
     return ReimbursementTask(
         id=row.id,
@@ -1087,6 +1163,27 @@ def _automatic_reminder_task_from_row(
         deduplication_key=row.deduplication_key,
         created_at=_ensure_utc_datetime(row.created_at),
         updated_at=_ensure_utc_datetime(row.updated_at),
+    )
+
+
+def _export_job_from_row(row: ExportJobRow) -> TaskExportJobRecord:
+    return TaskExportJobRecord(
+        id=row.id,
+        task_id=row.task_id,
+        requested_by=row.requested_by,
+        kind=ExportArtifactKind(row.kind),
+        format=ExportArtifactFormat(row.format),
+        status=TaskExportJobStatus(row.status),
+        parameters=dict(row.parameters or {}),
+        failure_reason=row.failure_reason,
+        created_at=_ensure_utc_datetime(row.created_at),
+        updated_at=_ensure_utc_datetime(row.updated_at),
+        started_at=(
+            _ensure_utc_datetime(row.started_at) if row.started_at is not None else None
+        ),
+        finished_at=(
+            _ensure_utc_datetime(row.finished_at) if row.finished_at is not None else None
+        ),
     )
 
 
