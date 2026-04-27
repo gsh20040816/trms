@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-04-28 04:28 - Add task expense detail query API
+
+### 完成内容
+- 新增领域模块 `src/trms_backend/domain/expense_details.py`，把当前“个人费用明细”收敛为“任务内现有分摊记录 + 关联发票快照 + 当前确认状态”的只读聚合模型。
+- 在 `src/trms_backend/api/tasks.py` 新增 `GET /api/tasks/{task_id}/expense-details`，以显式 `actor_id` 作为当前最小身份上下文：
+  - 任务管理员可查询任务内全部费用明细；
+  - 普通成员仅返回自己相关的费用明细；
+  - 非任务成员直接返回 `403`。
+- 补充 `tests/test_expense_details_api.py`，覆盖四条关键路径：
+  - 成员只能看到自己的费用明细；
+  - 无相关分摊的任务成员返回空列表，而不是看到他人数据；
+  - 管理员可查看任务内全部分摊明细；
+  - 非任务成员访问返回 `403`。
+- 将 `TASKS.md` 中“建立个人费用明细查询接口”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/expense_details.py`
+- `src/trms_backend/api/tasks.py`
+- `tests/test_expense_details_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有仓库虽然已经有按发票查询分摊和确认记录的接口，但缺少一个以“任务 + 当前查看者”为边界的聚合查询入口，导致成员无法直接查看自己待确认的个人费用明细，管理员也无法按任务一次性看到全部费用归属，而权限隔离只能依赖调用方自行拼装，和需求文档、架构文档要求的“成员只能查看本人相关费用明细”不一致。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_expense_details_api.py`
+    - 4 个用例通过
+  - `uv run pytest tests/test_tasks_api.py tests/test_splits_api.py tests/test_confirmations_api.py`
+    - 42 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 117 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 在“引入费用明细版本号”任务完成前，本轮保守把“个人费用明细”定义为当前有效的 `expense_splits` 记录及其关联发票快照，不提前发明新的持久化版本表。
+- 对于属于任务成员但当前没有任何分摊记录的成员，查询结果返回空列表和 `0` 金额；后续如需区分“暂未生成明细”和“已全部确认”，应在版本化或确认状态聚合任务中单独补齐。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“支持成员费用异议处理状态”，把当前单条分摊上的 `disputed` 记录进一步提升为管理员可查询、可处理的任务级异议视图。
+
 ## 2026-04-28 04:21 - Restrict expense split submission actors
 
 ### 完成内容
