@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.materials import MAX_MATERIAL_UPLOAD_SIZE_BYTES
 from trms_backend.domain.tasks import (
     ReimbursementTask,
     TaskSubmissionDeadlinePassedError,
@@ -58,13 +59,13 @@ def test_submit_material_accepts_supported_material_types(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)
 
-    for material_type, filename in (
-        ("invoice", "ticket.pdf"),
-        ("payment_record", "payment.png"),
-        ("competition_notice", "notice.pdf"),
-        ("itinerary", "itinerary.pdf"),
-        ("order_screenshot", "order.png"),
-        ("other_attachment", "other.zip"),
+    for material_type, filename, content_type in (
+        ("invoice", "ticket.pdf", "application/pdf"),
+        ("payment_record", "payment.png", "image/png"),
+        ("competition_notice", "notice.pdf", "application/pdf"),
+        ("itinerary", "itinerary.pdf", "application/pdf"),
+        ("order_screenshot", "order.png", "image/png"),
+        ("other_attachment", "other.zip", "application/zip"),
     ):
         response = client.post(
             f"/api/tasks/{task_id}/materials",
@@ -73,7 +74,7 @@ def test_submit_material_accepts_supported_material_types(tmp_path):
                 "channel": "web",
                 "material_type": material_type,
             },
-            files={"files": (filename, material_type.encode(), "application/octet-stream")},
+            files={"files": (filename, material_type.encode(), content_type)},
         )
 
         assert response.status_code == 201
@@ -225,6 +226,84 @@ def test_submit_material_rejects_invalid_material_type(tmp_path):
     assert response.status_code == 422
     error = response.json()["detail"][0]
     assert error["loc"][-1] == "material_type"
+
+
+def test_submit_material_rejects_missing_filename(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("   ", b"fake-pdf-content", "application/pdf")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "uploaded file must have a filename"
+
+
+def test_submit_material_rejects_empty_file(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"", "application/pdf")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "uploaded file is empty: ticket.pdf"
+
+
+def test_submit_material_rejects_unsupported_content_type(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("notes.txt", b"plain-text", "text/plain")},
+    )
+
+    assert response.status_code == 415
+    assert response.json()["detail"].startswith("unsupported material content type: text/plain;")
+
+
+def test_submit_material_rejects_file_exceeding_size_limit(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={
+            "files": (
+                "oversized.pdf",
+                b"x" * (MAX_MATERIAL_UPLOAD_SIZE_BYTES + 1),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"].startswith("uploaded file exceeds size limit: oversized.pdf")
 
 
 def test_list_materials_by_task(tmp_path):

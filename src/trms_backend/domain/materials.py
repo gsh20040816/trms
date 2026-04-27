@@ -8,6 +8,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES = (
+    "application/pdf",
+    "application/zip",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+)
+MAX_MATERIAL_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+
 
 class SubmissionChannel(StrEnum):
     WEB = "web"
@@ -60,6 +69,37 @@ class StoredMaterialFile(BaseModel):
     sha256: str = Field(min_length=64, max_length=64)
 
 
+class MaterialUploadValidationError(ValueError):
+    """Raised when an uploaded material file violates input constraints."""
+
+
+class MaterialUploadMissingFilenameError(MaterialUploadValidationError):
+    def __init__(self) -> None:
+        super().__init__("uploaded file must have a filename")
+
+
+class MaterialUploadEmptyFileError(MaterialUploadValidationError):
+    def __init__(self, filename: str) -> None:
+        super().__init__(f"uploaded file is empty: {filename}")
+
+
+class MaterialUploadUnsupportedContentTypeError(MaterialUploadValidationError):
+    def __init__(self, content_type: str | None) -> None:
+        supported = ", ".join(SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES)
+        super().__init__(
+            f"unsupported material content type: {content_type or '<missing>'}; "
+            f"supported content types: {supported}"
+        )
+
+
+class MaterialUploadTooLargeError(MaterialUploadValidationError):
+    def __init__(self, *, filename: str, size_bytes: int) -> None:
+        super().__init__(
+            f"uploaded file exceeds size limit: {filename} ({size_bytes} bytes > "
+            f"{MAX_MATERIAL_UPLOAD_SIZE_BYTES} bytes)"
+        )
+
+
 class MaterialRepository(Protocol):
     def create(self, data: MaterialCreate) -> MaterialRecord:
         raise NotImplementedError
@@ -81,6 +121,27 @@ class MaterialFileStorage(Protocol):
         content: bytes,
     ) -> StoredMaterialFile:
         raise NotImplementedError
+
+
+def validate_material_upload(
+    *,
+    original_filename: str | None,
+    content_type: str | None,
+    content: bytes,
+) -> None:
+    filename = (original_filename or "").strip()
+    if not filename:
+        raise MaterialUploadMissingFilenameError()
+
+    size_bytes = len(content)
+    if size_bytes == 0:
+        raise MaterialUploadEmptyFileError(filename)
+    if size_bytes > MAX_MATERIAL_UPLOAD_SIZE_BYTES:
+        raise MaterialUploadTooLargeError(filename=filename, size_bytes=size_bytes)
+
+    normalized_content_type = _normalize_content_type(content_type)
+    if normalized_content_type not in SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES:
+        raise MaterialUploadUnsupportedContentTypeError(content_type)
 
 
 class InMemoryMaterialRepository:
@@ -116,3 +177,7 @@ class InMemoryMaterialRepository:
             if material.task_id == task_id and material.sha256 == sha256:
                 return material.id
         return None
+
+
+def _normalize_content_type(content_type: str | None) -> str:
+    return (content_type or "").split(";", maxsplit=1)[0].strip().lower()

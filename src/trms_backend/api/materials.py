@@ -5,9 +5,14 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialFileStorage,
+    MaterialUploadEmptyFileError,
+    MaterialUploadMissingFilenameError,
+    MaterialUploadTooLargeError,
+    MaterialUploadUnsupportedContentTypeError,
     MaterialRepository,
     MaterialType,
     SubmissionChannel,
+    validate_material_upload,
 )
 from trms_backend.domain.tasks import (
     TaskRepository,
@@ -54,13 +59,43 @@ def build_material_router(
                 detail=str(error),
             ) from error
 
-        records = []
+        validated_uploads: list[tuple[str, str | None, bytes]] = []
         for file in files:
             content = await file.read()
+            try:
+                validate_material_upload(
+                    original_filename=file.filename,
+                    content_type=file.content_type,
+                    content=content,
+                )
+            except MaterialUploadMissingFilenameError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=str(error),
+                ) from error
+            except MaterialUploadEmptyFileError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=str(error),
+                ) from error
+            except MaterialUploadUnsupportedContentTypeError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=str(error),
+                ) from error
+            except MaterialUploadTooLargeError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=str(error),
+                ) from error
+            validated_uploads.append((file.filename or "", file.content_type, content))
+
+        records = []
+        for original_filename, content_type, content in validated_uploads:
             stored_file = material_file_storage.save(
                 task_id=task_id,
-                original_filename=file.filename or "unnamed",
-                content_type=file.content_type,
+                original_filename=original_filename,
+                content_type=content_type,
                 content=content,
             )
             records.append(

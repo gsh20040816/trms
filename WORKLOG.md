@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-04-28 01:59 - Add material upload validation rules
+
+### 完成内容
+- 在材料领域新增显式上传校验边界，统一校验缺少文件名、空文件、不支持的内容类型和超出大小限制四类失败场景；支持的内容类型和大小上限直接固化在代码常量中，避免隐藏规则。
+- 调整 `POST /api/tasks/{task_id}/materials` 的处理顺序：先读取并验证本次请求中的全部上传文件，再执行落盘和建库，避免无效文件在失败前先产生部分副作用。
+- 补充材料上传 API 测试，覆盖支持类型成功路径，以及缺少文件名、空文件、不支持内容类型、超出大小限制四类明确失败路径。
+- 将 `TASKS.md` 中“增加材料上传文件校验规则”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/api/materials.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 15 个用例通过
+  - `uv run pytest tests/test_material_storage.py`
+    - 3 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 64 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮采用保守上传白名单：`application/pdf`、`application/zip`、`image/jpeg`、`image/png`、`image/webp`；未在需求和现有代码中明确出现的内容类型暂不放行，后续若需要支持更多附件格式，应先补充规则和测试。
+- 单文件大小上限暂定为 `10 MiB`，作为第一阶段本地部署场景下的最小明确边界；后续如果出现真实业务文件超限，再结合对象存储、反向代理和渠道接入能力统一调整。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“支持批量上传部分成功结果”，把当前请求级全量校验扩展为逐文件返回成功/失败结果，同时保持失败原因显式暴露。
+
 ## 2026-04-28 01:55 - Persist material storage key
 
 ### 完成内容
