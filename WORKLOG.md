@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-04-28 06:45 - Bind export jobs to task data version
+
+### 完成内容
+- 在 `src/trms_backend/domain/exports.py` 增加导出任务版本快照边界：
+  - 新增 `TaskExportVersionSnapshot`；
+  - 基于任务、材料、发票、校验、分摊和当前确认记录计算稳定的 `task_data_version` 哈希；
+  - 为导出任务记录补充 `task_status_at_request`、`task_data_version` 和 `is_latest_for_task` 语义。
+- 在 `src/trms_backend/api/exports.py` 为导出任务创建、列表和状态更新统一计算当前任务导出版本：
+  - 创建导出任务时把当前任务状态和数据版本写入记录；
+  - 列表和状态接口返回 `is_latest_for_task`，显式标记旧导出是否已过期。
+- 在 `src/trms_backend/infrastructure/repositories.py` 复用现有 `parameters` 持久化版本元数据：
+  - 以保留键写入任务状态和版本；
+  - 对外响应时把这些内部元数据从用户参数中剥离，避免污染原始导出参数。
+- 在 `tests/test_exports_api.py` 增加回归测试，覆盖：
+  - 导出任务创建后会返回版本元数据；
+  - 任务数据变化后，旧导出会被标记为非最新；
+  - 导出任务状态流转返回仍保留最新标记。
+- 将 `TASKS.md` 中“绑定导出结果到任务版本”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_exports_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有导出链路虽然已经有导出任务记录，但记录只保存导出类型、参数和状态，没有绑定“这份导出对应哪一版任务数据”。
+- 一旦管理员在导出后继续修改任务字段、发票、分摊或确认状态，系统无法区分旧导出和当前最新数据，旧结果会被误当作最新版本使用。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py`
+    - 19 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前“导出结果到任务版本”的最小落点仍是导出任务记录，而不是新增真实导出文件实体；仓库现状还没有持久化导出文件模型，本轮不伪装成已经实现文件归档。
+- 为避免在仍使用 `create_all` 且未引入迁移工具的阶段直接追加数据库列，本轮把版本元数据保存在导出任务现有 `parameters` 存储中，并通过专门字段对外暴露；这样不引入新的共享库迁移要求。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“确认 Web 前端技术栈和工程边界”，先固化前端目录、命令和测试边界，再进入页面骨架实现。
+
 ## 2026-04-28 06:38 - Add merged PDF export placeholder
 
 ### 完成内容

@@ -903,6 +903,11 @@ class SqlAlchemyExportJobRepository(TaskExportJobRepository):
         data: TaskExportJobCreate,
     ) -> TaskExportJobRecord:
         now = datetime.now(timezone.utc)
+        stored_parameters = dict(data.parameters)
+        if data.task_status_at_request is not None:
+            stored_parameters["_task_status_at_request"] = data.task_status_at_request.value
+        if data.task_data_version is not None:
+            stored_parameters["_task_data_version"] = data.task_data_version
         row = ExportJobRow(
             id=str(uuid4()),
             task_id=task_id,
@@ -910,7 +915,7 @@ class SqlAlchemyExportJobRepository(TaskExportJobRepository):
             kind=data.kind.value,
             format=data.format.value,
             status=TaskExportJobStatus.PENDING.value,
-            parameters=data.parameters,
+            parameters=stored_parameters,
             failure_reason=None,
             created_at=now,
             updated_at=now,
@@ -1167,6 +1172,9 @@ def _automatic_reminder_task_from_row(
 
 
 def _export_job_from_row(row: ExportJobRow) -> TaskExportJobRecord:
+    parameters = dict(row.parameters or {})
+    raw_task_status = parameters.pop("_task_status_at_request", None)
+    task_data_version = parameters.pop("_task_data_version", None)
     return TaskExportJobRecord(
         id=row.id,
         task_id=row.task_id,
@@ -1174,7 +1182,11 @@ def _export_job_from_row(row: ExportJobRow) -> TaskExportJobRecord:
         kind=ExportArtifactKind(row.kind),
         format=ExportArtifactFormat(row.format),
         status=TaskExportJobStatus(row.status),
-        parameters=dict(row.parameters or {}),
+        parameters=parameters,
+        task_status_at_request=(
+            TaskStatus(raw_task_status) if isinstance(raw_task_status, str) else None
+        ),
+        task_data_version=task_data_version if isinstance(task_data_version, str) else None,
         failure_reason=row.failure_reason,
         created_at=_ensure_utc_datetime(row.created_at),
         updated_at=_ensure_utc_datetime(row.updated_at),

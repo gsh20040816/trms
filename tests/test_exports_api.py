@@ -929,6 +929,9 @@ def test_create_and_list_export_jobs_persist_requested_parameters(tmp_path):
         "include_member_breakdown": True,
         "locale": "zh-CN",
     }
+    assert created["task_status_at_request"] == "ready_to_export"
+    assert len(created["task_data_version"]) == 64
+    assert created["is_latest_for_task"] is True
     assert created["failure_reason"] is None
     assert created["created_at"]
     assert created["updated_at"]
@@ -944,6 +947,40 @@ def test_create_and_list_export_jobs_persist_requested_parameters(tmp_path):
     assert listed.json() == [created]
 
 
+def test_export_jobs_are_marked_stale_after_task_data_changes(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    first_job = create_export_job(client, task_id)
+
+    update_task_row(
+        tmp_path,
+        task_id,
+        project_info="ACM competition project (revised)",
+    )
+
+    second_job = create_export_job(client, task_id)
+
+    assert first_job["task_data_version"] != second_job["task_data_version"]
+    assert second_job["is_latest_for_task"] is True
+
+    listed = client.get(
+        f"/api/tasks/{task_id}/exports",
+        params={"actor_id": "admin-1"},
+    )
+
+    assert listed.status_code == 200
+    body = listed.json()
+    assert len(body) == 2
+    assert body[0]["id"] == first_job["id"]
+    assert body[0]["task_status_at_request"] == "ready_to_export"
+    assert body[0]["is_latest_for_task"] is False
+    assert body[1]["id"] == second_job["id"]
+    assert body[1]["task_data_version"] == second_job["task_data_version"]
+    assert body[1]["is_latest_for_task"] is True
+
+
 def test_export_job_status_transitions_cover_running_succeeded_and_failed(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
@@ -957,6 +994,7 @@ def test_export_job_status_transitions_cover_running_succeeded_and_failed(tmp_pa
     )
     assert running.status_code == 200
     assert running.json()["status"] == "running"
+    assert running.json()["is_latest_for_task"] is True
     assert running.json()["started_at"] is not None
     assert running.json()["finished_at"] is None
 
@@ -966,6 +1004,7 @@ def test_export_job_status_transitions_cover_running_succeeded_and_failed(tmp_pa
     )
     assert succeeded.status_code == 200
     assert succeeded.json()["status"] == "succeeded"
+    assert succeeded.json()["is_latest_for_task"] is True
     assert succeeded.json()["started_at"] is not None
     assert succeeded.json()["finished_at"] is not None
     assert succeeded.json()["failure_reason"] is None
@@ -986,6 +1025,7 @@ def test_export_job_status_transitions_cover_running_succeeded_and_failed(tmp_pa
     )
     assert failed.status_code == 200
     assert failed.json()["status"] == "failed"
+    assert failed.json()["is_latest_for_task"] is True
     assert failed.json()["failure_reason"] == "failed to read encrypted material PDF"
     assert failed.json()["finished_at"] is not None
 

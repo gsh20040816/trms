@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 from io import BytesIO, StringIO
 from datetime import date, datetime, timezone
 from enum import StrEnum
@@ -82,6 +84,8 @@ class TaskExportJobCreate(BaseModel):
     kind: ExportArtifactKind
     format: ExportArtifactFormat
     parameters: dict[str, Any] = Field(default_factory=dict)
+    task_status_at_request: TaskStatus | None = None
+    task_data_version: str | None = Field(default=None, min_length=64, max_length=64)
 
     @model_validator(mode="after")
     def normalize_and_validate(self) -> TaskExportJobCreate:
@@ -98,6 +102,9 @@ class TaskExportJobRecord(BaseModel):
     format: ExportArtifactFormat
     status: TaskExportJobStatus
     parameters: dict[str, Any]
+    task_status_at_request: TaskStatus | None = None
+    task_data_version: str | None = Field(default=None, min_length=64, max_length=64)
+    is_latest_for_task: bool | None = None
     failure_reason: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -342,6 +349,11 @@ class MergedPdfExportPlan(BaseModel):
     )
 
 
+class TaskExportVersionSnapshot(BaseModel):
+    task_status: TaskStatus
+    task_data_version: str = Field(min_length=64, max_length=64)
+
+
 class TaskExportJobRepository(Protocol):
     def create(
         self,
@@ -405,6 +417,7 @@ def create_task_export_job(
     task: ReimbursementTask,
     *,
     payload: TaskExportJobRequest,
+    snapshot: TaskExportVersionSnapshot,
     repository: TaskExportJobRepository,
 ) -> TaskExportJobRecord:
     boundary = build_task_export_boundary(task, actor_id=payload.actor_id)
@@ -418,6 +431,8 @@ def create_task_export_job(
             kind=payload.kind,
             format=payload.format,
             parameters=payload.parameters,
+            task_status_at_request=snapshot.task_status,
+            task_data_version=snapshot.task_data_version,
         ),
     )
 
@@ -1006,6 +1021,80 @@ def update_task_export_job_status(
     if updated is None:
         raise ValueError("export job not found")
     return updated
+
+
+def build_task_export_version_snapshot(
+    task: ReimbursementTask,
+    *,
+    invoices: list[InvoiceRecord],
+    materials: list[MaterialRecord],
+    validations_by_invoice_id: dict[str, list[ValidationResult]],
+    splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
+    confirmations_by_split_id: dict[str, ConfirmationRecord],
+) -> TaskExportVersionSnapshot:
+    payload = {
+        "task": task.model_dump(mode="json"),
+        "materials": [
+            material.model_dump(mode="json")
+            for material in sorted(
+                materials,
+                key=lambda item: (item.created_at, item.id),
+            )
+        ],
+        "invoices": [
+            invoice.model_dump(mode="json")
+            for invoice in sorted(
+                invoices,
+                key=lambda item: (item.created_at, item.id),
+            )
+        ],
+        "validations_by_invoice_id": {
+            invoice_id: [
+                validation.model_dump(mode="json")
+                for validation in sorted(
+                    validations,
+                    key=lambda item: (item.created_at, item.id),
+                )
+            ]
+            for invoice_id, validations in sorted(validations_by_invoice_id.items())
+        },
+        "splits_by_invoice_id": {
+            invoice_id: [
+                split.model_dump(mode="json")
+                for split in sorted(
+                    splits,
+                    key=lambda item: (item.created_at, item.id),
+                )
+            ]
+            for invoice_id, splits in sorted(splits_by_invoice_id.items())
+        },
+        "confirmations_by_split_id": {
+            split_id: confirmation.model_dump(mode="json")
+            for split_id, confirmation in sorted(confirmations_by_split_id.items())
+        },
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return TaskExportVersionSnapshot(
+        task_status=task.status,
+        task_data_version=hashlib.sha256(encoded).hexdigest(),
+    )
+
+
+def with_task_export_job_latest_flag(
+    export_job: TaskExportJobRecord,
+    *,
+    snapshot: TaskExportVersionSnapshot,
+) -> TaskExportJobRecord:
+    return export_job.model_copy(
+        update={
+            "is_latest_for_task": export_job.task_data_version == snapshot.task_data_version,
+        }
+    )
 
 
 def ensure_task_export_job_can_transition(

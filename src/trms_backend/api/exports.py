@@ -15,6 +15,7 @@ from trms_backend.domain.exports import (
     TaskExportJobRequest,
     TaskExportJobStatusTransitionError,
     TaskExportJobStatusUpdate,
+    build_task_export_version_snapshot,
     build_finance_draft_export,
     build_invoice_details_export,
     build_member_details_export,
@@ -29,6 +30,7 @@ from trms_backend.domain.exports import (
     render_missing_materials_csv,
     render_reimbursement_summary_csv,
     update_task_export_job_status,
+    with_task_export_job_latest_flag,
 )
 from trms_backend.domain.invoices import InvoiceRepository
 from trms_backend.domain.materials import MaterialFileStorage, MaterialRepository
@@ -48,6 +50,28 @@ def build_export_router(
     confirmation_repository: ConfirmationRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["exports"])
+
+    def build_current_export_snapshot(task):
+        invoices = invoice_repository.list_by_task(task.id)
+        materials = material_repository.list_by_task(task.id)
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        confirmations_by_split_id = {}
+        for invoice in invoices:
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+        return build_task_export_version_snapshot(
+            task,
+            invoices=invoices,
+            materials=materials,
+            validations_by_invoice_id=validations_by_invoice_id,
+            splits_by_invoice_id=splits_by_invoice_id,
+            confirmations_by_split_id=confirmations_by_split_id,
+        )
 
     @router.get("/{task_id}/exports/capabilities")
     def get_task_export_capabilities(
@@ -384,13 +408,16 @@ def build_export_router(
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        snapshot = build_current_export_snapshot(task)
 
         try:
-            return create_task_export_job(
+            export_job = create_task_export_job(
                 task,
                 payload=payload,
+                snapshot=snapshot,
                 repository=export_job_repository,
             )
+            return with_task_export_job_latest_flag(export_job, snapshot=snapshot)
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -415,13 +442,18 @@ def build_export_router(
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        snapshot = build_current_export_snapshot(task)
 
         try:
-            return list_task_export_jobs(
+            export_jobs = list_task_export_jobs(
                 task,
                 actor_id=actor_id,
                 repository=export_job_repository,
             )
+            return [
+                with_task_export_job_latest_flag(export_job, snapshot=snapshot)
+                for export_job in export_jobs
+            ]
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -440,14 +472,16 @@ def build_export_router(
         task = task_repository.get(export_job.task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        snapshot = build_current_export_snapshot(task)
 
         try:
-            return update_task_export_job_status(
+            updated = update_task_export_job_status(
                 task,
                 export_job=export_job,
                 payload=payload,
                 repository=export_job_repository,
             )
+            return with_task_export_job_latest_flag(updated, snapshot=snapshot)
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
