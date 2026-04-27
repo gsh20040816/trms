@@ -56,6 +56,7 @@ def build_recognition_router(
             recognition_task_id,
             payload.target_status,
             payload.result,
+            payload.failure,
         )
         if updated is None:
             raise HTTPException(

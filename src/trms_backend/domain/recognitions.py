@@ -31,12 +31,31 @@ class RecognitionFieldStatus(StrEnum):
     NEEDS_CONFIRMATION = "needs_confirmation"
 
 
+class RecognitionFailureStage(StrEnum):
+    OCR = "ocr"
+    PDF = "pdf"
+    AI = "ai"
+
+
 class RecognitionFieldResult(BaseModel):
     value: Any
     source: RecognitionFieldSource
     confidence: float = Field(ge=0, le=1)
     status: RecognitionFieldStatus = RecognitionFieldStatus.RECOGNIZED
     updated_at: datetime | None = None
+
+
+class RecognitionFailureDetail(BaseModel):
+    stage: RecognitionFailureStage
+    reason: str = Field(min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("failure reason must not be empty")
+        return normalized
 
 
 class RecognitionResultPayload(BaseModel):
@@ -70,6 +89,7 @@ class RecognitionTaskRecord(BaseModel):
     material_id: str
     status: RecognitionTaskStatus
     is_final_fact: Literal[False] = False
+    failure: RecognitionFailureDetail | None = None
     raw_response: Any = None
     recognized_fields: dict[str, RecognitionFieldResult] = Field(default_factory=dict)
     manual_corrections: list["RecognitionFieldCorrectionRecord"] = Field(default_factory=list)
@@ -95,9 +115,16 @@ class RecognitionFieldCorrectionRecord(BaseModel):
 class RecognitionTaskStatusUpdate(BaseModel):
     target_status: RecognitionTaskStatus
     result: RecognitionResultPayload | None = None
+    failure: RecognitionFailureDetail | None = None
 
     @model_validator(mode="after")
-    def validate_low_confidence_fields(self) -> RecognitionTaskStatusUpdate:
+    def validate_payload_for_target_status(self) -> RecognitionTaskStatusUpdate:
+        if self.target_status is RecognitionTaskStatus.FAILED:
+            if self.failure is None:
+                raise ValueError("failed recognition task requires failure detail")
+        elif self.failure is not None:
+            raise ValueError("only failed recognition task can persist failure detail")
+
         if self.result is None:
             return self
         if self.target_status is RecognitionTaskStatus.PENDING:
@@ -141,6 +168,7 @@ class RecognitionTaskRepository(Protocol):
         recognition_task_id: str,
         target_status: RecognitionTaskStatus,
         result: RecognitionResultPayload | None = None,
+        failure: RecognitionFailureDetail | None = None,
     ) -> RecognitionTaskRecord | None:
         raise NotImplementedError
 

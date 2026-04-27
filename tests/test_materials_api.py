@@ -38,6 +38,7 @@ def assert_single_pending_recognition_task(client: TestClient, material_id: str)
     assert items[0]["material_id"] == material_id
     assert items[0]["status"] == "pending"
     assert items[0]["is_final_fact"] is False
+    assert items[0]["failure"] is None
     assert items[0]["raw_response"] is None
     assert items[0]["recognized_fields"] == {}
 

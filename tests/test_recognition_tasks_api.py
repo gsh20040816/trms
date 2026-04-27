@@ -61,6 +61,7 @@ def test_uploaded_material_auto_creates_placeholder_recognition_task_marks_ai_ou
     assert body["material_id"] == material_id
     assert body["status"] == "pending"
     assert body["is_final_fact"] is False
+    assert body["failure"] is None
     assert body["raw_response"] is None
     assert body["recognized_fields"] == {}
     assert body["manual_corrections"] == []
@@ -85,6 +86,7 @@ def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path
     assert items[1]["id"] == created["id"]
     assert items[1]["status"] == "pending"
     assert items[1]["is_final_fact"] is False
+    assert items[1]["failure"] is None
     assert items[1]["raw_response"] is None
     assert items[1]["recognized_fields"] == {}
     assert items[1]["manual_corrections"] == []
@@ -117,13 +119,41 @@ def test_recognition_task_can_move_to_failed(tmp_path):
     material_id = upload_material(client, task_id, filename="ticket-2.pdf")
     recognition_task_id = get_single_recognition_task(client, material_id)["id"]
 
-    response = client.patch(
+    missing_failure_detail = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
         json={"target_status": "failed"},
     )
+    response = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        json={
+            "target_status": "failed",
+            "failure": {
+                "stage": "ocr",
+                "reason": "failed to extract text from scanned PDF",
+            },
+        },
+    )
 
+    assert missing_failure_detail.status_code == 422
+    assert "failed recognition task requires failure detail" in str(
+        missing_failure_detail.json()["detail"]
+    )
     assert response.status_code == 200
-    assert response.json()["item"]["status"] == "failed"
+    body = response.json()["item"]
+    assert body["status"] == "failed"
+    assert body["failure"] == {
+        "stage": "ocr",
+        "reason": "failed to extract text from scanned PDF",
+    }
+
+    listed = client.get(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["status"] == "failed"
+    assert listed.json()["items"][0]["failure"] == {
+        "stage": "ocr",
+        "reason": "failed to extract text from scanned PDF",
+    }
 
 
 def test_recognition_task_rejects_invalid_terminal_transition(tmp_path):

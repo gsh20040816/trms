@@ -135,6 +135,7 @@ class RecognitionTaskRow(Base):
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     is_final_fact: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    failure_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     raw_response: Mapped[dict | list | str | int | float | bool | None] = mapped_column(
         JSON,
         nullable=True,

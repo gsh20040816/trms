@@ -36,6 +36,7 @@ from trms_backend.domain.materials import (
 )
 from trms_backend.domain.recognitions import (
     RecognitionFieldCorrectionRecord,
+    RecognitionFailureDetail,
     RecognitionFieldResult,
     RecognitionRevalidationStatus,
     RecognitionTaskCreate,
@@ -431,12 +432,14 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
         recognition_task_id: str,
         target_status: RecognitionTaskStatus,
         result: RecognitionResultPayload | None = None,
+        failure: RecognitionFailureDetail | None = None,
     ) -> RecognitionTaskRecord | None:
         with session_scope(self._session_factory) as session:
             row = session.get(RecognitionTaskRow, recognition_task_id)
             if row is None:
                 return None
             row.status = target_status.value
+            row.failure_detail = failure.model_dump(mode="json") if failure is not None else None
             if result is not None:
                 row.raw_response = result.raw_response
                 row.recognized_fields = _recognized_fields_to_json(
@@ -703,6 +706,11 @@ def _recognition_task_from_row(row: RecognitionTaskRow) -> RecognitionTaskRecord
         material_id=row.material_id,
         status=RecognitionTaskStatus(row.status),
         is_final_fact=row.is_final_fact,
+        failure=(
+            RecognitionFailureDetail.model_validate(row.failure_detail)
+            if row.failure_detail is not None
+            else None
+        ),
         raw_response=row.raw_response,
         recognized_fields={
             field_name: RecognitionFieldResult.model_validate(field_result)

@@ -1,5 +1,43 @@
 # WORKLOG
 
+## 2026-04-28 03:02 - Expose recognition failures explicitly
+
+### 完成内容
+- 为识别任务新增结构化失败详情 `failure`，包含失败阶段 `ocr` / `pdf` / `ai` 和失败原因，避免识别任务只有 `failed` 状态却没有可追溯上下文。
+- 收紧识别状态更新边界：当识别任务切到 `failed` 时，接口现在必须同时提交失败详情；非 `failed` 状态禁止携带失败详情，避免把失败原因混入成功或待确认结果。
+- 识别任务查询接口 `GET /api/materials/{material_id}/recognition-tasks` 现在会直接返回失败状态和失败详情，因此材料维度可以显式看到识别失败，而不是只能猜测识别没有成功。
+- 补充识别与材料 API 回归测试，覆盖“缺少失败详情时拒绝写入失败状态”“失败详情可持久化并再次查询”以及占位识别任务默认无失败详情三条路径。
+- 将 `TASKS.md` 中“支持识别失败显式暴露”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/recognitions.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_recognition_tasks_api.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_tasks_api.py`
+    - 6 个用例通过
+  - `uv run pytest tests/test_materials_api.py`
+    - 22 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 85 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“API 返回材料识别失败状态”收敛为材料维度的识别任务查询接口 `GET /api/materials/{material_id}/recognition-tasks`；当前仓库尚无单独的材料详情接口，因此不额外扩展新的读取入口。
+- `failed` 状态默认必须携带失败详情，因为没有失败原因的失败记录仍然无法满足“显式暴露”目标；后续若接入真实 OCR / PDF / AI worker，应在任务失败时统一写入阶段和原因。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此新增 `recognition_tasks.failure_detail` 列只会自动体现在新建数据库上；已有旧库若需保留数据，仍需按现有迁移策略单独处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“支持多次识别历史”，把当前失败详情与多次重试历史串起来，避免新的识别尝试覆盖旧失败记录。
+
 ## 2026-04-28 02:56 - Record manual correction history for recognized invoice fields
 
 ### 完成内容
