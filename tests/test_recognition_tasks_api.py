@@ -63,6 +63,7 @@ def test_uploaded_material_auto_creates_placeholder_recognition_task_marks_ai_ou
     assert body["is_final_fact"] is False
     assert body["raw_response"] is None
     assert body["recognized_fields"] == {}
+    assert body["manual_corrections"] == []
 
 
 def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path):
@@ -86,6 +87,7 @@ def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path
     assert items[1]["is_final_fact"] is False
     assert items[1]["raw_response"] is None
     assert items[1]["recognized_fields"] == {}
+    assert items[1]["manual_corrections"] == []
 
 
 def test_recognition_task_can_move_to_needs_confirmation_then_succeeded(tmp_path):

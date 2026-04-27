@@ -72,6 +72,14 @@ def validation_by_code(response_body, rule_code: str):
     return next(item for item in response_body["validations"] if item["rule_code"] == rule_code)
 
 
+def manual_corrections_by_field(recognition_task: dict, field_name: str) -> list[dict]:
+    return [
+        item
+        for item in recognition_task["manual_corrections"]
+        if item["field_name"] == field_name
+    ]
+
+
 def test_create_invoice_and_pass_basic_validations(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)
@@ -173,6 +181,86 @@ def test_create_invoice_updates_existing_material_invoice_instead_of_creating_du
     assert len(listed.json()["items"]) == 1
     assert listed.json()["items"][0]["id"] == first_invoice_id
     assert listed.json()["items"][0]["amount_cents"] == 54321
+
+
+def test_manual_invoice_correction_updates_recognition_fields_and_keeps_diff_history(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+    recognition_task_id = client.get(f"/api/materials/{material_id}/recognition-tasks").json()["items"][0][
+        "id"
+    ]
+    recognition_result = {
+        "raw_response": {
+            "provider": "placeholder-ai",
+            "document_type": "invoice",
+        },
+        "recognized_fields": {
+            "invoice_number": {
+                "value": "INV-AI-001",
+                "source": "ai",
+                "confidence": 0.83,
+                "status": "recognized",
+            },
+            "buyer_name": {
+                "value": "Tongji ACM Lab",
+                "source": "ocr",
+                "confidence": 0.41,
+                "status": "needs_confirmation",
+            },
+            "tax_number": {
+                "value": "WRONG-TAX-NUMBER",
+                "source": "ocr",
+                "confidence": 0.38,
+                "status": "needs_confirmation",
+            },
+        },
+    }
+    client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        json={
+            "target_status": "needs_confirmation",
+            "result": recognition_result,
+        },
+    )
+
+    first_response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+
+    assert first_response.status_code == 201
+    assert validation_by_code(first_response.json(), "invoice_title_match")["status"] == "passed"
+    assert validation_by_code(first_response.json(), "invoice_tax_number_match")["status"] == "passed"
+
+    second_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | {"buyer_name": "错误抬头"},
+    )
+
+    assert second_response.status_code == 201
+    assert validation_by_code(second_response.json(), "invoice_title_match")["status"] == "failed"
+
+    recognition_task = client.get(f"/api/materials/{material_id}/recognition-tasks").json()["items"][0]
+
+    assert recognition_task["recognized_fields"]["buyer_name"]["value"] == "错误抬头"
+    assert recognition_task["recognized_fields"]["buyer_name"]["source"] == "manual"
+    assert recognition_task["recognized_fields"]["buyer_name"]["updated_at"] is not None
+    assert recognition_task["recognized_fields"]["tax_number"]["value"] == "12100000425006117D"
+    assert recognition_task["recognized_fields"]["tax_number"]["source"] == "manual"
+
+    buyer_name_corrections = manual_corrections_by_field(recognition_task, "buyer_name")
+    tax_number_corrections = manual_corrections_by_field(recognition_task, "tax_number")
+
+    assert len(buyer_name_corrections) == 2
+    assert len(tax_number_corrections) == 1
+    assert buyer_name_corrections[0]["before"]["value"] == "Tongji ACM Lab"
+    assert buyer_name_corrections[0]["before"]["source"] == "ocr"
+    assert buyer_name_corrections[0]["after"]["value"] == "同济大学"
+    assert buyer_name_corrections[0]["after"]["source"] == "manual"
+    assert buyer_name_corrections[0]["revalidation_status"] == "triggered"
+    assert buyer_name_corrections[0]["corrected_at"] is not None
+    assert buyer_name_corrections[1]["before"]["value"] == "同济大学"
+    assert buyer_name_corrections[1]["before"]["source"] == "manual"
+    assert buyer_name_corrections[1]["after"]["value"] == "错误抬头"
+    assert tax_number_corrections[0]["before"]["value"] == "WRONG-TAX-NUMBER"
+    assert tax_number_corrections[0]["after"]["value"] == "12100000425006117D"
 
 
 def test_create_invoice_rejects_expense_type_not_allowed_by_task(tmp_path):

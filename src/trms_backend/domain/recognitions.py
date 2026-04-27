@@ -36,6 +36,7 @@ class RecognitionFieldResult(BaseModel):
     source: RecognitionFieldSource
     confidence: float = Field(ge=0, le=1)
     status: RecognitionFieldStatus = RecognitionFieldStatus.RECOGNIZED
+    updated_at: datetime | None = None
 
 
 class RecognitionResultPayload(BaseModel):
@@ -71,8 +72,24 @@ class RecognitionTaskRecord(BaseModel):
     is_final_fact: Literal[False] = False
     raw_response: Any = None
     recognized_fields: dict[str, RecognitionFieldResult] = Field(default_factory=dict)
+    manual_corrections: list["RecognitionFieldCorrectionRecord"] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class RecognitionRevalidationStatus(StrEnum):
+    TRIGGERED = "triggered"
+    NOT_REQUIRED = "not_required"
+
+
+class RecognitionFieldCorrectionRecord(BaseModel):
+    id: str
+    field_name: str = Field(min_length=1)
+    actor_id: str = Field(min_length=1)
+    before: RecognitionFieldResult | None = None
+    after: RecognitionFieldResult
+    revalidation_status: RecognitionRevalidationStatus = RecognitionRevalidationStatus.NOT_REQUIRED
+    corrected_at: datetime
 
 
 class RecognitionTaskStatusUpdate(BaseModel):
@@ -125,6 +142,16 @@ class RecognitionTaskRepository(Protocol):
         target_status: RecognitionTaskStatus,
         result: RecognitionResultPayload | None = None,
     ) -> RecognitionTaskRecord | None:
+        raise NotImplementedError
+
+    def apply_manual_corrections(
+        self,
+        *,
+        material_id: str,
+        actor_id: str,
+        corrected_fields: dict[str, Any],
+        revalidation_field_names: set[str] | None = None,
+    ) -> RecognitionTaskRecord:
         raise NotImplementedError
 
 

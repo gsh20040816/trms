@@ -13,6 +13,7 @@ from trms_backend.domain.materials import (
     MaterialStatus,
     MaterialType,
 )
+from trms_backend.domain.recognitions import RecognitionTaskRepository
 from trms_backend.domain.tasks import (
     TaskExpenseTypeNotAllowedError,
     TaskRepository,
@@ -25,6 +26,7 @@ def build_invoice_router(
     material_repository: MaterialRepository,
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
+    recognition_task_repository: RecognitionTaskRepository,
 ) -> APIRouter:
     router = APIRouter(tags=["invoices"])
 
@@ -66,10 +68,26 @@ def build_invoice_router(
                 detail=str(error),
             ) from error
 
+        invoice_data = payload.to_invoice_create()
         invoice = invoice_repository.upsert_for_material(
             material.task_id,
             material_id,
-            payload.to_invoice_create(),
+            invoice_data,
+        )
+        recognition_task_repository.apply_manual_corrections(
+            material_id=material_id,
+            actor_id=payload.actor_id,
+            corrected_fields=invoice_data.model_dump(mode="json"),
+            revalidation_field_names={
+                "invoice_number",
+                "issue_date",
+                "transaction_time",
+                "buyer_name",
+                "tax_number",
+                "seller_name",
+                "amount_cents",
+                "expense_type",
+            },
         )
         duplicate_invoice_id = invoice_repository.find_duplicate_invoice_id(
             invoice.task_id,

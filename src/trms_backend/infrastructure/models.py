@@ -140,6 +140,7 @@ class RecognitionTaskRow(Base):
         nullable=True,
     )
     recognized_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    manual_corrections: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

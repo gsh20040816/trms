@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-04-28 02:56 - Record manual correction history for recognized invoice fields
+
+### 完成内容
+- 为识别字段结果补充 `updated_at`，并在识别任务里新增 `manual_corrections` 历史，显式保存每次人工更正的字段名、操作者、修改前值、修改后值、重校验触发状态和更正时间。
+- 将 `POST /api/materials/{material_id}/invoice` 接入识别结果覆盖层：人工录入或再次更正发票字段后，会把最新结构化字段同步写回该材料最近一次识别任务，并将字段来源标记为 `manual`，不再让人工修订停留在发票表里而无法回溯到识别链路。
+- 保留现有发票重校验主链：人工更正后仍立即重跑抬头、税号和重复发票校验，因此关键字段的修订不会静默绕过验证。
+- 补充发票与识别 API 回归测试，覆盖“AI 识别结果被人工修正后字段来源切换为 manual”“同一字段多次修正能追溯前后差异”“关键字段再次修正后校验结果随之变化”三条主路径。
+- 将 `TASKS.md` 中“增加人工更正识别字段记录”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/recognitions.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/main.py`
+- `tests/test_invoices_api.py`
+- `tests/test_recognition_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_tasks_api.py`
+    - 6 个用例通过
+  - `uv run pytest tests/test_invoices_api.py`
+    - 14 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 85 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮把“人工更正识别字段”收敛为覆盖该材料最近一次识别任务上的当前有效字段视图，并将更正前值保存在 `manual_corrections` 历史中；这样既能让当前识别结果体现 `manual` 来源，又不会丢失差异审计。
+- 关键字段集合按当前人工录入发票接口的全部结构化字段处理，因此每次人工修正这些字段都会记录为 `revalidation_status=triggered`；现阶段真正执行的仍是现有发票校验规则，后续新增更多规则时可复用同一触发语义。
+- 当前仓库依旧使用 `create_all` 初始化数据库，因此新增 `manual_corrections` 列只会自动体现在新建数据库上；已有共享旧库若需保留数据，仍需按既有迁移策略单独处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“支持识别失败显式暴露”，把失败原因、失败状态暴露和当前人工更正历史串起来，避免识别失败路径继续停留在黑盒状态。
+
 ## 2026-04-28 02:49 - Establish manual invoice entry boundary
 
 ### 完成内容

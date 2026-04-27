@@ -35,7 +35,9 @@ from trms_backend.domain.materials import (
     SubmissionChannel,
 )
 from trms_backend.domain.recognitions import (
+    RecognitionFieldCorrectionRecord,
     RecognitionFieldResult,
+    RecognitionRevalidationStatus,
     RecognitionTaskCreate,
     RecognitionTaskRecord,
     RecognitionTaskRepository,
@@ -437,11 +439,81 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
             row.status = target_status.value
             if result is not None:
                 row.raw_response = result.raw_response
-                row.recognized_fields = {
-                    field_name: field_result.model_dump(mode="json")
-                    for field_name, field_result in result.recognized_fields.items()
-                }
+                row.recognized_fields = _recognized_fields_to_json(
+                    result.recognized_fields,
+                    default_updated_at=datetime.now(timezone.utc),
+                )
             row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+        return _recognition_task_from_row(row)
+
+    def apply_manual_corrections(
+        self,
+        *,
+        material_id: str,
+        actor_id: str,
+        corrected_fields: dict[str, object],
+        revalidation_field_names: set[str] | None = None,
+    ) -> RecognitionTaskRecord:
+        now = datetime.now(timezone.utc)
+        tracked_revalidation_fields = revalidation_field_names or set()
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(RecognitionTaskRow)
+                .where(RecognitionTaskRow.material_id == material_id)
+                .order_by(RecognitionTaskRow.created_at.desc())
+                .limit(1)
+            )
+            if row is None:
+                row = RecognitionTaskRow(
+                    id=str(uuid4()),
+                    material_id=material_id,
+                    status=RecognitionTaskStatus.NEEDS_CONFIRMATION.value,
+                    is_final_fact=False,
+                    created_at=now,
+                    updated_at=now,
+                )
+            recognized_fields = {
+                field_name: RecognitionFieldResult.model_validate(field_result)
+                for field_name, field_result in (row.recognized_fields or {}).items()
+            }
+            manual_corrections = [
+                RecognitionFieldCorrectionRecord.model_validate(item)
+                for item in (row.manual_corrections or [])
+            ]
+            for field_name, corrected_value in corrected_fields.items():
+                previous = recognized_fields.get(field_name)
+                updated = RecognitionFieldResult(
+                    value=corrected_value,
+                    source="manual",
+                    confidence=1,
+                    status="recognized",
+                    updated_at=now,
+                )
+                if _recognition_field_equals(previous, updated):
+                    continue
+                recognized_fields[field_name] = updated
+                manual_corrections.append(
+                    RecognitionFieldCorrectionRecord(
+                        id=str(uuid4()),
+                        field_name=field_name,
+                        actor_id=actor_id,
+                        before=previous,
+                        after=updated,
+                        revalidation_status=(
+                            RecognitionRevalidationStatus.TRIGGERED
+                            if field_name in tracked_revalidation_fields
+                            else RecognitionRevalidationStatus.NOT_REQUIRED
+                        ),
+                        corrected_at=now,
+                    )
+                )
+            row.recognized_fields = _recognized_fields_to_json(
+                recognized_fields,
+                default_updated_at=now,
+            )
+            row.manual_corrections = [item.model_dump(mode="json") for item in manual_corrections]
+            row.updated_at = now
             session.add(row)
         return _recognition_task_from_row(row)
 
@@ -636,8 +708,42 @@ def _recognition_task_from_row(row: RecognitionTaskRow) -> RecognitionTaskRecord
             field_name: RecognitionFieldResult.model_validate(field_result)
             for field_name, field_result in (row.recognized_fields or {}).items()
         },
+        manual_corrections=[
+            RecognitionFieldCorrectionRecord.model_validate(item)
+            for item in (row.manual_corrections or [])
+        ],
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _recognized_fields_to_json(
+    recognized_fields: dict[str, RecognitionFieldResult],
+    *,
+    default_updated_at: datetime,
+) -> dict[str, dict]:
+    serialized: dict[str, dict] = {}
+    for field_name, field_result in recognized_fields.items():
+        normalized = field_result.model_copy(
+            update={
+                "updated_at": field_result.updated_at or default_updated_at,
+            }
+        )
+        serialized[field_name] = normalized.model_dump(mode="json")
+    return serialized
+
+
+def _recognition_field_equals(
+    previous: RecognitionFieldResult | None,
+    updated: RecognitionFieldResult,
+) -> bool:
+    if previous is None:
+        return False
+    return (
+        previous.value == updated.value
+        and previous.source is updated.source
+        and previous.confidence == updated.confidence
+        and previous.status is updated.status
     )
 
 

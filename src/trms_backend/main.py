@@ -78,6 +78,7 @@ def create_app(
             material_repository,
             invoice_repository,
             validation_repository,
+            recognition_task_repository,
         )
     )
     app.include_router(build_split_router(task_repository, invoice_repository, split_repository))
