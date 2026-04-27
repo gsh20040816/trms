@@ -97,6 +97,19 @@ def create_invoice_with_splits(
     return invoice_id
 
 
+def confirm_split(
+    client: TestClient,
+    *,
+    split_id: str,
+    member_id: str,
+) -> None:
+    response = client.put(
+        f"/api/splits/{split_id}/confirmation",
+        json={"actor_id": member_id, "member_id": member_id, "status": "confirmed"},
+    )
+    assert response.status_code == 200
+
+
 def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
@@ -116,7 +129,7 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["blocking_reasons"] == []
     assert body["execution_mode"] == "async_placeholder"
     assert body["note"] == (
-        "reimbursement summary CSV export is available; export jobs and other persisted "
+        "reimbursement summary/member details CSV export is available; export jobs and other persisted "
         "artifacts remain placeholders"
     )
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}
@@ -131,17 +144,20 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert supported_by_kind["reimbursement_summary"]["formats"] == ["xlsx", "csv"]
     assert supported_by_kind["reimbursement_summary"]["implemented"] is True
     assert supported_by_kind["reimbursement_summary"]["implemented_formats"] == ["csv"]
+    assert supported_by_kind["member_details"]["formats"] == ["xlsx", "csv"]
+    assert supported_by_kind["member_details"]["implemented"] is True
+    assert supported_by_kind["member_details"]["implemented_formats"] == ["csv"]
     assert supported_by_kind["finance_draft"]["formats"] == ["xlsx", "json"]
     assert supported_by_kind["merged_pdf"]["formats"] == ["pdf"]
     assert all(
         item["implemented"] is False
         for item in body["supported_exports"]
-        if item["kind"] != "reimbursement_summary"
+        if item["kind"] not in {"reimbursement_summary", "member_details"}
     )
     assert all(
         item["implemented_formats"] == []
         for item in body["supported_exports"]
-        if item["kind"] != "reimbursement_summary"
+        if item["kind"] not in {"reimbursement_summary", "member_details"}
     )
 
 
@@ -226,6 +242,123 @@ def test_task_administrator_can_export_reimbursement_summary_csv(tmp_path):
             "2250001": "7555",
             "2250002": "6345",
             "2250003": "20000",
+        },
+    ]
+
+
+def test_task_administrator_can_export_member_details_csv_with_current_split_versions(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    first_invoice_id = create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="railway-a.pdf",
+        split_items=[
+            {"member_id": "2250001", "amount_cents": 6000, "note": "initial-self"},
+            {"member_id": "2250002", "amount_cents": 6345, "note": "initial-shared"},
+        ],
+    )
+    initial_splits = client.get(f"/api/invoices/{first_invoice_id}/splits")
+    assert initial_splits.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in initial_splits.json()["items"]}
+    confirm_split(client, split_id=split_ids["2250001"], member_id="2250001")
+    confirm_split(client, split_id=split_ids["2250002"], member_id="2250002")
+
+    replace_response = client.put(
+        f"/api/invoices/{first_invoice_id}/splits",
+        json={
+            "actor_id": "admin-1",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6100, "note": "final-self"},
+                {"member_id": "2250002", "amount_cents": 6245, "note": "final-shared"},
+            ],
+        },
+    )
+    assert replace_response.status_code == 200
+
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250003",
+        filename="registration.pdf",
+        invoice_overrides={
+            "invoice_number": "INV-002",
+            "amount_cents": 20000,
+            "expense_type": "registration",
+            "seller_name": "比赛平台",
+        },
+        split_items=[
+            {"member_id": "2250002", "amount_cents": 10000},
+            {"member_id": "2250003", "amount_cents": 10000},
+        ],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/member-details",
+        params={"actor_id": "admin-1", "format": "csv"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="{task_id}-member-details.csv"'
+    )
+
+    rows = list(csv.DictReader(StringIO(response.text)))
+    assert rows == [
+        {
+            "member_id": "2250001",
+            "expense_type": "railway",
+            "invoice_number": "INV-001",
+            "invoice_amount_cents": "12345",
+            "split_amount_cents": "6100",
+            "split_version": "2",
+            "confirmation_status": "pending",
+            "split_note": "final-self",
+        },
+        {
+            "member_id": "2250002",
+            "expense_type": "railway",
+            "invoice_number": "INV-001",
+            "invoice_amount_cents": "12345",
+            "split_amount_cents": "6245",
+            "split_version": "2",
+            "confirmation_status": "pending",
+            "split_note": "final-shared",
+        },
+        {
+            "member_id": "2250002",
+            "expense_type": "registration",
+            "invoice_number": "INV-002",
+            "invoice_amount_cents": "20000",
+            "split_amount_cents": "10000",
+            "split_version": "1",
+            "confirmation_status": "",
+            "split_note": "",
+        },
+        {
+            "member_id": "2250003",
+            "expense_type": "registration",
+            "invoice_number": "INV-002",
+            "invoice_amount_cents": "20000",
+            "split_amount_cents": "10000",
+            "split_version": "1",
+            "confirmation_status": "",
+            "split_note": "",
+        },
+        {
+            "member_id": "grand_total",
+            "expense_type": "",
+            "invoice_number": "",
+            "invoice_amount_cents": "",
+            "split_amount_cents": "32345",
+            "split_version": "",
+            "confirmation_status": "",
+            "split_note": "",
         },
     ]
 

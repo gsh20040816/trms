@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
 from trms_backend.domain.invoices import ExpenseType, InvoiceRecord
 from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.tasks import ReimbursementTask, TaskStatus
@@ -46,7 +47,7 @@ class TaskExportBoundary(BaseModel):
     supported_exports: list[TaskExportCapability]
     note: str = Field(
         default=(
-            "reimbursement summary CSV export is available; export jobs and other persisted "
+            "reimbursement summary/member details CSV export is available; export jobs and other persisted "
             "artifacts remain placeholders"
         )
     )
@@ -187,6 +188,27 @@ class ReimbursementSummaryExport(BaseModel):
     rows: list[ReimbursementSummaryRow]
     grand_total_amount_cents: int = Field(ge=0)
     grand_total_amounts_cents_by_member: dict[str, int]
+
+
+class MemberDetailRow(BaseModel):
+    member_id: str
+    expense_type: ExpenseType
+    invoice_number: str
+    invoice_amount_cents: int = Field(ge=0)
+    split_amount_cents: int = Field(ge=0)
+    split_version: int = Field(ge=1)
+    confirmation_status: ConfirmationStatus | None = None
+    split_note: str | None = None
+
+
+class MemberDetailsExport(BaseModel):
+    task_id: str
+    administrator_id: str = Field(min_length=1)
+    format: ExportArtifactFormat
+    filename: str
+    generated_at: datetime
+    rows: list[MemberDetailRow]
+    grand_total_amount_cents: int = Field(ge=0)
 
 
 class TaskExportJobRepository(Protocol):
@@ -369,6 +391,110 @@ def render_reimbursement_summary_csv(export: ReimbursementSummaryExport) -> str:
     return buffer.getvalue()
 
 
+def build_member_details_export(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    format: ExportArtifactFormat,
+    invoices: list[InvoiceRecord],
+    splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
+    confirmations_by_split_id: dict[str, ConfirmationRecord],
+    generated_at: datetime | None = None,
+) -> MemberDetailsExport:
+    boundary = build_task_export_boundary(task, actor_id=actor_id)
+    if not boundary.export_allowed:
+        raise TaskExportJobNotReadyError(boundary.blocking_reasons)
+    ensure_export_format_implemented(
+        ExportArtifactKind.MEMBER_DETAILS,
+        format,
+    )
+
+    rows: list[MemberDetailRow] = []
+    for invoice in invoices:
+        current_splits = sorted(
+            splits_by_invoice_id.get(invoice.id, []),
+            key=lambda split: (split.member_id, split.created_at, split.id),
+        )
+        for split in current_splits:
+            confirmation = confirmations_by_split_id.get(split.id)
+            rows.append(
+                MemberDetailRow(
+                    member_id=split.member_id,
+                    expense_type=invoice.expense_type,
+                    invoice_number=invoice.invoice_number,
+                    invoice_amount_cents=invoice.amount_cents,
+                    split_amount_cents=split.amount_cents,
+                    split_version=split.version,
+                    confirmation_status=(
+                        confirmation.status if confirmation is not None else None
+                    ),
+                    split_note=split.note,
+                )
+            )
+
+    rows.sort(
+        key=lambda row: (
+            row.member_id,
+            row.expense_type.value,
+            row.invoice_number,
+        )
+    )
+
+    generated_at = generated_at or datetime.now(timezone.utc)
+    return MemberDetailsExport(
+        task_id=task.id,
+        administrator_id=boundary.administrator_id,
+        format=format,
+        filename=f"{task.id}-member-details.{format.value}",
+        generated_at=generated_at,
+        rows=rows,
+        grand_total_amount_cents=sum(row.split_amount_cents for row in rows),
+    )
+
+
+def render_member_details_csv(export: MemberDetailsExport) -> str:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "member_id",
+            "expense_type",
+            "invoice_number",
+            "invoice_amount_cents",
+            "split_amount_cents",
+            "split_version",
+            "confirmation_status",
+            "split_note",
+        ]
+    )
+    for row in export.rows:
+        writer.writerow(
+            [
+                row.member_id,
+                row.expense_type.value,
+                row.invoice_number,
+                row.invoice_amount_cents,
+                row.split_amount_cents,
+                row.split_version,
+                row.confirmation_status.value if row.confirmation_status is not None else "",
+                row.split_note or "",
+            ]
+        )
+    writer.writerow(
+        [
+            "grand_total",
+            "",
+            "",
+            "",
+            export.grand_total_amount_cents,
+            "",
+            "",
+            "",
+        ]
+    )
+    return buffer.getvalue()
+
+
 def update_task_export_job_status(
     task: ReimbursementTask,
     *,
@@ -424,6 +550,8 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
     TaskExportCapability(
         kind=ExportArtifactKind.MEMBER_DETAILS,
         formats=[ExportArtifactFormat.XLSX, ExportArtifactFormat.CSV],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.CSV],
     ),
     TaskExportCapability(
         kind=ExportArtifactKind.INVOICE_DETAILS,

@@ -80,6 +80,7 @@ def create_app(
             export_job_repository,
             invoice_repository,
             split_repository,
+            confirmation_repository,
         )
     )
     app.include_router(
