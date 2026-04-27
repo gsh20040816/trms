@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
-import type { AuthSession } from "./auth-store";
+import { useAuthSession } from "./auth-store";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -112,7 +113,8 @@ function buildTaskAnomalies(
   return items;
 }
 
-export function AdminTaskListPage({ session }: { session: AuthSession }) {
+export function AdminTaskListPage() {
+  const session = useAuthSession();
   const [state, setState] = useState<TaskListState>({ status: "loading" });
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
@@ -122,6 +124,10 @@ export function AdminTaskListPage({ session }: { session: AuthSession }) {
     let cancelled = false;
 
     async function loadTaskDigests() {
+      if (!session || session.role !== "admin") {
+        return;
+      }
+
       setState({ status: "loading" });
 
       try {
@@ -165,7 +171,11 @@ export function AdminTaskListPage({ session }: { session: AuthSession }) {
     return () => {
       cancelled = true;
     };
-  }, [session.actorId]);
+  }, [session]);
+
+  if (!session || session.role !== "admin") {
+    return null;
+  }
 
   const allItems = state.status === "ready" ? state.items : [];
   const filteredItems = allItems.filter(({ task }) => {
@@ -189,6 +199,11 @@ export function AdminTaskListPage({ session }: { session: AuthSession }) {
           当前仍使用 mock 管理员身份 {session.displayName}（{session.actorId}），并保守地只展示
           `administrator_id` 与当前身份一致的任务，避免在真实鉴权未接入前误展示其他管理员任务。
         </p>
+        <div className="inline-actions">
+          <Link className="route-link" to="/admin/tasks/new">
+            创建新任务
+          </Link>
+        </div>
       </section>
 
       <section className="status-card admin-filter-panel">

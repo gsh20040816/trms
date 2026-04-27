@@ -1,8 +1,20 @@
 import type { RouteObject } from "react-router-dom";
 
+import { AdminTaskCreatePage } from "./admin-task-create";
+import { AdminTaskListPage } from "./admin-task-list";
 import { MockLoginPage, ProtectedRoleRoute } from "./auth";
 import { HomePage, NotFoundPage, RootLayout } from "./pages";
-import { roleRoutes } from "./role-routes";
+import { findRoleRouteByRole, roleRoutes, type UserRole } from "./role-routes";
+
+function getRoleRouteOrThrow(role: UserRole) {
+  const roleRoute = findRoleRouteByRole(role);
+  if (!roleRoute) {
+    throw new Error(`Unknown role route: ${role}`);
+  }
+  return roleRoute;
+}
+
+const adminRoleRoute = getRoleRouteOrThrow("admin");
 
 export const routes: RouteObject[] = [
   {
@@ -17,7 +29,23 @@ export const routes: RouteObject[] = [
         path: "login",
         element: <MockLoginPage />,
       },
-      ...roleRoutes.map((roleRoute) => ({
+      {
+        path: adminRoleRoute.path.slice(1),
+        element: <ProtectedRoleRoute roleRoute={adminRoleRoute} />,
+        children: [
+          {
+            index: true,
+            element: <AdminTaskListPage />,
+          },
+          {
+            path: "tasks/new",
+            element: <AdminTaskCreatePage />,
+          },
+        ],
+      },
+      ...roleRoutes
+        .filter((roleRoute) => roleRoute.role !== "admin")
+        .map((roleRoute) => ({
         path: roleRoute.path.slice(1),
         element: <ProtectedRoleRoute roleRoute={roleRoute} />,
       })),
