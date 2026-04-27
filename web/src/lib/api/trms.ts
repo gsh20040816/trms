@@ -13,12 +13,14 @@ import type {
   MaterialBatchUploadResponse,
   MaterialRecord,
   MergedPdfExportPlan,
+  OverdueConfirmationList,
   ReimbursementTask,
   TaskCreateInput,
   TaskExportBoundary,
   TaskExportJobRecord,
   TaskExportJobRequest,
   TaskMembersUpdate,
+  TaskReviewSummary,
   TaskStatusUpdate,
   ValidationResult,
 } from "./types";
@@ -52,6 +54,18 @@ export const trmsApi = {
 
   getTask(taskId: string) {
     return apiClient.request<ReimbursementTask>(`/tasks/${encodeSegment(taskId)}`);
+  },
+
+  getTaskReviewSummary(taskId: string, actorId: string) {
+    return apiClient.request<TaskReviewSummary>(
+      `/tasks/${encodeSegment(taskId)}/review-summary${buildQuery({ actor_id: actorId })}`,
+    );
+  },
+
+  listTaskOverdueConfirmations(taskId: string, actorId: string) {
+    return apiClient.request<OverdueConfirmationList>(
+      `/tasks/${encodeSegment(taskId)}/overdue-confirmations${buildQuery({ actor_id: actorId })}`,
+    );
   },
 
   updateTaskMembers(taskId: string, payload: TaskMembersUpdate) {

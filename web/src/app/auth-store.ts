@@ -8,6 +8,7 @@ const memoryStorage = new Map<string, string>();
 
 export type AuthSession = {
   role: UserRole;
+  actorId: string;
   displayName: string;
   memberCode: string | null;
 };
@@ -28,6 +29,7 @@ function createSession(role: UserRole): AuthSession {
   const roleRoute = getRoleRouteOrThrow(role);
   return {
     role,
+    actorId: roleRoute.mockActorId,
     displayName: roleRoute.mockDisplayName,
     memberCode: roleRoute.mockMemberCode,
   };

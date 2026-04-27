@@ -54,6 +54,7 @@ export type ExportArtifactKind =
 export type ExportArtifactFormat = "xlsx" | "csv" | "json" | "pdf";
 
 export type TaskExportJobStatus = "pending" | "running" | "succeeded" | "failed";
+export type RecognitionTaskStatus = "pending" | "succeeded" | "failed" | "needs_confirmation";
 
 export type ReimbursementTask = {
   id: string;
@@ -259,6 +260,36 @@ export type TaskExportJobRecord = {
   updated_at: ApiDateTime;
   started_at: ApiDateTime | null;
   finished_at: ApiDateTime | null;
+};
+
+export type TaskReviewSummaryCounts = {
+  material_count: number;
+  invoice_count: number;
+  validation_count: number;
+  blocker_failed_validation_count: number;
+  split_count: number;
+  confirmed_split_count: number;
+  pending_confirmation_count: number;
+  disputed_confirmation_count: number;
+  missing_confirmation_count: number;
+  pending_recognition_count: number;
+  failed_recognition_count: number;
+  needs_confirmation_recognition_count: number;
+};
+
+export type TaskReviewSummary = {
+  task_id: string;
+  administrator_id: string;
+  counts: TaskReviewSummaryCounts;
+};
+
+export type OverdueConfirmationList = {
+  task_id: string;
+  administrator_id: string;
+  confirmation_deadline: ApiDateTime;
+  is_overdue: boolean;
+  total_overdue_members: number;
+  overdue_member_ids: string[];
 };
 
 export type TaskExportJobStatusUpdate = {

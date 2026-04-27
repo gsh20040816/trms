@@ -235,6 +235,174 @@ select {
   max-width: none;
 }
 
+.admin-page-hero,
+.admin-filter-panel {
+  max-width: none;
+}
+
+.admin-filter-header,
+.task-card-header,
+.task-anomaly-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-filter-grid,
+.task-card-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.admin-filter-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.field-stack {
+  display: grid;
+  gap: 8px;
+  color: #11253d;
+  font-weight: 700;
+}
+
+.field-stack input,
+.field-stack select {
+  min-height: 48px;
+  border: 1px solid rgba(17, 37, 61, 0.16);
+  border-radius: 16px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #11253d;
+}
+
+.field-stack input::placeholder {
+  color: rgba(53, 80, 111, 0.8);
+}
+
+.task-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.task-card {
+  border: 1px solid rgba(17, 37, 61, 0.1);
+  border-radius: 24px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px rgba(17, 37, 61, 0.08);
+  animation: rise-in 460ms ease-out;
+}
+
+.task-card h3,
+.task-anomaly-panel h4 {
+  margin: 0;
+}
+
+.task-card-id {
+  margin: 0 0 8px;
+  color: #9e4d11;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.task-status-chip {
+  white-space: nowrap;
+}
+
+.task-status-draft {
+  background: rgba(17, 37, 61, 0.08);
+}
+
+.task-status-open {
+  background: rgba(20, 130, 76, 0.14);
+  color: #0d5a34;
+}
+
+.task-status-closed {
+  background: rgba(168, 90, 17, 0.16);
+  color: #7a3c07;
+}
+
+.task-status-reviewing {
+  background: rgba(24, 87, 173, 0.14);
+  color: #14407d;
+}
+
+.task-status-ready_to_export {
+  background: rgba(111, 76, 9, 0.18);
+  color: #6c4a07;
+}
+
+.task-status-completed {
+  background: rgba(41, 94, 118, 0.15);
+  color: #1c5d77;
+}
+
+.task-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0 0;
+}
+
+.task-meta-grid div,
+.task-anomaly-panel {
+  border-radius: 18px;
+  background: rgba(244, 239, 228, 0.7);
+}
+
+.task-meta-grid div {
+  padding: 16px;
+}
+
+.task-meta-grid dt {
+  margin-bottom: 6px;
+  color: #11253d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.task-meta-grid dd {
+  margin: 0;
+  color: #35506f;
+}
+
+.task-anomaly-panel {
+  margin-top: 18px;
+  padding: 18px;
+}
+
+.task-anomaly-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-anomaly-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #35506f;
+}
+
+.task-anomaly-list strong,
+.task-healthy-note {
+  color: #11253d;
+}
+
+.task-healthy-note {
+  margin-top: 14px;
+}
+
 .api-error-header {
   display: flex;
   align-items: center;
@@ -301,7 +469,10 @@ select {
 @media (max-width: 900px) {
   .boundary-grid,
   .card-grid,
-  .session-grid {
+  .session-grid,
+  .admin-filter-grid,
+  .task-card-grid,
+  .task-meta-grid {
     grid-template-columns: 1fr;
   }
 
@@ -312,5 +483,11 @@ select {
   .route-card,
   .status-card {
     padding: 20px;
+  }
+
+  .admin-filter-header,
+  .task-card-header,
+  .task-anomaly-header {
+    flex-direction: column;
   }
 }

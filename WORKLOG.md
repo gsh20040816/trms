@@ -1,5 +1,64 @@
 # WORKLOG
 
+## 2026-04-28 07:33 - Implement admin task list page
+
+### 完成内容
+- 将 `/admin` 从纯占位页替换为首个真实业务页面“管理员任务列表”：
+  - 新增 `web/src/app/admin-task-list.tsx`，接入 `/api/tasks`、`/api/tasks/{id}/review-summary` 和 `/api/tasks/{id}/overdue-confirmations`；
+  - 列表页展示任务编号、比赛名称、状态、截止时间、材料/发票数量、确认进度和异常摘要；
+  - 支持按任务状态筛选，以及按任务编号或比赛名称做基础搜索。
+- 补齐管理员列表的异常摘要聚合：
+  - 显式展示 Must 级失败校验、识别失败、识别待人工确认、成员异议、待确认费用明细和逾期未确认成员；
+  - 当任务当前无异常时，返回明确“当前无异常”提示，而不是留空。
+- 为前端 mock 会话补充稳定 actor id：
+  - 在 `auth-store.ts` 和 `role-routes.tsx` 中为成员、管理员、系统管理员增加 mock actor id；
+  - 管理员页面据此调用需要 `actor_id` 的后端接口，不再伪造匿名管理员访问。
+- 扩展前端 API 合同和测试：
+  - 在 `web/src/lib/api/types.ts`、`web/src/lib/api/trms.ts` 中补充复核摘要和逾期确认摘要类型/请求；
+  - 新增 `web/src/app/admin-task-list.test.tsx`，覆盖列表渲染、异常摘要、搜索/筛选、加载态、空态和错误态；
+  - 更新 `web/src/app/App.test.tsx`，把 `/admin` 登录跳转断言改为真实列表页。
+- 将 `TASKS.md` 中“实现管理员任务列表页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/admin-task-list.tsx`
+- `web/src/app/admin-task-list.test.tsx`
+- `web/src/app/App.test.tsx`
+- `web/src/app/auth-store.ts`
+- `web/src/app/auth.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/app/role-routes.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前两轮前端已经具备路由门禁、mock 登录态、统一 API 客户端和错误展示边界，但 `/admin` 仍只是纯静态占位。
+- 如果继续做任务创建页或详情页而不先落地管理员任务列表，管理员后台仍没有任何“从入口进入真实数据”的主导航页面，后续页面会缺少统一的任务上下文入口。
+- 后端现有接口已经能提供任务列表、复核摘要和逾期确认摘要，足够支撑管理员列表页的最小实现，没有必要为这一轮再扩散到新的后端接口或额外状态模型。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，4 个前端测试文件、12 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于后端已有 `HTTP_422_UNPROCESSABLE_ENTITY` 常量使用，不是本轮新增问题。
+  - `npm test` 期间仍打印 Node `--localstorage-file` 既有警告，但前端测试和构建均通过；本轮未新增对该行为的依赖。
+
+### 假设
+- 在真实鉴权尚未接入前，管理员任务列表当前保守地只展示 `administrator_id` 与当前 mock 管理员 `actor_id` 一致的任务，避免前端在无权限边界时误展示其他管理员任务。
+- “异常摘要”当前只使用现有后端可直接提供的复核摘要和逾期确认摘要，不额外虚构“任务级综合健康分”之类的新字段。
+- 基础搜索当前仅覆盖任务编号和比赛名称；更复杂的后端分页、服务端搜索或多字段组合筛选留给后续任务。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现管理员任务创建页面”，直接复用本轮已经补齐的管理员列表入口、mock actor id 和统一错误展示边界。
+
 ## 2026-04-28 07:23 - Add web login placeholder and role gate
 
 ### 完成内容

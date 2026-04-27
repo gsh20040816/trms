@@ -1,5 +1,6 @@
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
+import { AdminTaskListPage } from "./admin-task-list";
 import { RoleShell } from "../components/RoleShell";
 import {
   buildLoginPath,
@@ -143,6 +144,10 @@ export function ProtectedRoleRoute({ roleRoute }: { roleRoute: RoleRouteConfig }
         </div>
       </RoleShell>
     );
+  }
+
+  if (roleRoute.role === "admin") {
+    return <AdminTaskListPage session={session} />;
   }
 
   return (

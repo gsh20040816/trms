@@ -4,9 +4,23 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { clearMockSession, setMockSession } from "./auth-store";
 import { routes } from "./routes";
 
+function resolveRequestUrl(input: string | URL | Request) {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  return input.url;
+}
+
 describe("web app auth placeholder", () => {
   beforeEach(() => {
     clearMockSession();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders role entry cards on the home page", () => {
@@ -36,6 +50,21 @@ describe("web app auth placeholder", () => {
   });
 
   it("allows entering the requested route with a mock admin session", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in auth test: ${url}`);
+    });
+
     const router = createMemoryRouter(routes, {
       initialEntries: ["/login?next=%2Fadmin"],
     });
@@ -44,11 +73,9 @@ describe("web app auth placeholder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "以管理员身份进入" }));
 
-    expect(await screen.findByRole("heading", { name: "管理员后台" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "管理员任务列表" })).toBeInTheDocument();
     expect(
-      await screen.findByText(
-        "当前以 mock 身份 张管理员 进入。此页只固化登录态与角色入口边界，真实业务内容将在后续任务补齐。",
-      ),
+      await screen.findByText("当前管理员名下还没有任务"),
     ).toBeInTheDocument();
   });
 
