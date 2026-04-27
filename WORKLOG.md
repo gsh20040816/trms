@@ -1,5 +1,32 @@
 # WORKLOG
 
+## 2026-04-28 01:20 - Document database migration strategy boundary
+
+### 完成内容
+- 新增文档 `docs/数据库迁移策略说明.md`，记录当前数据库初始化仍依赖应用启动时执行 `Base.metadata.create_all(...)`。
+- 明确当前仓库尚未引入 Alembic，现阶段继续保留 `create_all` 仅作为第一阶段早期开发和测试的低成本建表方案。
+- 记录 `create_all` 的阶段性限制：无法做可靠的增量 schema 变更、版本追踪、回滚和数据迁移，不适合作为共享环境的长期迁移机制。
+- 明确 Alembic 的引入触发条件：一旦出现已有表结构变更、需要保留历史数据、共享部署环境、数据回填或多人协作下的版本管理需求，应优先切换到版本化迁移。
+- 将 `TASKS.md` 中“增加数据库迁移策略说明”标记为已完成。
+
+### 修改文件
+- `docs/数据库迁移策略说明.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 32 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前第一阶段的主要运行场景仍是本地 SQLite 和 pytest 临时数据库，因此暂不把 Alembic 作为强制前置依赖。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“明确第一阶段 Won't-have 边界”，把 FR-011 和财务系统自动化相关能力的非目标范围写清楚。
+
 ## 2026-04-28 01:15 - Map first-phase acceptance criteria
 
 ### 完成内容
