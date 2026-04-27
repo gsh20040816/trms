@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RecognitionTaskStatus(StrEnum):
@@ -19,17 +19,80 @@ class RecognitionTaskCreate(BaseModel):
     is_final_fact: Literal[False] = False
 
 
+class RecognitionFieldSource(StrEnum):
+    OCR = "ocr"
+    PDF_TEXT = "pdf_text"
+    AI = "ai"
+    MANUAL = "manual"
+
+
+class RecognitionFieldStatus(StrEnum):
+    RECOGNIZED = "recognized"
+    NEEDS_CONFIRMATION = "needs_confirmation"
+
+
+class RecognitionFieldResult(BaseModel):
+    value: Any
+    source: RecognitionFieldSource
+    confidence: float = Field(ge=0, le=1)
+    status: RecognitionFieldStatus = RecognitionFieldStatus.RECOGNIZED
+
+
+class RecognitionResultPayload(BaseModel):
+    raw_response: Any = None
+    recognized_fields: dict[str, RecognitionFieldResult] = Field(default_factory=dict)
+
+    @field_validator("recognized_fields")
+    @classmethod
+    def validate_field_names(
+        cls,
+        value: dict[str, RecognitionFieldResult],
+    ) -> dict[str, RecognitionFieldResult]:
+        normalized: dict[str, RecognitionFieldResult] = {}
+        for field_name, field_result in value.items():
+            normalized_name = field_name.strip()
+            if not normalized_name:
+                raise ValueError("recognition field names must not be empty")
+            normalized[normalized_name] = field_result
+        return normalized
+
+    def pending_confirmation_field_names(self) -> list[str]:
+        return [
+            field_name
+            for field_name, field_result in self.recognized_fields.items()
+            if field_result.status is RecognitionFieldStatus.NEEDS_CONFIRMATION
+        ]
+
+
 class RecognitionTaskRecord(BaseModel):
     id: str
     material_id: str
     status: RecognitionTaskStatus
     is_final_fact: Literal[False] = False
+    raw_response: Any = None
+    recognized_fields: dict[str, RecognitionFieldResult] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
 
 class RecognitionTaskStatusUpdate(BaseModel):
     target_status: RecognitionTaskStatus
+    result: RecognitionResultPayload | None = None
+
+    @model_validator(mode="after")
+    def validate_low_confidence_fields(self) -> RecognitionTaskStatusUpdate:
+        if self.result is None:
+            return self
+        if self.target_status is RecognitionTaskStatus.PENDING:
+            raise ValueError("pending recognition task cannot persist recognition result")
+        pending_fields = self.result.pending_confirmation_field_names()
+        if pending_fields and self.target_status is not RecognitionTaskStatus.NEEDS_CONFIRMATION:
+            joined_field_names = ", ".join(pending_fields)
+            raise ValueError(
+                "low-confidence recognition fields require needs_confirmation status: "
+                f"{joined_field_names}"
+            )
+        return self
 
 
 class RecognitionTaskStatusTransitionError(ValueError):
@@ -60,6 +123,7 @@ class RecognitionTaskRepository(Protocol):
         self,
         recognition_task_id: str,
         target_status: RecognitionTaskStatus,
+        result: RecognitionResultPayload | None = None,
     ) -> RecognitionTaskRecord | None:
         raise NotImplementedError
 

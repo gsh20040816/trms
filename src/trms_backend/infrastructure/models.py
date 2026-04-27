@@ -135,6 +135,11 @@ class RecognitionTaskRow(Base):
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     is_final_fact: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    raw_response: Mapped[dict | list | str | int | float | bool | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+    recognized_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

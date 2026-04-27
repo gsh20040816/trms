@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-04-28 02:37 - Persist recognition raw results and field confidence
+
+### 完成内容
+- 为识别任务模型补充字段级结果结构，显式保存 `raw_response`、字段值、字段来源和 `0..1` 置信度；识别任务列表和详情返回也同步暴露这些内容，避免识别状态存在但结果内容丢失。
+- 在 `recognition_tasks` 持久化表中新增 `raw_response`、`recognized_fields` 两个 JSON 字段，并在仓储层保证结果可写入、可读取、可随状态更新一起持久化。
+- 扩展 `PATCH /api/recognition-tasks/{recognition_task_id}/status` 请求体，允许在状态流转时一并提交识别结果；当字段被显式标记为 `needs_confirmation` 时，接口拒绝把该任务直接更新为 `succeeded`，防止低置信度结果被静默当作已确认事实。
+- 补充识别任务 API 回归测试，覆盖低置信度字段必须进入 `needs_confirmation`、以及原始响应与字段置信度能被持久化和再次查询的路径。
+- 将 `TASKS.md` 中“保存识别原始结果和字段置信度”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/recognitions.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_recognition_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_tasks_api.py`
+    - 5 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 80 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“低置信度字段可标记为待确认”收敛为显式字段状态 `needs_confirmation`，不在当前任务内再引入全局置信度阈值配置；原因是需求和现有代码尚未定义统一阈值，强行硬编码会把策略和存储边界混在一起。后续若要自动根据置信度判定待确认，应在单独规则或配置任务里补齐阈值来源。
+- 当前仍未接入真实 OCR / PDF / AI provider，本轮只提供“识别结果如何保存和暴露”的稳定边界，不把占位任务自动触发或外部调用混入当前任务；上传后自动创建识别任务的动作仍留给下一项“建立识别任务触发边界”处理。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此本轮新增的 `recognition_tasks.raw_response`、`recognition_tasks.recognized_fields` 列只会自动体现在新建数据库上；已有旧库若需要保留数据，仍需后续迁移机制统一处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立识别任务触发边界”，把材料提交后的识别任务创建或排队动作做成显式但不阻塞上传响应的占位链路。
+
 ## 2026-04-28 02:31 - Establish AI recognition task placeholders
 
 ### 完成内容

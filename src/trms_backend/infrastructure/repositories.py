@@ -35,9 +35,11 @@ from trms_backend.domain.materials import (
     SubmissionChannel,
 )
 from trms_backend.domain.recognitions import (
+    RecognitionFieldResult,
     RecognitionTaskCreate,
     RecognitionTaskRecord,
     RecognitionTaskRepository,
+    RecognitionResultPayload,
     RecognitionTaskStatus,
 )
 from trms_backend.domain.splits import ExpenseSplitItem, ExpenseSplitRecord, ExpenseSplitRepository
@@ -403,12 +405,19 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
         self,
         recognition_task_id: str,
         target_status: RecognitionTaskStatus,
+        result: RecognitionResultPayload | None = None,
     ) -> RecognitionTaskRecord | None:
         with session_scope(self._session_factory) as session:
             row = session.get(RecognitionTaskRow, recognition_task_id)
             if row is None:
                 return None
             row.status = target_status.value
+            if result is not None:
+                row.raw_response = result.raw_response
+                row.recognized_fields = {
+                    field_name: field_result.model_dump(mode="json")
+                    for field_name, field_result in result.recognized_fields.items()
+                }
             row.updated_at = datetime.now(timezone.utc)
             session.add(row)
         return _recognition_task_from_row(row)
@@ -599,6 +608,11 @@ def _recognition_task_from_row(row: RecognitionTaskRow) -> RecognitionTaskRecord
         material_id=row.material_id,
         status=RecognitionTaskStatus(row.status),
         is_final_fact=row.is_final_fact,
+        raw_response=row.raw_response,
+        recognized_fields={
+            field_name: RecognitionFieldResult.model_validate(field_result)
+            for field_name, field_result in (row.recognized_fields or {}).items()
+        },
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
