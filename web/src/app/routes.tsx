@@ -1,5 +1,6 @@
 import type { RouteObject } from "react-router-dom";
 
+import { AdminTaskDetailPage } from "./admin-task-detail";
 import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminTaskListPage } from "./admin-task-list";
 import { MockLoginPage, ProtectedRoleRoute } from "./auth";
@@ -40,6 +41,10 @@ export const routes: RouteObject[] = [
           {
             path: "tasks/new",
             element: <AdminTaskCreatePage />,
+          },
+          {
+            path: "tasks/:taskId",
+            element: <AdminTaskDetailPage />,
           },
         ],
       },

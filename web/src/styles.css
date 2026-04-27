@@ -233,7 +233,9 @@ select {
 .contract-card,
 .api-error-card,
 .admin-create-hero,
-.admin-form-card {
+.admin-form-card,
+.admin-task-detail-hero,
+.admin-task-detail-panel {
   max-width: none;
 }
 
@@ -385,6 +387,12 @@ select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.task-detail-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
 .task-card {
   border: 1px solid rgba(17, 37, 61, 0.1);
   border-radius: 24px;
@@ -454,6 +462,31 @@ select {
   background: rgba(244, 239, 228, 0.7);
 }
 
+.task-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0 0;
+}
+
+.task-detail-grid div {
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(244, 239, 228, 0.7);
+}
+
+.task-detail-grid dt {
+  margin-bottom: 6px;
+  color: #11253d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.task-detail-grid dd {
+  margin: 0;
+  color: #35506f;
+}
+
 .task-meta-grid div {
   padding: 16px;
 }
@@ -501,6 +534,34 @@ select {
 
 .task-healthy-note {
   margin-top: 14px;
+}
+
+.token-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.token-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(17, 37, 61, 0.12);
+  border-radius: 999px;
+  background: rgba(244, 239, 228, 0.8);
+  color: #11253d;
+  font-weight: 700;
+}
+
+.status-action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
 }
 
 .api-error-header {
@@ -572,8 +633,10 @@ select {
   .session-grid,
   .admin-filter-grid,
   .admin-form-grid,
+  .task-detail-layout,
   .task-card-grid,
   .task-meta-grid,
+  .task-detail-grid,
   .checkbox-grid {
     grid-template-columns: 1fr;
   }

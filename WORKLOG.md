@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-28 07:53 - Implement admin task detail page
+
+### 完成内容
+- 为管理员后台补齐任务详情与状态操作页面：
+  - 新增 `web/src/app/admin-task-detail.tsx`，在 `/admin/tasks/:taskId` 展示任务基础信息、成员名单、允许费用类别和当前状态；
+  - 页面直接接入现有 `GET /api/tasks/{taskId}` 与 `PATCH /api/tasks/{taskId}/status`，不新增后端接口或额外业务逻辑。
+- 补齐管理员详情页状态流转边界：
+  - 前端只展示当前状态机允许的下一步流转按钮，避免在 mock 阶段提供与后端状态机不一致的伪操作；
+  - 当后端因发布条件不足、复核未完成或未记录导出完成事实而拒绝流转时，通过统一 `ApiErrorNotice` 显式展示错误，不在前端伪装成功。
+- 将管理员列表与详情页连通：
+  - 在 `web/src/app/routes.tsx` 新增 `/admin/tasks/:taskId` 路由；
+  - 在 `web/src/app/admin-task-list.tsx` 每个任务卡片增加“查看详情与状态操作”入口，避免详情页成为孤页。
+- 新增 `web/src/app/admin-task-detail.test.tsx`，覆盖：
+  - 任务基础信息、成员名单、费用类别和允许流转按钮渲染；
+  - 状态流转成功后页面状态更新；
+  - 状态流转被后端拒绝时的错误展示。
+- 将 `TASKS.md` 中“实现任务详情与状态操作页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/admin-task-list.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮已经有管理员任务列表和任务创建页，但管理员仍无法在前端进入单个任务查看完整配置，也无法从前端触发现有后端状态流转接口。
+- 如果继续实现成员上传、复核或导出页，而不先补任务详情页，管理员主链路会长期停留在“能看到列表、能创建任务，但无法进入任务内部操作”的断点状态。
+- 后端已经具备任务详情查询和状态流转契约，本轮缺口仅在前端页面、路由和错误展示边界，不需要扩散到新的后端实现。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，6 个前端测试文件、18 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于后端已有 `HTTP_422_UNPROCESSABLE_ENTITY` 常量使用，不是本轮新增问题。
+  - `npm test` 期间仍打印 Node `--localstorage-file` 既有警告，但前端测试与构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 任务详情页当前保守地仅在前端允许操作 `administrator_id` 与当前 mock 管理员一致的任务；若直接访问其他管理员任务，只展示范围提示，不暴露状态流转按钮。
+- 状态流转页当前只调用已有任务状态接口，不提前实现任务成员编辑、复核汇总或导出能力，以避免超出本轮最小任务范围。
+- 费用类别当前继续复用后端枚举值到中文标签的静态映射，不引入新的配置接口或元数据服务。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现成员 Web 可提交任务页面”，把成员前端入口从当前占位页推进到真实可见任务列表。
+
 ## 2026-04-28 07:43 - Implement admin task create page
 
 ### 完成内容

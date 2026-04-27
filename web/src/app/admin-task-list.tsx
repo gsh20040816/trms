@@ -337,6 +337,12 @@ export function AdminTaskListPage() {
                     </p>
                   )}
                 </section>
+
+                <div className="inline-actions">
+                  <Link className="route-link route-link-secondary" to={`/admin/tasks/${task.id}`}>
+                    查看详情与状态操作
+                  </Link>
+                </div>
               </article>
             );
           })}
