@@ -515,6 +515,58 @@ def test_update_task_status_rejects_ready_to_export_when_member_confirmation_mis
     )
 
 
+def test_update_task_status_rejects_ready_to_export_when_member_confirmation_is_disputed(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(client, material_id)
+    split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000},
+                {"member_id": "2250002", "amount_cents": 6345},
+            ],
+        },
+    )
+    assert split_response.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in split_response.json()["items"]}
+
+    confirmed_response = client.put(
+        f"/api/splits/{split_ids['2250001']}/confirmation",
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
+    )
+    assert confirmed_response.status_code == 200
+
+    disputed_response = client.put(
+        f"/api/splits/{split_ids['2250002']}/confirmation",
+        json={
+            "actor_id": "2250002",
+            "member_id": "2250002",
+            "status": "disputed",
+            "dispute_reason": "shared amount should be lower",
+        },
+    )
+    assert disputed_response.status_code == 200
+
+    move_open_task_to_reviewing(client, task["id"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task review is incomplete: "
+        f"member confirmations are disputed for splits: {split_ids['2250002']}"
+    )
+
+
 def test_update_task_status_rejects_ready_to_export_when_pending_assignment_material_exists(
     tmp_path,
 ):

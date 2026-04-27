@@ -1,5 +1,39 @@
 # WORKLOG
 
+## 2026-04-28 05:31 - Close final-confirmation gate for unconfirmed members
+
+### 完成内容
+- 在 `tests/test_tasks_api.py` 新增回归测试，显式覆盖“成员确认处于 `disputed` 时，任务不能从 `reviewing` 进入 `ready_to_export`”。
+- 将 `TASKS.md` 中“阻止存在未确认成员的最终确认”标记为已完成。
+
+### 修改文件
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库的 `ready_to_export` 门禁代码实际上已经拒绝三类成员确认缺口：
+  - 缺失确认；
+  - 金额变更后回退到 `pending`；
+  - 成员提出异议后的 `disputed`。
+- 但现有回归测试只显式覆盖了缺失确认和回退到 `pending` 的路径，没有直接锁定 `disputed` 分支。
+- 结果是：任务清单要求的“异议状态不能被静默当作确认”虽然在实现上已成立，但缺少可回归证明，任务无法严谨结项。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 34 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 134 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守认定“未确认成员”任务的最小闭环是把现有服务端门禁语义用测试锁定，而不是在尚未引入成员级费用明细版本模型前继续重写确认数据结构。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“支持管理员补材料提醒记录”，不要把提醒能力和真实外部通知发送耦合在同一轮。
+
 ## 2026-04-28 05:19 - Block ready-to-export when pending-assignment materials exist
 
 ### 完成内容
