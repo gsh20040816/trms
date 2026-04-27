@@ -1,5 +1,39 @@
 # WORKLOG
 
+## 2026-04-28 04:07 - Add missing material aggregation model
+
+### 完成内容
+- 新增领域模块 `src/trms_backend/domain/missing_materials.py`，把现有发票校验结果中的“明确缺少附件”规则聚合成统一的缺失材料清单模型。
+- 清单同时输出任务维度 `items` 和成员维度 `members` 两层结构，当前按发票主材料的 `submitter_id` 归属成员，便于后续复核、CLI 查询和导出模块复用。
+- 当前先收敛支持两类明确缺失项：`invoice_payment_record_required` 对应 `payment_record`，`invoice_competition_notice_required` 对应 `competition_notice`；不会把抬头错误、金额不匹配或待确认 warning 误聚合成“缺失材料”。
+- 新增 `tests/test_missing_materials.py`，覆盖任务级聚合、成员级分组，以及“非缺失类校验结果不应进入清单”的过滤逻辑。
+- 将 `TASKS.md` 中“建立缺失材料清单模型”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/missing_materials.py`
+- `tests/test_missing_materials.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 仓库已经具备支付记录、比赛通知等附件完整性规则，但这些结果仍停留在逐发票校验层，尚无统一模型把“明确缺少哪些材料、对应哪个成员/任务”聚合出来，导致后续 FR-009 复核、FR-010 导出和 FR-014 CLI 缺失材料查询都缺少稳定基础。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_missing_materials.py`
+    - 2 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 108 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 在尚未引入费用明细版本和成员权限上下文前，本轮保守采用“发票主材料提交人即缺失材料责任成员”的归属规则；若后续业务确认应按分摊成员或任务管理员视角归属，应在独立任务中调整聚合口径。
+- 本轮只把“明确缺少附件”的 blocker 失败聚合进清单，不把金额不一致、识别待确认或比赛范围 warning 视为缺失材料，避免把异常校验与缺件问题混为一类。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“支持材料补充后重新校验”，把补挂附件后的校验刷新与当前缺失材料清单联动起来。
+
 ## 2026-04-28 04:02 - Implement competition location range validation
 
 ### 完成内容
