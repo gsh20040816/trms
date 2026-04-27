@@ -3,11 +3,23 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
+from trms_backend.infrastructure.database import build_session_factory, session_scope
+from trms_backend.infrastructure.models import TaskRow
 from trms_backend.main import create_app
 
 
 def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = None):
     return TestClient(create_app(f"sqlite:///{tmp_path}/test.db", global_invoice_config))
+
+
+def update_task_row(tmp_path, task_id: str, **updates):
+    session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    with session_scope(session_factory) as session:
+        row = session.get(TaskRow, task_id)
+        assert row is not None
+        for field_name, value in updates.items():
+            setattr(row, field_name, value)
+        session.add(row)
 
 
 def valid_task_payload():
@@ -177,6 +189,66 @@ def test_update_task_status_allows_valid_transition(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["status"] == "open"
+
+
+def test_update_task_status_rejects_open_when_member_list_missing(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    update_task_row(tmp_path, created["id"], member_ids=[])
+
+    response = client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "task is missing required publish fields: member_ids"
+
+
+def test_update_task_status_rejects_open_when_fee_categories_missing(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    update_task_row(tmp_path, created["id"], fee_categories=[])
+
+    response = client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task is missing required publish fields: fee_categories"
+    )
+
+
+def test_update_task_status_rejects_open_when_project_info_missing(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    update_task_row(tmp_path, created["id"], project_info="   ")
+
+    response = client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "task is missing required publish fields: project_info"
+
+
+def test_update_task_status_rejects_open_when_reimburser_info_missing(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    update_task_row(tmp_path, created["id"], reimburser_info="   ")
+
+    response = client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task is missing required publish fields: reimburser_info"
+    )
 
 
 def test_update_task_status_rejects_invalid_transition(tmp_path):

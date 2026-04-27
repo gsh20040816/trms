@@ -5,8 +5,11 @@ from trms_backend.domain.tasks import (
     TaskCreateInput,
     MissingTaskInvoiceConfigError,
     TaskRepository,
+    TaskPublishValidationError,
+    TaskStatus,
     TaskStatusUpdate,
     can_transition,
+    ensure_task_can_publish,
     resolve_task_create,
 )
 
@@ -50,6 +53,15 @@ def build_task_router(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"cannot transition task from {task.status} to {payload.target_status}",
             )
+
+        if payload.target_status == TaskStatus.OPEN:
+            try:
+                ensure_task_can_publish(task)
+            except TaskPublishValidationError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(error),
+                ) from error
 
         return repository.update_status(task_id, payload.target_status)
 

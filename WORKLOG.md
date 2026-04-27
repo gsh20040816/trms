@@ -91,6 +91,36 @@
 ### 后续建议
 - 下一轮按 `TASKS.md` 顺序处理“明确第一阶段 Won't-have 边界”，把 FR-011 和财务系统自动化相关能力的非目标范围写清楚。
 
+## 2026-04-28 01:18 - Enforce task publish readiness validation
+
+### 完成内容
+- 在任务领域新增发布门禁校验，显式检查 `member_ids`、`fee_categories`、`project_info`、`reimburser_info` 四类发布前必填信息。
+- 调整任务状态更新接口：仅当目标状态进入 `open` 时触发发布校验；若草稿任务缺少上述字段，则返回明确 `409` 错误，而不是只依赖状态图放行。
+- 在 `tests/test_tasks_api.py` 增加发布成功与 4 条失败路径覆盖；失败路径通过数据库中篡改不完整草稿任务构造，证明发布校验独立于创建校验存在。
+- 将 `TASKS.md` 中“完善报销任务发布前校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/tasks.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 18 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 39 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 发布门禁对所有进入 `open` 的状态迁移统一生效，而不只限制 `draft -> open`；原因是 `open` 代表允许成员提交材料，缺少基础任务信息时不应重新开放。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加任务成员管理接口”，优先补只读查询和草稿态变更边界，再决定开放状态下的成员变更限制。
+
 ## 2026-04-28 01:15 - Map first-phase acceptance criteria
 
 ### 完成内容

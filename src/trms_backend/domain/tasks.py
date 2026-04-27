@@ -84,6 +84,13 @@ class MissingTaskInvoiceConfigError(ValueError):
         super().__init__(f"missing invoice configuration fields: {joined_fields}")
 
 
+class TaskPublishValidationError(ValueError):
+    def __init__(self, missing_fields: list[str]) -> None:
+        self.missing_fields = missing_fields
+        joined_fields = ", ".join(missing_fields)
+        super().__init__(f"task is missing required publish fields: {joined_fields}")
+
+
 class ReimbursementTask(BaseModel):
     id: str
     status: TaskStatus
@@ -157,6 +164,24 @@ ALLOWED_STATUS_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
 
 def can_transition(current_status: TaskStatus, target_status: TaskStatus) -> bool:
     return target_status in ALLOWED_STATUS_TRANSITIONS[current_status]
+
+
+def ensure_task_can_publish(task: ReimbursementTask) -> None:
+    missing_fields: list[str] = []
+    if not _has_non_blank_items(task.member_ids):
+        missing_fields.append("member_ids")
+    if not _has_non_blank_items(task.fee_categories):
+        missing_fields.append("fee_categories")
+    if not task.project_info.strip():
+        missing_fields.append("project_info")
+    if not task.reimburser_info.strip():
+        missing_fields.append("reimburser_info")
+    if missing_fields:
+        raise TaskPublishValidationError(missing_fields)
+
+
+def _has_non_blank_items(values: list[str]) -> bool:
+    return bool(values) and all(value.strip() for value in values)
 
 
 class InMemoryTaskRepository:
