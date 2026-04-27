@@ -14,6 +14,8 @@ describe("web app skeleton", () => {
     expect(screen.getByRole("heading", { name: "报销收集前端骨架已建立" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "进入占位页" })).toHaveLength(3);
     expect(screen.getByText("管理员后台")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "前端 API 类型与错误边界已建立" })).toBeInTheDocument();
+    expect(screen.getByText("统一解析 detail/message/字段校验错误，不在前端静默吞掉")).toBeInTheDocument();
   });
 
   it("keeps a dedicated admin placeholder route", () => {

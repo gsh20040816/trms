@@ -1,18 +1,10 @@
-export type ApiErrorPayload = {
-  detail?: unknown;
-  message?: string;
-  [key: string]: unknown;
-};
+import { extractApiErrorMessage, summarizeApiError, type ApiErrorSummary } from "./errors";
 
 type ApiRequestBody = string | FormData | URLSearchParams | Blob | Record<string, unknown> | null;
 
 export type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: ApiRequestBody;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, "");
@@ -41,14 +33,31 @@ function buildRequestBody(body: ApiRequestBody | undefined): BodyInit | null | u
 
 export class ApiError extends Error {
   readonly status: number;
-  readonly payload: ApiErrorPayload | null;
+  readonly payload: unknown;
+  readonly summary: ApiErrorSummary;
 
-  constructor(status: number, message: string, payload: ApiErrorPayload | null) {
+  constructor(status: number, payload: unknown) {
+    const message = extractApiErrorMessage(payload) ?? `Request failed with status ${status}`;
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.payload = payload;
+    this.summary = summarizeApiError(status, payload);
   }
+}
+
+function buildTransportErrorPayload(error: unknown) {
+  return {
+    message: "无法连接到 TRMS 后端服务",
+    detail: error instanceof Error ? error.message : "unknown network error",
+  };
+}
+
+function buildJsonParseErrorPayload(error: unknown) {
+  return {
+    message: "服务端返回了无法解析的响应",
+    detail: error instanceof Error ? error.message : "unknown response parse error",
+  };
 }
 
 export class ApiClient {
@@ -70,16 +79,25 @@ export class ApiClient {
       headers.set("Content-Type", "application/json");
     }
 
-    const response = await fetch(this.buildUrl(path), {
-      ...options,
-      body: requestBody,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(this.buildUrl(path), {
+        ...options,
+        body: requestBody,
+        headers,
+      });
+    } catch (error) {
+      throw new ApiError(0, buildTransportErrorPayload(error));
+    }
 
-    const payload: unknown = await this.parseResponse(response);
+    let payload: unknown;
+    try {
+      payload = await this.parseResponse(response);
+    } catch (error) {
+      throw new ApiError(response.status, buildJsonParseErrorPayload(error));
+    }
     if (!response.ok) {
-      const message = this.extractErrorMessage(payload) ?? `Request failed with status ${response.status}`;
-      throw new ApiError(response.status, message, this.asErrorPayload(payload));
+      throw new ApiError(response.status, payload);
     }
 
     return payload as T;
@@ -97,27 +115,6 @@ export class ApiClient {
     }
 
     return response.text();
-  }
-
-  private extractErrorMessage(payload: unknown) {
-    if (typeof payload === "string" && payload.length > 0) {
-      return payload;
-    }
-    if (isRecord(payload)) {
-      const message = payload["message"];
-      if (typeof message === "string" && message.length > 0) {
-        return message;
-      }
-      const detail = payload["detail"];
-      if (typeof detail === "string" && detail.length > 0) {
-        return detail;
-      }
-    }
-    return null;
-  }
-
-  private asErrorPayload(payload: unknown) {
-    return isRecord(payload) ? payload : null;
   }
 }
 

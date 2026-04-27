@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-04-28 07:12 - Establish frontend API contract and error boundary
+
+### 完成内容
+- 在 `web/src/lib/api/` 建立前端 API 合同层：
+  - 新增 `types.ts`，补齐任务、材料、发票、分摊、确认、校验和导出相关的基础类型定义；
+  - 新增 `trms.ts`，集中封装前端对现有后端接口的请求入口，避免后续业务页面重复手写路径和返回类型。
+- 统一前端错误处理边界：
+  - 新增 `errors.ts`，统一解析 FastAPI 常见 `detail` 字符串、字段校验数组和网络失败；
+  - 调整 `web/src/lib/api/client.ts`，请求失败时抛出带 `summary` 的 `ApiError`，不再把服务端错误或网络错误裸漏给页面自行拼接。
+- 新增 `web/src/components/ApiErrorNotice.tsx`，作为页面级统一错误展示组件占位。
+- 更新首页骨架文案和样式，显式记录“合同层”和“错误展示”边界。
+- 新增前端测试，覆盖：
+  - `ApiClient` 对字段校验错误、普通服务端错误和网络错误的归一化；
+  - `ApiErrorNotice` 的用户可见渲染；
+  - 首页对新合同边界说明的展示。
+- 将 `TASKS.md` 中“建立前端 API 类型与错误处理边界”标记为已完成。
+
+### 修改文件
+- `web/src/lib/api/client.ts`
+- `web/src/lib/api/errors.ts`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/components/ApiErrorNotice.tsx`
+- `web/src/components/ApiErrorNotice.test.tsx`
+- `web/src/lib/api/client.test.ts`
+- `web/src/app/pages.tsx`
+- `web/src/app/App.test.tsx`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮只固化了前端工程、路由和基础 `ApiClient`，但还没有任何与后端领域模型对齐的前端类型定义。
+- 当前 `ApiClient` 只能把部分字符串错误抛出来，无法统一表达 FastAPI 的字段校验错误，也没有网络失败的统一展示语义。
+- 如果继续推进管理员列表、创建页或上传页，而不先补齐合同层和错误边界，后续每个页面都会重复定义字段、拼接路径并各自处理错误，直接制造前端技术债。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，3 个前端测试文件、6 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于后端已有 `HTTP_422_UNPROCESSABLE_ENTITY` 常量使用，不是本轮新增问题。
+
+### 假设
+- 当前前端合同层只覆盖仓库内已经存在的后端接口形状，不额外虚构新的接口字段。
+- 导出相关接口按当前后端事实处理：
+  - 报销汇总、成员明细、发票明细、缺失材料清单仍按 CSV 文本下载边界封装；
+  - 财务填报草稿和合并 PDF 计划按 JSON 结构封装。
+- 本轮只建立合同层与错误展示边界，不接入真实业务页面的数据加载和交互状态管理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立 Web 登录和角色入口占位”，把未登录拦截、角色入口选择和 mock 身份上下文接到现有路由骨架上。
+
 ## 2026-04-28 07:08 - Bootstrap web frontend skeleton
 
 ### 完成内容

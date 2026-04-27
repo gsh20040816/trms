@@ -25,6 +25,14 @@ export function RootLayout() {
             <dt>API 边界</dt>
             <dd>{apiClient.baseUrl}</dd>
           </div>
+          <div>
+            <dt>合同层</dt>
+            <dd>任务、材料、发票、分摊、确认、校验、导出类型已固化</dd>
+          </div>
+          <div>
+            <dt>错误展示</dt>
+            <dd>统一解析 detail/message/字段校验错误，不在前端静默吞掉</dd>
+          </div>
         </dl>
       </header>
       <main className="page-content">
@@ -36,18 +44,32 @@ export function RootLayout() {
 
 export function HomePage() {
   return (
-    <section className="card-grid" aria-label="角色入口">
-      {roleRoutes.map((roleRoute) => (
-        <article key={roleRoute.path} className="route-card">
-          <p className="card-kicker">{roleRoute.emphasis}</p>
-          <h2>{roleRoute.title}</h2>
-          <p>{roleRoute.summary}</p>
-          <Link className="route-link" to={roleRoute.path}>
-            进入占位页
-          </Link>
-        </article>
-      ))}
-    </section>
+    <div className="page-stack">
+      <section className="card-grid" aria-label="角色入口">
+        {roleRoutes.map((roleRoute) => (
+          <article key={roleRoute.path} className="route-card">
+            <p className="card-kicker">{roleRoute.emphasis}</p>
+            <h2>{roleRoute.title}</h2>
+            <p>{roleRoute.summary}</p>
+            <Link className="route-link" to={roleRoute.path}>
+              进入占位页
+            </Link>
+          </article>
+        ))}
+      </section>
+      <section className="status-card contract-card" aria-label="API 合同边界">
+        <p className="eyebrow">API Contracts</p>
+        <h2>前端 API 类型与错误边界已建立</h2>
+        <p>
+          当前前端已固化任务、材料、发票、分摊、确认、校验和导出合同类型，并为
+          FastAPI 常见 `detail` 错误、字段校验错误和网络失败提供统一展示入口。
+        </p>
+        <p className="status-note">
+          下一轮页面任务可直接复用统一 `trmsApi` 请求封装和 `ApiErrorNotice`
+          错误组件，不需要在业务页面重复拼装错误文案。
+        </p>
+      </section>
+    </div>
   );
 }
 

@@ -97,9 +97,14 @@ select {
   max-width: 1100px;
 }
 
+.page-stack {
+  display: grid;
+  gap: 20px;
+}
+
 .boundary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
   margin: 28px 0 0;
 }
@@ -164,10 +169,56 @@ select {
   max-width: 640px;
 }
 
+.contract-card,
+.api-error-card {
+  max-width: none;
+}
+
+.api-error-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(17, 37, 61, 0.08);
+  color: #11253d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.api-error-list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding-left: 18px;
+  color: #35506f;
+}
+
+.api-error-list li {
+  display: grid;
+  gap: 2px;
+}
+
+.api-error-list strong {
+  color: #11253d;
+}
+
 .status-note {
   margin-top: 10px;
   padding-left: 14px;
   border-left: 3px solid rgba(158, 77, 17, 0.4);
+}
+
+.status-note p + p {
+  margin-top: 8px;
 }
 
 @keyframes rise-in {

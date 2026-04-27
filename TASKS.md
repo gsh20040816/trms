@@ -424,7 +424,7 @@
     - `./scripts/verify.sh` 能在存在前端工程时运行 lint/test/build
     - README 或 WORKLOG 记录本地启动方式
 
-- [ ] 建立前端 API 类型与错误处理边界
+- [x] 建立前端 API 类型与错误处理边界
   - Done when:
     - 前端有任务、材料、发票、分摊、确认、校验和导出的基础类型定义
     - API 错误能以统一结构展示给用户
