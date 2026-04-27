@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from trms_backend.domain.invoice_validation import (
     AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+    COMPETITION_TIME_RANGE_RULE_CODE,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
     PAYMENT_RECORD_AMOUNT_MATCH_MODE,
@@ -133,7 +134,7 @@ def valid_invoice_payload():
         "actor_id": "2250001",
         "invoice_number": "INV-001",
         "issue_date": "2026-11-04",
-        "transaction_time": "2026-11-01T08:00:00Z",
+        "transaction_time": "2026-11-01T08:00:00+00:00",
         "buyer_name": "同济大学",
         "tax_number": "12100000425006117D",
         "seller_name": "铁路服务商",
@@ -268,6 +269,29 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         "requires_local_transport_validation": False,
         "rideshare_detections": [],
         "trip_information_materials": [],
+    }
+    competition_time_validation = validation_by_code(body, COMPETITION_TIME_RANGE_RULE_CODE)
+    assert competition_time_validation["severity"] == "warning"
+    assert competition_time_validation["status"] == "passed"
+    assert competition_time_validation["evidence"] == {
+        "expense_type": "railway",
+        "supported_expense_types": [
+            "railway",
+            "airfare",
+            "local_transport",
+            "hotel",
+        ],
+        "requires_competition_time_validation": True,
+        "competition_start_date": "2026-11-01",
+        "competition_end_date": "2026-11-03",
+        "buffer_days_before": 1,
+        "buffer_days_after": 1,
+        "effective_start_date": "2026-10-31",
+        "effective_end_date": "2026-11-04",
+        "transaction_time": "2026-11-01T08:00:00+00:00",
+        "transaction_date": "2026-11-01",
+        "issue_date": "2026-11-04",
+        "time_source": "transaction_time",
     }
 
 
@@ -473,6 +497,94 @@ def test_create_invoice_fails_payment_record_validation_when_amount_reaches_thre
     )
     assert payment_amount_validation["status"] == "not_applicable"
     assert payment_amount_validation["message"] == "尚未关联支付记录，暂不执行金额匹配"
+
+
+def test_create_invoice_marks_competition_time_validation_pending_when_transaction_time_is_missing(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "transaction_time": None,
+            "issue_date": "2026-11-02",
+        },
+    )
+
+    assert response.status_code == 201
+    competition_time_validation = validation_by_code(
+        response.json(),
+        COMPETITION_TIME_RANGE_RULE_CODE,
+    )
+    assert competition_time_validation["severity"] == "warning"
+    assert competition_time_validation["status"] == "pending"
+    assert competition_time_validation["message"] == (
+        "缺少交易时间，需人工确认是否与比赛时间范围相关"
+    )
+    assert competition_time_validation["evidence"] == {
+        "expense_type": "railway",
+        "supported_expense_types": [
+            "railway",
+            "airfare",
+            "local_transport",
+            "hotel",
+        ],
+        "requires_competition_time_validation": True,
+        "competition_start_date": "2026-11-01",
+        "competition_end_date": "2026-11-03",
+        "buffer_days_before": 1,
+        "buffer_days_after": 1,
+        "effective_start_date": "2026-10-31",
+        "effective_end_date": "2026-11-04",
+        "transaction_time": None,
+        "transaction_date": None,
+        "issue_date": "2026-11-02",
+        "time_source": "missing_transaction_time",
+    }
+
+
+def test_create_invoice_warns_when_transaction_time_is_outside_default_competition_buffer(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | {"transaction_time": "2026-10-29T08:00:00Z"},
+    )
+
+    assert response.status_code == 201
+    competition_time_validation = validation_by_code(
+        response.json(),
+        COMPETITION_TIME_RANGE_RULE_CODE,
+    )
+    assert competition_time_validation["severity"] == "warning"
+    assert competition_time_validation["status"] == "failed"
+    assert competition_time_validation["message"] == "交易时间超出默认比赛时间缓冲范围，需人工确认"
+    assert competition_time_validation["evidence"] == {
+        "expense_type": "railway",
+        "supported_expense_types": [
+            "railway",
+            "airfare",
+            "local_transport",
+            "hotel",
+        ],
+        "requires_competition_time_validation": True,
+        "competition_start_date": "2026-11-01",
+        "competition_end_date": "2026-11-03",
+        "buffer_days_before": 1,
+        "buffer_days_after": 1,
+        "effective_start_date": "2026-10-31",
+        "effective_end_date": "2026-11-04",
+        "transaction_time": "2026-10-29T08:00:00+00:00",
+        "transaction_date": "2026-10-29",
+        "issue_date": "2026-11-04",
+        "time_source": "transaction_time",
+    }
 
 
 def test_create_registration_invoice_fails_when_competition_notice_is_missing(tmp_path):

@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-04-28 03:59 - Implement competition time range validation
+
+### 完成内容
+- 为发票校验新增 `invoice_competition_time_range` 规则，默认对 `railway`、`airfare`、`local_transport`、`hotel` 四类与行程直接相关的费用执行比赛时间范围检查。
+- 规则优先使用 `transaction_time` 判断是否落在比赛起止日期前后各 1 天的默认缓冲窗口内；若命中窗口则返回 `passed`，超出窗口则返回 `failed` 且严重级别为 `warning`，不把 Should 级规则误当作 Must 级阻断。
+- 当发票只有 `issue_date`、缺少 `transaction_time` 时，规则返回 `pending`，显式暴露“无法判断”的状态，而不是回退用开票日期静默判定通过。
+- 补充发票 API 回归测试，覆盖“基础通过”“缺少交易时间返回待确认”“超出默认缓冲范围返回 warning 失败”三条主路径。
+- 将 `TASKS.md` 中“实现比赛时间范围校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoice_validation.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库的发票校验链路已经覆盖抬头、税号、重复发票和附件完整性，但 FR-006 的比赛范围检查仍未落到统一校验结果里，导致系统既无法优先依据实际交易时间给出范围判断，也无法在交易时间缺失时显式提示“仍需人工确认”。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 32 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 104 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 需求文档和架构文档只明确了“比赛时间范围校验”与默认前后缓冲建议，但没有定义报名费、其他杂项费用的统一合理窗口；本轮保守收敛为仅对 `railway`、`airfare`、`local_transport`、`hotel` 执行该规则，`registration` 与 `other` 暂返回 `not_applicable`，避免把尚未确认的业务边界硬编码成错误失败。
+- 默认缓冲窗口采用架构文档 A-002 建议值：比赛开始日前 1 天至结束日后 1 天。若后续业务确认需要更宽或按费用类型区分，应在单独任务中抽出配置，而不是在本轮直接扩散改动。
+- 当前时间比较基于发票记录中的 `transaction_time.date()`；仓库尚未定义比赛时区字段，因此本轮不额外引入跨时区换算策略。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现比赛地点范围校验”，继续补齐 FR-006 的剩余范围规则。
+
 ## 2026-04-28 03:50 - Implement rideshare trip information validation for local transport invoices
 
 ### 完成内容

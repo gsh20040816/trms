@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 from trms_backend.domain.invoices import (
@@ -21,6 +21,15 @@ AIRFARE_ITINERARY_REQUIRED_RULE_CODE = "invoice_airfare_itinerary_required"
 AIRFARE_CABIN_PROOF_RULE_CODE = "invoice_airfare_cabin_proof_required"
 AIRFARE_CABIN_FIELD_NAMES = ("cabin_class", "seat_class", "cabin")
 LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE = "invoice_local_transport_rideshare_trip_required"
+COMPETITION_TIME_RANGE_RULE_CODE = "invoice_competition_time_range"
+COMPETITION_TIME_BUFFER_DAYS_BEFORE = 1
+COMPETITION_TIME_BUFFER_DAYS_AFTER = 1
+COMPETITION_TIME_SUPPORTED_EXPENSE_TYPES = (
+    ExpenseType.RAILWAY,
+    ExpenseType.AIRFARE,
+    ExpenseType.LOCAL_TRANSPORT,
+    ExpenseType.HOTEL,
+)
 RIDESHARE_INDICATOR_FIELD_NAMES = (
     "is_rideshare",
     "transport_mode",
@@ -86,6 +95,7 @@ def validate_invoice(
             supporting_materials,
             supporting_material_recognitions,
         ),
+        validate_competition_time_range(invoice, task),
     ]
 
 
@@ -179,13 +189,14 @@ def _validation_result(
     status: ValidationStatus,
     message: str,
     evidence: dict[str, object | None],
+    severity: ValidationSeverity = ValidationSeverity.BLOCKER,
 ) -> ValidationResult:
     return ValidationResult(
         id=str(uuid4()),
         rule_code=rule_code,
         target_type="invoice",
         target_id=target_id,
-        severity=ValidationSeverity.BLOCKER,
+        severity=severity,
         status=status,
         message=message,
         evidence=evidence,
@@ -599,6 +610,88 @@ def validate_local_transport_rideshare_trip_requirement(
         message="网约车费用缺少行程信息",
         evidence=evidence,
     )
+
+
+def validate_competition_time_range(
+    invoice: InvoiceRecord,
+    task: ReimbursementTask,
+) -> ValidationResult:
+    requires_competition_time_validation = (
+        invoice.expense_type in COMPETITION_TIME_SUPPORTED_EXPENSE_TYPES
+    )
+    effective_start_date = task.competition_start_date - timedelta(
+        days=COMPETITION_TIME_BUFFER_DAYS_BEFORE
+    )
+    effective_end_date = task.competition_end_date + timedelta(
+        days=COMPETITION_TIME_BUFFER_DAYS_AFTER
+    )
+    transaction_date = _extract_transaction_date(invoice.transaction_time)
+    evidence = {
+        "expense_type": invoice.expense_type.value,
+        "supported_expense_types": [
+            expense_type.value for expense_type in COMPETITION_TIME_SUPPORTED_EXPENSE_TYPES
+        ],
+        "requires_competition_time_validation": requires_competition_time_validation,
+        "competition_start_date": task.competition_start_date.isoformat(),
+        "competition_end_date": task.competition_end_date.isoformat(),
+        "buffer_days_before": COMPETITION_TIME_BUFFER_DAYS_BEFORE,
+        "buffer_days_after": COMPETITION_TIME_BUFFER_DAYS_AFTER,
+        "effective_start_date": effective_start_date.isoformat(),
+        "effective_end_date": effective_end_date.isoformat(),
+        "transaction_time": (
+            invoice.transaction_time.isoformat() if invoice.transaction_time is not None else None
+        ),
+        "transaction_date": transaction_date.isoformat() if transaction_date is not None else None,
+        "issue_date": invoice.issue_date.isoformat() if invoice.issue_date is not None else None,
+        "time_source": (
+            "transaction_time" if invoice.transaction_time is not None else "missing_transaction_time"
+        ),
+    }
+
+    if not requires_competition_time_validation:
+        return _validation_result(
+            rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前费用类型不要求比赛时间范围校验",
+            evidence=evidence,
+            severity=ValidationSeverity.WARNING,
+        )
+
+    if transaction_date is None:
+        return _validation_result(
+            rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PENDING,
+            message="缺少交易时间，需人工确认是否与比赛时间范围相关",
+            evidence=evidence,
+            severity=ValidationSeverity.WARNING,
+        )
+
+    if effective_start_date <= transaction_date <= effective_end_date:
+        return _validation_result(
+            rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="交易时间在比赛时间合理范围内",
+            evidence=evidence,
+            severity=ValidationSeverity.WARNING,
+        )
+
+    return _validation_result(
+        rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="交易时间超出默认比赛时间缓冲范围，需人工确认",
+        evidence=evidence,
+        severity=ValidationSeverity.WARNING,
+    )
+
+
+def _extract_transaction_date(transaction_time: datetime | None) -> date | None:
+    if transaction_time is None:
+        return None
+    return transaction_time.date()
 
 
 def _extract_recognized_amount_cents(
