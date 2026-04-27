@@ -32,11 +32,17 @@ class LocalMaterialFileStorage(MaterialFileStorage):
             sha256=sha256(content).hexdigest(),
         )
 
+    def read(self, *, storage_key: str) -> bytes:
+        return self._resolve_storage_path(storage_key).read_bytes()
+
     def _build_storage_key(self, task_id: str, filename: str) -> Path:
         while True:
             candidate = Path(task_id) / f"{uuid4()}-{filename}"
             if not (self._root_dir / candidate).exists():
                 return candidate
+
+    def _resolve_storage_path(self, storage_key: str) -> Path:
+        return self._root_dir / Path(storage_key)
 
 
 def _normalize_filename(original_filename: str) -> str:

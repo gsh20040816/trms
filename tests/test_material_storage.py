@@ -30,6 +30,8 @@ def test_local_material_storage_uses_distinct_keys_for_same_filename(tmp_path):
     assert first.storage_key != second.storage_key
     assert (storage_root / first.storage_key).read_bytes() == b"first-version"
     assert (storage_root / second.storage_key).read_bytes() == b"second-version"
+    assert storage.read(storage_key=first.storage_key) == b"first-version"
+    assert storage.read(storage_key=second.storage_key) == b"second-version"
 
 
 def test_local_material_storage_records_file_metadata(tmp_path):

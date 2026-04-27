@@ -168,6 +168,9 @@ class MaterialFileStorage(Protocol):
     ) -> StoredMaterialFile:
         raise NotImplementedError
 
+    def read(self, *, storage_key: str) -> bytes:
+        raise NotImplementedError
+
 
 def validate_material_upload(
     *,

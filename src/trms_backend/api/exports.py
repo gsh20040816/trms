@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
     ExportArtifactFormat,
+    MergedPdfSourceMaterialError,
     TaskExportActorNotAllowedError,
     TaskExportFormatNotSupportedError,
     TaskExportFormatNotImplementedError,
@@ -15,11 +16,12 @@ from trms_backend.domain.exports import (
     TaskExportJobStatusTransitionError,
     TaskExportJobStatusUpdate,
     build_finance_draft_export,
-    build_task_export_boundary,
     build_invoice_details_export,
     build_member_details_export,
+    build_merged_pdf_export_plan,
     build_missing_materials_export,
     build_reimbursement_summary_export,
+    build_task_export_boundary,
     create_task_export_job,
     list_task_export_jobs,
     render_invoice_details_csv,
@@ -29,7 +31,7 @@ from trms_backend.domain.exports import (
     update_task_export_job_status,
 )
 from trms_backend.domain.invoices import InvoiceRepository
-from trms_backend.domain.materials import MaterialRepository
+from trms_backend.domain.materials import MaterialFileStorage, MaterialRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import TaskRepository
 from trms_backend.domain.invoices import ValidationRepository
@@ -40,6 +42,7 @@ def build_export_router(
     export_job_repository: TaskExportJobRepository,
     invoice_repository: InvoiceRepository,
     material_repository: MaterialRepository,
+    material_file_storage: MaterialFileStorage,
     validation_repository: ValidationRepository,
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
@@ -317,6 +320,63 @@ def build_export_router(
             headers={
                 "Content-Disposition": f'attachment; filename="{export.filename}"',
             },
+        )
+
+    @router.get("/{task_id}/exports/merged-pdf")
+    def export_merged_pdf_plan(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+        format: ExportArtifactFormat = ExportArtifactFormat.PDF,
+    ):
+        task = task_repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        materials = material_repository.list_by_task(task_id)
+        material_bytes_by_id: dict[str, bytes] = {}
+        for material in materials:
+            try:
+                material_bytes_by_id[material.id] = material_file_storage.read(
+                    storage_key=material.storage_key
+                )
+            except FileNotFoundError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"merged pdf source material {material.id} file content is missing from storage",
+                ) from error
+
+        try:
+            export_plan = build_merged_pdf_export_plan(
+                task,
+                actor_id=actor_id,
+                format=format,
+                materials=materials,
+                material_bytes_by_id=material_bytes_by_id,
+            )
+        except TaskExportActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except TaskExportJobNotReadyError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        except TaskExportFormatNotSupportedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(error),
+            ) from error
+        except MergedPdfSourceMaterialError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(error),
+            ) from error
+
+        return JSONResponse(
+            content=export_plan.model_dump(mode="json"),
+            media_type="application/json",
         )
 
     @router.post("/{task_id}/exports", status_code=status.HTTP_201_CREATED)

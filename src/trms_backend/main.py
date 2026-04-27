@@ -80,6 +80,7 @@ def create_app(
             export_job_repository,
             invoice_repository,
             material_repository,
+            material_file_storage,
             validation_repository,
             split_repository,
             confirmation_repository,

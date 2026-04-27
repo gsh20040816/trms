@@ -1,7 +1,8 @@
 import csv
-from io import StringIO
+from io import BytesIO, StringIO
 
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
@@ -57,6 +58,7 @@ def upload_invoice_material(
     *,
     submitter_id: str,
     filename: str,
+    content: bytes | None = None,
 ) -> str:
     response = client.post(
         f"/api/tasks/{task_id}/materials",
@@ -65,7 +67,7 @@ def upload_invoice_material(
             "channel": "web",
             "material_type": "invoice",
         },
-        files={"files": (filename, filename.encode(), "application/pdf")},
+        files={"files": (filename, content if content is not None else filename.encode(), "application/pdf")},
     )
     assert response.status_code == 201
     return response.json()["items"][0]["id"]
@@ -79,6 +81,7 @@ def upload_supporting_material(
     material_type: str,
     filename: str,
     content_type: str = "application/pdf",
+    content: bytes | None = None,
 ) -> str:
     response = client.post(
         f"/api/tasks/{task_id}/materials",
@@ -87,7 +90,13 @@ def upload_supporting_material(
             "channel": "web",
             "material_type": material_type,
         },
-        files={"files": (filename, filename.encode(), content_type)},
+        files={
+            "files": (
+                filename,
+                content if content is not None else filename.encode(),
+                content_type,
+            )
+        },
     )
     assert response.status_code == 201
     return response.json()["items"][0]["id"]
@@ -138,6 +147,16 @@ def confirm_split(
     assert response.status_code == 200
 
 
+def build_pdf_bytes(*, encrypted: bool = False) -> bytes:
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    if encrypted:
+        writer.encrypt("secret")
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
 def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
@@ -158,8 +177,8 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["execution_mode"] == "async_placeholder"
     assert body["note"] == (
         "reimbursement summary/member details/invoice details/missing materials CSV export and "
-        "finance draft JSON export are available; export jobs and other persisted artifacts remain "
-        "placeholders"
+        "finance draft JSON export are available; merged PDF planning/validation is available as "
+        "a placeholder, and export jobs plus persisted artifacts remain placeholders"
     )
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}
     assert set(supported_by_kind) == {
@@ -729,6 +748,105 @@ def test_task_administrator_can_export_finance_draft_json(tmp_path):
     ]
     assert "storage_key" not in response.text
     assert str(tmp_path) not in response.text
+
+
+def test_task_administrator_can_preview_merged_pdf_plan_in_default_order(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    invoice_material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice.pdf",
+        content=build_pdf_bytes(),
+    )
+    supporting_material_id = upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="competition_notice",
+        filename="notice.pdf",
+        content=build_pdf_bytes(),
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/merged-pdf",
+        params={"actor_id": "admin-1", "format": "pdf"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert body["task_id"] == task_id
+    assert body["format"] == "pdf"
+    assert body["filename"] == f"{task_id}-merged-printing.pdf"
+    assert [item["kind"] for item in body["ordered_items"]] == [
+        "reimbursement_summary",
+        "member_details",
+        "invoice_details",
+        "invoice_material",
+        "supporting_material",
+    ]
+    assert [item["status"] for item in body["ordered_items"][:3]] == [
+        "placeholder",
+        "placeholder",
+        "placeholder",
+    ]
+    assert body["ordered_items"][3]["material_id"] == invoice_material_id
+    assert body["ordered_items"][3]["original_filename"] == "invoice.pdf"
+    assert body["ordered_items"][4]["material_id"] == supporting_material_id
+    assert body["ordered_items"][4]["original_filename"] == "notice.pdf"
+
+
+def test_merged_pdf_preview_reports_encrypted_material_id(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="encrypted.pdf",
+        content=build_pdf_bytes(encrypted=True),
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/merged-pdf",
+        params={"actor_id": "admin-1", "format": "pdf"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == f"merged pdf source material {material_id} is encrypted"
+
+
+def test_merged_pdf_preview_reports_unreadable_material_id(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="broken.pdf",
+        content=b"%PDF-1.4 broken",
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/merged-pdf",
+        params={"actor_id": "admin-1", "format": "pdf"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith(
+        f"merged pdf source material {material_id} is unreadable:"
+    )
 
 
 def test_finance_draft_xlsx_is_not_implemented_yet(tmp_path):
