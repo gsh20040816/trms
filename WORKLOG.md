@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-28 02:28 - Add pending-assignment material claim flow
+
+### 完成内容
+- 为待归属材料新增显式认领入口 `POST /api/materials/{material_id}/claim`，允许任务管理员将 `pending_assignment` 材料绑定到目标任务和提交人，并把材料状态切换为 `assigned`。
+- 在材料记录中新增 `claimed_by`、`claimed_at` 审计字段，显式记录认领操作者和认领时间，避免管理员处理动作不可追溯。
+- 认领时增加最小权限与一致性校验：只有目标任务的 `administrator_id` 可认领；被绑定的 `submitter_id` 必须属于任务成员；非待归属材料不能重复认领。
+- 调整材料仓储认领逻辑：待归属材料转入任务时会重新参与同任务文件哈希重复检测，并在任务材料列表中可见。
+- 补充材料 API 测试，覆盖管理员成功认领、非管理员拒绝、已归属材料拒绝三条最小回归路径。
+- 将 `TASKS.md` 中“建立待归属材料认领流程”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 22 个用例通过
+  - `uv run pytest tests/test_material_storage.py tests/test_invoices_api.py tests/test_tasks_api.py`
+    - 38 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 71 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前仓库尚未实现统一认证上下文，因此本轮把“管理员可认领”收敛为显式提交 `administrator_id` 并校验其必须等于目标任务的 `administrator_id`；这是第一阶段最小权限边界，不把它伪装成完整登录鉴权。
+- 待归属材料的认领视为管理员归档动作，而不是成员新增提交，因此本轮不复用成员提交截止时间门禁；即使任务已过截止时间，只要管理员仍在处理该任务，仍允许把此前已收进系统的待归属材料绑定到目标任务和成员。
+- 材料原始 `task_id_hint`、`submitter_id_hint` 在线索被人工确认后仍保留，用于追溯提交时的原始猜测，不在认领时覆盖或删除。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此本轮新增的 `materials.claimed_by`、`materials.claimed_at` 列只会自动体现在新建数据库上；已有旧库若缺少这些列，仍需后续迁移机制统一处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加跨渠道重复文件检测”，补上待归属/已归属之外的跨渠道重复材料识别与展示边界。
+
 ## 2026-04-28 02:11 - Add pending-assignment material status
 
 ### 完成内容

@@ -263,10 +263,15 @@ def ensure_task_accepts_member_submission(
     submitter_id: str | None = None,
     now: datetime | None = None,
 ) -> None:
-    if submitter_id is not None and submitter_id not in task.member_ids:
-        raise TaskSubmitterNotMemberError(submitter_id)
+    if submitter_id is not None:
+        ensure_task_has_member(task, submitter_id=submitter_id)
     if has_task_submission_deadline_passed(task, now=now):
         raise TaskSubmissionDeadlinePassedError(task.deadline)
+
+
+def ensure_task_has_member(task: ReimbursementTask, *, submitter_id: str) -> None:
+    if submitter_id not in task.member_ids:
+        raise TaskSubmitterNotMemberError(submitter_id)
 
 
 def has_task_submission_deadline_passed(

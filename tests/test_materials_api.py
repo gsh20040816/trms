@@ -109,6 +109,99 @@ def test_pending_assignment_material_stays_hidden_from_task_material_list(tmp_pa
     assert listed.json()["items"] == []
 
 
+def test_administrator_can_claim_pending_assignment_material(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    created = client.post(
+        "/api/materials/pending-assignment",
+        data={
+            "task_id_hint": task_id,
+            "submitter_id_hint": "2250001",
+            "channel": "email",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    material_id = created.json()["items"][0]["id"]
+
+    response = client.post(
+        f"/api/materials/{material_id}/claim",
+        data={
+            "administrator_id": "admin-1",
+            "task_id": task_id,
+            "submitter_id": "2250001",
+        },
+    )
+
+    assert response.status_code == 200
+    material = response.json()["item"]
+    assert material["status"] == "assigned"
+    assert material["task_id"] == task_id
+    assert material["submitter_id"] == "2250001"
+    assert material["task_id_hint"] == task_id
+    assert material["submitter_id_hint"] == "2250001"
+    assert material["claimed_by"] == "admin-1"
+    assert material["claimed_at"] is not None
+
+    listed = client.get(f"/api/tasks/{task_id}/materials")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [material_id]
+
+
+def test_claim_pending_assignment_material_rejects_non_administrator(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    created = client.post(
+        "/api/materials/pending-assignment",
+        data={
+            "channel": "telegram",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    material_id = created.json()["items"][0]["id"]
+
+    response = client.post(
+        f"/api/materials/{material_id}/claim",
+        data={
+            "administrator_id": "2250001",
+            "task_id": task_id,
+            "submitter_id": "2250001",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "administrator is not allowed to claim materials for this task"
+    )
+
+
+def test_claim_pending_assignment_material_rejects_assigned_material(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    assigned_material = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    ).json()["items"][0]
+
+    response = client.post(
+        f"/api/materials/{assigned_material['id']}/claim",
+        data={
+            "administrator_id": "admin-1",
+            "task_id": task_id,
+            "submitter_id": "2250001",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "material is not pending assignment"
+
+
 def test_submit_material_accepts_supported_material_types(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)

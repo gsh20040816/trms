@@ -89,6 +89,8 @@ class MaterialRecord(BaseModel):
     size_bytes: int
     sha256: str
     duplicate_of: str | None
+    claimed_by: str | None
+    claimed_at: datetime | None
     created_at: datetime
 
 
@@ -133,6 +135,16 @@ class MaterialUploadTooLargeError(MaterialUploadValidationError):
 
 class MaterialRepository(Protocol):
     def create(self, data: MaterialCreate) -> MaterialRecord:
+        raise NotImplementedError
+
+    def claim_pending_assignment(
+        self,
+        *,
+        material_id: str,
+        task_id: str,
+        submitter_id: str,
+        claimed_by: str,
+    ) -> MaterialRecord | None:
         raise NotImplementedError
 
     def get(self, material_id: str) -> MaterialRecord | None:
@@ -187,10 +199,42 @@ class InMemoryMaterialRepository:
                 id=str(uuid4()),
                 created_at=datetime.now(timezone.utc),
                 duplicate_of=duplicate_of,
+                claimed_by=None,
+                claimed_at=None,
                 **data.model_dump(),
             )
             self._materials[material.id] = material
             return material
+
+    def claim_pending_assignment(
+        self,
+        *,
+        material_id: str,
+        task_id: str,
+        submitter_id: str,
+        claimed_by: str,
+    ) -> MaterialRecord | None:
+        with self._lock:
+            material = self._materials.get(material_id)
+            if material is None or material.status is not MaterialStatus.PENDING_ASSIGNMENT:
+                return None
+
+            claimed_at = datetime.now(timezone.utc)
+            updated = material.model_copy(
+                update={
+                    "status": MaterialStatus.ASSIGNED,
+                    "task_id": task_id,
+                    "submitter_id": submitter_id,
+                    "duplicate_of": self._find_duplicate_material_id_for_assignment(
+                        task_id=task_id,
+                        sha256=material.sha256,
+                    ),
+                    "claimed_by": claimed_by,
+                    "claimed_at": claimed_at,
+                }
+            )
+            self._materials[material_id] = updated
+            return updated
 
     def list_by_task(self, task_id: str) -> list[MaterialRecord]:
         with self._lock:
@@ -208,11 +252,22 @@ class InMemoryMaterialRepository:
     def _find_duplicate_material_id(self, data: MaterialCreate) -> str | None:
         if data.status is not MaterialStatus.ASSIGNED or data.task_id is None:
             return None
+        return self._find_duplicate_material_id_for_assignment(
+            task_id=data.task_id,
+            sha256=data.sha256,
+        )
+
+    def _find_duplicate_material_id_for_assignment(
+        self,
+        *,
+        task_id: str,
+        sha256: str,
+    ) -> str | None:
         for material in self._materials.values():
             if (
                 material.status is MaterialStatus.ASSIGNED
-                and material.task_id == data.task_id
-                and material.sha256 == data.sha256
+                and material.task_id == task_id
+                and material.sha256 == sha256
             ):
                 return material.id
         return None

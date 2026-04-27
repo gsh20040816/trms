@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialFileStorage,
+    MaterialRecord,
     MaterialStatus,
     MaterialUploadEmptyFileError,
     MaterialUploadMissingFilenameError,
@@ -24,6 +25,7 @@ from trms_backend.domain.tasks import (
     TaskSubmissionDeadlinePassedError,
     TaskSubmitterNotMemberError,
     ensure_task_accepts_member_submission,
+    ensure_task_has_member,
 )
 
 PENDING_ASSIGNMENT_STORAGE_NAMESPACE = "_pending_assignment"
@@ -220,6 +222,52 @@ def build_material_router(
                 )
             )
         return build_batch_response(records, failures)
+
+    @router.post("/api/materials/{material_id}/claim")
+    def claim_pending_assignment_material(
+        material_id: str,
+        administrator_id: Annotated[str, Form(min_length=1)],
+        task_id: Annotated[str, Form(min_length=1)],
+        submitter_id: Annotated[str, Form(min_length=1)],
+    ):
+        material = material_repository.get(material_id)
+        if material is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        if material.status is not MaterialStatus.PENDING_ASSIGNMENT:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="material is not pending assignment",
+            )
+
+        task = task_repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        if task.administrator_id != administrator_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="administrator is not allowed to claim materials for this task",
+            )
+
+        try:
+            ensure_task_has_member(task, submitter_id=submitter_id)
+        except TaskSubmitterNotMemberError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+
+        claimed_material = material_repository.claim_pending_assignment(
+            material_id=material_id,
+            task_id=task_id,
+            submitter_id=submitter_id,
+            claimed_by=administrator_id,
+        )
+        if claimed_material is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="material is not pending assignment",
+            )
+        return {"item": claimed_material}
 
     @router.get("/api/tasks/{task_id}/materials")
     def list_materials(task_id: str):

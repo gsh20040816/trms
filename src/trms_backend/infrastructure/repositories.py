@@ -145,6 +145,31 @@ class SqlAlchemyMaterialRepository:
             session.add(row)
         return _material_from_row(row)
 
+    def claim_pending_assignment(
+        self,
+        *,
+        material_id: str,
+        task_id: str,
+        submitter_id: str,
+        claimed_by: str,
+    ) -> MaterialRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(MaterialRow, material_id)
+            if row is None or row.status != MaterialStatus.PENDING_ASSIGNMENT.value:
+                return None
+            row.status = MaterialStatus.ASSIGNED.value
+            row.task_id = task_id
+            row.submitter_id = submitter_id
+            row.duplicate_of = self._find_duplicate_material_id_for_assignment(
+                session,
+                task_id=task_id,
+                sha256=row.sha256,
+            )
+            row.claimed_by = claimed_by
+            row.claimed_at = datetime.now(timezone.utc)
+            session.add(row)
+        return _material_from_row(row)
+
     def list_by_task(self, task_id: str) -> list[MaterialRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(
@@ -169,12 +194,25 @@ class SqlAlchemyMaterialRepository:
     ) -> str | None:
         if data.status is not MaterialStatus.ASSIGNED or data.task_id is None:
             return None
+        return self._find_duplicate_material_id_for_assignment(
+            session,
+            task_id=data.task_id,
+            sha256=data.sha256,
+        )
+
+    def _find_duplicate_material_id_for_assignment(
+        self,
+        session: Session,
+        *,
+        task_id: str,
+        sha256: str,
+    ) -> str | None:
         return session.scalar(
             select(MaterialRow.id)
             .where(
-                MaterialRow.task_id == data.task_id,
+                MaterialRow.task_id == task_id,
                 MaterialRow.status == MaterialStatus.ASSIGNED.value,
-                MaterialRow.sha256 == data.sha256,
+                MaterialRow.sha256 == sha256,
             )
             .order_by(MaterialRow.created_at)
             .limit(1)
@@ -405,6 +443,8 @@ def _material_from_row(row: MaterialRow) -> MaterialRecord:
         size_bytes=row.size_bytes,
         sha256=row.sha256,
         duplicate_of=row.duplicate_of,
+        claimed_by=row.claimed_by,
+        claimed_at=row.claimed_at,
         created_at=row.created_at,
     )
 
