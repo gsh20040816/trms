@@ -152,3 +152,103 @@ def test_unrelated_member_cannot_replace_invoice_splits(tmp_path):
     assert response.json()["detail"] == (
         "only the invoice submitter, split member, or task administrator can submit splits"
     )
+
+
+def test_replace_invoice_splits_resets_changed_member_confirmations_to_pending(tmp_path):
+    client = make_client(tmp_path)
+    invoice_id = create_invoice(client)
+
+    initial_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000},
+                {"member_id": "2250002", "amount_cents": 6345},
+            ],
+        },
+    )
+    assert initial_response.status_code == 200
+    initial_split_ids = {item["member_id"]: item["id"] for item in initial_response.json()["items"]}
+
+    for member_id, split_id in initial_split_ids.items():
+        response = client.put(
+            f"/api/splits/{split_id}/confirmation",
+            json={"member_id": member_id, "status": "confirmed"},
+        )
+        assert response.status_code == 200
+
+    replace_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "admin-1",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6100},
+                {"member_id": "2250002", "amount_cents": 6245},
+            ],
+        },
+    )
+
+    assert replace_response.status_code == 200
+    replaced_items = replace_response.json()["items"]
+    assert {item["member_id"]: item["id"] for item in replaced_items} == initial_split_ids
+
+    confirmation_response = client.get(f"/api/invoices/{invoice_id}/confirmations")
+
+    assert confirmation_response.status_code == 200
+    confirmations = {
+        item["member_id"]: item for item in confirmation_response.json()["items"]
+    }
+    assert confirmations["2250001"]["status"] == "pending"
+    assert confirmations["2250002"]["status"] == "pending"
+
+
+def test_replace_invoice_splits_keeps_unchanged_member_confirmation(tmp_path):
+    client = make_client(tmp_path)
+    invoice_id = create_invoice(client)
+
+    initial_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000},
+                {"member_id": "2250002", "amount_cents": 6345},
+            ],
+        },
+    )
+    assert initial_response.status_code == 200
+    initial_split_ids = {item["member_id"]: item["id"] for item in initial_response.json()["items"]}
+
+    response = client.put(
+        f"/api/splits/{initial_split_ids['2250001']}/confirmation",
+        json={"member_id": "2250001", "status": "confirmed"},
+    )
+    assert response.status_code == 200
+
+    replace_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "admin-1",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000},
+                {"member_id": "2250003", "amount_cents": 6345},
+            ],
+        },
+    )
+
+    assert replace_response.status_code == 200
+    replaced_items = replace_response.json()["items"]
+    replaced_split_ids = {item["member_id"]: item["id"] for item in replaced_items}
+    assert replaced_split_ids["2250001"] == initial_split_ids["2250001"]
+
+    confirmation_response = client.get(f"/api/invoices/{invoice_id}/confirmations")
+
+    assert confirmation_response.status_code == 200
+    assert confirmation_response.json()["items"] == [
+        {
+            **response.json(),
+            "confirmed_at": confirmation_response.json()["items"][0]["confirmed_at"],
+            "updated_at": confirmation_response.json()["items"][0]["updated_at"],
+        }
+    ]

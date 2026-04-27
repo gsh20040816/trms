@@ -571,21 +571,57 @@ class SqlAlchemyExpenseSplitRepository(ExpenseSplitRepository):
         items: list[ExpenseSplitItem],
     ) -> list[ExpenseSplitRecord]:
         now = datetime.now(timezone.utc)
-        rows = [
-            ExpenseSplitRow(
-                id=str(uuid4()),
-                invoice_id=invoice_id,
-                member_id=item.member_id,
-                amount_cents=item.amount_cents,
-                note=item.note,
-                created_at=now,
-                updated_at=now,
-            )
-            for item in items
-        ]
         with session_scope(self._session_factory) as session:
-            session.execute(delete(ExpenseSplitRow).where(ExpenseSplitRow.invoice_id == invoice_id))
-            session.add_all(rows)
+            existing_rows = session.scalars(
+                select(ExpenseSplitRow)
+                .where(ExpenseSplitRow.invoice_id == invoice_id)
+                .order_by(ExpenseSplitRow.created_at)
+            ).all()
+            existing_rows_by_member_id = {row.member_id: row for row in existing_rows}
+
+            rows: list[ExpenseSplitRow] = []
+            for item in items:
+                existing_row = existing_rows_by_member_id.pop(item.member_id, None)
+                if existing_row is None:
+                    row = ExpenseSplitRow(
+                        id=str(uuid4()),
+                        invoice_id=invoice_id,
+                        member_id=item.member_id,
+                        amount_cents=item.amount_cents,
+                        note=item.note,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    session.add(row)
+                    rows.append(row)
+                    continue
+
+                split_changed = (
+                    existing_row.amount_cents != item.amount_cents or existing_row.note != item.note
+                )
+                existing_row.amount_cents = item.amount_cents
+                existing_row.note = item.note
+                if split_changed:
+                    existing_row.updated_at = now
+                    confirmation_row = session.scalar(
+                        select(ConfirmationRow).where(
+                            ConfirmationRow.split_id == existing_row.id,
+                            ConfirmationRow.member_id == existing_row.member_id,
+                        )
+                    )
+                    if confirmation_row is not None:
+                        confirmation_row.status = ConfirmationStatus.PENDING.value
+                        confirmation_row.updated_at = now
+                        session.add(confirmation_row)
+                session.add(existing_row)
+                rows.append(existing_row)
+
+            removed_split_ids = [row.id for row in existing_rows_by_member_id.values()]
+            if removed_split_ids:
+                session.execute(
+                    delete(ConfirmationRow).where(ConfirmationRow.split_id.in_(removed_split_ids))
+                )
+                session.execute(delete(ExpenseSplitRow).where(ExpenseSplitRow.id.in_(removed_split_ids)))
         return [_split_from_row(row) for row in rows]
 
     def list_by_invoice(self, invoice_id: str) -> list[ExpenseSplitRecord]:

@@ -469,6 +469,63 @@ def test_update_task_status_rejects_ready_to_export_when_member_confirmation_mis
     )
 
 
+def test_update_task_status_rejects_ready_to_export_when_split_amount_changes_after_confirmation(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(client, material_id)
+
+    initial_split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000},
+                {"member_id": "2250002", "amount_cents": 6345},
+            ],
+        },
+    )
+    assert initial_split_response.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in initial_split_response.json()["items"]}
+
+    for member_id, split_id in split_ids.items():
+        response = client.put(
+            f"/api/splits/{split_id}/confirmation",
+            json={"member_id": member_id, "status": "confirmed"},
+        )
+        assert response.status_code == 200
+
+    replace_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "admin-1",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6100},
+                {"member_id": "2250002", "amount_cents": 6245},
+            ],
+        },
+    )
+    assert replace_response.status_code == 200
+    assert {item["member_id"]: item["id"] for item in replace_response.json()["items"]} == split_ids
+
+    move_open_task_to_reviewing(client, task["id"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task review is incomplete: "
+        "member confirmations are still pending for splits: "
+        f"{split_ids['2250001']}, {split_ids['2250002']}"
+    )
+
+
 def test_update_task_status_rejects_completed_before_export_completion_is_recorded(tmp_path):
     client = make_client(tmp_path)
     task = client.post("/api/tasks", json=valid_task_payload()).json()

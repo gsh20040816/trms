@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-04-28 04:42 - Invalidate changed split confirmations explicitly
+
+### 完成内容
+- 在 `src/trms_backend/infrastructure/repositories.py` 将发票分摊替换从“整张发票全删全建”改为“按成员差量替换”：
+  - 未变化的分摊保留原 `split_id`；
+  - 同一成员的金额或备注发生变化时，保留原分摊记录，但把已有确认显式重置为 `pending`；
+  - 被移除的旧分摊会同步清理其确认记录，避免旧确认残留为孤儿数据。
+- 在 `tests/test_splits_api.py` 补充两条回归测试，覆盖：
+  - 金额调整后，已确认成员会被重置为 `pending`；
+  - 未变化的成员分摊继续保留原确认，不会被无关失效。
+- 在 `tests/test_tasks_api.py` 补充任务状态回归测试，覆盖“成员已确认后，管理员重新调整分摊金额，任务进入复核时会因 `pending` 确认而被阻止进入 `ready_to_export`”。
+- 将 `TASKS.md` 中“实现费用分摊确认失效规则”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_splits_api.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有分摊替换实现直接删除整张发票的全部 `expense_splits` 后重建，成员确认是否“失效”完全依赖旧 `split_id` 被替换掉这一副作用：
+  - 无法区分“哪些成员的明细真的变了”；
+  - 对于被修改过的成员，也只会表现为“确认记录消失”，而不是显式进入 `pending`；
+  - 这和架构文档要求的“金额变更后相关确认失效并重新确认”不一致，也会让后续复核门禁只能看到缺失确认，无法区分“从未确认”和“确认已失效”。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_splits_api.py tests/test_tasks_api.py tests/test_confirmations_api.py tests/test_expense_details_api.py`
+    - 50 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 124 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“确认失效”收敛为：只有此前已经存在确认记录、且当前分摊明细确实发生变化的成员，才会被显式重置为 `pending`；新增分摊仍保持“尚未确认”的现状，不提前为其自动创建确认记录。
+- 在“引入费用明细版本号”任务完成前，仍以当前 `split_id` 作为确认绑定对象；本轮只修正失效语义，不提前引入版本表或历史版本查询。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“引入费用明细版本号”，把当前基于 `split_id` 的确认失效进一步提升为真正的“费用明细版本确认”模型。
+
 ## 2026-04-28 04:35 - Support expense dispute review workflow
 
 ### 完成内容
