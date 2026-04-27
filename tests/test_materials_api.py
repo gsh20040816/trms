@@ -78,6 +78,7 @@ def test_submit_material_accepts_supported_material_types(tmp_path):
         )
 
         assert response.status_code == 201
+        assert response.json()["status"] == "success"
         material = response.json()["items"][0]
         assert material["submitter_id"] == "2250001"
         assert material["material_type"] == material_type
@@ -99,6 +100,7 @@ def test_submit_material_allows_member_across_all_channels(tmp_path):
         )
 
         assert response.status_code == 201
+        assert response.json()["status"] == "success"
         material = response.json()["items"][0]
         assert material["submitter_id"] == "2250001"
         assert material["channel"] == channel
@@ -168,6 +170,85 @@ def test_submit_material_marks_duplicate_file_in_same_task(tmp_path):
     assert response.status_code == 201
     duplicate = response.json()["items"][0]
     assert duplicate["duplicate_of"] == first["id"]
+
+
+def test_submit_material_returns_partial_success_for_batch_upload(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "cli",
+            "material_type": "invoice",
+        },
+        files=[
+            ("files", ("ticket.pdf", b"fake-pdf-content", "application/pdf")),
+            ("files", ("notes.txt", b"plain-text", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 207
+    payload = response.json()
+    assert payload["status"] == "partial_success"
+    assert [item["original_filename"] for item in payload["items"]] == ["ticket.pdf"]
+    assert payload["failures"] == [
+        {
+            "original_filename": "notes.txt",
+            "error_code": "unsupported_content_type",
+            "detail": (
+                "unsupported material content type: text/plain; supported content types: "
+                "application/pdf, application/zip, image/jpeg, image/png, image/webp"
+            ),
+        }
+    ]
+
+    listed = client.get(f"/api/tasks/{task_id}/materials")
+    assert listed.status_code == 200
+    assert [item["original_filename"] for item in listed.json()["items"]] == ["ticket.pdf"]
+
+
+def test_submit_material_returns_failed_batch_result_when_all_files_fail(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "cli",
+            "material_type": "invoice",
+        },
+        files=[
+            ("files", ("   ", b"fake-pdf-content", "application/pdf")),
+            ("files", ("notes.txt", b"plain-text", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["items"] == []
+    assert payload["failures"] == [
+        {
+            "original_filename": "   ",
+            "error_code": "missing_filename",
+            "detail": "uploaded file must have a filename",
+        },
+        {
+            "original_filename": "notes.txt",
+            "error_code": "unsupported_content_type",
+            "detail": (
+                "unsupported material content type: text/plain; supported content types: "
+                "application/pdf, application/zip, image/jpeg, image/png, image/webp"
+            ),
+        },
+    ]
+
+    listed = client.get(f"/api/tasks/{task_id}/materials")
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
 
 
 def test_submit_material_rejects_task_after_deadline(tmp_path):

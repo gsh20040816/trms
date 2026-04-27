@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-04-28 02:04 - Support partial success for batch material upload
+
+### 完成内容
+- 调整 `POST /api/tasks/{task_id}/materials` 的批量上传语义：多文件请求不再因为单个文件校验失败而整体短路，而是逐文件执行上传校验，并聚合返回成功记录和失败明细。
+- 保持单文件上传现有兼容边界：单文件缺少文件名、空文件、内容类型不支持和超出大小限制时，仍分别返回原有 `422`、`415`、`413` 错误，不改变已存在调用方的错误码语义。
+- 为多文件上传新增聚合返回状态：全部成功返回 `201 success`，部分成功返回 `207 partial_success`，全部失败返回 `422 failed`；失败项显式返回 `original_filename`、`error_code` 和 `detail`，避免把“部分成功”伪装成“全部成功”或“单一错误”。
+- 补充材料上传 API 测试，覆盖“一个成功一个失败”的部分成功场景，以及“全部失败但逐文件暴露原因”的批量失败场景；同时确认只有成功文件会真正落库。
+- 将 `TASKS.md` 中“支持批量上传部分成功结果”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/materials.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 17 个用例通过
+  - `uv run pytest tests/test_material_storage.py`
+    - 3 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 66 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮把“批量上传部分成功”限定在文件级输入校验错误上：缺少文件名、空文件、不支持内容类型和超出大小限制会被聚合到失败列表；若后续出现磁盘写入、数据库故障等基础设施异常，当前仍按服务端错误直接失败显式暴露，不在本轮内继续扩展为更宽泛的补偿逻辑。
+- 为降低现有接口回归风险，本轮只对多文件请求引入聚合状态和逐文件失败列表；单文件请求继续保持既有 HTTP 错误码和 `detail` 响应格式，供现有 Web/CLI 调用方继续复用。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加待归属材料状态”，把“无法识别任务或提交人”的异常路径从当前直接失败，收敛为管理员可见、普通成员不可见的待归属材料模型。
+
 ## 2026-04-28 01:59 - Add material upload validation rules
 
 ### 完成内容

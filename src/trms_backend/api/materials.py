@@ -1,6 +1,8 @@
 from typing import Annotated
 
+from fastapi.encoders import jsonable_encoder
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import JSONResponse
 
 from trms_backend.domain.materials import (
     MaterialCreate,
@@ -9,6 +11,7 @@ from trms_backend.domain.materials import (
     MaterialUploadMissingFilenameError,
     MaterialUploadTooLargeError,
     MaterialUploadUnsupportedContentTypeError,
+    MaterialUploadValidationError,
     MaterialRepository,
     MaterialType,
     SubmissionChannel,
@@ -21,6 +24,45 @@ from trms_backend.domain.tasks import (
     TaskSubmitterNotMemberError,
     ensure_task_accepts_member_submission,
 )
+
+
+def _raise_material_upload_http_error(error: MaterialUploadValidationError) -> None:
+    if isinstance(error, MaterialUploadMissingFilenameError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+    if isinstance(error, MaterialUploadEmptyFileError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+    if isinstance(error, MaterialUploadUnsupportedContentTypeError):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(error),
+        ) from error
+    if isinstance(error, MaterialUploadTooLargeError):
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(error),
+        ) from error
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=str(error),
+    ) from error
+
+
+def _material_upload_error_code(error: MaterialUploadValidationError) -> str:
+    if isinstance(error, MaterialUploadMissingFilenameError):
+        return "missing_filename"
+    if isinstance(error, MaterialUploadEmptyFileError):
+        return "empty_file"
+    if isinstance(error, MaterialUploadUnsupportedContentTypeError):
+        return "unsupported_content_type"
+    if isinstance(error, MaterialUploadTooLargeError):
+        return "file_too_large"
+    return "validation_error"
 
 
 def build_material_router(
@@ -59,7 +101,9 @@ def build_material_router(
                 detail=str(error),
             ) from error
 
+        batch_mode = len(files) > 1
         validated_uploads: list[tuple[str, str | None, bytes]] = []
+        failures: list[dict[str, str | None]] = []
         for file in files:
             content = await file.read()
             try:
@@ -68,26 +112,17 @@ def build_material_router(
                     content_type=file.content_type,
                     content=content,
                 )
-            except MaterialUploadMissingFilenameError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail=str(error),
-                ) from error
-            except MaterialUploadEmptyFileError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail=str(error),
-                ) from error
-            except MaterialUploadUnsupportedContentTypeError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    detail=str(error),
-                ) from error
-            except MaterialUploadTooLargeError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                    detail=str(error),
-                ) from error
+            except MaterialUploadValidationError as error:
+                if not batch_mode:
+                    _raise_material_upload_http_error(error)
+                failures.append(
+                    {
+                        "original_filename": file.filename,
+                        "error_code": _material_upload_error_code(error),
+                        "detail": str(error),
+                    }
+                )
+                continue
             validated_uploads.append((file.filename or "", file.content_type, content))
 
         records = []
@@ -113,7 +148,26 @@ def build_material_router(
                     )
                 )
             )
-        return {"items": records}
+        response_body: dict[str, object] = {
+            "status": "success",
+            "items": records,
+        }
+        if not failures:
+            return response_body
+
+        response_body["failures"] = failures
+        if records:
+            response_body["status"] = "partial_success"
+            return JSONResponse(
+                status_code=status.HTTP_207_MULTI_STATUS,
+                content=jsonable_encoder(response_body),
+            )
+
+        response_body["status"] = "failed"
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content=jsonable_encoder(response_body),
+        )
 
     @router.get("")
     def list_materials(task_id: str):
