@@ -48,7 +48,7 @@
     - 明确是否引入 Alembic 以及触发条件
     - 不要求立即迁移已有数据库
 
-- [ ] 明确第一阶段 Won't-have 边界
+- [x] 明确第一阶段 Won't-have 边界
   - Done when:
     - `WORKLOG.md` 或文档记录 FR-011 Browser Use 自动录入、财务 API 对接、财务审批同步等第一阶段不实现
     - 说明后续如需启用 Browser Use 必须人工确认提交
