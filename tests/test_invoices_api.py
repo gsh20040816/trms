@@ -18,7 +18,11 @@ def create_material(client: TestClient) -> tuple[str, str]:
 def upload_material(client: TestClient, task_id: str, filename: str = "ticket.pdf") -> str:
     response = client.post(
         f"/api/tasks/{task_id}/materials",
-        data={"submitter_id": "2250001", "channel": "web"},
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
         files={"files": (filename, filename.encode(), "application/pdf")},
     )
     return response.json()["items"][0]["id"]

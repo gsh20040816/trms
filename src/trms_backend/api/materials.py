@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialRepository,
+    MaterialType,
     SubmissionChannel,
 )
 from trms_backend.domain.tasks import (
@@ -28,6 +29,7 @@ def build_material_router(
         task_id: str,
         submitter_id: Annotated[str, Form(min_length=1)],
         channel: Annotated[SubmissionChannel, Form()],
+        material_type: Annotated[MaterialType, Form()],
         files: Annotated[list[UploadFile], File(min_length=1)],
     ):
         task = task_repository.get(task_id)
@@ -60,6 +62,7 @@ def build_material_router(
                         task_id=task_id,
                         submitter_id=submitter_id,
                         channel=channel,
+                        material_type=material_type,
                         original_filename=file.filename or "unnamed",
                         content_type=file.content_type,
                         size_bytes=len(content),

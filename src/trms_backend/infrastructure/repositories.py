@@ -29,6 +29,7 @@ from trms_backend.domain.invoices import (
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialRecord,
+    MaterialType,
     SubmissionChannel,
 )
 from trms_backend.domain.splits import ExpenseSplitItem, ExpenseSplitRecord, ExpenseSplitRepository
@@ -380,6 +381,7 @@ def _material_from_row(row: MaterialRow) -> MaterialRecord:
         task_id=row.task_id,
         submitter_id=row.submitter_id,
         channel=SubmissionChannel(row.channel),
+        material_type=MaterialType(row.material_type),
         original_filename=row.original_filename,
         content_type=row.content_type,
         size_bytes=row.size_bytes,

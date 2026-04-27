@@ -42,7 +42,11 @@ def valid_task_payload():
 def upload_material(client: TestClient, task_id: str, filename: str = "ticket.pdf") -> str:
     response = client.post(
         f"/api/tasks/{task_id}/materials",
-        data={"submitter_id": "2250001", "channel": "web"},
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
         files={"files": (filename, b"fake-pdf-content", "application/pdf")},
     )
     assert response.status_code == 201

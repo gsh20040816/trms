@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-04-28 01:46 - Add material type classification field
+
+### 完成内容
+- 在材料领域模型中新增受限枚举 `material_type`，统一支持 `invoice`、`payment_record`、`competition_notice`、`itinerary`、`order_screenshot` 和 `other_attachment` 六类材料。
+- 在统一材料提交接口 `POST /api/tasks/{task_id}/materials` 增加必填表单字段 `material_type`，并确保 API 返回体和材料列表接口都能返回该字段。
+- 在 SQLAlchemy 材料表与仓储映射中持久化 `material_type`，保持内存仓储和数据库仓储行为一致。
+- 补充 `tests/test_materials_api.py`，覆盖受支持材料类型保存返回、非法类型 `422` 失败路径，以及列表接口返回材料类型。
+- 调整 `tests/test_tasks_api.py` 与 `tests/test_invoices_api.py` 的上传辅助方法，使现有发票与任务链路显式提交 `material_type=invoice`。
+- 将 `TASKS.md` 中“增加材料类型与附件类型字段”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_materials_api.py`
+- `tests/test_tasks_api.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 11 个用例通过
+  - `uv run pytest tests/test_invoices_api.py`
+    - 6 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 57 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮采用单一字段 `material_type` 承载“发票”和“各类附件”分类，不额外拆分高层 `material_type` 与低层 `attachment_type` 双字段；后续若需要做附件关联或更细规则，可在现有枚举边界上继续扩展。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 建表；因此本轮新增 `materials.material_type` 列只会体现在新建数据库上，已有本地 SQLite 若已存在旧表结构，需要重建数据库或在后续迁移任务中补齐 schema。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立材料文件保存抽象”，把材料记录与实际文件落盘路径解耦，为“保存原始文件存储位置”和“不覆盖同名文件”任务提供稳定接口。
+
 ## 2026-04-28 01:41 - Enforce task member-only material submission
 
 ### 完成内容

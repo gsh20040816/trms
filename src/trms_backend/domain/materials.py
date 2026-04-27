@@ -16,10 +16,20 @@ class SubmissionChannel(StrEnum):
     EMAIL = "email"
 
 
+class MaterialType(StrEnum):
+    INVOICE = "invoice"
+    PAYMENT_RECORD = "payment_record"
+    COMPETITION_NOTICE = "competition_notice"
+    ITINERARY = "itinerary"
+    ORDER_SCREENSHOT = "order_screenshot"
+    OTHER_ATTACHMENT = "other_attachment"
+
+
 class MaterialCreate(BaseModel):
     task_id: str = Field(min_length=1)
     submitter_id: str = Field(min_length=1)
     channel: SubmissionChannel
+    material_type: MaterialType
     original_filename: str = Field(min_length=1)
     content_type: str | None = None
     size_bytes: int = Field(ge=0)
@@ -31,6 +41,7 @@ class MaterialRecord(BaseModel):
     task_id: str
     submitter_id: str
     channel: SubmissionChannel
+    material_type: MaterialType
     original_filename: str
     content_type: str | None
     size_bytes: int
