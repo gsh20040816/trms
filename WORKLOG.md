@@ -1,5 +1,36 @@
 # WORKLOG
 
+## 2026-04-28 01:32 - Add task deadline check boundary
+
+### 完成内容
+- 在任务领域新增 `close_expired_open_tasks(...)`，统一复用 `deadline <= 当前时间` 的截止判定，只关闭已到期且仍处于 `open` 状态的任务。
+- 在任务 API 新增手动触发入口 `POST /api/tasks/deadline-check`，返回本次关闭的任务数量和任务 ID，作为后续 cron 或后台调度可复用的显式检查边界。
+- 补充 `tests/test_tasks_api.py`，覆盖“到期开放任务会被关闭”以及“非开放任务不会被误关”的路径。
+- 将 `TASKS.md` 中“建立任务自动关闭检查边界”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/api/tasks.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 25 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 49 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮只建立“可手动调用的截止检查边界”，不引入真实调度器；后续如需自动执行，可由 cron、后台任务或运维入口调用同一检查接口。
+- 自动关闭边界与成员提交截止边界保持一致，均按 `deadline <= 当前时间` 处理，避免“成员已不可提交但任务仍长期保持 open”。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加任务状态流转条件检查”，把 `ready_to_export` 和 `completed` 的门禁收紧到复核与导出事实。
+
 ## 2026-04-28 01:28 - Enforce task submission deadline boundary
 
 ### 完成内容

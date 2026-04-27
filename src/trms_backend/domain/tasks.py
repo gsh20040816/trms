@@ -237,12 +237,38 @@ def ensure_task_accepts_member_submission(
     *,
     now: datetime | None = None,
 ) -> None:
+    if has_task_submission_deadline_passed(task, now=now):
+        raise TaskSubmissionDeadlinePassedError(task.deadline)
+
+
+def has_task_submission_deadline_passed(
+    task: ReimbursementTask,
+    *,
+    now: datetime | None = None,
+) -> bool:
     deadline = task.deadline
     if deadline.tzinfo is None:
         deadline = deadline.replace(tzinfo=timezone.utc)
     reference_time = now or datetime.now(timezone.utc)
-    if deadline <= reference_time:
-        raise TaskSubmissionDeadlinePassedError(deadline)
+    return deadline <= reference_time
+
+
+def close_expired_open_tasks(
+    repository: TaskRepository,
+    *,
+    now: datetime | None = None,
+) -> list[ReimbursementTask]:
+    closed_tasks: list[ReimbursementTask] = []
+    reference_time = now or datetime.now(timezone.utc)
+    for task in repository.list():
+        if task.status != TaskStatus.OPEN:
+            continue
+        if not has_task_submission_deadline_passed(task, now=reference_time):
+            continue
+        updated = repository.update_status(task.id, TaskStatus.CLOSED)
+        if updated is not None:
+            closed_tasks.append(updated)
+    return closed_tasks
 
 
 _SUPPORTED_FEE_CATEGORIES = frozenset(expense_type.value for expense_type in ExpenseType)

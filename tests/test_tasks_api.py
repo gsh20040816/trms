@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -340,6 +340,62 @@ def test_update_missing_task_status_returns_404(tmp_path):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "task not found"
+
+
+def test_run_task_deadline_check_closes_expired_open_task(tmp_path):
+    client = make_client(tmp_path)
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+    )
+    update_task_row(
+        tmp_path,
+        created["id"],
+        deadline=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    response = client.post("/api/tasks/deadline-check")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "closed_count": 1,
+        "closed_task_ids": [created["id"]],
+    }
+
+    fetched = client.get(f"/api/tasks/{created['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "closed"
+
+
+def test_run_task_deadline_check_ignores_non_open_tasks(tmp_path):
+    client = make_client(tmp_path)
+    draft_task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task = client.post(
+        "/api/tasks",
+        json=valid_task_payload() | {"competition_name": "CCPC Final"},
+    ).json()
+    client.patch(
+        f"/api/tasks/{open_task['id']}/status",
+        json={"target_status": "open"},
+    )
+    update_task_row(
+        tmp_path,
+        draft_task["id"],
+        deadline=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    response = client.post("/api/tasks/deadline-check")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "closed_count": 0,
+        "closed_task_ids": [],
+    }
+
+    fetched = client.get(f"/api/tasks/{draft_task['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "draft"
 
 
 def test_task_persists_across_app_instances(tmp_path):

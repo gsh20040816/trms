@@ -10,6 +10,7 @@ from trms_backend.domain.tasks import (
     TaskStatus,
     TaskStatusUpdate,
     can_transition,
+    close_expired_open_tasks,
     ensure_task_can_publish,
     resolve_task_create,
 )
@@ -87,5 +88,13 @@ def build_task_router(
                 ) from error
 
         return repository.update_status(task_id, payload.target_status)
+
+    @router.post("/deadline-check")
+    def run_task_deadline_check():
+        closed_tasks = close_expired_open_tasks(repository)
+        return {
+            "closed_count": len(closed_tasks),
+            "closed_task_ids": [task.id for task in closed_tasks],
+        }
 
     return router
