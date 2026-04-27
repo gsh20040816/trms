@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from io import StringIO
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -49,8 +49,9 @@ class TaskExportBoundary(BaseModel):
     supported_exports: list[TaskExportCapability]
     note: str = Field(
         default=(
-            "reimbursement summary/member details/invoice details/missing materials CSV export is "
-            "available; export jobs and other persisted artifacts remain placeholders"
+            "reimbursement summary/member details/invoice details/missing materials CSV export and "
+            "finance draft JSON export are available; export jobs and other persisted artifacts "
+            "remain placeholders"
         )
     )
 
@@ -249,6 +250,50 @@ class MissingMaterialsExport(BaseModel):
     filename: str
     generated_at: datetime
     rows: list[MissingMaterialExportRow]
+
+
+class FinanceDraftSplitRow(BaseModel):
+    member_id: str
+    amount_cents: int = Field(ge=0)
+    split_version: int = Field(ge=1)
+    split_note: str | None = None
+
+
+class FinanceDraftInvoiceRow(BaseModel):
+    invoice_number: str
+    expense_type: ExpenseType
+    amount_cents: int = Field(ge=0)
+    buyer_name: str
+    tax_number: str
+    seller_name: str | None = None
+    issue_date: date | None = None
+    transaction_time: datetime | None = None
+    submitter_id: str | None = None
+    validation_status: ValidationStatus
+    failed_rule_codes: list[str] = Field(default_factory=list)
+    pending_rule_codes: list[str] = Field(default_factory=list)
+    split_items: list[FinanceDraftSplitRow] = Field(default_factory=list)
+
+
+class FinanceDraftExport(BaseModel):
+    task_id: str
+    administrator_id: str = Field(min_length=1)
+    format: ExportArtifactFormat
+    filename: str
+    generated_at: datetime
+    competition_name: str
+    competition_location: str
+    competition_start_date: date
+    competition_end_date: date
+    project_info: str
+    reimburser_info: str
+    invoice_title: str
+    tax_number: str
+    total_amount_cents: int = Field(ge=0)
+    invoice_count: int = Field(ge=0)
+    expense_totals_cents: dict[str, int]
+    member_totals_cents: dict[str, int]
+    invoice_rows: list[FinanceDraftInvoiceRow]
 
 
 class TaskExportJobRepository(Protocol):
@@ -711,6 +756,107 @@ def render_missing_materials_csv(export: MissingMaterialsExport) -> str:
     return buffer.getvalue()
 
 
+def build_finance_draft_export(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    format: ExportArtifactFormat,
+    invoices: list[InvoiceRecord],
+    materials_by_id: dict[str, MaterialRecord],
+    validations_by_invoice_id: dict[str, list[ValidationResult]],
+    splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
+    generated_at: datetime | None = None,
+) -> FinanceDraftExport:
+    boundary = build_task_export_boundary(task, actor_id=actor_id)
+    if not boundary.export_allowed:
+        raise TaskExportJobNotReadyError(boundary.blocking_reasons)
+    ensure_export_format_implemented(
+        ExportArtifactKind.FINANCE_DRAFT,
+        format,
+    )
+
+    expense_totals_cents = {expense_type: 0 for expense_type in task.fee_categories}
+    member_totals_cents = {member_id: 0 for member_id in task.member_ids}
+    invoice_rows: list[FinanceDraftInvoiceRow] = []
+
+    for invoice in invoices:
+        if invoice.task_id != task.id:
+            continue
+
+        validations = validations_by_invoice_id.get(invoice.id, [])
+        material = materials_by_id.get(invoice.material_id)
+        split_items: list[FinanceDraftSplitRow] = []
+        for split in sorted(
+            splits_by_invoice_id.get(invoice.id, []),
+            key=lambda item: (item.member_id, item.created_at, item.id),
+        ):
+            split_items.append(
+                FinanceDraftSplitRow(
+                    member_id=split.member_id,
+                    amount_cents=split.amount_cents,
+                    split_version=split.version,
+                    split_note=split.note,
+                )
+            )
+            member_totals_cents.setdefault(split.member_id, 0)
+            member_totals_cents[split.member_id] += split.amount_cents
+
+        expense_totals_cents.setdefault(invoice.expense_type.value, 0)
+        expense_totals_cents[invoice.expense_type.value] += invoice.amount_cents
+        invoice_rows.append(
+            FinanceDraftInvoiceRow(
+                invoice_number=invoice.invoice_number,
+                expense_type=invoice.expense_type,
+                amount_cents=invoice.amount_cents,
+                buyer_name=invoice.buyer_name,
+                tax_number=invoice.tax_number,
+                seller_name=invoice.seller_name,
+                issue_date=invoice.issue_date,
+                transaction_time=invoice.transaction_time,
+                submitter_id=material.submitter_id if material is not None else None,
+                validation_status=_summarize_invoice_validation_status(validations),
+                failed_rule_codes=sorted(
+                    {result.rule_code for result in validations if result.status is ValidationStatus.FAILED}
+                ),
+                pending_rule_codes=sorted(
+                    {result.rule_code for result in validations if result.status is ValidationStatus.PENDING}
+                ),
+                split_items=split_items,
+            )
+        )
+
+    invoice_rows.sort(
+        key=lambda row: (
+            row.expense_type.value,
+            row.invoice_number,
+            row.submitter_id or "",
+            row.amount_cents,
+        )
+    )
+
+    generated_at = generated_at or datetime.now(timezone.utc)
+    return FinanceDraftExport(
+        task_id=task.id,
+        administrator_id=boundary.administrator_id,
+        format=format,
+        filename=f"{task.id}-finance-draft.{format.value}",
+        generated_at=generated_at,
+        competition_name=task.competition_name,
+        competition_location=task.competition_location,
+        competition_start_date=task.competition_start_date,
+        competition_end_date=task.competition_end_date,
+        project_info=task.project_info,
+        reimburser_info=task.reimburser_info,
+        invoice_title=task.invoice_title,
+        tax_number=task.tax_number,
+        total_amount_cents=sum(item.amount_cents for item in invoice_rows),
+        invoice_count=len(invoice_rows),
+        expense_totals_cents=expense_totals_cents,
+        member_totals_cents=member_totals_cents,
+        invoice_rows=invoice_rows,
+    )
+
+
 def update_task_export_job_status(
     task: ReimbursementTask,
     *,
@@ -784,6 +930,8 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
     TaskExportCapability(
         kind=ExportArtifactKind.FINANCE_DRAFT,
         formats=[ExportArtifactFormat.XLSX, ExportArtifactFormat.JSON],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.JSON],
     ),
     TaskExportCapability(
         kind=ExportArtifactKind.MERGED_PDF,

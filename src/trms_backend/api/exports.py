@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
@@ -14,6 +14,7 @@ from trms_backend.domain.exports import (
     TaskExportJobRequest,
     TaskExportJobStatusTransitionError,
     TaskExportJobStatusUpdate,
+    build_finance_draft_export,
     build_task_export_boundary,
     build_invoice_details_export,
     build_member_details_export,
@@ -258,6 +259,61 @@ def build_export_router(
         return PlainTextResponse(
             content=render_missing_materials_csv(export),
             media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{export.filename}"',
+            },
+        )
+
+    @router.get("/{task_id}/exports/finance-draft")
+    def export_finance_draft(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+        format: ExportArtifactFormat = ExportArtifactFormat.JSON,
+    ):
+        task = task_repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        invoices = invoice_repository.list_by_task(task_id)
+        materials_by_id = {
+            material.id: material for material in material_repository.list_by_task(task_id)
+        }
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+
+        try:
+            export = build_finance_draft_export(
+                task,
+                actor_id=actor_id,
+                format=format,
+                invoices=invoices,
+                materials_by_id=materials_by_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+            )
+        except TaskExportActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except TaskExportJobNotReadyError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        except TaskExportFormatNotImplementedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(error),
+            ) from error
+
+        return JSONResponse(
+            content=export.model_dump(mode="json"),
+            media_type="application/json",
             headers={
                 "Content-Disposition": f'attachment; filename="{export.filename}"',
             },

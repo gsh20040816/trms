@@ -157,8 +157,9 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["blocking_reasons"] == []
     assert body["execution_mode"] == "async_placeholder"
     assert body["note"] == (
-        "reimbursement summary/member details/invoice details/missing materials CSV export is available; "
-        "export jobs and other persisted artifacts remain placeholders"
+        "reimbursement summary/member details/invoice details/missing materials CSV export and "
+        "finance draft JSON export are available; export jobs and other persisted artifacts remain "
+        "placeholders"
     )
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}
     assert set(supported_by_kind) == {
@@ -182,18 +183,32 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert supported_by_kind["missing_materials"]["implemented"] is True
     assert supported_by_kind["missing_materials"]["implemented_formats"] == ["csv"]
     assert supported_by_kind["finance_draft"]["formats"] == ["xlsx", "json"]
+    assert supported_by_kind["finance_draft"]["implemented"] is True
+    assert supported_by_kind["finance_draft"]["implemented_formats"] == ["json"]
     assert supported_by_kind["merged_pdf"]["formats"] == ["pdf"]
     assert all(
         item["implemented"] is False
         for item in body["supported_exports"]
         if item["kind"]
-        not in {"reimbursement_summary", "member_details", "invoice_details", "missing_materials"}
+        not in {
+            "reimbursement_summary",
+            "member_details",
+            "invoice_details",
+            "missing_materials",
+            "finance_draft",
+        }
     )
     assert all(
         item["implemented_formats"] == []
         for item in body["supported_exports"]
         if item["kind"]
-        not in {"reimbursement_summary", "member_details", "invoice_details", "missing_materials"}
+        not in {
+            "reimbursement_summary",
+            "member_details",
+            "invoice_details",
+            "missing_materials",
+            "finance_draft",
+        }
     )
 
 
@@ -595,6 +610,141 @@ def test_task_administrator_can_export_empty_missing_materials_csv(tmp_path):
     )
     rows = list(csv.DictReader(StringIO(response.text)))
     assert rows == []
+
+
+def test_task_administrator_can_export_finance_draft_json(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="railway-a.pdf",
+        split_items=[
+            {"member_id": "2250001", "amount_cents": 6000, "note": "self"},
+            {"member_id": "2250002", "amount_cents": 6345, "note": "shared"},
+        ],
+    )
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250003",
+        filename="hotel.pdf",
+        invoice_overrides={
+            "invoice_number": "INV-002",
+            "amount_cents": 20000,
+            "expense_type": "hotel",
+            "seller_name": "酒店商户",
+        },
+        split_items=[{"member_id": "2250003", "amount_cents": 20000}],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/finance-draft",
+        params={"actor_id": "admin-1", "format": "json"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="{task_id}-finance-draft.json"'
+    )
+
+    body = response.json()
+    assert body["task_id"] == task_id
+    assert body["administrator_id"] == "admin-1"
+    assert body["format"] == "json"
+    assert body["competition_name"] == "ICPC Asia Regional"
+    assert body["competition_location"] == "Shanghai"
+    assert body["project_info"] == "ACM competition project"
+    assert body["reimburser_info"] == "Lab reimbursement owner"
+    assert body["invoice_title"] == "同济大学"
+    assert body["tax_number"] == "12100000425006117D"
+    assert body["total_amount_cents"] == 32345
+    assert body["invoice_count"] == 2
+    assert body["expense_totals_cents"] == {
+        "registration": 0,
+        "railway": 12345,
+        "hotel": 20000,
+    }
+    assert body["member_totals_cents"] == {
+        "2250001": 6000,
+        "2250002": 6345,
+        "2250003": 20000,
+    }
+    assert body["invoice_rows"] == [
+        {
+            "invoice_number": "INV-002",
+            "expense_type": "hotel",
+            "amount_cents": 20000,
+            "buyer_name": "同济大学",
+            "tax_number": "12100000425006117D",
+            "seller_name": "酒店商户",
+            "issue_date": "2026-11-04",
+            "transaction_time": "2026-11-01T08:00:00",
+            "submitter_id": "2250003",
+            "validation_status": "pending",
+            "failed_rule_codes": [],
+            "pending_rule_codes": ["invoice_competition_location_range"],
+            "split_items": [
+                {
+                    "member_id": "2250003",
+                    "amount_cents": 20000,
+                    "split_version": 1,
+                    "split_note": None,
+                }
+            ],
+        },
+        {
+            "invoice_number": "INV-001",
+            "expense_type": "railway",
+            "amount_cents": 12345,
+            "buyer_name": "同济大学",
+            "tax_number": "12100000425006117D",
+            "seller_name": "铁路服务商",
+            "issue_date": "2026-11-04",
+            "transaction_time": "2026-11-01T08:00:00",
+            "submitter_id": "2250001",
+            "validation_status": "pending",
+            "failed_rule_codes": [],
+            "pending_rule_codes": ["invoice_competition_location_range"],
+            "split_items": [
+                {
+                    "member_id": "2250001",
+                    "amount_cents": 6000,
+                    "split_version": 1,
+                    "split_note": "self",
+                },
+                {
+                    "member_id": "2250002",
+                    "amount_cents": 6345,
+                    "split_version": 1,
+                    "split_note": "shared",
+                },
+            ],
+        },
+    ]
+    assert "storage_key" not in response.text
+    assert str(tmp_path) not in response.text
+
+
+def test_finance_draft_xlsx_is_not_implemented_yet(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/finance-draft",
+        params={"actor_id": "admin-1", "format": "xlsx"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "export format xlsx is not implemented yet for finance_draft"
+    )
 
 
 def test_export_capabilities_report_blocking_reason_before_final_confirmation(tmp_path):

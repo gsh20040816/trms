@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-28 06:31 - Add finance draft export
+
+### 完成内容
+- 在 `src/trms_backend/domain/exports.py` 增加财务填报草稿导出模型与聚合逻辑：
+  - 新增 `FinanceDraftExport`、发票行和分摊行结构；
+  - 汇总任务的项目、报销人、抬头、税号、总金额、费用类别总额、成员分摊总额和发票明细；
+  - 财务草稿只暴露人工录入所需字段，不输出材料存储路径等实现细节。
+- 在 `src/trms_backend/api/exports.py` 增加 `GET /api/tasks/{task_id}/exports/finance-draft`：
+  - 仅允许任务管理员访问；
+  - 仅允许任务处于 `ready_to_export` 或 `completed` 时导出；
+  - 当前先实现 `format=json`，以 `application/json` 响应返回财务填报草稿。
+- 在 `tests/test_exports_api.py` 增加回归测试，覆盖：
+  - 导出能力声明包含 `finance_draft` 的已实现 JSON 格式；
+  - 财务草稿可导出项目、报销人、总金额、费用分摊和发票明细；
+  - 响应中不暴露 `storage_key` 或本地临时路径；
+  - `format=xlsx` 仍显式返回“尚未实现”错误，而不是伪装成功。
+- 将 `TASKS.md` 中“生成财务填报草稿”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/api/exports.py`
+- `tests/test_exports_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有导出链路已经补齐汇总表、成员明细表、发票明细表和缺失材料清单，但管理员仍缺少一份可直接用于人工录入财务系统的结构化草稿。
+- 需求文档 FR-010 和架构文档 5.8 节都要求系统生成财务填报草稿；如果继续缺失这类导出，管理员仍需从多张导出表手工拼接项目、报销人、总额和逐张发票信息，导出链路就无法闭合到“人工录入前辅助结果”这一阶段目标。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py`
+    - 15 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 157 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“财务填报草稿”实现为 JSON 导出，而不是同时引入 XLSX 生成；这样先满足架构文档中“JSON 供后续自动化扩展”的边界，同时避免在本轮增加额外表格生成依赖。
+- 财务草稿中的成员总额来自当前有效分摊，任务总金额来自当前发票金额求和；在 `ready_to_export` 状态下，分摊和发票应已由现有门禁保证一致。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“合并打印 PDF 占位”，继续复用导出模块和导出任务边界。
+
 ## 2026-04-28 06:21 - Add missing materials export
 
 ### 完成内容
