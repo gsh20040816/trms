@@ -228,3 +228,34 @@ class MaterialReminderRow(Base):
     member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     content: Mapped[str] = mapped_column(String(2000), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AutomaticReminderTaskRow(Base):
+    __tablename__ = "automatic_reminder_tasks"
+    __table_args__ = (
+        Index("ix_automatic_reminder_task_created_at", "task_id", "created_at"),
+        Index("ix_automatic_reminder_task_member_kind", "task_id", "member_id", "kind"),
+        Index(
+            "ix_automatic_reminder_task_deduplication",
+            "task_id",
+            "deduplication_key",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reimbursement_tasks.id"),
+        nullable=False,
+        index=True,
+    )
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    summary: Mapped[str] = mapped_column(String(2000), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    deduplication_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

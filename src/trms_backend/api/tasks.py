@@ -2,6 +2,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from trms_backend.domain.automatic_reminders import (
+    AutomaticReminderTaskActorNotAllowedError,
+    AutomaticReminderTaskGenerate,
+    AutomaticReminderTaskRepository,
+    generate_task_automatic_reminder_tasks,
+    list_task_automatic_reminder_tasks,
+)
 from trms_backend.domain.confirmations import (
     ConfirmationDisputeResolve,
     ConfirmationRepository,
@@ -59,6 +66,7 @@ def build_task_router(
     repository: TaskRepository,
     global_invoice_config_repository: GlobalInvoiceConfigRepository,
     material_reminder_repository: MaterialReminderRepository,
+    automatic_reminder_task_repository: AutomaticReminderTaskRepository,
     material_repository: MaterialRepository,
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
@@ -96,6 +104,65 @@ def build_task_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         return {"items": task.member_ids}
+
+    @router.post("/{task_id}/automatic-reminder-tasks", status_code=status.HTTP_201_CREATED)
+    def generate_automatic_reminder_tasks(task_id: str, payload: AutomaticReminderTaskGenerate):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        materials = material_repository.list_by_task(task_id)
+        invoices = invoice_repository.list_by_task(task_id)
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        confirmations_by_split_id = {}
+        for invoice in invoices:
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        try:
+            return generate_task_automatic_reminder_tasks(
+                task,
+                payload=payload,
+                repository=automatic_reminder_task_repository,
+                materials=materials,
+                invoices=invoices,
+                validations_by_invoice_id=validations_by_invoice_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_split_id=confirmations_by_split_id,
+            )
+        except AutomaticReminderTaskActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/automatic-reminder-tasks")
+    def list_automatic_reminder_tasks(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        try:
+            return {
+                "items": list_task_automatic_reminder_tasks(
+                    task,
+                    actor_id=actor_id,
+                    repository=automatic_reminder_task_repository,
+                )
+            }
+        except AutomaticReminderTaskActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
 
     @router.post("/{task_id}/material-reminders", status_code=status.HTTP_201_CREATED)
     def create_material_reminder(task_id: str, payload: MaterialReminderCreate):

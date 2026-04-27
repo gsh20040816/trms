@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-04-28 05:47 - Add automatic reminder task placeholders
+
+### 完成内容
+- 新增 `src/trms_backend/domain/automatic_reminders.py`，建立系统自动提醒任务占位模型、管理员权限校验、缺失材料与未确认费用聚合逻辑，以及基于去重键的幂等生成规则。
+- 在 `src/trms_backend/api/tasks.py` 增加：
+  - `POST /api/tasks/{task_id}/automatic-reminder-tasks`，用于生成当前任务的自动提醒任务占位；
+  - `GET /api/tasks/{task_id}/automatic-reminder-tasks`，用于管理员查询已生成的自动提醒任务占位。
+- 在 `src/trms_backend/infrastructure/models.py` 与 `src/trms_backend/infrastructure/repositories.py` 增加自动提醒任务表和 SQLAlchemy 仓储实现，持久化提醒类型、摘要、载荷、去重键和请求人。
+- 新增 `tests/test_automatic_reminder_tasks_api.py`，覆盖：
+  - 缺失材料与未确认费用两类提醒占位生成；
+  - 重复生成同一快照时的幂等复用；
+  - 非管理员禁止生成和查询。
+- 将 `TASKS.md` 中“建立系统自动提醒占位”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/automatic_reminders.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_automatic_reminder_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 需求文档 FR-009 要求“管理员可查看自动提醒记录”，任务清单也要求系统能基于缺失材料和未确认状态生成提醒占位。
+- 当前仓库只有管理员手动提醒记录，没有任何系统自动提醒任务骨架：
+  - 缺失材料和未确认状态虽然已经能分别聚合或识别，但没有统一入口把它们转成可查询、可追踪的提醒任务；
+  - 后续若接入邮件、Telegram 或定时任务，也缺少幂等的本地任务占位可供复用。
+- 因此管理员复核链路里“系统自动提醒”仍停留在文档要求，没有最小可验证实现。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_automatic_reminder_tasks_api.py`
+    - 3 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 141 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“未确认状态”定义为当前有效费用分摊上所有非 `confirmed` 状态，而不是只在截止后才生成提醒；由于本轮只生成占位、不发送外部通知，这样能先把提醒任务骨架和幂等边界落库。
+- 自动提醒任务目前仅保留 `pending` 占位状态，不提前设计真实发送、重试和失败流转，避免在未接入通知渠道前过度扩展。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立导出模块边界骨架”，先把导出服务与任务边界建立出来，再分别补导出任务模型和具体导出物。
+
 ## 2026-04-28 05:29 - Record administrator material reminders
 
 ### 完成内容

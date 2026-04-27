@@ -6,6 +6,13 @@ from uuid import uuid4
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from trms_backend.domain.automatic_reminders import (
+    AutomaticReminderTaskCreate,
+    AutomaticReminderTaskKind,
+    AutomaticReminderTaskRecord,
+    AutomaticReminderTaskRepository,
+    AutomaticReminderTaskStatus,
+)
 from trms_backend.domain.confirmations import (
     ConfirmationRecord,
     ConfirmationRepository,
@@ -57,6 +64,7 @@ from trms_backend.domain.tasks import (
 )
 from trms_backend.infrastructure.database import session_scope
 from trms_backend.infrastructure.models import (
+    AutomaticReminderTaskRow,
     ConfirmationRow,
     ExpenseSplitRow,
     GlobalInvoiceConfigRow,
@@ -822,6 +830,59 @@ class SqlAlchemyMaterialReminderRepository(MaterialReminderRepository):
             return [_material_reminder_from_row(row) for row in rows]
 
 
+class SqlAlchemyAutomaticReminderTaskRepository(AutomaticReminderTaskRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(
+        self,
+        *,
+        task_id: str,
+        data: AutomaticReminderTaskCreate,
+    ) -> AutomaticReminderTaskRecord:
+        now = datetime.now(timezone.utc)
+        row = AutomaticReminderTaskRow(
+            id=str(uuid4()),
+            task_id=task_id,
+            member_id=data.member_id,
+            requested_by=data.requested_by,
+            kind=data.kind.value,
+            status=AutomaticReminderTaskStatus.PENDING.value,
+            summary=data.summary,
+            payload=data.payload,
+            deduplication_key=data.deduplication_key,
+            created_at=now,
+            updated_at=now,
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _automatic_reminder_task_from_row(row)
+
+    def get_by_deduplication_key(
+        self,
+        *,
+        task_id: str,
+        deduplication_key: str,
+    ) -> AutomaticReminderTaskRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(AutomaticReminderTaskRow).where(
+                    AutomaticReminderTaskRow.task_id == task_id,
+                    AutomaticReminderTaskRow.deduplication_key == deduplication_key,
+                )
+            )
+            return _automatic_reminder_task_from_row(row) if row else None
+
+    def list_by_task(self, task_id: str) -> list[AutomaticReminderTaskRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(AutomaticReminderTaskRow)
+                .where(AutomaticReminderTaskRow.task_id == task_id)
+                .order_by(AutomaticReminderTaskRow.created_at)
+            ).all()
+            return [_automatic_reminder_task_from_row(row) for row in rows]
+
+
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
     return ReimbursementTask(
         id=row.id,
@@ -1008,6 +1069,24 @@ def _material_reminder_from_row(row: MaterialReminderRow) -> MaterialReminderRec
         member_id=row.member_id,
         content=row.content,
         created_at=_ensure_utc_datetime(row.created_at),
+    )
+
+
+def _automatic_reminder_task_from_row(
+    row: AutomaticReminderTaskRow,
+) -> AutomaticReminderTaskRecord:
+    return AutomaticReminderTaskRecord(
+        id=row.id,
+        task_id=row.task_id,
+        member_id=row.member_id,
+        requested_by=row.requested_by,
+        kind=AutomaticReminderTaskKind(row.kind),
+        status=AutomaticReminderTaskStatus(row.status),
+        summary=row.summary,
+        payload=dict(row.payload),
+        deduplication_key=row.deduplication_key,
+        created_at=_ensure_utc_datetime(row.created_at),
+        updated_at=_ensure_utc_datetime(row.updated_at),
     )
 
 
