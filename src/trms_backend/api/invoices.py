@@ -69,6 +69,9 @@ def build_invoice_router(
             ) from error
 
         invoice_data = payload.to_invoice_create()
+        latest_effective_recognition = recognition_task_repository.get_latest_effective_by_material(
+            material_id
+        )
         invoice = invoice_repository.upsert_for_material(
             material.task_id,
             material_id,
@@ -96,7 +99,12 @@ def build_invoice_router(
         )
         validations = validation_repository.replace_for_invoice(
             invoice.id,
-            validate_invoice(invoice, task, duplicate_invoice_id),
+            validate_invoice(
+                invoice,
+                task,
+                duplicate_invoice_id,
+                latest_effective_recognition,
+            ),
         )
         return {"invoice": invoice, "validations": validations}
 

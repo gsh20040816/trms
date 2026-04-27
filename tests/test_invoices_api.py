@@ -167,6 +167,109 @@ def test_create_invoice_reports_title_and_tax_mismatch(tmp_path):
     }
 
 
+def test_create_invoice_marks_missing_recognized_title_and_tax_as_pending(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+    recognition_task_id = client.get(f"/api/materials/{material_id}/recognition-tasks").json()["items"][0][
+        "id"
+    ]
+
+    recognition_update = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        json={
+            "target_status": "succeeded",
+            "result": {
+                "raw_response": {
+                    "provider": "placeholder-ai",
+                    "document_type": "invoice",
+                },
+                "recognized_fields": {
+                    "invoice_number": {
+                        "value": "INV-001",
+                        "source": "ai",
+                        "confidence": 0.99,
+                        "status": "recognized",
+                    }
+                },
+            },
+        },
+    )
+
+    assert recognition_update.status_code == 200
+
+    response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
+
+    assert response.status_code == 201
+    body = response.json()
+    assert validation_by_code(body, "invoice_title_match")["status"] == "pending"
+    assert validation_by_code(body, "invoice_title_match")["evidence"] == {
+        "expected_buyer_name": "同济大学",
+        "actual_buyer_name": "同济大学",
+        "recognized_buyer_name": None,
+        "recognition_task_status": "succeeded",
+        "recognition_status": "missing",
+    }
+    assert validation_by_code(body, "invoice_tax_number_match")["status"] == "pending"
+    assert validation_by_code(body, "invoice_tax_number_match")["evidence"] == {
+        "expected_tax_number": "12100000425006117D",
+        "actual_tax_number": "12100000425006117D",
+        "recognized_tax_number": None,
+        "recognition_task_status": "succeeded",
+        "recognition_status": "missing",
+    }
+
+
+def test_create_invoice_keeps_failed_when_manual_title_and_tax_mismatch_after_missing_recognition(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+    recognition_task_id = client.get(f"/api/materials/{material_id}/recognition-tasks").json()["items"][0][
+        "id"
+    ]
+
+    recognition_update = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        json={
+            "target_status": "failed",
+            "failure": {
+                "stage": "ocr",
+                "reason": "buyer name and tax number were not recognized",
+            },
+        },
+    )
+
+    assert recognition_update.status_code == 200
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "buyer_name": "错误抬头",
+            "tax_number": "WRONG-TAX-NUMBER",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert validation_by_code(body, "invoice_title_match")["status"] == "failed"
+    assert validation_by_code(body, "invoice_title_match")["evidence"] == {
+        "expected_buyer_name": "同济大学",
+        "actual_buyer_name": "错误抬头",
+        "recognized_buyer_name": None,
+        "recognition_task_status": "failed",
+        "recognition_status": "missing",
+    }
+    assert validation_by_code(body, "invoice_tax_number_match")["status"] == "failed"
+    assert validation_by_code(body, "invoice_tax_number_match")["evidence"] == {
+        "expected_tax_number": "12100000425006117D",
+        "actual_tax_number": "WRONG-TAX-NUMBER",
+        "recognized_tax_number": None,
+        "recognition_task_status": "failed",
+        "recognition_status": "missing",
+    }
+
+
 def test_create_invoice_reports_duplicate_invoice_number(tmp_path):
     client = make_client(tmp_path)
     task_id, first_material_id = create_material(client)

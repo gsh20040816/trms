@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-04-28 03:19 - Mark unrecognized invoice title and tax number validations as pending
+
+### 完成内容
+- 将发票抬头/税号校验接入“人工覆盖前的最新有效识别快照”：创建发票时会先读取材料最近一次非 `pending` 的识别任务，再执行人工录入覆盖，避免把“原本未识别”直接静默抹掉。
+- 当识别结果里缺少 `buyer_name` 或 `tax_number` 时，抬头/税号规则不再仅凭人工录入值直接判定通过；若人工录入值与任务配置一致，校验结果返回 `pending`，明确表示“识别缺失，仍需人工确认”。
+- 若识别缺失同时人工录入值又与任务配置不一致，规则直接返回 `failed`，并在结构化证据中同时记录“识别缺失”和当前人工值，避免把“未识别”和“值错误”混成一个模糊状态。
+- 补充发票 API 回归测试，覆盖“识别结果已产出但缺少抬头/税号时返回 `pending`”和“识别失败且人工录入值错误时继续返回 `failed`”两条路径。
+- 将 `TASKS.md` 中“未识别抬头或税号时输出待确认校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/domain/invoice_validation.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有发票创建流程会先把人工录入字段写回识别任务，再运行抬头/税号校验；校验层只看发票当前字段，不看此前的识别结果，因此一旦人工录入补齐抬头或税号，系统就无法区分“AI 已识别且正确”与“AI 根本没识别出来但被人工补录”，从而把“未识别”静默伪装成“通过”。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 18 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 90 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮把“未识别”收敛为“存在最近一次有效识别任务，但其中缺少 `buyer_name` 或 `tax_number` 字段”；如果材料当前只有默认占位识别任务、尚未产出任何有效识别结果，则继续沿用现有人工录入的通过/失败判定，不把“尚未开始识别”和“识别后缺失字段”混为同一状态。
+- 当前仍以人工录入后的发票字段作为最终比较对象；因此当识别缺失但人工录入值本身已经与任务配置不一致时，本轮直接返回 `failed`，不降级为 `pending`。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“单张发票金额达到阈值时校验支付记录附件”，继续把发票校验从抬头/税号/重复号码扩展到附件完整性主链路。
+
 ## 2026-04-28 03:12 - Extend invoice validation result schema with structured evidence
 
 ### 完成内容
