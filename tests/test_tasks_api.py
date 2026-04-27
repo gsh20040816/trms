@@ -335,6 +335,27 @@ def test_update_task_status_allows_valid_transition(tmp_path):
     assert response.json()["status"] == "open"
 
 
+def test_update_task_status_allows_transition_from_closed_to_reviewing(tmp_path):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+
+    closed = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "closed"},
+    )
+    assert closed.status_code == 200
+    assert closed.json()["status"] == "closed"
+
+    reviewing = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "reviewing"},
+    )
+
+    assert reviewing.status_code == 200
+    assert reviewing.json()["status"] == "reviewing"
+
+
 def test_update_task_status_rejects_open_when_member_list_missing(tmp_path):
     client = make_client(tmp_path)
     created = client.post("/api/tasks", json=valid_task_payload()).json()
@@ -414,6 +435,31 @@ def test_update_task_status_allows_ready_to_export_after_review_conditions_met(t
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
+    split_id = replace_invoice_splits(client, invoice_id)
+    confirm_split(client, split_id)
+    move_open_task_to_reviewing(client, task["id"])
+
+    response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready_to_export"
+
+
+def test_update_task_status_allows_ready_to_export_when_only_warning_validations_remain(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    open_task(client, task["id"])
+    material_id = upload_material(client, task["id"])
+    invoice_id = create_invoice(
+        client,
+        material_id,
+        transaction_time="2026-10-29T08:00:00Z",
+    )
     split_id = replace_invoice_splits(client, invoice_id)
     confirm_split(client, split_id)
     move_open_task_to_reviewing(client, task["id"])

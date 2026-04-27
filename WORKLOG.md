@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-04-28 05:07 - Close administrator review state flow task
+
+### 完成内容
+- 在 `tests/test_tasks_api.py` 补充两条管理员复核状态流转回归测试：
+  - 显式覆盖任务从 `closed` 进入 `reviewing`；
+  - 显式覆盖仅剩 warning 级校验时，任务仍可从 `reviewing` 进入 `ready_to_export`，验证“只有 Must/blocker 问题阻止最终确认”的门禁语义。
+- 将 `TASKS.md` 中“建立管理员复核状态流转”标记为已完成。
+
+### 修改文件
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 该任务对应的核心业务能力实际上已在仓库中存在：
+  - `src/trms_backend/domain/tasks.py` 已定义 `closed -> reviewing -> ready_to_export` 状态流转；
+  - `src/trms_backend/api/tasks.py` 已在进入 `ready_to_export` 前执行 Must/blocker 校验和成员确认门禁；
+  - `tests/test_tasks_api.py` 已覆盖 blocker 校验失败、确认缺失、确认失效和禁止直接完成等关键失败路径。
+- 但任务清单仍未结项，主要缺口是“主要状态流转”的直接回归覆盖不够直观，导致当前事实没有被 `TASKS.md` 明确收口。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py`
+    - 32 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 130 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守认定“建立管理员复核状态流转”只要求收敛任务状态机和最终确认门禁，不包含管理员复核汇总视图、待归属材料阻断、补材料提醒等后续独立任务；这些仍按 `TASKS.md` 后续顺序推进。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立复核汇总查询接口”，把当前已有的材料、识别、校验、分摊和确认数据聚合为管理员复核视图。
+
 ## 2026-04-28 05:02 - Forbid proxy split confirmations by default
 
 ### 完成内容
