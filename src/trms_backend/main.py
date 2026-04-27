@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from trms_backend.api.confirmations import build_confirmation_router
 from trms_backend.api.invoices import build_invoice_router
 from trms_backend.api.materials import build_material_router
+from trms_backend.api.recognitions import build_recognition_router
 from trms_backend.api.splits import build_split_router
 from trms_backend.api.tasks import build_task_router
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
@@ -16,6 +17,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyExpenseSplitRepository,
     SqlAlchemyGlobalInvoiceConfigRepository,
     SqlAlchemyMaterialRepository,
+    SqlAlchemyRecognitionTaskRepository,
     SqlAlchemyTaskRepository,
     SqlAlchemyValidationRepository,
 )
@@ -43,6 +45,7 @@ def create_app(
         )
     invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
     validation_repository = SqlAlchemyValidationRepository(session_factory)
+    recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
 
@@ -63,6 +66,7 @@ def create_app(
     app.include_router(
         build_material_router(task_repository, material_repository, material_file_storage)
     )
+    app.include_router(build_recognition_router(material_repository, recognition_task_repository))
     app.include_router(
         build_invoice_router(
             task_repository,

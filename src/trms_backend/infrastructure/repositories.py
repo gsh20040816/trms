@@ -34,6 +34,12 @@ from trms_backend.domain.materials import (
     MaterialType,
     SubmissionChannel,
 )
+from trms_backend.domain.recognitions import (
+    RecognitionTaskCreate,
+    RecognitionTaskRecord,
+    RecognitionTaskRepository,
+    RecognitionTaskStatus,
+)
 from trms_backend.domain.splits import ExpenseSplitItem, ExpenseSplitRecord, ExpenseSplitRepository
 from trms_backend.domain.tasks import (
     ReimbursementTask,
@@ -48,6 +54,7 @@ from trms_backend.infrastructure.models import (
     InvoiceRow,
     InvoiceSupportingMaterialLinkRow,
     MaterialRow,
+    RecognitionTaskRow,
     TaskRow,
     ValidationResultRow,
 )
@@ -361,6 +368,52 @@ class SqlAlchemyValidationRepository(ValidationRepository):
             return [_validation_from_row(row) for row in rows]
 
 
+class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(self, data: RecognitionTaskCreate) -> RecognitionTaskRecord:
+        now = datetime.now(timezone.utc)
+        row = RecognitionTaskRow(
+            id=str(uuid4()),
+            status=RecognitionTaskStatus.PENDING.value,
+            created_at=now,
+            updated_at=now,
+            **data.model_dump(),
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _recognition_task_from_row(row)
+
+    def get(self, recognition_task_id: str) -> RecognitionTaskRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(RecognitionTaskRow, recognition_task_id)
+            return _recognition_task_from_row(row) if row else None
+
+    def list_by_material(self, material_id: str) -> list[RecognitionTaskRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(RecognitionTaskRow)
+                .where(RecognitionTaskRow.material_id == material_id)
+                .order_by(RecognitionTaskRow.created_at)
+            ).all()
+            return [_recognition_task_from_row(row) for row in rows]
+
+    def update_status(
+        self,
+        recognition_task_id: str,
+        target_status: RecognitionTaskStatus,
+    ) -> RecognitionTaskRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(RecognitionTaskRow, recognition_task_id)
+            if row is None:
+                return None
+            row.status = target_status.value
+            row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+        return _recognition_task_from_row(row)
+
+
 class SqlAlchemyExpenseSplitRepository(ExpenseSplitRepository):
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
@@ -540,6 +593,17 @@ def _validation_from_row(row: ValidationResultRow) -> ValidationResult:
     )
 
 
+def _recognition_task_from_row(row: RecognitionTaskRow) -> RecognitionTaskRecord:
+    return RecognitionTaskRecord(
+        id=row.id,
+        material_id=row.material_id,
+        status=RecognitionTaskStatus(row.status),
+        is_final_fact=row.is_final_fact,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 def _split_from_row(row: ExpenseSplitRow) -> ExpenseSplitRecord:
     return ExpenseSplitRecord(
         id=row.id,
@@ -562,9 +626,3 @@ def _confirmation_from_row(row: ConfirmationRow) -> ConfirmationRecord:
         confirmed_at=row.confirmed_at,
         updated_at=row.updated_at,
     )
-from trms_backend.domain.confirmations import (
-    ConfirmationRecord,
-    ConfirmationRepository,
-    ConfirmationStatus,
-    ConfirmationSubmit,
-)

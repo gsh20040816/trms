@@ -162,7 +162,7 @@
 
 ## P1 - 发票、识别与人工更正
 
-- [ ] 建立 AI 识别任务占位模型
+- [x] 建立 AI 识别任务占位模型
   - Done when:
     - 存在识别任务记录或领域模型，能表达 pending、succeeded、failed、needs_confirmation
     - AI 输出明确不是最终事实来源

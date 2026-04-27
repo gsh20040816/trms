@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-04-28 02:31 - Establish AI recognition task placeholders
+
+### 完成内容
+- 新增独立识别任务领域模型 `RecognitionTask`，显式支持 `pending`、`succeeded`、`failed`、`needs_confirmation` 四种状态，并用 `is_final_fact=false` 固化“AI 输出只是识别建议，不是最终事实来源”的第一阶段边界。
+- 新增 `recognition_tasks` 持久化表与 SQLAlchemy 仓储，实现材料维度的识别任务创建、查询和状态更新，占位后续 OCR / AI / 异步处理链路，但本轮不接入任何真实外部识别服务。
+- 新增最小识别任务 API：`POST /api/materials/{material_id}/recognition-tasks`、`GET /api/materials/{material_id}/recognition-tasks`、`PATCH /api/recognition-tasks/{recognition_task_id}/status`，用于显式创建占位任务、查询状态，以及在无外部 AI 的前提下验证状态流转边界。
+- 补充识别任务 API 回归测试，覆盖占位创建、`pending -> needs_confirmation -> succeeded`、`pending -> failed` 和终态非法回退四条主路径。
+- 将 `TASKS.md` 中“建立 AI 识别任务占位模型”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/recognitions.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_recognition_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_tasks_api.py`
+    - 4 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 79 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮把“识别任务占位”严格收敛为任务状态骨架，不在当前任务内继续保存 OCR 原文、字段值、字段来源、置信度或失败原因；这些内容留给后续“保存识别原始结果和字段置信度”“支持识别失败显式暴露”等任务分别补齐，避免一次性把识别链路做散。
+- 当前未把材料上传自动接入识别任务创建；原因是 `TASKS.md` 下一项已单独定义“建立识别任务触发边界”。本轮只提供显式创建占位任务的最小入口，不把“自动排队”提前实现成隐藏副作用。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此本轮新增的 `recognition_tasks` 表只会自动体现在新建数据库上；已有旧库若需要保留数据，仍需后续迁移机制统一处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“保存识别原始结果和字段置信度”，先把识别原始响应、字段值、来源和置信度挂到当前识别任务骨架上，再决定低置信度字段的待确认表达方式。
+
 ## 2026-04-28 03:10 - Establish invoice supporting-material associations
 
 ### 完成内容

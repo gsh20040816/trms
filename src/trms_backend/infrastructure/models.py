@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trms_backend.infrastructure.database import Base
@@ -120,6 +120,23 @@ class InvoiceSupportingMaterialLinkRow(Base):
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RecognitionTaskRow(Base):
+    __tablename__ = "recognition_tasks"
+    __table_args__ = (Index("ix_recognition_task_material", "material_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    material_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("materials.id"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    is_final_fact: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ValidationResultRow(Base):
