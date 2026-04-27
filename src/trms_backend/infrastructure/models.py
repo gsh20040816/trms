@@ -107,3 +107,21 @@ class ExpenseSplitRow(Base):
     note: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ConfirmationRow(Base):
+    __tablename__ = "confirmations"
+    __table_args__ = (Index("ix_confirmation_split_member", "split_id", "member_id", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    split_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("expense_splits.id"),
+        nullable=False,
+        index=True,
+    )
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    dispute_reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

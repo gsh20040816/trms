@@ -5,6 +5,12 @@ from sqlalchemy import select
 from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
+from trms_backend.domain.confirmations import (
+    ConfirmationRecord,
+    ConfirmationRepository,
+    ConfirmationStatus,
+    ConfirmationSubmit,
+)
 from trms_backend.domain.invoices import (
     ExpenseType,
     InvoiceCreate,
@@ -27,6 +33,7 @@ from trms_backend.domain.tasks import (
 )
 from trms_backend.infrastructure.database import session_scope
 from trms_backend.infrastructure.models import (
+    ConfirmationRow,
     ExpenseSplitRow,
     InvoiceRow,
     MaterialRow,
@@ -241,6 +248,56 @@ class SqlAlchemyExpenseSplitRepository(ExpenseSplitRepository):
             ).all()
             return [_split_from_row(row) for row in rows]
 
+    def get(self, split_id: str) -> ExpenseSplitRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(ExpenseSplitRow, split_id)
+            return _split_from_row(row) if row else None
+
+
+class SqlAlchemyConfirmationRepository(ConfirmationRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def upsert_for_split(
+        self,
+        split_id: str,
+        payload: ConfirmationSubmit,
+    ) -> ConfirmationRecord:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(ConfirmationRow).where(
+                    ConfirmationRow.split_id == split_id,
+                    ConfirmationRow.member_id == payload.member_id,
+                )
+            )
+            if row is None:
+                row = ConfirmationRow(
+                    id=str(uuid4()),
+                    split_id=split_id,
+                    member_id=payload.member_id,
+                    confirmed_at=now,
+                    updated_at=now,
+                    status=payload.status.value,
+                    dispute_reason=payload.dispute_reason,
+                )
+            else:
+                row.status = payload.status.value
+                row.dispute_reason = payload.dispute_reason
+                row.updated_at = now
+            session.add(row)
+        return _confirmation_from_row(row)
+
+    def list_by_invoice(self, invoice_id: str) -> list[ConfirmationRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(ConfirmationRow)
+                .join(ExpenseSplitRow, ConfirmationRow.split_id == ExpenseSplitRow.id)
+                .where(ExpenseSplitRow.invoice_id == invoice_id)
+                .order_by(ConfirmationRow.confirmed_at)
+            ).all()
+            return [_confirmation_from_row(row) for row in rows]
+
 
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
     return ReimbursementTask(
@@ -319,3 +376,21 @@ def _split_from_row(row: ExpenseSplitRow) -> ExpenseSplitRecord:
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+def _confirmation_from_row(row: ConfirmationRow) -> ConfirmationRecord:
+    return ConfirmationRecord(
+        id=row.id,
+        split_id=row.split_id,
+        member_id=row.member_id,
+        status=ConfirmationStatus(row.status),
+        dispute_reason=row.dispute_reason,
+        confirmed_at=row.confirmed_at,
+        updated_at=row.updated_at,
+    )
+from trms_backend.domain.confirmations import (
+    ConfirmationRecord,
+    ConfirmationRepository,
+    ConfirmationStatus,
+    ConfirmationSubmit,
+)

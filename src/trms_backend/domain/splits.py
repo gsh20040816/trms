@@ -51,3 +51,5 @@ class ExpenseSplitRepository(Protocol):
     def list_by_invoice(self, invoice_id: str) -> list[ExpenseSplitRecord]:
         raise NotImplementedError
 
+    def get(self, split_id: str) -> ExpenseSplitRecord | None:
+        raise NotImplementedError
