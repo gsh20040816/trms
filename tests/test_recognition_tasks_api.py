@@ -40,7 +40,32 @@ def upload_material(
     return response.json()["items"][0]["id"]
 
 
-def test_create_placeholder_recognition_task_marks_ai_output_non_final(tmp_path):
+def get_single_recognition_task(client: TestClient, material_id: str) -> dict:
+    listed = client.get(f"/api/materials/{material_id}/recognition-tasks")
+
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert len(items) == 1
+    return items[0]
+
+
+def test_uploaded_material_auto_creates_placeholder_recognition_task_marks_ai_output_non_final(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    material_id = upload_material(client, task_id)
+
+    body = get_single_recognition_task(client, material_id)
+
+    assert body["material_id"] == material_id
+    assert body["status"] == "pending"
+    assert body["is_final_fact"] is False
+    assert body["raw_response"] is None
+    assert body["recognized_fields"] == {}
+
+
+def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
     material_id = upload_material(client, task_id)
@@ -48,32 +73,26 @@ def test_create_placeholder_recognition_task_marks_ai_output_non_final(tmp_path)
     response = client.post(f"/api/materials/{material_id}/recognition-tasks")
 
     assert response.status_code == 201
-    body = response.json()["item"]
-    assert body["material_id"] == material_id
-    assert body["status"] == "pending"
-    assert body["is_final_fact"] is False
-    assert body["raw_response"] is None
-    assert body["recognized_fields"] == {}
+    created = response.json()["item"]
 
     listed = client.get(f"/api/materials/{material_id}/recognition-tasks")
 
     assert listed.status_code == 200
-    listed_body = listed.json()["items"][0]
-    assert listed_body["id"] == body["id"]
-    assert listed_body["material_id"] == body["material_id"]
-    assert listed_body["status"] == body["status"]
-    assert listed_body["is_final_fact"] is False
-    assert listed_body["raw_response"] is None
-    assert listed_body["recognized_fields"] == {}
+    items = listed.json()["items"]
+    assert len(items) == 2
+    assert items[0]["status"] == "pending"
+    assert items[1]["id"] == created["id"]
+    assert items[1]["status"] == "pending"
+    assert items[1]["is_final_fact"] is False
+    assert items[1]["raw_response"] is None
+    assert items[1]["recognized_fields"] == {}
 
 
 def test_recognition_task_can_move_to_needs_confirmation_then_succeeded(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
     material_id = upload_material(client, task_id)
-    recognition_task_id = client.post(
-        f"/api/materials/{material_id}/recognition-tasks"
-    ).json()["item"]["id"]
+    recognition_task_id = get_single_recognition_task(client, material_id)["id"]
 
     pending_to_confirmation = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
@@ -94,9 +113,7 @@ def test_recognition_task_can_move_to_failed(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
     material_id = upload_material(client, task_id, filename="ticket-2.pdf")
-    recognition_task_id = client.post(
-        f"/api/materials/{material_id}/recognition-tasks"
-    ).json()["item"]["id"]
+    recognition_task_id = get_single_recognition_task(client, material_id)["id"]
 
     response = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
@@ -111,9 +128,7 @@ def test_recognition_task_rejects_invalid_terminal_transition(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
     material_id = upload_material(client, task_id)
-    recognition_task_id = client.post(
-        f"/api/materials/{material_id}/recognition-tasks"
-    ).json()["item"]["id"]
+    recognition_task_id = get_single_recognition_task(client, material_id)["id"]
     client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
         json={"target_status": "succeeded"},
@@ -134,9 +149,7 @@ def test_low_confidence_fields_require_needs_confirmation_and_are_persisted(tmp_
     client = make_client(tmp_path)
     task_id = create_task(client)
     material_id = upload_material(client, task_id, filename="ticket-3.pdf")
-    recognition_task_id = client.post(
-        f"/api/materials/{material_id}/recognition-tasks"
-    ).json()["item"]["id"]
+    recognition_task_id = get_single_recognition_task(client, material_id)["id"]
     recognition_result = {
         "raw_response": {
             "provider": "placeholder-ai",

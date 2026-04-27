@@ -27,6 +27,7 @@ from trms_backend.domain.tasks import (
     ensure_task_accepts_member_submission,
     ensure_task_has_member,
 )
+from trms_backend.domain.recognitions import RecognitionTaskCreate, RecognitionTaskRepository
 
 PENDING_ASSIGNMENT_STORAGE_NAMESPACE = "_pending_assignment"
 
@@ -74,6 +75,7 @@ def build_material_router(
     task_repository: TaskRepository,
     material_repository: MaterialRepository,
     material_file_storage: MaterialFileStorage,
+    recognition_task_repository: RecognitionTaskRepository,
 ) -> APIRouter:
     router = APIRouter(tags=["materials"])
 
@@ -127,6 +129,11 @@ def build_material_router(
             content=jsonable_encoder(response_body),
         )
 
+    def create_material_with_recognition_placeholder(data: MaterialCreate) -> MaterialRecord:
+        record = material_repository.create(data)
+        recognition_task_repository.create(RecognitionTaskCreate(material_id=record.id))
+        return record
+
     @router.post("/api/tasks/{task_id}/materials", status_code=status.HTTP_201_CREATED)
     async def submit_materials(
         task_id: str,
@@ -166,7 +173,7 @@ def build_material_router(
                 content=content,
             )
             records.append(
-                material_repository.create(
+                create_material_with_recognition_placeholder(
                     MaterialCreate(
                         status=MaterialStatus.ASSIGNED,
                         task_id=task_id,
@@ -204,7 +211,7 @@ def build_material_router(
                 content=content,
             )
             records.append(
-                material_repository.create(
+                create_material_with_recognition_placeholder(
                     MaterialCreate(
                         status=MaterialStatus.PENDING_ASSIGNMENT,
                         task_id=None,

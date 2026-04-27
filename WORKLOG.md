@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-04-28 02:42 - Establish recognition task trigger boundary
+
+### 完成内容
+- 将材料上传链路接入识别占位触发：`POST /api/tasks/{task_id}/materials` 和 `POST /api/materials/pending-assignment` 在每个成功落库的材料后，都会自动创建一个 `pending` 状态的识别任务，占位后续异步 OCR / AI 处理，但本轮不接入任何真实外部服务。
+- 保持上传响应边界不变：接口仍同步返回材料上传结果，不等待真实识别执行；本轮只增加本地数据库中的识别任务占位，不把耗时识别工作塞进上传请求。
+- 调整识别任务测试语义：上传产生的首个识别任务现在视为默认尝试；原有手工 `POST /api/materials/{material_id}/recognition-tasks` 继续保留，用于显式追加新的重试/历史尝试。
+- 补充材料与识别 API 回归测试，覆盖“已归属材料上传后自动创建识别任务”“待归属材料上传后自动创建识别任务”“手工追加第二次识别尝试”三条主路径。
+- 将 `TASKS.md` 中“建立识别任务触发边界”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/main.py`
+- `tests/test_materials_api.py`
+- `tests/test_recognition_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 22 个用例通过
+  - `uv run pytest tests/test_recognition_tasks_api.py`
+    - 6 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 81 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“材料提交后触发识别”收敛为“为每个成功创建的材料自动插入一个 `pending` 识别任务占位”，而不是在上传请求中直接执行 OCR、PDF 解析或外部 AI 调用；这满足架构文档里“识别属于异步辅助能力”的边界，同时避免把上传响应和识别耗时耦合在一起。
+- 自动触发同时覆盖已归属材料和待归属材料；原因是需求与架构都把比赛通知、行程单、订单截图、支付记录等所有材料纳入统一识别链路，待归属材料不应因为身份未解析而失去后续识别入口。
+- 管理员认领待归属材料时，本轮不额外再生成新的默认识别任务；认领改变的是归属关系，不是新一次文件提交。若后续需要在认领后重新识别，当前保留的手工创建识别任务接口可作为显式重试入口。
+- 当前仓库仍依赖 `Base.metadata.create_all(...)` 初始化数据库，因此本轮没有新增 schema，只在现有 `recognition_tasks` 表基础上补上上传触发逻辑；共享旧库若此前已缺少该表，仍需按已有迁移策略处理。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立人工录入发票字段边界”，把成员/管理员录入发票关键字段的最小接口和基础校验边界补齐。
+
 ## 2026-04-28 02:37 - Persist recognition raw results and field confidence
 
 ### 完成内容
