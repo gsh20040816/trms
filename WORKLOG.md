@@ -1,5 +1,39 @@
 # WORKLOG
 
+## 2026-04-28 03:35 - Implement competition notice validation for registration invoices
+
+### 完成内容
+- 为发票校验新增 `invoice_competition_notice_required` 规则：当发票费用类型为 `registration` 时，若未关联 `competition_notice` 类型辅助材料，则返回 `failed`；已关联时返回 `passed`；其他费用类型返回 `not_applicable`。
+- 将该规则接入发票创建时的即时校验链路，并纳入发票辅助材料关联/取消关联后的局部重算，保证成员补挂或解绑比赛通知后，校验结果会同步更新。
+- 补充发票 API 回归测试，覆盖“非参赛费不适用”“参赛费缺少比赛通知失败”“补挂比赛通知后通过”三条主路径。
+- 将 `TASKS.md` 中“实现参赛费比赛通知校验”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/invoice_validation.py`
+- `src/trms_backend/api/invoices.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库已经具备发票与辅助材料关联模型，也已实现大额支付记录类的附件完整性校验，但参赛费“必须补比赛通知”这一 Must 规则尚未进入统一校验结果，因此系统无法显式暴露该类缺失材料问题，也无法在后续复核状态流转中据此阻断。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoices_api.py`
+    - 24 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 96 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“比赛通知校验”收敛为“参赛费发票是否已关联至少一份 `competition_notice` 类型材料”，不进一步解析通知内容中是否明确包含支付要求；这是因为当前 `TASKS.md` 的 Done when 只要求存在性校验，仓库内也尚未定义比赛通知内容识别结构。
+- 规则只依据材料类型字段 `material_type=competition_notice` 判断，不依赖文件名猜测，满足当前任务的最小闭环要求；后续若要校验“通知内容确有支付要求”，应在单独任务中引入识别字段和更细粒度规则。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现航空费用附件完整性校验”，继续补齐费用类型对应的附件完整性规则。
+
 ## 2026-04-28 03:31 - Implement payment record amount match validation
 
 ### 完成内容

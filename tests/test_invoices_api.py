@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from trms_backend.domain.invoice_validation import (
+    COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     PAYMENT_RECORD_AMOUNT_MATCH_MODE,
     PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
 )
@@ -178,6 +179,16 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         "matched_payment_records": [],
         "missing_amount_materials": [],
         "payment_record_amount_total_cents": None,
+    }
+    competition_notice_validation = validation_by_code(
+        body, COMPETITION_NOTICE_REQUIRED_RULE_CODE
+    )
+    assert competition_notice_validation["status"] == "not_applicable"
+    assert competition_notice_validation["evidence"] == {
+        "expense_type": "railway",
+        "required_material_type": "competition_notice",
+        "requires_competition_notice": False,
+        "competition_notice_material_ids": [],
     }
 
 
@@ -385,6 +396,29 @@ def test_create_invoice_fails_payment_record_validation_when_amount_reaches_thre
     assert payment_amount_validation["message"] == "尚未关联支付记录，暂不执行金额匹配"
 
 
+def test_create_registration_invoice_fails_when_competition_notice_is_missing(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | {"expense_type": "registration"},
+    )
+
+    assert response.status_code == 201
+    competition_notice_validation = validation_by_code(
+        response.json(), COMPETITION_NOTICE_REQUIRED_RULE_CODE
+    )
+    assert competition_notice_validation["status"] == "failed"
+    assert competition_notice_validation["message"] == "参赛费缺少比赛通知"
+    assert competition_notice_validation["evidence"] == {
+        "expense_type": "registration",
+        "required_material_type": "competition_notice",
+        "requires_competition_notice": True,
+        "competition_notice_material_ids": [],
+    }
+
+
 def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)
@@ -456,6 +490,46 @@ def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path
         ],
         "missing_amount_materials": [],
         "payment_record_amount_total_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+    }
+
+
+def test_attach_competition_notice_revalidates_registration_invoice_to_pass(tmp_path):
+    client = make_client(tmp_path)
+    task_id, material_id = create_material(client)
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | {"expense_type": "registration"},
+    )
+    invoice_id = invoice_response.json()["invoice"]["id"]
+    competition_notice_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="competition_notice",
+        filename="notice.pdf",
+        content_type="application/pdf",
+    )
+
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{competition_notice_material_id}"
+    )
+
+    assert attach_response.status_code == 200
+
+    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
+
+    assert validations_response.status_code == 200
+    competition_notice_validation = next(
+        item
+        for item in validations_response.json()["items"]
+        if item["rule_code"] == COMPETITION_NOTICE_REQUIRED_RULE_CODE
+    )
+    assert competition_notice_validation["status"] == "passed"
+    assert competition_notice_validation["message"] == "参赛费已关联比赛通知"
+    assert competition_notice_validation["evidence"] == {
+        "expense_type": "registration",
+        "required_material_type": "competition_notice",
+        "requires_competition_notice": True,
+        "competition_notice_material_ids": [competition_notice_material_id],
     }
 
 

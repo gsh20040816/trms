@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from trms_backend.domain.invoices import (
+    ExpenseType,
     InvoiceRecord,
     ValidationResult,
     ValidationSeverity,
@@ -15,6 +16,7 @@ PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS = 100_000
 PAYMENT_RECORD_REQUIRED_RULE_CODE = "invoice_payment_record_required"
 PAYMENT_RECORD_AMOUNT_MATCH_MODE = "exact_sum"
 PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE = "invoice_payment_record_amount_match"
+COMPETITION_NOTICE_REQUIRED_RULE_CODE = "invoice_competition_notice_required"
 
 
 def validate_invoice(
@@ -51,6 +53,7 @@ def validate_invoice(
             supporting_materials,
             supporting_material_recognitions,
         ),
+        validate_competition_notice_requirement(invoice, supporting_materials),
     ]
 
 
@@ -328,6 +331,50 @@ def validate_payment_record_amount_match(
         target_id=invoice.id,
         status=ValidationStatus.FAILED,
         message="支付记录金额合计与发票金额不一致",
+        evidence=evidence,
+    )
+
+
+def validate_competition_notice_requirement(
+    invoice: InvoiceRecord,
+    supporting_materials: list[MaterialRecord],
+) -> ValidationResult:
+    competition_notice_material_ids = [
+        material.id
+        for material in supporting_materials
+        if material.material_type is MaterialType.COMPETITION_NOTICE
+    ]
+    requires_competition_notice = invoice.expense_type is ExpenseType.REGISTRATION
+    evidence = {
+        "expense_type": invoice.expense_type.value,
+        "required_material_type": MaterialType.COMPETITION_NOTICE.value,
+        "requires_competition_notice": requires_competition_notice,
+        "competition_notice_material_ids": competition_notice_material_ids,
+    }
+
+    if not requires_competition_notice:
+        return _validation_result(
+            rule_code=COMPETITION_NOTICE_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前费用类型不要求比赛通知",
+            evidence=evidence,
+        )
+
+    if competition_notice_material_ids:
+        return _validation_result(
+            rule_code=COMPETITION_NOTICE_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="参赛费已关联比赛通知",
+            evidence=evidence,
+        )
+
+    return _validation_result(
+        rule_code=COMPETITION_NOTICE_REQUIRED_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="参赛费缺少比赛通知",
         evidence=evidence,
     )
 

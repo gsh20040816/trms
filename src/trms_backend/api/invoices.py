@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
 
 from trms_backend.domain.invoice_validation import (
+    COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
     PAYMENT_RECORD_REQUIRED_RULE_CODE,
     validate_invoice,
+    validate_competition_notice_requirement,
     validate_payment_record_amount_match,
     validate_payment_record_requirement,
 )
@@ -50,7 +52,7 @@ def build_invoice_router(
             for material in supporting_materials
         }
 
-    def recalculate_payment_record_validations(invoice_id: str) -> list:
+    def recalculate_supporting_material_validations(invoice_id: str) -> list:
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
@@ -64,12 +66,14 @@ def build_invoice_router(
             for item in existing_validations
             if item.rule_code
             not in {
+                COMPETITION_NOTICE_REQUIRED_RULE_CODE,
                 PAYMENT_RECORD_REQUIRED_RULE_CODE,
                 PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
             }
         ]
         updated_validations.extend(
             [
+                validate_competition_notice_requirement(invoice, supporting_materials),
                 validate_payment_record_requirement(invoice, supporting_materials),
                 validate_payment_record_amount_match(
                     invoice,
@@ -203,7 +207,7 @@ def build_invoice_router(
             )
 
         invoice_repository.attach_supporting_material(invoice_id, material_id)
-        recalculate_payment_record_validations(invoice_id)
+        recalculate_supporting_material_validations(invoice_id)
         return {"item": material}
 
     @router.get("/api/invoices/{invoice_id}/supporting-materials")
@@ -230,7 +234,7 @@ def build_invoice_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="supporting material link not found",
             )
-        recalculate_payment_record_validations(invoice_id)
+        recalculate_supporting_material_validations(invoice_id)
         return {"status": "deleted"}
 
     return router
