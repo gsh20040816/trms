@@ -1,5 +1,39 @@
 # WORKLOG
 
+## 2026-04-28 01:55 - Persist material storage key
+
+### 完成内容
+- 为材料领域模型 `MaterialCreate` / `MaterialRecord` 增加不可变 `storage_key` 字段，并在材料上传接口中把存储层返回的 `storage_key` 一并持久化，而不是只保留文件名、大小和哈希。
+- 在 `materials` 表新增 `storage_key` 列，并通过 SQLAlchemy 仓储映射读写该字段，使 API 返回、数据库记录和实际落盘文件三者能稳定关联。
+- 补充材料上传测试，覆盖上传返回 `storage_key`；补充存储集成测试，覆盖数据库中的 `storage_key` 能定位到已保存的原始文件，满足“数据库不保存完整文件内容，但能通过 key 找到文件”的任务边界。
+- 将 `TASKS.md` 中“保存原始文件存储位置”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_material_storage.py`
+- `tests/test_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_material_storage.py tests/test_materials_api.py`
+    - 14 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 60 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮把“原始文件存储位置”收敛为存储层生成的 `storage_key`，其语义是对象存储或本地存储中的稳定定位键；当前默认本地实现下该 key 恰好表现为相对路径，但上层业务只依赖其“不可变定位信息”语义，不依赖本地路径格式。
+- 当前仓库仍使用 `Base.metadata.create_all(...)` 初始化数据库，因此新增 `materials.storage_key` 列只会自动出现在新建数据库中；已有旧 SQLite 库若缺少该列，需要重建数据库或在后续迁移机制任务中补齐 schema。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加材料上传文件校验规则”，把空文件、缺少文件名、内容类型和大小限制的失败路径补齐，并保持上传失败原因显式暴露。
+
 ## 2026-04-28 01:51 - Establish material file storage abstraction
 
 ### 完成内容

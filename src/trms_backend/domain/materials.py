@@ -30,6 +30,7 @@ class MaterialCreate(BaseModel):
     submitter_id: str = Field(min_length=1)
     channel: SubmissionChannel
     material_type: MaterialType
+    storage_key: str = Field(min_length=1)
     original_filename: str = Field(min_length=1)
     content_type: str | None = None
     size_bytes: int = Field(ge=0)
@@ -42,6 +43,7 @@ class MaterialRecord(BaseModel):
     submitter_id: str
     channel: SubmissionChannel
     material_type: MaterialType
+    storage_key: str
     original_filename: str
     content_type: str | None
     size_bytes: int

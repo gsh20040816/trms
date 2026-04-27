@@ -51,6 +51,7 @@ class MaterialRow(Base):
     submitter_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     material_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)

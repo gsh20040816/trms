@@ -48,6 +48,7 @@ def test_submit_material_to_open_task(tmp_path):
     assert material["submitter_id"] == "2250001"
     assert material["channel"] == "web"
     assert material["material_type"] == "invoice"
+    assert material["storage_key"].startswith(f"{task_id}/")
     assert material["original_filename"] == "ticket.pdf"
     assert material["size_bytes"] == len(b"fake-pdf-content")
     assert material["duplicate_of"] is None

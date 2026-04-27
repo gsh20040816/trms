@@ -70,6 +70,7 @@ def build_material_router(
                         submitter_id=submitter_id,
                         channel=channel,
                         material_type=material_type,
+                        storage_key=stored_file.storage_key,
                         original_filename=stored_file.original_filename,
                         content_type=stored_file.content_type,
                         size_bytes=stored_file.size_bytes,

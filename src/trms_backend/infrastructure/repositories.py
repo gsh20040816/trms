@@ -382,6 +382,7 @@ def _material_from_row(row: MaterialRow) -> MaterialRecord:
         submitter_id=row.submitter_id,
         channel=SubmissionChannel(row.channel),
         material_type=MaterialType(row.material_type),
+        storage_key=row.storage_key,
         original_filename=row.original_filename,
         content_type=row.content_type,
         size_bytes=row.size_bytes,
