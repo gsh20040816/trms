@@ -79,6 +79,8 @@ def create_app(
             task_repository,
             export_job_repository,
             invoice_repository,
+            material_repository,
+            validation_repository,
             split_repository,
             confirmation_repository,
         )

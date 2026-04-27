@@ -1,5 +1,51 @@
 # WORKLOG
 
+## 2026-04-28 06:14 - Add invoice detail export
+
+### 完成内容
+- 在 `src/trms_backend/domain/exports.py` 增加发票明细导出模型与 CSV 渲染逻辑：
+  - 按发票导出发票号码、金额、费用类型、提交人；
+  - 聚合当前发票校验结果，输出总校验状态、失败规则码、待确认规则码和异常消息；
+  - 将 `invoice_details` 导出能力声明为已实现的 CSV 导出。
+- 在 `src/trms_backend/api/exports.py` 增加 `GET /api/tasks/{task_id}/exports/invoice-details`：
+  - 仅允许任务管理员访问；
+  - 仅允许任务处于 `ready_to_export` 或 `completed` 时导出；
+  - 以 `text/csv` 响应返回发票明细表。
+- 在 `src/trms_backend/main.py` 为导出路由补充材料仓储和校验仓储依赖注入。
+- 在 `tests/test_exports_api.py` 增加回归测试，覆盖：
+  - 导出能力声明包含发票明细 CSV；
+  - 发票明细可导出提交人和聚合校验状态；
+  - 重复发票与缺少比赛通知等异常会在 CSV 中显式暴露。
+- 将 `TASKS.md` 中“导出发票明细表”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/main.py`
+- `tests/test_exports_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有导出链路已经补齐汇总表和成员明细表，但管理员仍缺少“逐张发票核对金额、费用类型、提交人和当前异常状态”的基础表。
+- 需求文档 FR-010 与任务清单都要求导出发票明细表；如果继续缺少这类导出，管理员无法在导出阶段直接看见重复发票、缺失比赛通知或待确认校验项，也无法对照提交人做最终复核。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py`
+    - 11 个用例通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 152 个用例通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮保守把“发票明细表”的校验状态定义为当前发票校验结果的聚合视图，优先级为 `failed > pending > passed > not_applicable`，不额外引入新的导出专用状态机。
+- 发票明细中的“提交人”取自主发票材料记录的 `submitter_id`，不尝试把多人分摊成员展开进本表；成员级金额视图仍由“成员报销明细表”承担。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“导出缺失材料清单”，复用现有缺失材料聚合模型和导出模块边界继续补齐导出产物。
+
 ## 2026-04-28 06:08 - Add member detail export
 
 ### 完成内容

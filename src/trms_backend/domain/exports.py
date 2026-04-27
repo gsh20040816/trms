@@ -9,7 +9,8 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
-from trms_backend.domain.invoices import ExpenseType, InvoiceRecord
+from trms_backend.domain.invoices import ExpenseType, InvoiceRecord, ValidationResult, ValidationStatus
+from trms_backend.domain.materials import MaterialRecord
 from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.tasks import ReimbursementTask, TaskStatus
 
@@ -47,8 +48,8 @@ class TaskExportBoundary(BaseModel):
     supported_exports: list[TaskExportCapability]
     note: str = Field(
         default=(
-            "reimbursement summary/member details CSV export is available; export jobs and other persisted "
-            "artifacts remain placeholders"
+            "reimbursement summary/member details/invoice details CSV export is available; export jobs "
+            "and other persisted artifacts remain placeholders"
         )
     )
 
@@ -209,6 +210,26 @@ class MemberDetailsExport(BaseModel):
     generated_at: datetime
     rows: list[MemberDetailRow]
     grand_total_amount_cents: int = Field(ge=0)
+
+
+class InvoiceDetailRow(BaseModel):
+    invoice_number: str
+    amount_cents: int = Field(ge=0)
+    expense_type: ExpenseType
+    submitter_id: str | None = None
+    validation_status: ValidationStatus
+    failed_rule_codes: list[str] = Field(default_factory=list)
+    pending_rule_codes: list[str] = Field(default_factory=list)
+    abnormal_validation_messages: list[str] = Field(default_factory=list)
+
+
+class InvoiceDetailsExport(BaseModel):
+    task_id: str
+    administrator_id: str = Field(min_length=1)
+    format: ExportArtifactFormat
+    filename: str
+    generated_at: datetime
+    rows: list[InvoiceDetailRow]
 
 
 class TaskExportJobRepository(Protocol):
@@ -495,6 +516,100 @@ def render_member_details_csv(export: MemberDetailsExport) -> str:
     return buffer.getvalue()
 
 
+def build_invoice_details_export(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    format: ExportArtifactFormat,
+    invoices: list[InvoiceRecord],
+    materials_by_id: dict[str, MaterialRecord],
+    validations_by_invoice_id: dict[str, list[ValidationResult]],
+    generated_at: datetime | None = None,
+) -> InvoiceDetailsExport:
+    boundary = build_task_export_boundary(task, actor_id=actor_id)
+    if not boundary.export_allowed:
+        raise TaskExportJobNotReadyError(boundary.blocking_reasons)
+    ensure_export_format_implemented(
+        ExportArtifactKind.INVOICE_DETAILS,
+        format,
+    )
+
+    rows: list[InvoiceDetailRow] = []
+    for invoice in invoices:
+        validations = validations_by_invoice_id.get(invoice.id, [])
+        material = materials_by_id.get(invoice.material_id)
+        rows.append(
+            InvoiceDetailRow(
+                invoice_number=invoice.invoice_number,
+                amount_cents=invoice.amount_cents,
+                expense_type=invoice.expense_type,
+                submitter_id=material.submitter_id if material is not None else None,
+                validation_status=_summarize_invoice_validation_status(validations),
+                failed_rule_codes=sorted(
+                    {result.rule_code for result in validations if result.status is ValidationStatus.FAILED}
+                ),
+                pending_rule_codes=sorted(
+                    {result.rule_code for result in validations if result.status is ValidationStatus.PENDING}
+                ),
+                abnormal_validation_messages=[
+                    result.message
+                    for result in validations
+                    if result.status in {ValidationStatus.FAILED, ValidationStatus.PENDING}
+                ],
+            )
+        )
+
+    rows.sort(
+        key=lambda row: (
+            row.invoice_number,
+            row.submitter_id or "",
+            row.expense_type.value,
+            row.amount_cents,
+        )
+    )
+
+    generated_at = generated_at or datetime.now(timezone.utc)
+    return InvoiceDetailsExport(
+        task_id=task.id,
+        administrator_id=boundary.administrator_id,
+        format=format,
+        filename=f"{task.id}-invoice-details.{format.value}",
+        generated_at=generated_at,
+        rows=rows,
+    )
+
+
+def render_invoice_details_csv(export: InvoiceDetailsExport) -> str:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "invoice_number",
+            "amount_cents",
+            "expense_type",
+            "submitter_id",
+            "validation_status",
+            "failed_rule_codes",
+            "pending_rule_codes",
+            "abnormal_validation_messages",
+        ]
+    )
+    for row in export.rows:
+        writer.writerow(
+            [
+                row.invoice_number,
+                row.amount_cents,
+                row.expense_type.value,
+                row.submitter_id or "",
+                row.validation_status.value,
+                ";".join(row.failed_rule_codes),
+                ";".join(row.pending_rule_codes),
+                " | ".join(row.abnormal_validation_messages),
+            ]
+        )
+    return buffer.getvalue()
+
+
 def update_task_export_job_status(
     task: ReimbursementTask,
     *,
@@ -556,6 +671,8 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
     TaskExportCapability(
         kind=ExportArtifactKind.INVOICE_DETAILS,
         formats=[ExportArtifactFormat.XLSX, ExportArtifactFormat.CSV],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.CSV],
     ),
     TaskExportCapability(
         kind=ExportArtifactKind.MISSING_MATERIALS,
@@ -596,3 +713,16 @@ _ALLOWED_EXPORT_JOB_TRANSITIONS: dict[
     TaskExportJobStatus.SUCCEEDED: set(),
     TaskExportJobStatus.FAILED: set(),
 }
+
+
+def _summarize_invoice_validation_status(
+    validations: list[ValidationResult],
+) -> ValidationStatus:
+    statuses = {result.status for result in validations}
+    if ValidationStatus.FAILED in statuses:
+        return ValidationStatus.FAILED
+    if ValidationStatus.PENDING in statuses:
+        return ValidationStatus.PENDING
+    if ValidationStatus.PASSED in statuses:
+        return ValidationStatus.PASSED
+    return ValidationStatus.NOT_APPLICABLE
