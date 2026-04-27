@@ -54,6 +54,10 @@ class TaskCreate(BaseModel):
         return self
 
 
+class TaskStatusUpdate(BaseModel):
+    target_status: TaskStatus
+
+
 class ReimbursementTask(BaseModel):
     id: str
     status: TaskStatus
@@ -83,6 +87,23 @@ class TaskRepository(Protocol):
     def list(self) -> list[ReimbursementTask]:
         raise NotImplementedError
 
+    def update_status(self, task_id: str, target_status: TaskStatus) -> ReimbursementTask | None:
+        raise NotImplementedError
+
+
+ALLOWED_STATUS_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
+    TaskStatus.DRAFT: {TaskStatus.OPEN},
+    TaskStatus.OPEN: {TaskStatus.DRAFT, TaskStatus.CLOSED},
+    TaskStatus.CLOSED: {TaskStatus.OPEN, TaskStatus.REVIEWING},
+    TaskStatus.REVIEWING: {TaskStatus.OPEN, TaskStatus.READY_TO_EXPORT},
+    TaskStatus.READY_TO_EXPORT: {TaskStatus.COMPLETED},
+    TaskStatus.COMPLETED: set(),
+}
+
+
+def can_transition(current_status: TaskStatus, target_status: TaskStatus) -> bool:
+    return target_status in ALLOWED_STATUS_TRANSITIONS[current_status]
+
 
 class InMemoryTaskRepository:
     def __init__(self) -> None:
@@ -110,3 +131,17 @@ class InMemoryTaskRepository:
         with self._lock:
             return sorted(self._tasks.values(), key=lambda task: task.created_at)
 
+    def update_status(self, task_id: str, target_status: TaskStatus) -> ReimbursementTask | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+
+            updated = task.model_copy(
+                update={
+                    "status": target_status,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            )
+            self._tasks[task_id] = updated
+            return updated

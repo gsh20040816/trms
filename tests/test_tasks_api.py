@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
@@ -105,3 +105,40 @@ def test_get_missing_task_returns_404():
     assert response.status_code == 404
     assert response.json()["detail"] == "task not found"
 
+
+def test_update_task_status_allows_valid_transition():
+    client = TestClient(create_app())
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+
+    response = client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "open"
+
+
+def test_update_task_status_rejects_invalid_transition():
+    client = TestClient(create_app())
+    created = client.post("/api/tasks", json=valid_task_payload()).json()
+
+    response = client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "completed"},
+    )
+
+    assert response.status_code == 409
+    assert "cannot transition task" in response.json()["detail"]
+
+
+def test_update_missing_task_status_returns_404():
+    client = TestClient(create_app())
+
+    response = client.patch(
+        "/api/tasks/missing/status",
+        json={"target_status": "open"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "task not found"
