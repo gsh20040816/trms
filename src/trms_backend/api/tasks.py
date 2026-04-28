@@ -38,6 +38,10 @@ from trms_backend.domain.material_reminders import (
     list_task_material_reminders,
 )
 from trms_backend.domain.materials import MaterialRepository
+from trms_backend.domain.missing_materials import (
+    TaskMissingMaterialActorNotAllowedError,
+    build_visible_missing_material_list,
+)
 from trms_backend.domain.recognitions import RecognitionTaskRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.task_review_summary import (
@@ -237,6 +241,37 @@ def build_task_router(
                 confirmations_by_split_id=confirmations_by_split_id,
             )
         except ExpenseDetailActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/missing-materials")
+    def list_task_missing_materials(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        invoices = invoice_repository.list_by_task(task_id)
+        materials_by_id = {
+            material.id: material for material in material_repository.list_by_task(task_id)
+        }
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+
+        try:
+            return build_visible_missing_material_list(
+                task,
+                actor_id=actor_id,
+                invoices=invoices,
+                materials_by_id=materials_by_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+            )
+        except TaskMissingMaterialActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),

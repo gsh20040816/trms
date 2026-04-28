@@ -1,5 +1,68 @@
 # WORKLOG
 
+## 2026-04-28 09:34 - Implement missing materials pages
+
+### 完成内容
+- 为缺失材料清单补齐后端读取接口：
+  - 在 `src/trms_backend/domain/missing_materials.py` 新增面向页面的可见视图模型与权限边界，管理员可查看任务内全部缺失项，成员只能查看本人缺失项；
+  - 在 `src/trms_backend/api/tasks.py` 新增 `GET /api/tasks/{taskId}/missing-materials`，复用现有缺失材料聚合逻辑，不再把 `ready_to_export` 约束的导出接口硬套成页面数据源。
+- 为 Web 前端补齐管理员/成员缺失材料页面：
+  - 新增 `web/src/app/task-missing-materials.tsx`，提供 `/admin/tasks/:taskId/missing-materials` 与 `/member/materials/missing` 两个入口；
+  - 管理员页支持按成员、发票、费用类型切换查看；成员页只展示当前成员本人缺失项，并支持按发票或费用类型查看；
+  - 两端均补齐加载、错误和空清单状态。
+- 打通前端入口与测试：
+  - 更新 `web/src/app/routes.tsx` 注册新路由；
+  - 更新 `web/src/app/admin-task-detail.tsx` 与 `web/src/app/member-task-list.tsx` 增加页面入口；
+  - 新增 `tests/test_missing_materials_api.py` 与 `web/src/app/task-missing-materials.test.tsx`，并更新 `web/src/app/admin-task-detail.test.tsx`、`web/src/app/member-task-list.test.tsx`；
+  - 将 `TASKS.md` 中“实现缺失材料清单页面”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/domain/missing_materials.py`
+- `src/trms_backend/api/tasks.py`
+- `tests/test_missing_materials_api.py`
+- `web/src/app/task-missing-materials.tsx`
+- `web/src/app/task-missing-materials.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 仓库已经有缺失材料聚合模型和 CSV 导出实现，但唯一现成入口是导出接口，其访问边界要求任务达到 `ready_to_export` 且只允许管理员调用，无法满足“管理员复核中先查看缺失项”和“成员查看本人缺失材料”这两个页面场景。
+- 现有成员材料状态页虽然能从发票校验中看到零散的缺失提示，但缺少一个按任务聚合、按成员/发票/费用类型切换视角的清单页面，导致“补材料”这条前端主链路仍然不完整。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_missing_materials.py tests/test_missing_materials_api.py`
+    - 6 个后端相关用例通过
+  - `cd web && npm test -- task-missing-materials member-task-list admin-task-detail`
+    - 3 个前端测试文件、7 个测试通过
+  - `cd web && npm run lint`
+    - 通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 165 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，14 个前端测试文件、38 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 缺失材料页面当前只聚合“缺失材料类规则且状态为 failed”的结果，不把 `pending` 待确认规则伪装成缺失项。
+- 成员页严格依赖服务端返回的 `member_id == 当前成员` 条目做展示；即使前端已知道任务成员名单，也不会自行拼接或推断其他成员缺失项。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现管理员人工更正与提醒页面”，优先复用现有复核总览、材料提醒和费用异议处理能力。
+
 ## 2026-04-28 09:21 - Implement admin review overview page
 
 ### 完成内容

@@ -353,6 +353,7 @@ export type TaskReviewSummaryInvoiceItem = {
 };
 
 export type ExpenseDetailScope = "member" | "task";
+export type MissingMaterialScope = "member" | "task";
 
 export type ExpenseDetailInvoiceSnapshot = {
   id: string;
@@ -478,6 +479,26 @@ export type MissingMaterialExportRow = {
   required_material_type: MaterialType;
   source_rule_code: string;
   message: string;
+};
+
+export type MissingMaterialItem = {
+  task_id: string;
+  member_id: string | null;
+  invoice_id: string;
+  invoice_number: string;
+  expense_type: ExpenseType;
+  required_material_type: MaterialType;
+  source_rule_code: string;
+  message: string;
+  evidence: Record<string, unknown>;
+  detected_at: ApiDateTime;
+};
+
+export type VisibleMissingMaterialList = {
+  task_id: string;
+  actor_id: string;
+  scope: MissingMaterialScope;
+  items: MissingMaterialItem[];
 };
 
 export type MissingMaterialsExport = {

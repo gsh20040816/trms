@@ -84,6 +84,10 @@ describe("admin task detail page", () => {
       "href",
       "/admin/tasks/TASK-ALPHA/invoices",
     );
+    expect(screen.getByRole("link", { name: "查看缺失材料" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-ALPHA/missing-materials",
+    );
     expect(screen.getByRole("link", { name: "进入复核总览" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/review",

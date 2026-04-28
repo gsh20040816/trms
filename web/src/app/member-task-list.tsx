@@ -161,6 +161,12 @@ export function MemberTaskListPage() {
                 </Link>
                 <Link
                   className="route-link route-link-secondary"
+                  to={`/member/materials/missing?taskId=${encodeURIComponent(task.id)}`}
+                >
+                  查看缺失材料
+                </Link>
+                <Link
+                  className="route-link route-link-secondary"
                   to={`/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`}
                 >
                   确认费用明细

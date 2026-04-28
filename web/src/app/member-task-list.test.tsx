@@ -104,6 +104,10 @@ describe("MemberTaskListPage", () => {
       "href",
       "/member/materials/status?taskId=TASK-OPEN",
     );
+    expect(within(taskCard).getByRole("link", { name: "查看缺失材料" })).toHaveAttribute(
+      "href",
+      "/member/materials/missing?taskId=TASK-OPEN",
+    );
     expect(within(taskCard).getByRole("link", { name: "确认费用明细" })).toHaveAttribute(
       "href",
       "/member/expenses/confirm?taskId=TASK-OPEN",

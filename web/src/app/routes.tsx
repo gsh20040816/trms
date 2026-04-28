@@ -3,6 +3,7 @@ import type { RouteObject } from "react-router-dom";
 import { AdminTaskDetailPage } from "./admin-task-detail";
 import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminInvoiceEditorPage } from "./admin-invoice-editor";
+import { AdminMissingMaterialsPage, MemberMissingMaterialsPage } from "./task-missing-materials";
 import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
 import { AdminTaskListPage } from "./admin-task-list";
@@ -55,6 +56,10 @@ export const routes: RouteObject[] = [
             element: <MemberMaterialStatusPage />,
           },
           {
+            path: "materials/missing",
+            element: <MemberMissingMaterialsPage />,
+          },
+          {
             path: "expenses/confirm",
             element: <MemberExpenseConfirmationPage />,
           },
@@ -87,6 +92,10 @@ export const routes: RouteObject[] = [
           {
             path: "tasks/:taskId/review",
             element: <AdminReviewOverviewPage />,
+          },
+          {
+            path: "tasks/:taskId/missing-materials",
+            element: <AdminMissingMaterialsPage />,
           },
         ],
       },

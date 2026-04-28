@@ -14,6 +14,7 @@ import type {
   MaterialBatchUploadResponse,
   MaterialRecord,
   MergedPdfExportPlan,
+  VisibleMissingMaterialList,
   OverdueConfirmationList,
   RecognitionTaskList,
   ReimbursementTask,
@@ -67,6 +68,12 @@ export const trmsApi = {
   listTaskExpenseDetails(taskId: string, actorId: string) {
     return apiClient.request<ExpenseDetailList>(
       `/tasks/${encodeSegment(taskId)}/expense-details${buildQuery({ actor_id: actorId })}`,
+    );
+  },
+
+  getTaskMissingMaterials(taskId: string, actorId: string) {
+    return apiClient.request<VisibleMissingMaterialList>(
+      `/tasks/${encodeSegment(taskId)}/missing-materials${buildQuery({ actor_id: actorId })}`,
     );
   },
 
