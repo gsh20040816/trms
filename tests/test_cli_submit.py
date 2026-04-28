@@ -1,5 +1,6 @@
 import json
 
+from trms_backend.domain.materials import MAX_MATERIAL_UPLOAD_SIZE_BYTES
 from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, main
 from trms_cli.token_store import save_token_session
 
@@ -197,9 +198,6 @@ def test_submit_command_reports_backend_error_without_leaking_token(
         refresh_token="stored-refresh-token",
     )
 
-    def fake_post_multipart_json(url: str, *, headers=None, fields=None, files=None):
-        raise Exception("unexpected")
-
     def fake_post_error(url: str, *, headers=None, fields=None, files=None):
         from trms_cli.cli import CliError
 
@@ -231,7 +229,114 @@ def test_submit_command_reports_backend_error_without_leaking_token(
     )
 
 
-def test_submit_command_reports_partial_success_for_batch_upload(
+def test_submit_command_reports_local_validation_failure_without_upload(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    config_dir = tmp_path / "config"
+    upload_path = tmp_path / "notes.txt"
+    upload_path.write_text("plain-text", encoding="utf-8")
+    monkeypatch.setenv("TRMS_CLI_CONFIG_DIR", str(config_dir))
+    save_token_session(
+        base_url="http://127.0.0.1:8000",
+        member_id="2250100",
+        access_token="stored-access-token",
+        refresh_token="stored-refresh-token",
+    )
+
+    def fake_post_multipart_json(url: str, *, headers=None, fields=None, files=None):
+        raise AssertionError("local precheck failure should not trigger upload")
+
+    monkeypatch.setattr("trms_cli.cli.post_multipart_json", fake_post_multipart_json)
+
+    exit_code = main(
+        [
+            "submit",
+            "--task-id",
+            "task-100",
+            "--material-type",
+            "invoice",
+            "--json",
+            str(upload_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == ""
+    assert json.loads(captured.out) == {
+        "schema_version": CLI_JSON_SCHEMA_VERSION,
+        "ok": False,
+        "command": "submit",
+        "data": {
+            "base_url": "http://127.0.0.1:8000",
+            "task_id": "task-100",
+            "member_id": "2250100",
+            "status": "failed",
+            "success_count": 0,
+            "failure_count": 1,
+            "items": [],
+            "failures": [
+                {
+                    "original_filename": "notes.txt",
+                    "error_code": "local_unsupported_content_type",
+                    "detail": (
+                        "local file has unsupported content type: "
+                        f"{upload_path} (text/plain); supported content types: "
+                        "application/pdf, application/zip, image/jpeg, image/png, image/webp"
+                    ),
+                }
+            ],
+        },
+    }
+
+
+def test_submit_command_reports_local_oversized_file_without_upload(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    config_dir = tmp_path / "config"
+    upload_path = tmp_path / "oversized.pdf"
+    upload_path.write_bytes(b"x" * (MAX_MATERIAL_UPLOAD_SIZE_BYTES + 1))
+    monkeypatch.setenv("TRMS_CLI_CONFIG_DIR", str(config_dir))
+    save_token_session(
+        base_url="http://127.0.0.1:8000",
+        member_id="2250101",
+        access_token="stored-access-token",
+        refresh_token="stored-refresh-token",
+    )
+
+    def fake_post_multipart_json(url: str, *, headers=None, fields=None, files=None):
+        raise AssertionError("oversized local file should not trigger upload")
+
+    monkeypatch.setattr("trms_cli.cli.post_multipart_json", fake_post_multipart_json)
+
+    exit_code = main(
+        [
+            "submit",
+            "--task-id",
+            "task-101",
+            "--material-type",
+            "invoice",
+            str(upload_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == ""
+    assert captured.out == (
+        "Submit result: failed (0 uploaded, 1 failed)\n"
+        "FAIL\toversized.pdf\tlocal_file_too_large\t"
+        f"local file exceeds size limit: {upload_path} "
+        f"({MAX_MATERIAL_UPLOAD_SIZE_BYTES + 1} bytes > "
+        f"{MAX_MATERIAL_UPLOAD_SIZE_BYTES} bytes)\n"
+    )
+
+
+def test_submit_command_reports_partial_success_for_batch_upload_with_local_precheck_failure(
     monkeypatch,
     tmp_path,
     capsys,
@@ -255,8 +360,8 @@ def test_submit_command_reports_partial_success_for_batch_upload(
         seen["headers"] = headers
         seen["fields"] = fields
         seen["files"] = files
-        return 207, {
-            "status": "partial_success",
+        return 201, {
+            "status": "success",
             "items": [
                 {
                     "id": "material-101",
@@ -266,14 +371,7 @@ def test_submit_command_reports_partial_success_for_batch_upload(
                     "original_filename": "ticket.pdf",
                     "status": "assigned",
                 }
-            ],
-            "failures": [
-                {
-                    "original_filename": "notes.txt",
-                    "error_code": "unsupported_content_type",
-                    "detail": "unsupported material content type: text/plain",
-                }
-            ],
+            ]
         }
 
     monkeypatch.setattr("trms_cli.cli.post_multipart_json", fake_post_multipart_json)
@@ -300,21 +398,23 @@ def test_submit_command_reports_partial_success_for_batch_upload(
         "channel": "cli",
         "material_type": "invoice",
     }
-    assert [item.filename for item in seen["files"]] == ["ticket.pdf", "notes.txt"]
+    assert [item.filename for item in seen["files"]] == ["ticket.pdf"]
     assert captured.out == (
         "Submit result: partial_success (1 uploaded, 1 failed)\n"
         "OK\tticket.pdf\tmaterial-101\ttask-101\tpending\n"
-        "FAIL\tnotes.txt\tunsupported_content_type\t"
-        "unsupported material content type: text/plain\n"
+        "FAIL\tnotes.txt\tlocal_unsupported_content_type\t"
+        f"local file has unsupported content type: {note_path} "
+        "(text/plain); supported content types: "
+        "application/pdf, application/zip, image/jpeg, image/png, image/webp\n"
     )
 
 
 def test_submit_command_reports_failed_batch_result_as_json(monkeypatch, tmp_path, capsys):
     config_dir = tmp_path / "config"
-    first_path = tmp_path / "missing-name.pdf"
-    second_path = tmp_path / "notes.txt"
+    first_path = tmp_path / "first.pdf"
+    second_path = tmp_path / "second.pdf"
     first_path.write_bytes(b"%PDF-1.4 fake invoice")
-    second_path.write_text("plain-text", encoding="utf-8")
+    second_path.write_bytes(b"%PDF-1.4 another fake invoice")
     monkeypatch.setenv("TRMS_CLI_CONFIG_DIR", str(config_dir))
     save_token_session(
         base_url="http://127.0.0.1:8000",
@@ -329,14 +429,14 @@ def test_submit_command_reports_failed_batch_result_as_json(monkeypatch, tmp_pat
             "items": [],
             "failures": [
                 {
-                    "original_filename": "   ",
-                    "error_code": "missing_filename",
-                    "detail": "uploaded file must have a filename",
+                    "original_filename": "first.pdf",
+                    "error_code": "storage_error",
+                    "detail": "failed to persist uploaded file: first.pdf",
                 },
                 {
-                    "original_filename": "notes.txt",
-                    "error_code": "unsupported_content_type",
-                    "detail": "unsupported material content type: text/plain",
+                    "original_filename": "second.pdf",
+                    "error_code": "storage_error",
+                    "detail": "failed to persist uploaded file: second.pdf",
                 },
             ],
         }
@@ -373,14 +473,14 @@ def test_submit_command_reports_failed_batch_result_as_json(monkeypatch, tmp_pat
             "items": [],
             "failures": [
                 {
-                    "original_filename": "   ",
-                    "error_code": "missing_filename",
-                    "detail": "uploaded file must have a filename",
+                    "original_filename": "first.pdf",
+                    "error_code": "storage_error",
+                    "detail": "failed to persist uploaded file: first.pdf",
                 },
                 {
-                    "original_filename": "notes.txt",
-                    "error_code": "unsupported_content_type",
-                    "detail": "unsupported material content type: text/plain",
+                    "original_filename": "second.pdf",
+                    "error_code": "storage_error",
+                    "detail": "failed to persist uploaded file: second.pdf",
                 },
             ],
         },

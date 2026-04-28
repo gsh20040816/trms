@@ -14,6 +14,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from trms_backend.domain.materials import (
+    MAX_MATERIAL_UPLOAD_SIZE_BYTES,
+    SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES,
+)
 from trms_cli.token_store import TokenStoreError, load_token_session, save_token_session
 
 DEFAULT_BASE_URL = os.getenv("TRMS_API_BASE_URL", "http://127.0.0.1:8000")
@@ -74,6 +78,13 @@ class MultipartUploadFile:
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL_SUCCESS = 2
+LOCAL_BATCH_PRECHECK_ERROR_CODES = frozenset(
+    {
+        "local_empty_file",
+        "local_file_too_large",
+        "local_unsupported_content_type",
+    }
+)
 
 
 def emit_json(payload: dict[str, object], *, stream: object | None = None) -> None:
@@ -416,25 +427,31 @@ def run_submit_command(args: argparse.Namespace) -> int:
     except TokenStoreError as error:
         raise CliError(str(error), code="login_required") from error
 
-    upload_files = [load_upload_file(file_path) for file_path in args.file_paths]
+    upload_files, local_failures = prepare_upload_files(args.file_paths)
     base_url = session.base_url.rstrip("/")
-    status_code, payload = post_multipart_json(
-        build_material_submit_url(base_url, task_id=args.task_id),
-        headers={"Authorization": f"Bearer {session.access_token}"},
-        fields={
-            "submitter_id": session.member_id,
-            "channel": "cli",
-            "material_type": args.material_type,
-        },
-        files=upload_files,
-    )
-    if status_code not in {201, 207, 422}:
-        raise CliError(
-            f"material submit endpoint returned unexpected status {status_code}",
-            code="material_submit_unexpected_status",
+    result = build_local_only_submit_result(local_failures)
+    if upload_files:
+        status_code, payload = post_multipart_json(
+            build_material_submit_url(base_url, task_id=args.task_id),
+            headers={"Authorization": f"Bearer {session.access_token}"},
+            fields={
+                "submitter_id": session.member_id,
+                "channel": "cli",
+                "material_type": args.material_type,
+            },
+            files=upload_files,
+        )
+        if status_code not in {201, 207, 422}:
+            raise CliError(
+                f"material submit endpoint returned unexpected status {status_code}",
+                code="material_submit_unexpected_status",
+            )
+
+        result = merge_material_upload_batch_results(
+            parse_material_upload_batch_result(payload),
+            local_failures=local_failures,
         )
 
-    result = parse_material_upload_batch_result(payload)
     exit_code = material_submit_exit_code(result)
     if args.json_output:
         emit_submit_json_result(
@@ -467,6 +484,28 @@ def build_material_submit_url(base_url: str, *, task_id: str) -> str:
     return f"{normalized_base_url}/api/tasks/{normalized_task_id}/materials"
 
 
+def prepare_upload_files(
+    file_paths: list[str],
+) -> tuple[list[MultipartUploadFile], list[MaterialUploadFailure]]:
+    upload_files: list[MultipartUploadFile] = []
+    local_failures: list[MaterialUploadFailure] = []
+    for file_path in file_paths:
+        try:
+            upload_files.append(load_upload_file(file_path))
+        except CliError as error:
+            if error.code not in LOCAL_BATCH_PRECHECK_ERROR_CODES:
+                raise
+            path = Path(file_path).expanduser()
+            local_failures.append(
+                MaterialUploadFailure(
+                    original_filename=path.name or None,
+                    error_code=error.code,
+                    detail=str(error),
+                )
+            )
+    return upload_files, local_failures
+
+
 def load_upload_file(file_path: str) -> MultipartUploadFile:
     path = Path(file_path).expanduser()
     if not path.exists():
@@ -479,13 +518,36 @@ def load_upload_file(file_path: str) -> MultipartUploadFile:
     except OSError as error:
         raise CliError(f"unable to read local file: {path}", code="local_file_unreadable") from error
 
+    size_bytes = len(content)
+    if size_bytes == 0:
+        raise CliError(f"local file is empty: {path}", code="local_empty_file")
+    if size_bytes > MAX_MATERIAL_UPLOAD_SIZE_BYTES:
+        raise CliError(
+            "local file exceeds size limit: "
+            f"{path} ({size_bytes} bytes > {MAX_MATERIAL_UPLOAD_SIZE_BYTES} bytes)",
+            code="local_file_too_large",
+        )
+
     content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    normalized_content_type = normalize_content_type(content_type)
+    if normalized_content_type not in SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES:
+        supported = ", ".join(SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES)
+        raise CliError(
+            "local file has unsupported content type: "
+            f"{path} ({content_type}); supported content types: {supported}",
+            code="local_unsupported_content_type",
+        )
+
     return MultipartUploadFile(
         field_name="files",
         filename=path.name,
         content_type=content_type,
         content=content,
     )
+
+
+def normalize_content_type(content_type: str | None) -> str:
+    return (content_type or "").split(";", maxsplit=1)[0].strip().lower()
 
 
 def parse_material_upload_batch_result(payload: object) -> MaterialUploadBatchResult:
@@ -570,6 +632,30 @@ def material_submit_exit_code(result: MaterialUploadBatchResult) -> int:
     if result.status == "partial_success":
         return EXIT_PARTIAL_SUCCESS
     return EXIT_FAILURE
+
+
+def build_local_only_submit_result(
+    local_failures: list[MaterialUploadFailure],
+) -> MaterialUploadBatchResult:
+    if not local_failures:
+        return MaterialUploadBatchResult(status="success", items=[], failures=[])
+    return MaterialUploadBatchResult(status="failed", items=[], failures=local_failures)
+
+
+def merge_material_upload_batch_results(
+    result: MaterialUploadBatchResult,
+    *,
+    local_failures: list[MaterialUploadFailure],
+) -> MaterialUploadBatchResult:
+    if not local_failures:
+        return result
+
+    failures = [*result.failures, *local_failures]
+    if result.items:
+        status = "partial_success"
+    else:
+        status = "failed"
+    return MaterialUploadBatchResult(status=status, items=result.items, failures=failures)
 
 
 def emit_submit_json_result(
