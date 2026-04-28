@@ -14,6 +14,12 @@ from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskRepository,
     AutomaticReminderTaskStatus,
 )
+from trms_backend.domain.audit_logs import (
+    AuditLogCreate,
+    AuditLogRecord,
+    AuditLogRepository,
+    AuditLogResult,
+)
 from trms_backend.domain.auth import (
     AuthenticatedUser,
     AuthRepository,
@@ -90,6 +96,7 @@ from trms_backend.domain.telegram_bindings import (
 from trms_backend.infrastructure.database import session_scope
 from trms_backend.infrastructure.models import (
     AuthSessionRow,
+    AuditLogRow,
     AutomaticReminderTaskRow,
     ConfirmationRow,
     ExpenseSplitRow,
@@ -218,6 +225,46 @@ class SqlAlchemyAuthRepository(AuthRepository):
                 .filter(UserAccountRow.role.in_(normalized_roles))
                 .count()
             )
+
+
+class SqlAlchemyAuditLogRepository(AuditLogRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(self, data: AuditLogCreate) -> AuditLogRecord:
+        row = AuditLogRow(
+            id=str(uuid4()),
+            actor_id=data.actor_id,
+            object_type=data.object_type,
+            object_id=data.object_id,
+            action=data.action,
+            result=data.result.value,
+            summary=data.summary,
+            detail=data.detail,
+            task_id=data.task_id,
+            request_id=data.request_id,
+            created_at=datetime.now(timezone.utc),
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _audit_log_from_row(row)
+
+    def list_by_object(self, *, object_type: str, object_id: str) -> list[AuditLogRecord]:
+        normalized_object_type = object_type.strip()
+        normalized_object_id = object_id.strip()
+        if not normalized_object_type or not normalized_object_id:
+            return []
+
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(AuditLogRow)
+                .where(
+                    AuditLogRow.object_type == normalized_object_type,
+                    AuditLogRow.object_id == normalized_object_id,
+                )
+                .order_by(AuditLogRow.created_at)
+            ).all()
+            return [_audit_log_from_row(row) for row in rows]
 
 
 class SqlAlchemyTaskRepository:
@@ -1237,6 +1284,22 @@ def _stored_auth_user_from_row(row: UserAccountRow) -> StoredAuthUser:
         member_code=row.member_code,
         created_at=_ensure_utc_datetime(row.created_at),
         updated_at=_ensure_utc_datetime(row.updated_at),
+    )
+
+
+def _audit_log_from_row(row: AuditLogRow) -> AuditLogRecord:
+    return AuditLogRecord(
+        id=row.id,
+        actor_id=row.actor_id,
+        object_type=row.object_type,
+        object_id=row.object_id,
+        action=row.action,
+        result=AuditLogResult(row.result),
+        summary=row.summary,
+        detail=dict(row.detail or {}),
+        task_id=row.task_id,
+        request_id=row.request_id,
+        created_at=_ensure_utc_datetime(row.created_at),
     )
 
 

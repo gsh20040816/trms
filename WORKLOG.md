@@ -1,5 +1,56 @@
 # WORKLOG
 
+## 2026-04-28 17:50 - Add audit log model skeleton
+
+### 完成内容
+- 为后续审计任务建立统一骨架：
+  - 新增 `src/trms_backend/domain/audit_logs.py`，定义 `AuditLogCreate`、`AuditLogRecord`、`AuditLogRepository`，并提供最小内存仓储；
+  - 审计模型统一记录 `actor_id`、`object_type`、`object_id`、`action`、`result`、`summary`、`detail`、`request_id` 和时间，满足“谁对什么做了什么，结果如何”的最小追溯要求；
+  - 审计 `detail` 在进入模型时即做最小脱敏与截断，避免把 `password`、`token`、`secret`、`authorization`、完整文档内容或超长文本原样写入审计数据。
+- 补齐持久化与迁移：
+  - 在 `src/trms_backend/infrastructure/models.py` 新增 `AuditLogRow`；
+  - 在 `src/trms_backend/infrastructure/repositories.py` 新增 `SqlAlchemyAuditLogRepository`，支持写入和按对象查询；
+  - 新增 Alembic revision `20260428_03_audit_log_skeleton.py`，使生产迁移链与 `create_all` 路径一致。
+- 补最小测试：
+  - 新增 `tests/test_audit_logs.py`，覆盖敏感字段脱敏、长文本截断和 SQLAlchemy 持久化查询；
+  - 更新 `tests/test_database_migrations.py`，验证本地自举和 Alembic head 都包含 `audit_logs` 表。
+
+### 根因
+- 当前仓库虽然已有导出任务记录、识别历史和用户注册来源等零散追溯信息，但不存在统一的审计日志模型。
+- 如果继续等到各业务点逐个补日志再回头统一，会把字段命名、脱敏规则和查询边界散落到各模块，后续很容易形成彼此不兼容的“半审计”实现。
+- 因此本轮先补统一骨架，把数据结构、最小脱敏规则和迁移链立住，再让后续“材料提交审计”“识别更正审计”“分摊确认审计”“导出下载审计”沿同一仓储扩展。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `alembic/versions/20260428_03_audit_log_skeleton.py`
+- `src/trms_backend/domain/audit_logs.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_audit_logs.py`
+- `tests/test_database_migrations.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_audit_logs.py tests/test_database_migrations.py`
+    - 5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 299 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：审计摘要只保存简短操作摘要，结构化 `detail` 承担结果细节；若未来需要全文检索或更复杂检索条件，应单独扩展索引和查询接口，而不是在本轮提前扩散。
+- 当前保守假设：本轮只建立审计数据模型和仓储，不把具体业务写入点一并接入；后续任务将分别把材料、识别、更正、分摊、确认和导出动作接到该仓储。
+
 ## 2026-04-28 17:40 - Standardize API error response payloads
 
 ### 完成内容

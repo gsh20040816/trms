@@ -327,3 +327,30 @@ class ExportJobRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLogRow(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_log_actor_created_at", "actor_id", "created_at"),
+        Index("ix_audit_log_object_created_at", "object_type", "object_id", "created_at"),
+        Index("ix_audit_log_task_created_at", "task_id", "created_at"),
+        Index("ix_audit_log_request_id", "request_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    object_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    object_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    summary: Mapped[str] = mapped_column(String(1024), nullable=False)
+    detail: Mapped[dict] = mapped_column(JSON, nullable=False)
+    task_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("reimbursement_tasks.id"),
+        nullable=True,
+        index=True,
+    )
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

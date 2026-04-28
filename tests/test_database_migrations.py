@@ -20,6 +20,7 @@ def test_init_database_bootstraps_schema_for_local_sqlite(tmp_path):
     engine = session_factory.kw["bind"]
     assert engine is not None
     table_names = set(inspect(engine).get_table_names())
+    assert "audit_logs" in table_names
     assert "reimbursement_tasks" in table_names
     assert "materials" in table_names
 
@@ -42,4 +43,4 @@ def test_init_database_accepts_schema_at_alembic_head(tmp_path):
 
     init_database(session_factory, allow_schema_bootstrap=False)
 
-    assert get_alembic_head_revisions() == ("20260428_02",)
+    assert get_alembic_head_revisions() == ("20260428_03",)
