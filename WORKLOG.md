@@ -1,5 +1,43 @@
 # WORKLOG
 
+## 2026-04-29 00:08 - Record VLM-based OCR requirement update
+
+### 完成内容
+- 将“扫描 PDF / 图片 OCR”需求明确收敛为“通过支持图像输入的 VLM API 直接提取结构化信息”：
+  - 需求文档 FR-003 增加该处理逻辑，不再把“先落传统 OCR 文本”写成唯一主路径；
+  - 架构文档同步把扫描 PDF / 图片识别节点从泛化 `OCR` 改为 `VLM 图像直提`，并更新技术选型与设计原则；
+  - `TASKS.md` 中对应未完成任务改写为“接入基于 VLM API 的扫描 PDF / 图片直提识别链路”；
+  - `README.md` 中当前能力边界同步更新，明确待补齐的是 VLM 图像直提链路。
+
+### 根因
+- 现有文档里对“扫描 PDF / 图片识别”的表述仍然偏向传统 OCR 能力，但用户已明确要求该路径应以 VLM API 的直接结构化提取为主。
+- 如果只改任务名而不改需求与架构文档，后续实现会继续在“传统 OCR 中间文本”与“VLM 直提”两条路径之间摇摆，造成验收口径不一致。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `README.md`
+- `docs/同济大学ACM竞赛报销收集系统需求分析文档_V0.2.md`
+- `docs/同济大学ACM竞赛报销收集系统架构设计与技术选型文档_V0.1.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 320 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、60 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前仅把“VLM API 直提”写入需求和任务，不在本轮继续决定具体 Provider、模型名称、多模态请求协议或是否保留传统 OCR 作为兜底。
+
 ## 2026-04-28 23:58 - Record review findings and new product-level task changes
 
 ### 完成内容
