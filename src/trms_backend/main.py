@@ -39,7 +39,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyTelegramAccountBindingRepository,
     SqlAlchemyValidationRepository,
 )
-from trms_backend.infrastructure.storage import LocalMaterialFileStorage
+from trms_backend.infrastructure.storage import build_material_file_storage
 from trms_backend.runtime_config import RuntimeConfig, load_runtime_config
 
 
@@ -76,7 +76,7 @@ def create_app(
     task_repository = SqlAlchemyTaskRepository(session_factory)
     material_repository = SqlAlchemyMaterialRepository(session_factory)
     if material_file_storage is None:
-        material_file_storage = LocalMaterialFileStorage(config.material_storage_dir)
+        material_file_storage = build_material_file_storage(config)
     material_reminder_repository = SqlAlchemyMaterialReminderRepository(session_factory)
     automatic_reminder_task_repository = SqlAlchemyAutomaticReminderTaskRepository(session_factory)
     export_job_repository = SqlAlchemyExportJobRepository(session_factory)

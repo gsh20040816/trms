@@ -12,6 +12,7 @@ def test_load_runtime_config_uses_development_defaults():
 
     assert config.environment == "development"
     assert config.database_url == "sqlite:///./trms.db"
+    assert config.file_storage.backend == "local"
     assert config.material_storage_dir == Path("data/materials")
     assert config.cors_allowed_origins == (
         "http://127.0.0.1:5173",
@@ -31,7 +32,7 @@ def test_load_runtime_config_requires_explicit_production_settings():
 
     message = str(exc_info.value)
     assert "DATABASE_URL is required when TRMS_ENV=production" in message
-    assert "MATERIAL_STORAGE_DIR is required when TRMS_ENV=production" in message
+    assert "TRMS_STORAGE_BACKEND is required when TRMS_ENV=production" in message
     assert "TRMS_CORS_ALLOWED_ORIGINS is required when TRMS_ENV=production" in message
     assert "TRMS_PUBLIC_API_BASE_URL is required when TRMS_ENV=production" in message
     assert "TRMS_API_HOST is required when TRMS_ENV=production" in message
@@ -50,7 +51,11 @@ def test_load_runtime_config_defaults_to_worker_mode_in_production():
         env={
             "TRMS_ENV": "production",
             "DATABASE_URL": "sqlite:///./prod.db",
-            "MATERIAL_STORAGE_DIR": "./prod-materials",
+            "TRMS_STORAGE_BACKEND": "s3",
+            "TRMS_STORAGE_S3_ENDPOINT": "https://minio.example.com",
+            "TRMS_STORAGE_S3_BUCKET": "trms-prod",
+            "TRMS_STORAGE_S3_ACCESS_KEY_ID": "prod-access",
+            "TRMS_STORAGE_S3_SECRET_ACCESS_KEY": "prod-secret",
             "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
             "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
             "TRMS_API_HOST": "0.0.0.0",
@@ -60,6 +65,7 @@ def test_load_runtime_config_defaults_to_worker_mode_in_production():
 
     assert config.environment == "production"
     assert config.async_jobs.mode == "worker"
+    assert config.file_storage.backend == "s3"
 
 
 def test_load_runtime_config_rejects_in_process_mode_in_production():
@@ -68,7 +74,11 @@ def test_load_runtime_config_rejects_in_process_mode_in_production():
             env={
                 "TRMS_ENV": "production",
                 "DATABASE_URL": "sqlite:///./prod.db",
-                "MATERIAL_STORAGE_DIR": "./prod-materials",
+                "TRMS_STORAGE_BACKEND": "s3",
+                "TRMS_STORAGE_S3_ENDPOINT": "https://minio.example.com",
+                "TRMS_STORAGE_S3_BUCKET": "trms-prod",
+                "TRMS_STORAGE_S3_ACCESS_KEY_ID": "prod-access",
+                "TRMS_STORAGE_S3_SECRET_ACCESS_KEY": "prod-secret",
                 "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
                 "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
                 "TRMS_API_HOST": "0.0.0.0",
@@ -78,6 +88,26 @@ def test_load_runtime_config_rejects_in_process_mode_in_production():
         )
 
     assert "TRMS_ASYNC_JOB_MODE=in_process is not allowed when TRMS_ENV=production" in str(
+        exc_info.value
+    )
+
+
+def test_load_runtime_config_rejects_local_storage_in_production():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(
+            env={
+                "TRMS_ENV": "production",
+                "DATABASE_URL": "sqlite:///./prod.db",
+                "TRMS_STORAGE_BACKEND": "local",
+                "MATERIAL_STORAGE_DIR": "./prod-materials",
+                "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
+                "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
+                "TRMS_API_HOST": "0.0.0.0",
+                "TRMS_API_PORT": "8000",
+            }
+        )
+
+    assert "TRMS_STORAGE_BACKEND=local is not allowed when TRMS_ENV=production" in str(
         exc_info.value
     )
 
@@ -136,6 +166,26 @@ def test_llm_provider_safe_log_fields_redact_api_key():
     assert safe_log_fields["api_key"] == "[redacted]"
     assert safe_log_fields["api_key_configured"] is True
     assert "sk-live-secret-value" not in str(safe_log_fields)
+
+
+def test_s3_file_storage_safe_log_fields_redact_credentials():
+    config = load_runtime_config(
+        env={
+            "TRMS_STORAGE_BACKEND": "s3",
+            "TRMS_STORAGE_S3_ENDPOINT": "https://minio.example.com",
+            "TRMS_STORAGE_S3_BUCKET": "trms-prod",
+            "TRMS_STORAGE_S3_ACCESS_KEY_ID": "access-secret",
+            "TRMS_STORAGE_S3_SECRET_ACCESS_KEY": "secret-secret",
+        }
+    )
+
+    safe_log_fields = config.file_storage.to_safe_log_fields()
+
+    assert safe_log_fields["backend"] == "s3"
+    assert safe_log_fields["access_key_id"] == "[redacted]"
+    assert safe_log_fields["secret_access_key"] == "[redacted]"
+    assert "access-secret" not in str(safe_log_fields)
+    assert "secret-secret" not in str(safe_log_fields)
 
 
 def test_create_app_applies_configured_cors_origins(tmp_path):

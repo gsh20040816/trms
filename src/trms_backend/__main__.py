@@ -23,7 +23,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyTaskRepository,
     SqlAlchemyValidationRepository,
 )
-from trms_backend.infrastructure.storage import LocalMaterialFileStorage
+from trms_backend.infrastructure.storage import build_material_file_storage
 from trms_backend.runtime_config import RuntimeConfig, load_runtime_config
 
 
@@ -65,7 +65,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
     export_job_repository = SqlAlchemyExportJobRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
-    material_file_storage = LocalMaterialFileStorage(config.material_storage_dir)
+    material_file_storage = build_material_file_storage(config)
     recognition_llm_client = (
         OpenAiCompatibleRecognitionClient(config.llm_provider)
         if config.llm_provider is not None

@@ -30,7 +30,14 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 
 - `TRMS_ENV`：`development`、`test` 或 `production`，默认 `development`
 - `DATABASE_URL`
-- `MATERIAL_STORAGE_DIR`
+- `TRMS_STORAGE_BACKEND`
+- `MATERIAL_STORAGE_DIR`：仅 `TRMS_STORAGE_BACKEND=local` 时使用
+- `TRMS_STORAGE_S3_ENDPOINT`
+- `TRMS_STORAGE_S3_BUCKET`
+- `TRMS_STORAGE_S3_ACCESS_KEY_ID`
+- `TRMS_STORAGE_S3_SECRET_ACCESS_KEY`
+- `TRMS_STORAGE_S3_REGION`
+- `TRMS_STORAGE_S3_KEY_PREFIX`
 - `TRMS_CORS_ALLOWED_ORIGINS`：逗号分隔的 `http(s)://host[:port]` 列表
 - `TRMS_PUBLIC_API_BASE_URL`
 - `TRMS_API_HOST`
@@ -46,6 +53,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 开发环境默认值：
 
 - `DATABASE_URL=sqlite:///./trms.db`
+- `TRMS_STORAGE_BACKEND=local`
 - `MATERIAL_STORAGE_DIR=./data/materials`
 - `TRMS_CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173`
 - `TRMS_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api`
@@ -62,12 +70,27 @@ TRMS_CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173 \
 uv run python -m trms_backend --reload
 ```
 
+文件存储边界：
+
+- `TRMS_STORAGE_BACKEND` 支持 `local` 和 `s3`。
+- 开发和测试环境默认使用 `local`，并从 `MATERIAL_STORAGE_DIR` 读取本地根目录。
+- `TRMS_ENV=production` 时必须显式配置 `TRMS_STORAGE_BACKEND=s3`；生产环境拒绝继续使用本地目录存储，避免把原始材料和导出产物留在 API/worker 容器本地盘。
+- `TRMS_STORAGE_S3_ENDPOINT`、`TRMS_STORAGE_S3_BUCKET`、`TRMS_STORAGE_S3_ACCESS_KEY_ID`、`TRMS_STORAGE_S3_SECRET_ACCESS_KEY` 为 `s3` 后端必填项；`TRMS_STORAGE_S3_REGION` 和 `TRMS_STORAGE_S3_KEY_PREFIX` 为可选项。
+- 对象存储凭据只允许通过后端环境变量或密钥管理注入，不入库、不返回前端，也不应写入日志。
+- 当前导出产物下载继续走后端接口读取存储内容，不暴露长期公开 URL；更细粒度的 bearer 下载鉴权仍待后续权限任务收口。
+
 生产环境不会静默回退到开发默认值；当 `TRMS_ENV=production` 时，以上变量都必须显式提供，否则服务会在启动时直接报错。启动参数 `--host`、`--port` 可覆盖对应环境变量，例如：
 
 ```bash
 TRMS_ENV=production \
 DATABASE_URL=postgresql+psycopg://user:password@db:5432/trms \
-MATERIAL_STORAGE_DIR=/var/lib/trms/materials \
+TRMS_STORAGE_BACKEND=s3 \
+TRMS_STORAGE_S3_ENDPOINT=https://minio.example.edu \
+TRMS_STORAGE_S3_BUCKET=trms-prod \
+TRMS_STORAGE_S3_ACCESS_KEY_ID=replace-me \
+TRMS_STORAGE_S3_SECRET_ACCESS_KEY=replace-me \
+TRMS_STORAGE_S3_REGION=cn-east-1 \
+TRMS_STORAGE_S3_KEY_PREFIX=prod \
 TRMS_CORS_ALLOWED_ORIGINS=https://trms.example.edu \
 TRMS_PUBLIC_API_BASE_URL=https://trms.example.edu/api \
 TRMS_API_HOST=0.0.0.0 \
@@ -159,6 +182,7 @@ npm run dev
 
 - 所有 `VITE_*` 变量都会进入前端构建产物，只能保存公开配置。
 - 不要把 OpenAI 兼容 LLM `api_key`、后端 secret、数据库凭据或长期 token 写入 `VITE_*` 变量。
+- 不要把对象存储 access key / secret key 写入 `VITE_*` 变量。
 - 前端页面和测试不应展示上述 secret；相关敏感配置只能保留在后端环境变量或专用密钥管理中。
 - `TRMS_LLM_API_KEY` 只允许从后端环境变量或密钥管理读取，不入库、不返回前端，也不应写入日志。
 

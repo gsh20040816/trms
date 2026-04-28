@@ -3,14 +3,13 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 
 RuntimeEnvironment = Literal["development", "test", "production"]
 AsyncJobMode = Literal["in_process", "worker"]
-
 DEFAULT_DATABASE_URL = "sqlite:///./trms.db"
 DEFAULT_MATERIAL_STORAGE_DIR = "./data/materials"
 DEFAULT_API_HOST = "127.0.0.1"
@@ -90,10 +89,97 @@ class AsyncJobConfig(BaseModel):
         return normalized
 
 
+class LocalFileStorageConfig(BaseModel):
+    backend: Literal["local"]
+    root_dir: Path
+
+    @field_validator("root_dir", mode="before")
+    @classmethod
+    def validate_root_dir(cls, value: str | Path) -> Path:
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError("file_storage.root_dir must not be empty")
+        return Path(normalized)
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return {
+            "backend": self.backend,
+            "root_dir": str(self.root_dir),
+        }
+
+
+class S3FileStorageConfig(BaseModel):
+    backend: Literal["s3"]
+    endpoint: str
+    bucket: str
+    access_key_id: SecretStr
+    secret_access_key: SecretStr
+    region: str | None = None
+    key_prefix: str | None = None
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        return _normalize_http_url(value, field_name="file_storage.endpoint", allow_path=False)
+
+    @field_validator("bucket")
+    @classmethod
+    def validate_bucket(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("file_storage.bucket must not be empty")
+        if "/" in normalized:
+            raise ValueError("file_storage.bucket must not contain '/'")
+        return normalized
+
+    @field_validator("access_key_id", "secret_access_key", mode="before")
+    @classmethod
+    def validate_secret_field(cls, value: SecretStr | str, info) -> SecretStr:
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            raise ValueError(f"file_storage.{info.field_name} must not be empty")
+        return SecretStr(normalized)
+
+    @field_validator("region")
+    @classmethod
+    def validate_region(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("key_prefix")
+    @classmethod
+    def validate_key_prefix(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().strip("/")
+        return normalized or None
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return {
+            "backend": self.backend,
+            "endpoint": self.endpoint,
+            "bucket": self.bucket,
+            "region": self.region,
+            "key_prefix": self.key_prefix,
+            "access_key_id": "[redacted]",
+            "secret_access_key": "[redacted]",
+            "credentials_configured": True,
+        }
+
+
+FileStorageConfig = Annotated[
+    LocalFileStorageConfig | S3FileStorageConfig,
+    Field(discriminator="backend"),
+]
+
+
 class RuntimeConfig(BaseModel):
     environment: RuntimeEnvironment
     database_url: str
-    material_storage_dir: Path
+    file_storage: FileStorageConfig
     cors_allowed_origins: tuple[str, ...]
     public_api_base_url: str
     api_host: str
@@ -110,14 +196,6 @@ class RuntimeConfig(BaseModel):
         if "://" not in normalized:
             raise ValueError("database_url must include a scheme")
         return normalized
-
-    @field_validator("material_storage_dir", mode="before")
-    @classmethod
-    def validate_material_storage_dir(cls, value: str | Path) -> Path:
-        normalized = str(value).strip()
-        if not normalized:
-            raise ValueError("material_storage_dir must not be empty")
-        return Path(normalized)
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
@@ -161,6 +239,12 @@ class RuntimeConfig(BaseModel):
             raise ValueError("api_host must be a bare host or IP address")
         return normalized
 
+    @property
+    def material_storage_dir(self) -> Path:
+        if isinstance(self.file_storage, LocalFileStorageConfig):
+            return self.file_storage.root_dir
+        raise RuntimeError("material_storage_dir is only available for local file storage")
+
 
 def load_runtime_config(
     env: Mapping[str, str] | None = None,
@@ -172,6 +256,13 @@ def load_runtime_config(
     public_api_base_url: str | None = None,
     api_host: str | None = None,
     api_port: str | int | None = None,
+    storage_backend: str | None = None,
+    storage_s3_endpoint: str | None = None,
+    storage_s3_bucket: str | None = None,
+    storage_s3_access_key_id: str | None = None,
+    storage_s3_secret_access_key: str | None = None,
+    storage_s3_region: str | None = None,
+    storage_s3_key_prefix: str | None = None,
     async_job_mode: str | None = None,
     async_job_poll_interval_seconds: str | float | int | None = None,
     llm_api_key: str | None = None,
@@ -196,15 +287,6 @@ def load_runtime_config(
         if require_explicit_values:
             issues.append("DATABASE_URL is required when TRMS_ENV=production")
         raw_database_url = DEFAULT_DATABASE_URL
-
-    raw_material_storage_dir = _resolve_value(
-        material_storage_dir,
-        environment_variables.get("MATERIAL_STORAGE_DIR"),
-    )
-    if raw_material_storage_dir is None:
-        if require_explicit_values:
-            issues.append("MATERIAL_STORAGE_DIR is required when TRMS_ENV=production")
-        raw_material_storage_dir = DEFAULT_MATERIAL_STORAGE_DIR
 
     raw_api_host = _resolve_value(api_host, environment_variables.get("TRMS_API_HOST"))
     if raw_api_host is None:
@@ -239,6 +321,44 @@ def load_runtime_config(
             port=str(raw_api_port),
         )
 
+    raw_storage_backend = _resolve_value(
+        storage_backend,
+        environment_variables.get("TRMS_STORAGE_BACKEND"),
+    )
+    if raw_storage_backend is None:
+        if require_explicit_values:
+            issues.append("TRMS_STORAGE_BACKEND is required when TRMS_ENV=production")
+        raw_storage_backend = "local"
+
+    raw_material_storage_dir = _resolve_value(
+        material_storage_dir,
+        environment_variables.get("MATERIAL_STORAGE_DIR"),
+    )
+    raw_storage_s3_endpoint = _resolve_value(
+        storage_s3_endpoint,
+        environment_variables.get("TRMS_STORAGE_S3_ENDPOINT"),
+    )
+    raw_storage_s3_bucket = _resolve_value(
+        storage_s3_bucket,
+        environment_variables.get("TRMS_STORAGE_S3_BUCKET"),
+    )
+    raw_storage_s3_access_key_id = _resolve_value(
+        storage_s3_access_key_id,
+        environment_variables.get("TRMS_STORAGE_S3_ACCESS_KEY_ID"),
+    )
+    raw_storage_s3_secret_access_key = _resolve_value(
+        storage_s3_secret_access_key,
+        environment_variables.get("TRMS_STORAGE_S3_SECRET_ACCESS_KEY"),
+    )
+    raw_storage_s3_region = _resolve_value(
+        storage_s3_region,
+        environment_variables.get("TRMS_STORAGE_S3_REGION"),
+    )
+    raw_storage_s3_key_prefix = _resolve_value(
+        storage_s3_key_prefix,
+        environment_variables.get("TRMS_STORAGE_S3_KEY_PREFIX"),
+    )
+
     raw_llm_api_key = _resolve_value(llm_api_key, environment_variables.get("TRMS_LLM_API_KEY"))
     raw_llm_base_url = _resolve_value(
         llm_base_url,
@@ -271,6 +391,45 @@ def load_runtime_config(
             "TRMS_ASYNC_JOB_MODE=in_process is not allowed when TRMS_ENV=production; "
             "configure worker mode instead"
         )
+
+    normalized_storage_backend = str(raw_storage_backend).strip().lower()
+    storage_payload: dict[str, object]
+    if normalized_storage_backend == "local":
+        if normalized_environment == "production":
+            issues.append(
+                "TRMS_STORAGE_BACKEND=local is not allowed when TRMS_ENV=production; "
+                "configure s3 storage instead"
+            )
+        if raw_material_storage_dir is None:
+            raw_material_storage_dir = DEFAULT_MATERIAL_STORAGE_DIR
+        storage_payload = {
+            "backend": "local",
+            "root_dir": raw_material_storage_dir,
+        }
+    elif normalized_storage_backend == "s3":
+        if not _has_meaningful_value(raw_storage_s3_endpoint):
+            issues.append("TRMS_STORAGE_S3_ENDPOINT is required when TRMS_STORAGE_BACKEND=s3")
+        if not _has_meaningful_value(raw_storage_s3_bucket):
+            issues.append("TRMS_STORAGE_S3_BUCKET is required when TRMS_STORAGE_BACKEND=s3")
+        if not _has_meaningful_value(raw_storage_s3_access_key_id):
+            issues.append(
+                "TRMS_STORAGE_S3_ACCESS_KEY_ID is required when TRMS_STORAGE_BACKEND=s3"
+            )
+        if not _has_meaningful_value(raw_storage_s3_secret_access_key):
+            issues.append(
+                "TRMS_STORAGE_S3_SECRET_ACCESS_KEY is required when TRMS_STORAGE_BACKEND=s3"
+            )
+        storage_payload = {
+            "backend": "s3",
+            "endpoint": raw_storage_s3_endpoint,
+            "bucket": raw_storage_s3_bucket,
+            "access_key_id": raw_storage_s3_access_key_id,
+            "secret_access_key": raw_storage_s3_secret_access_key,
+            "region": raw_storage_s3_region,
+            "key_prefix": raw_storage_s3_key_prefix,
+        }
+    else:
+        storage_payload = {"backend": raw_storage_backend}
 
     llm_provider_payload: dict[str, object] | None = None
     if any(
@@ -317,7 +476,7 @@ def load_runtime_config(
             {
                 "environment": normalized_environment,
                 "database_url": raw_database_url,
-                "material_storage_dir": raw_material_storage_dir,
+                "file_storage": storage_payload,
                 "cors_allowed_origins": raw_cors_allowed_origins,
                 "public_api_base_url": raw_public_api_base_url,
                 "api_host": raw_api_host,

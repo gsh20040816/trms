@@ -1,9 +1,17 @@
 from hashlib import sha256
+from io import BytesIO
+
+import pytest
+from botocore.exceptions import ClientError
 
 from trms_backend.infrastructure.database import build_session_factory, session_scope
 from trms_backend.infrastructure.models import MaterialRow
-from trms_backend.infrastructure.storage import LocalMaterialFileStorage
+from trms_backend.infrastructure.storage import (
+    LocalMaterialFileStorage,
+    S3CompatibleMaterialFileStorage,
+)
 from trms_backend.main import create_app
+from trms_backend.runtime_config import S3FileStorageConfig
 
 from fastapi.testclient import TestClient
 
@@ -82,3 +90,79 @@ def test_material_record_persists_storage_key_for_saved_file(tmp_path):
 
     storage_root = tmp_path / "material-storage"
     assert (storage_root / material["storage_key"]).read_bytes() == b"stored-content"
+
+
+class RecordingS3Client:
+    def __init__(self) -> None:
+        self.put_calls: list[dict[str, object]] = []
+        self.objects: dict[tuple[str, str], bytes] = {}
+
+    def put_object(self, **kwargs):
+        self.put_calls.append(kwargs)
+        self.objects[(kwargs["Bucket"], kwargs["Key"])] = kwargs["Body"]
+        return {"ETag": '"fake-etag"'}
+
+    def get_object(self, *, Bucket: str, Key: str):
+        try:
+            content = self.objects[(Bucket, Key)]
+        except KeyError as error:
+            raise ClientError(
+                {
+                    "Error": {"Code": "NoSuchKey", "Message": "missing"},
+                    "ResponseMetadata": {"HTTPStatusCode": 404},
+                },
+                "GetObject",
+            ) from error
+        return {"Body": BytesIO(content)}
+
+
+def test_s3_material_storage_persists_under_bucket_key_contract():
+    client = RecordingS3Client()
+    storage = S3CompatibleMaterialFileStorage(
+        S3FileStorageConfig(
+            backend="s3",
+            endpoint="https://minio.example.com",
+            bucket="trms-materials",
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+            key_prefix="nightly",
+        ),
+        client=client,
+    )
+
+    stored_file = storage.save(
+        task_id="task-1",
+        original_filename="../nested/payment.png",
+        content_type="image/png",
+        content=b"png-bytes",
+    )
+
+    assert stored_file.storage_key.startswith("nightly/task-1/")
+    assert stored_file.original_filename == "payment.png"
+    assert stored_file.size_bytes == len(b"png-bytes")
+    assert stored_file.sha256 == sha256(b"png-bytes").hexdigest()
+    assert client.put_calls == [
+        {
+            "Bucket": "trms-materials",
+            "Key": stored_file.storage_key,
+            "Body": b"png-bytes",
+            "ContentType": "image/png",
+        }
+    ]
+    assert storage.read(storage_key=stored_file.storage_key) == b"png-bytes"
+
+
+def test_s3_material_storage_translates_missing_object_to_file_not_found():
+    storage = S3CompatibleMaterialFileStorage(
+        S3FileStorageConfig(
+            backend="s3",
+            endpoint="https://minio.example.com",
+            bucket="trms-materials",
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+        ),
+        client=RecordingS3Client(),
+    )
+
+    with pytest.raises(FileNotFoundError):
+        storage.read(storage_key="task-1/missing.pdf")

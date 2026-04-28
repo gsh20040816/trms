@@ -1,5 +1,68 @@
 # WORKLOG
 
+## 2026-04-28 15:38 - Productionize object storage and export artifact access
+
+### 完成内容
+- 扩展运行配置模型：
+  - `src/trms_backend/runtime_config.py` 新增 `file_storage` 配置块，区分 `local` 与 `s3` 两类后端；
+  - 增加 `TRMS_STORAGE_BACKEND`、`TRMS_STORAGE_S3_ENDPOINT`、`TRMS_STORAGE_S3_BUCKET`、`TRMS_STORAGE_S3_ACCESS_KEY_ID`、`TRMS_STORAGE_S3_SECRET_ACCESS_KEY`、`TRMS_STORAGE_S3_REGION`、`TRMS_STORAGE_S3_KEY_PREFIX`；
+  - 开发/测试环境默认继续使用本地目录，`TRMS_ENV=production` 下显式拒绝 `local` 存储，要求改用 S3 兼容对象存储。
+- 新增 S3 兼容存储适配器：
+  - `src/trms_backend/infrastructure/storage.py` 新增 `S3CompatibleMaterialFileStorage` 和统一工厂 `build_material_file_storage()`；
+  - 原始材料与导出产物继续复用既有 `MaterialFileStorage` 协议，不扩散到业务层；
+  - 对象存储读取缺失对象时会显式转成 `FileNotFoundError`，保持现有 API/worker 错误语义。
+- 更新 API 与 worker 装配：
+  - `src/trms_backend/main.py`、`src/trms_backend/__main__.py` 改为从运行配置统一构建存储实例；
+  - 导出产物下载继续走后端 `GET /api/tasks/exports/{export_job_id}/artifact`，不暴露长期公开对象 URL。
+- 补测试与文档：
+  - `tests/test_material_storage.py` 增加对象存储适配器契约测试；
+  - `tests/test_runtime_config.py` 增加生产环境 S3 配置、生产环境拒绝本地存储和凭据脱敏测试；
+  - `README.md`、`docs/第一阶段验收映射.md`、`TASKS.md` 更新对象存储与生产访问边界说明；
+  - `pyproject.toml`、`uv.lock` 增加 `boto3` 依赖。
+
+### 根因
+- 现有仓库虽然已经具备原始材料落盘、导出产物持久化和下载接口，但底层仍只支持本地目录 `MATERIAL_STORAGE_DIR`。
+- 这会直接带来三类问题：
+  - 生产环境 API / worker 容器重建后，本地盘上的原始材料和导出产物缺少可靠持久化边界；
+  - 运行配置无法表达对象存储 endpoint、bucket 和凭据，也缺少显式脱敏出口；
+  - “导出产物可下载”虽然已存在，但底层还没有和生产级对象存储适配，导致 README 与验收映射里对生产差距的描述仍然成立。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `README.md`
+- `docs/第一阶段验收映射.md`
+- `pyproject.toml`
+- `uv.lock`
+- `src/trms_backend/__main__.py`
+- `src/trms_backend/infrastructure/storage.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/runtime_config.py`
+- `tests/test_material_storage.py`
+- `tests/test_runtime_config.py`
+
+### 验证结果
+- 已通过：
+  - `uv lock`
+    - 锁文件已更新，新增 `boto3`、`botocore` 及其依赖
+  - `uv run pytest tests/test_runtime_config.py tests/test_material_storage.py tests/test_export_async_jobs.py`
+    - 20 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 267 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出相关测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮保守选择“导出下载继续经过后端读取存储内容”而不是直接发放预签名 URL；这样能满足“不暴露长期公开 URL”的要求，同时不提前把下载鉴权模型与后续 bearer 权限收口任务耦合在一起。
+- 本轮未实际连接真实 MinIO/S3 服务做联机演练；当前只验证了运行配置解析、凭据脱敏和对象存储适配器接口契约。真实对象存储备份/恢复与联机兼容性仍属于后续部署和恢复演练任务范围。
+
 ## 2026-04-28 15:29 - Productionize database migration baseline with Alembic
 
 ### 完成内容
