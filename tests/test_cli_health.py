@@ -1,13 +1,14 @@
 import json
 
-from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, main
+from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, build_cli_request_headers, main
 
 
 def test_health_command_reports_ok(monkeypatch, capsys):
     seen = {}
 
-    def fake_fetch_json(url: str):
+    def fake_fetch_json(url: str, *, headers=None):
         seen["url"] = url
+        seen["headers"] = headers
         return 200, {"status": "ok"}
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)
@@ -17,12 +18,14 @@ def test_health_command_reports_ok(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert exit_code == 0
     assert seen["url"] == "http://example.com/api/health"
+    assert seen["headers"] == build_cli_request_headers()
     assert captured.out == "TRMS API health: ok\n"
     assert captured.err == ""
 
 
 def test_health_command_reports_error(monkeypatch, capsys):
-    def fake_fetch_json(_url: str):
+    def fake_fetch_json(_url: str, *, headers=None):
+        assert headers == build_cli_request_headers()
         return 200, {"status": "degraded"}
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)
@@ -36,7 +39,8 @@ def test_health_command_reports_error(monkeypatch, capsys):
 
 
 def test_health_command_reports_ok_as_json(monkeypatch, capsys):
-    def fake_fetch_json(_url: str):
+    def fake_fetch_json(_url: str, *, headers=None):
+        assert headers == build_cli_request_headers()
         return 200, {"status": "ok"}
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)
@@ -58,7 +62,8 @@ def test_health_command_reports_ok_as_json(monkeypatch, capsys):
 
 
 def test_health_command_reports_error_as_json(monkeypatch, capsys):
-    def fake_fetch_json(_url: str):
+    def fake_fetch_json(_url: str, *, headers=None):
+        assert headers == build_cli_request_headers()
         return 200, {"status": "degraded"}
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)

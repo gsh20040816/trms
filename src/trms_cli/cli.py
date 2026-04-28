@@ -22,6 +22,20 @@ from trms_cli.token_store import TokenStoreError, load_token_session, save_token
 
 DEFAULT_BASE_URL = os.getenv("TRMS_API_BASE_URL", "http://127.0.0.1:8000")
 CLI_JSON_SCHEMA_VERSION = "trms-cli.v1"
+CLI_PROTOCOL_VERSION = "1"
+CLI_CLIENT_HEADER = "X-TRMS-Client"
+CLI_CLIENT_KIND = "cli"
+CLI_VERSION_HEADER = "X-TRMS-CLI-Version"
+CLI_CAPABILITIES_HEADER = "X-TRMS-CLI-Capabilities"
+CLI_CAPABILITIES = (
+    "json-output-v1",
+    "material-submit-v1",
+    "task-list-v1",
+    "member-status-v1",
+    "missing-materials-v1",
+    "split-submit-v1",
+    "expense-confirmation-v1",
+)
 ACCESS_TOKEN_ENV = "TRMS_CLI_ACCESS_TOKEN"
 REFRESH_TOKEN_ENV = "TRMS_CLI_REFRESH_TOKEN"
 
@@ -200,6 +214,17 @@ LOCAL_BATCH_PRECHECK_ERROR_CODES = frozenset(
         "local_unsupported_content_type",
     }
 )
+
+
+def build_cli_request_headers(*, access_token: str | None = None) -> dict[str, str]:
+    headers = {
+        CLI_CLIENT_HEADER: CLI_CLIENT_KIND,
+        CLI_VERSION_HEADER: CLI_PROTOCOL_VERSION,
+        CLI_CAPABILITIES_HEADER: ",".join(CLI_CAPABILITIES),
+    }
+    if access_token is not None:
+        headers["Authorization"] = f"Bearer {access_token}"
+    return headers
 
 
 def emit_json(payload: dict[str, object], *, stream: object | None = None) -> None:
@@ -595,7 +620,10 @@ def run_login_command(args: argparse.Namespace) -> int:
 
 def run_health_command(args: argparse.Namespace) -> int:
     base_url = args.base_url.rstrip("/")
-    status_code, payload = fetch_json(f"{base_url}/health")
+    status_code, payload = fetch_json(
+        f"{base_url}/health",
+        headers=build_cli_request_headers(),
+    )
     if status_code != 200:
         raise CliError(
             f"health endpoint returned unexpected status {status_code}",
@@ -631,7 +659,7 @@ def run_tasks_command(args: argparse.Namespace) -> int:
     base_url = session.base_url.rstrip("/")
     status_code, payload = fetch_json(
         build_task_list_url(base_url, member_id=session.member_id),
-        headers={"Authorization": f"Bearer {session.access_token}"},
+        headers=build_cli_request_headers(access_token=session.access_token),
     )
     if status_code != 200:
         raise CliError(
@@ -678,7 +706,7 @@ def run_submit_command(args: argparse.Namespace) -> int:
     if upload_files:
         status_code, payload = post_multipart_json(
             build_material_submit_url(base_url, task_id=args.task_id),
-            headers={"Authorization": f"Bearer {session.access_token}"},
+            headers=build_cli_request_headers(access_token=session.access_token),
             fields={
                 "submitter_id": session.member_id,
                 "channel": "cli",
@@ -720,7 +748,7 @@ def run_status_command(args: argparse.Namespace) -> int:
     base_url = session.base_url.rstrip("/")
     status_code, payload = fetch_json(
         build_task_status_url(base_url, task_id=args.task_id, actor_id=session.member_id),
-        headers={"Authorization": f"Bearer {session.access_token}"},
+        headers=build_cli_request_headers(access_token=session.access_token),
     )
     if status_code != 200:
         raise CliError(
@@ -762,7 +790,7 @@ def run_missing_materials_command(args: argparse.Namespace) -> int:
     base_url = session.base_url.rstrip("/")
     status_code, payload = fetch_json(
         build_task_missing_materials_url(base_url, task_id=args.task_id, actor_id=session.member_id),
-        headers={"Authorization": f"Bearer {session.access_token}"},
+        headers=build_cli_request_headers(access_token=session.access_token),
     )
     if status_code != 200:
         raise CliError(
@@ -803,7 +831,7 @@ def run_split_command(args: argparse.Namespace) -> int:
     base_url = session.base_url.rstrip("/")
     status_code, payload = put_json(
         build_invoice_splits_url(base_url, invoice_id=args.invoice_id),
-        headers={"Authorization": f"Bearer {session.access_token}"},
+        headers=build_cli_request_headers(access_token=session.access_token),
         payload={
             "actor_id": session.member_id,
             "items": items,
@@ -886,7 +914,7 @@ def run_confirm_expense_command(args: argparse.Namespace) -> int:
     )
     status_code, payload = put_json(
         build_split_confirmation_url(base_url, split_id=detail.split_id),
-        headers={"Authorization": f"Bearer {session.access_token}"},
+        headers=build_cli_request_headers(access_token=session.access_token),
         payload={
             "actor_id": session.member_id,
             "member_id": session.member_id,
@@ -1846,7 +1874,7 @@ def fetch_expense_detail_confirmation_report(
 ) -> ExpenseDetailConfirmationReport:
     status_code, payload = fetch_json(
         build_task_expense_details_url(base_url, task_id=task_id, actor_id=actor_id),
-        headers={"Authorization": f"Bearer {access_token}"},
+        headers=build_cli_request_headers(access_token=access_token),
     )
     if status_code != 200:
         raise CliError(

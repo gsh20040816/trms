@@ -1,6 +1,6 @@
 import json
 
-from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, main
+from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, build_cli_request_headers, main
 from trms_cli.token_store import save_token_session
 
 
@@ -47,7 +47,7 @@ def test_tasks_command_lists_open_tasks_from_stored_session(monkeypatch, tmp_pat
     captured = capsys.readouterr()
     assert exit_code == 0
     assert seen["url"] == "http://example.com/api/tasks?member_id=2250001"
-    assert seen["headers"] == {"Authorization": "Bearer access-token"}
+    assert seen["headers"] == build_cli_request_headers(access_token="access-token")
     assert captured.err == ""
     assert captured.out == (
         "task_id\tcompetition_name\tstatus\tdeadline\n"
@@ -67,7 +67,7 @@ def test_tasks_command_reports_json(monkeypatch, tmp_path, capsys):
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://127.0.0.1:8000/api/tasks?member_id=2250002"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, [
             {
                 "id": "task-001",
@@ -135,7 +135,7 @@ def test_tasks_command_reports_no_visible_tasks(monkeypatch, tmp_path, capsys):
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://127.0.0.1:8000/api/tasks?member_id=2250999"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, []
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)

@@ -1,6 +1,6 @@
 import json
 
-from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, main
+from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, build_cli_request_headers, main
 from trms_cli.token_store import save_token_session
 
 
@@ -112,7 +112,7 @@ def test_status_command_reports_text(monkeypatch, tmp_path, capsys):
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://127.0.0.1:8000/api/tasks/task-123/member-status?actor_id=2250001"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_status_payload()
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)
@@ -149,7 +149,7 @@ def test_status_command_reports_json(monkeypatch, tmp_path, capsys):
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://example.com/api/tasks/task-123/member-status?actor_id=2250001"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_status_payload()
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)

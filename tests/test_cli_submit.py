@@ -1,7 +1,7 @@
 import json
 
 from trms_backend.domain.materials import MAX_MATERIAL_UPLOAD_SIZE_BYTES
-from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, main
+from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, build_cli_request_headers, main
 from trms_cli.token_store import save_token_session
 
 
@@ -56,7 +56,7 @@ def test_submit_command_uploads_local_file_from_stored_session(monkeypatch, tmp_
     assert "stored-access-token" not in captured.out
     assert "stored-access-token" not in captured.err
     assert seen["url"] == "http://example.com/api/tasks/task-123/materials"
-    assert seen["headers"] == {"Authorization": "Bearer stored-access-token"}
+    assert seen["headers"] == build_cli_request_headers(access_token="stored-access-token")
     assert seen["fields"] == {
         "submitter_id": "2250001",
         "channel": "cli",
@@ -86,7 +86,7 @@ def test_submit_command_reports_json(monkeypatch, tmp_path, capsys):
 
     def fake_post_multipart_json(url: str, *, headers=None, fields=None, files=None):
         assert url == "http://127.0.0.1:8000/api/tasks/task-456/materials"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         assert fields == {
             "submitter_id": "2250002",
             "channel": "cli",
@@ -392,7 +392,7 @@ def test_submit_command_reports_partial_success_for_batch_upload_with_local_prec
     assert exit_code == 2
     assert captured.err == ""
     assert seen["url"] == "http://127.0.0.1:8000/api/tasks/task-101/materials"
-    assert seen["headers"] == {"Authorization": "Bearer stored-access-token"}
+    assert seen["headers"] == build_cli_request_headers(access_token="stored-access-token")
     assert seen["fields"] == {
         "submitter_id": "2250111",
         "channel": "cli",

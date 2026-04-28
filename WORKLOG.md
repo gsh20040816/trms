@@ -1,5 +1,68 @@
 # WORKLOG
 
+## 2026-04-28 12:05 - Record CLI compatibility strategy
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 增加统一 CLI 协商请求头：
+  - `X-TRMS-Client: cli`
+  - `X-TRMS-CLI-Version: 1`
+  - `X-TRMS-CLI-Capabilities: ...`
+- 让 `health`、`tasks`、`submit`、`status`、`missing-materials`、`split`、`confirm-expense` 全部复用同一请求头构造函数，避免不同命令各自维护版本协商口径。
+- 为 `src/trms_backend/main.py` 增加轻量 CLI 兼容检查中间件，并新增 `src/trms_backend/api/cli_compatibility.py`：
+  - 仅对显式声明 `X-TRMS-Client: cli` 的请求生效；
+  - 当 `X-TRMS-CLI-Version` 缺失、不可解析或小于最小支持版本时，返回 `426 Upgrade Required`；
+  - 错误响应包含 `code=cli_version_too_old`、`detail`、`minimum_supported_cli_version` 和 `received_cli_version`。
+- 新增 `docs/CLI版本兼容策略说明.md`，记录：
+  - 当前 CLI 协议版本和能力标识；
+  - 服务端如何返回“版本过旧”错误；
+  - `--json` 输出的破坏性变更升级规则。
+- 新增/更新测试：
+  - `tests/test_cli_compatibility_api.py` 覆盖服务端接受当前 CLI 版本、拒绝过旧 CLI 版本；
+  - 更新 CLI 命令测试，覆盖所有已实现命令都会携带统一兼容协商请求头。
+- 将 `TASKS.md` 中“记录 CLI 版本兼容策略”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/cli_compatibility.py`
+- `src/trms_backend/main.py`
+- `src/trms_cli/cli.py`
+- `docs/CLI版本兼容策略说明.md`
+- `tests/test_cli_compatibility_api.py`
+- `tests/test_cli_health.py`
+- `tests/test_cli_tasks.py`
+- `tests/test_cli_submit.py`
+- `tests/test_cli_status.py`
+- `tests/test_cli_missing_materials.py`
+- `tests/test_cli_split.py`
+- `tests/test_cli_confirm_expense.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 功能已经覆盖上传、状态、分摊和确认，但客户端与服务端之间没有显式兼容协商：
+  - 服务端无法区分“请求来自 CLI”还是“来自其他调用方”；
+  - CLI 即使未来新增破坏性协议变更，也没有统一位置声明自己支持哪些能力；
+  - `--json` 输出虽然已有 `schema_version`，但缺少明确的升级规则记录，后续很容易在无边界情况下破坏脚本调用。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_compatibility_api.py tests/test_cli_health.py tests/test_cli_tasks.py tests/test_cli_submit.py tests/test_cli_status.py tests/test_cli_missing_materials.py tests/test_cli_split.py tests/test_cli_confirm_expense.py`
+  - `./scripts/verify.sh`
+
+### 说明
+- 本轮只处理“CLI 版本兼容策略”，没有提前实现下一项“评估 CLI 目录递归上传”。
+- 服务端当前只对显式声明 `X-TRMS-Client: cli` 的请求做兼容门禁，不会把普通 Web/API 请求误判为 CLI。
+
+### 假设
+- 本轮保守假设“CLI 兼容版本”先使用独立整数协议版本 `1`，而不是直接复用 Python 包版本 `0.1.0`：
+  - 当前仓库没有独立 CLI 发版链路，协议版本更适合表达“是否能和当前服务端正常对话”；
+  - 后续即使 CLI 包版本前进，只要请求/响应契约不破坏，也不需要同步升级协议版本。
+- 当前最小闭环先只做到“声明式门禁”：
+  - 新 CLI 稳定发送版本头和能力头；
+  - 真正完全不发送这些请求头的历史客户端，服务端暂时无法仅凭通用 REST 路径与非 CLI 调用方完全区分。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“评估 CLI 目录递归上传”，先判断它是否属于第一阶段 Could 功能，再决定是否拆独立实现任务。
+
 ## 2026-04-28 11:46 - Add CLI expense confirmation
 
 ### 完成内容

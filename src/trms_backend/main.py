@@ -1,7 +1,8 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
+from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
 from trms_backend.api.confirmations import build_confirmation_router
 from trms_backend.api.exports import build_export_router
 from trms_backend.api.invoices import build_invoice_router
@@ -55,6 +56,13 @@ def create_app(
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
+
+    @app.middleware("http")
+    async def enforce_cli_compatibility(request: Request, call_next):
+        rejection = reject_incompatible_cli_request(request)
+        if rejection is not None:
+            return rejection
+        return await call_next(request)
 
     @app.get("/health")
     def health():

@@ -1,6 +1,6 @@
 import json
 
-from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, CliError, main
+from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, CliError, build_cli_request_headers, main
 from trms_cli.token_store import save_token_session
 
 
@@ -16,7 +16,7 @@ def test_split_command_submits_invoice_splits(monkeypatch, tmp_path, capsys):
 
     def fake_put_json(url: str, *, headers=None, payload=None):
         assert url == "http://127.0.0.1:8000/api/invoices/invoice-001/splits"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         assert payload == {
             "actor_id": "2250001",
             "items": [
@@ -83,7 +83,7 @@ def test_split_command_reports_json(monkeypatch, tmp_path, capsys):
 
     def fake_put_json(url: str, *, headers=None, payload=None):
         assert url == "http://example.com/api/invoices/invoice-002/splits"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         assert payload == {
             "actor_id": "2250002",
             "items": [{"member_id": "2250002", "amount_cents": 12345}],
@@ -178,7 +178,7 @@ def test_split_command_shows_backend_amount_mismatch_error(monkeypatch, tmp_path
     assert exit_code == 1
     assert captured.out == ""
     assert seen["url"] == "http://127.0.0.1:8000/api/invoices/invoice-003/splits"
-    assert seen["headers"] == {"Authorization": "Bearer stored-access-token"}
+    assert seen["headers"] == build_cli_request_headers(access_token="stored-access-token")
     assert seen["payload"] == {
         "actor_id": "2250001",
         "items": [

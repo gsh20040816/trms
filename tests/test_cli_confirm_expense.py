@@ -1,6 +1,6 @@
 import json
 
-from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, main
+from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, build_cli_request_headers, main
 from trms_cli.token_store import save_token_session
 
 
@@ -49,7 +49,7 @@ def test_confirm_expense_command_lists_current_member_expense_details(monkeypatc
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details?actor_id=2250001"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_expense_detail_payload()
 
     monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)
@@ -81,12 +81,12 @@ def test_confirm_expense_command_submits_confirmed_status_and_reports_json(
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://example.com/api/tasks/task-123/expense-details?actor_id=2250001"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_expense_detail_payload()
 
     def fake_put_json(url: str, *, headers=None, payload=None):
         assert url == "http://example.com/api/splits/split-001/confirmation"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         assert payload == {
             "actor_id": "2250001",
             "member_id": "2250001",
@@ -161,12 +161,12 @@ def test_confirm_expense_command_submits_dispute_reason(monkeypatch, tmp_path, c
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details?actor_id=2250001"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_expense_detail_payload()
 
     def fake_put_json(url: str, *, headers=None, payload=None):
         assert url == "http://127.0.0.1:8000/api/splits/split-001/confirmation"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         assert payload == {
             "actor_id": "2250001",
             "member_id": "2250001",
@@ -229,7 +229,7 @@ def test_confirm_expense_command_rejects_stale_split_version(monkeypatch, tmp_pa
 
     def fake_fetch_json(url: str, *, headers=None):
         assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details?actor_id=2250001"
-        assert headers == {"Authorization": "Bearer stored-access-token"}
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, payload
 
     def fail_put_json(*args, **kwargs):
