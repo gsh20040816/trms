@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-04-29 02:10 - Split oversized member invoice workspace task
+
+### 完成内容
+- 将 `TASKS.md` 中原单条“重构成员发票工作台并补齐自助元数据管理”拆成 4 个可单轮验证的子任务：
+  - 成员发票工作台单任务汇总视图；
+  - 成员侧材料类型自助更正；
+  - 成员侧金额分配对象自助调整；
+  - 工作台入口与下一步动作收口。
+- 保留该需求原始边界，但把“信息聚合”“可编辑元数据”“分摊对象调整”“导航入口收口”拆开，避免在一轮里同时改动成员端页面结构、后端权限接口和交互流转。
+
+### 拆分依据
+- 当前成员端能力分散在 `web/src/app/member-material-status.tsx` 和 `web/src/app/member-expense-confirmation.tsx` 两个页面，任务上下文需要用户自己拼接，不符合原任务 Done when 中“围绕待处理事项、异常原因、下一步动作组织”的要求。
+- 当前仓库已有成员侧发票内容更正和分摊查看能力，但仍缺少成员侧 `material_type` 更正入口，也没有单任务发票工作台汇总页；若强行在一轮内同时补齐，会跨前端信息架构、路由入口和后端接口边界，超出“最小可验证任务”范围。
+- 该任务与后续“按原型图收口成员端单任务处理闭环”存在交叉；先拆分可避免把“发票工作台能力补齐”和“成员主流程重排”混成一次大改。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 340 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 下轮默认从拆分后的第一个未完成任务“建立成员发票工作台单任务汇总视图”继续推进。
+- 当前拆分不改变原需求优先级，只是把一个过大的交付项改为多个连续子任务。
+
 ## 2026-04-29 01:35 - Implement real merged PDF export artifacts
 
 ### 完成内容
