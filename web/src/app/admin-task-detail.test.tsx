@@ -80,6 +80,10 @@ describe("admin task detail page", () => {
     expect(screen.getAllByText("张管理员")).toHaveLength(2);
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "录入或更正发票" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-ALPHA/invoices",
+    );
 
     const members = within(screen.getByLabelText("任务成员名单"));
     expect(members.getByText("2250001")).toBeInTheDocument();

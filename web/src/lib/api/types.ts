@@ -141,6 +141,18 @@ export type RecognitionFieldResult = {
   updated_at: ApiDateTime | null;
 };
 
+export type RecognitionRevalidationStatus = "triggered" | "not_required";
+
+export type RecognitionFieldCorrectionRecord = {
+  id: string;
+  field_name: string;
+  actor_id: string;
+  before: RecognitionFieldResult | null;
+  after: RecognitionFieldResult;
+  revalidation_status: RecognitionRevalidationStatus;
+  corrected_at: ApiDateTime;
+};
+
 export type RecognitionFailureDetail = {
   stage: RecognitionFailureStage;
   reason: string;
@@ -154,6 +166,7 @@ export type RecognitionTaskRecord = {
   failure: RecognitionFailureDetail | null;
   raw_response: unknown;
   recognized_fields: Record<string, RecognitionFieldResult>;
+  manual_corrections: RecognitionFieldCorrectionRecord[];
   created_at: ApiDateTime;
   updated_at: ApiDateTime;
 };
@@ -314,6 +327,27 @@ export type TaskReviewSummary = {
   task_id: string;
   administrator_id: string;
   counts: TaskReviewSummaryCounts;
+  materials: TaskReviewSummaryMaterialItem[];
+  invoices: TaskReviewSummaryInvoiceItem[];
+};
+
+export type TaskReviewSummaryMaterialItem = {
+  material: MaterialRecord;
+  latest_recognition: RecognitionTaskRecord | null;
+  invoice_id: string | null;
+  supporting_invoice_ids: string[];
+};
+
+export type TaskReviewSummarySplitItem = {
+  split: ExpenseSplitRecord;
+  confirmation: ConfirmationRecord | null;
+};
+
+export type TaskReviewSummaryInvoiceItem = {
+  invoice: InvoiceRecord;
+  supporting_material_ids: string[];
+  validations: ValidationResult[];
+  splits: TaskReviewSummarySplitItem[];
 };
 
 export type OverdueConfirmationList = {

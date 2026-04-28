@@ -163,6 +163,11 @@ export function AdminTaskDetailPage() {
           <Link className="route-link route-link-secondary" to="/admin">
             返回任务列表
           </Link>
+          {taskId ? (
+            <Link className="route-link" to={`/admin/tasks/${taskId}/invoices`}>
+              录入或更正发票
+            </Link>
+          ) : null}
         </div>
       </section>
 

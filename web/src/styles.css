@@ -666,6 +666,85 @@ select {
   color: #35506f;
 }
 
+.invoice-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.4fr);
+  gap: 20px;
+}
+
+.invoice-editor-list-panel,
+.invoice-editor-form-panel {
+  max-width: none;
+}
+
+.invoice-material-list,
+.validation-result-list,
+.manual-correction-list {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invoice-material-button {
+  width: 100%;
+  border: 1px solid rgba(17, 37, 61, 0.12);
+  border-radius: 20px;
+  padding: 18px;
+  background: rgba(244, 239, 228, 0.56);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.invoice-material-button:hover,
+.invoice-material-button-selected {
+  border-color: rgba(23, 71, 124, 0.36);
+  box-shadow: 0 16px 28px rgba(17, 37, 61, 0.08);
+  transform: translateY(-1px);
+}
+
+.invoice-editor-summary-grid {
+  margin-top: 18px;
+}
+
+.invoice-editor-empty {
+  margin-top: 18px;
+}
+
+.recognition-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.recognition-field-card {
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.validation-result-list li,
+.manual-correction-list li {
+  display: grid;
+  gap: 6px;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #35506f;
+}
+
+.validation-result-list strong,
+.manual-correction-list strong {
+  color: #11253d;
+}
+
 .token-list {
   display: flex;
   flex-wrap: wrap;
@@ -767,6 +846,8 @@ select {
   .task-card-grid,
   .task-meta-grid,
   .task-detail-grid,
+  .invoice-editor-layout,
+  .recognition-field-grid,
   .checkbox-grid {
     grid-template-columns: 1fr;
   }

@@ -1,5 +1,60 @@
 # WORKLOG
 
+## 2026-04-28 08:40 - Implement admin invoice entry and correction page
+
+### 完成内容
+- 为管理员补齐发票人工录入与更正页面：
+  - 新增 `web/src/app/admin-invoice-editor.tsx`，在 `/admin/tasks/:taskId/invoices` 展示当前任务内 `invoice` 类型材料列表，并允许对选中材料录入或更正发票号码、开票日期、交易时间、抬头、税号、销售方、金额和费用类型；
+  - 页面直接复用 `GET /api/tasks/{taskId}`、`GET /api/tasks/{taskId}/review-summary` 和 `POST /api/materials/{material_id}/invoice`，不新增后端接口。
+- 将识别结果与人工更正边界接入前端：
+  - 扩展 `web/src/lib/api/types.ts`，补齐 `review-summary` 中的材料/发票聚合结构，以及识别任务 `manual_corrections`、字段来源、置信度和重新校验状态类型；
+  - 页面按字段展示识别来源、置信度、待确认状态和人工更正历史，并在保存后显式刷新任务摘要与校验结果，不在前端伪装“应该已重算”。
+- 打通管理员入口：
+  - 更新 `web/src/app/routes.tsx` 注册 `/admin/tasks/:taskId/invoices`；
+  - 更新 `web/src/app/admin-task-detail.tsx`，从任务详情页增加“录入或更正发票”入口。
+- 补齐前端测试：
+  - 新增 `web/src/app/admin-invoice-editor.test.tsx`，覆盖“识别字段与待确认提示展示”“成功保存并刷新校验结果”“服务端拒绝时错误展示”；
+  - 更新 `web/src/app/admin-task-detail.test.tsx`，覆盖任务详情页到发票录入页的入口链接。
+- 将 `TASKS.md` 中“实现发票人工录入和更正页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/admin-invoice-editor.tsx`
+- `web/src/app/admin-invoice-editor.test.tsx`
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/lib/api/types.ts`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮成员侧已能上传并查看材料状态，但管理员仍缺少一个前端入口，把“识别建议”真正转成当前系统中的发票事实记录，也无法在页面上直接查看字段来源、低置信度提示和更正后的重新校验反馈。
+- 后端实际上已经具备 `review-summary` 聚合、发票录入/更正、识别字段人工更正记录和校验刷新能力；缺口集中在管理员页面、前端类型和交互串联，而不是新的后端业务实现。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- admin-invoice-editor admin-task-detail`
+    - 2 个前端测试文件、6 个测试通过
+  - `cd web && npm run lint`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，10 个前端测试文件、29 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守地先把“发票人工录入与更正”入口落在管理员路径 `/admin/tasks/:taskId/invoices`；成员侧若后续需要直接编辑，可复用本轮字段展示与保存边界在独立任务中扩展。
+- 金额输入在前端按“元”展示并转换为后端 `amount_cents`；交易时间使用本地 `datetime-local` 输入并在提交时显式带上本地时区偏移，避免前端静默丢失时间语义。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现费用分摊编辑页面”，直接复用本轮已接入的发票列表、当前校验状态和任务允许费用类型信息。
+
 ## 2026-04-28 08:25 - Implement member material status page
 
 ### 完成内容
