@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-28 12:10 - Evaluate CLI recursive directory upload
+
+### 完成内容
+- 阅读 `TASKS.md`、近期 `WORKLOG.md`、需求分析文档中的 FR-012、第 7 节 CLI 能力表和 Q-012，以及架构文档的 CLI 模块边界。
+- 结论：`CLI 目录递归上传` 继续保留为第一阶段 `Could` 能力，不并入当前 `Must` / `Should` 主链路，也不降级为第一阶段 `Won't have`。
+- 更新 `TASKS.md`：
+  - 将“评估 CLI 目录递归上传”标记为已完成；
+  - 在 `P4 - Could 与后续增强评估` 区域新增独立后续任务“实现 CLI 目录递归上传”，避免把 `Could` 功能插到 Telegram、权限和审计等更高优先级任务之前。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 需求文档已明确把“目录递归上传”列为 CLI `Could` 能力，而不是 `Must` 或 `Won't have`，但任务队列里此前只有评估项，没有明确保留/放弃结论，也没有拆出后续独立任务。
+- 当前 CLI `submit` 已形成“显式文件列表 -> 本地预检查 -> 后端批量上传 -> 逐文件结果输出”的稳定闭环；目录递归上传若直接混入当前任务，会额外引入本地遍历语义：
+  - 目录展开顺序；
+  - 是否跟随符号链接；
+  - 遇到目录内不支持文件、不可读文件时如何并入现有 `partial_success` / `failed` 结果；
+  - 跨平台路径处理边界。
+- 这些问题都属于 CLI 本地文件发现层，不要求扩展后端业务规则，因此适合作为后续独立 `Could` 实现任务，而不是在本轮评估任务里顺手实现。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 205 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只完成范围评估和任务拆分，没有实现目录递归上传，也没有改动 CLI、后端或测试业务逻辑。
+- `./scripts/verify.sh` 期间仍出现两类既有警告：
+  - `pytest` 中 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`；
+  - 前端测试期间若干 Node `--localstorage-file` 警告。
+  这些警告均为既有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设后续若实现目录递归上传，应继续遵守既有 CLI 边界：
+  - 只扩展本地文件发现与预检查；
+  - 不在 CLI 复制服务端材料归属、重复判断或校验规则；
+  - 递归发现出的本地失败项继续并入现有批量上传结果模型。
+
+### 后续建议
+- 下一轮继续按 `TASKS.md` 顺序处理 `P2 - Telegram 与邮件渠道` 中的“建立渠道提交统一入口边界”，不要因为递归上传已保留为 `Could` 就提前改变高优先级任务顺序。
+
 ## 2026-04-28 12:05 - Record CLI compatibility strategy
 
 ### 完成内容
