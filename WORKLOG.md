@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-28 10:26 - Establish CLI project skeleton
+
+### 完成内容
+- 新增最小 CLI 包 `src/trms_cli/`，建立独立模块边界和 `python -m trms_cli` 入口。
+- 新增独立启动脚本 `scripts/trms-cli`，统一设置 `PYTHONPATH=src` 并优先通过 `uv run` 调起 CLI，避免当前仓库未安装为可导入包时命令直接失效。
+- 实现最小占位命令 `health`：
+  - 调用后端 `GET /health`；
+  - 仅在返回 `{"status": "ok"}` 时输出 `TRMS API health: ok`；
+  - 网络失败、非 JSON 响应或非预期健康状态时显式失败，不伪装为成功。
+- 新增 `tests/test_cli_health.py`，覆盖健康检查成功与失败路径。
+- 将 `TASKS.md` 中“建立 CLI 项目骨架”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/__init__.py`
+- `src/trms_cli/__main__.py`
+- `src/trms_cli/cli.py`
+- `scripts/trms-cli`
+- `tests/test_cli_health.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 仓库此前只有后端 API 和 Web 前端，没有任何 CLI 工程目录、命令入口或可执行骨架。
+- 这使需求文档和任务队列里关于 CLI 渠道的后续工作都缺少承载位置；即使只是先做最小占位命令，也需要先固定模块边界、调用方式和最基本的失败语义。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_health.py`
+    - 2 个 CLI 测试通过
+  - `./scripts/trms-cli --help`
+    - 独立 CLI 入口可正常显示帮助信息
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 167 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- `scripts/trms-cli` 当前本地运行方式为：
+  - `./scripts/trms-cli health --base-url http://127.0.0.1:8000`
+- 之所以提供脚本包装层，而不是直接要求 `uv run python -m trms_cli`，是因为当前仓库默认不会把 `src/` 自动加入导入路径；若不显式补 `PYTHONPATH`，CLI 模块无法被直接导入。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮将“CLI 项目骨架”保守限定为最小可运行入口和健康检查占位，不提前实现 `--json`、登录、任务列表或上传能力，以保持与后续 CLI 任务拆分一致。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“定义 CLI JSON 输出规范”，先固定成功/失败输出结构和 `schema version`，再决定是否把 `health` 命令扩展为 JSON 模式。
+
 ## 2026-04-28 10:21 - Establish frontend main-flow E2E placeholder
 
 ### 完成内容
