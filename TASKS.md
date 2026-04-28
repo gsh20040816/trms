@@ -775,7 +775,7 @@
     - 现有直接传 `submitter_id` 或 `member_id` 的路径有迁移边界
     - 不要求接入真实 OAuth
 
-- [ ] 将 Web 业务 API 迁移到 bearer 身份上下文
+- [x] 将 Web 业务 API 迁移到 bearer 身份上下文
   - Done when:
     - Web 前端业务请求携带登录返回的 bearer token
     - 后端从 token 解析当前用户，替代关键路径中的前端自报 `actor_id`、`submitter_id`、`member_id`

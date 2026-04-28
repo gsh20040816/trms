@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 
+import { setApiAccessTokenProvider } from "../lib/api/client";
 import { trmsApi } from "../lib/api/trms";
 import type { AuthSessionResponse } from "../lib/api/types";
 import { findRoleRouteByRole, type UserRole } from "./role-routes";
@@ -147,6 +148,7 @@ function persistSession(session: AuthSession | null) {
 }
 
 let currentSession = readStoredSession();
+setApiAccessTokenProvider(() => currentSession?.accessToken ?? null);
 
 function emitChange() {
   listeners.forEach((listener) => listener());

@@ -1,10 +1,18 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from pydantic import BaseModel, Field, ValidationError
 
+from trms_backend.api.request_identity import (
+    RequestIdentity,
+    build_optional_request_identity_dependency,
+)
+from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
+    ExportArtifactKind,
     ExportArtifactFormat,
     MergedPdfSourceMaterialError,
     TaskExportActorNotAllowedError,
@@ -36,13 +44,31 @@ from trms_backend.domain.exports import (
     with_task_export_job_retry_count,
 )
 from trms_backend.domain.invoices import InvoiceRepository
+from trms_backend.domain.invoices import ValidationRepository
 from trms_backend.domain.materials import MaterialFileStorage, MaterialRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import TaskRepository
-from trms_backend.domain.invoices import ValidationRepository
+
+
+class TaskExportJobRequestInput(BaseModel):
+    actor_id: str | None = None
+    kind: ExportArtifactKind
+    format: ExportArtifactFormat
+    parameters: dict[str, object] = Field(default_factory=dict)
+
+    def to_domain(self, *, actor_id: str) -> TaskExportJobRequest:
+        return TaskExportJobRequest.model_validate(
+            {
+                "actor_id": actor_id,
+                "kind": self.kind,
+                "format": self.format,
+                "parameters": self.parameters,
+            }
+        )
 
 
 def build_export_router(
+    auth_repository: AuthRepository,
     task_repository: TaskRepository,
     export_job_repository: TaskExportJobRepository,
     invoice_repository: InvoiceRepository,
@@ -53,6 +79,7 @@ def build_export_router(
     confirmation_repository: ConfirmationRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["exports"])
+    optional_request_identity = build_optional_request_identity_dependency(auth_repository)
 
     def build_current_export_snapshot(task):
         invoices = invoice_repository.list_by_task(task.id)
@@ -89,14 +116,20 @@ def build_export_router(
     @router.get("/{task_id}/exports/capabilities")
     def get_task_export_capabilities(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
-            return build_task_export_boundary(task, actor_id=actor_id)
+            return build_task_export_boundary(task, actor_id=resolved_actor_id)
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -106,7 +139,8 @@ def build_export_router(
     @router.get("/{task_id}/exports/reimbursement-summary")
     def export_reimbursement_summary(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
         format: ExportArtifactFormat = ExportArtifactFormat.CSV,
     ):
         task = task_repository.get(task_id)
@@ -118,10 +152,15 @@ def build_export_router(
             invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             export = build_reimbursement_summary_export(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 format=format,
                 invoices=invoices,
                 splits_by_invoice_id=splits_by_invoice_id,
@@ -153,7 +192,8 @@ def build_export_router(
     @router.get("/{task_id}/exports/member-details")
     def export_member_details(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
         format: ExportArtifactFormat = ExportArtifactFormat.CSV,
     ):
         task = task_repository.get(task_id)
@@ -169,10 +209,15 @@ def build_export_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             export = build_member_details_export(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 format=format,
                 invoices=invoices,
                 splits_by_invoice_id=splits_by_invoice_id,
@@ -205,7 +250,8 @@ def build_export_router(
     @router.get("/{task_id}/exports/invoice-details")
     def export_invoice_details(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
         format: ExportArtifactFormat = ExportArtifactFormat.CSV,
     ):
         task = task_repository.get(task_id)
@@ -220,10 +266,15 @@ def build_export_router(
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             export = build_invoice_details_export(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 format=format,
                 invoices=invoices,
                 materials_by_id=materials_by_id,
@@ -256,7 +307,8 @@ def build_export_router(
     @router.get("/{task_id}/exports/missing-materials")
     def export_missing_materials(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
         format: ExportArtifactFormat = ExportArtifactFormat.CSV,
     ):
         task = task_repository.get(task_id)
@@ -271,10 +323,15 @@ def build_export_router(
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             export = build_missing_materials_export(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 format=format,
                 invoices=invoices,
                 materials_by_id=materials_by_id,
@@ -307,7 +364,8 @@ def build_export_router(
     @router.get("/{task_id}/exports/finance-draft")
     def export_finance_draft(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
         format: ExportArtifactFormat = ExportArtifactFormat.JSON,
     ):
         task = task_repository.get(task_id)
@@ -325,10 +383,15 @@ def build_export_router(
             invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             export = build_finance_draft_export(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 format=format,
                 invoices=invoices,
                 materials_by_id=materials_by_id,
@@ -362,7 +425,8 @@ def build_export_router(
     @router.get("/{task_id}/exports/merged-pdf")
     def export_merged_pdf_plan(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
         format: ExportArtifactFormat = ExportArtifactFormat.PDF,
     ):
         task = task_repository.get(task_id)
@@ -382,10 +446,15 @@ def build_export_router(
                     detail=f"merged pdf source material {material.id} file content is missing from storage",
                 ) from error
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             export_plan = build_merged_pdf_export_plan(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 format=format,
                 materials=materials,
                 material_bytes_by_id=material_bytes_by_id,
@@ -417,20 +486,34 @@ def build_export_router(
         )
 
     @router.post("/{task_id}/exports", status_code=status.HTTP_201_CREATED)
-    def create_export_job(task_id: str, payload: TaskExportJobRequest):
+    def create_export_job(
+        task_id: str,
+        payload: TaskExportJobRequestInput,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         snapshot = build_current_export_snapshot(task)
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            payload.actor_id,
+            field_name="actor_id",
+        )
         try:
             export_job = create_task_export_job(
                 task,
-                payload=payload,
+                payload=payload.to_domain(actor_id=resolved_actor_id),
                 snapshot=snapshot,
                 repository=export_job_repository,
             )
             return with_export_job_status_view(task, export_job)
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from error
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -450,16 +533,22 @@ def build_export_router(
     @router.get("/{task_id}/exports")
     def list_export_jobs(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             export_jobs = list_task_export_jobs(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 repository=export_job_repository,
             )
             return [with_export_job_status_view(task, export_job) for export_job in export_jobs]

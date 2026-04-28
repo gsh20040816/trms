@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-04-28 16:38 - Migrate web business APIs to bearer request identity
+
+### 完成内容
+- 将 Web 业务请求迁到 bearer 身份上下文，同时保留非 Web 渠道兼容边界：
+  - 新增 `src/trms_backend/api/request_identity_http.py`，统一把“请求自报 actor 字段”和 bearer token 身份做对齐，并在缺失或不一致时返回明确的 422 / 403；
+  - `tasks`、`materials`、`invoices`、`splits`、`confirmations`、`exports` 路由在收到 bearer token 时优先解析当前用户，不再要求 Web 关键路径显式传 `actor_id`、`submitter_id`、`member_id`；
+  - 路由仍保留匿名/非 Web 调用方显式传参的旧边界，没有把 CLI、Telegram、邮件接入器强行改成 Web 会话模型。
+- 收口前端 bearer 透传与 mock 回退：
+  - `web/src/lib/api/client.ts` 增加统一 access token provider，真实登录态下自动为业务请求附带 `Authorization: Bearer ...`；
+  - `web/src/lib/api/trms.ts` 在检测到 bearer token 时，自动去掉关键请求里的 `actor_id` / `submitter_id` / `member_id`；若当前是无 token 的 mock 调试会话，则继续保留旧字段回退，避免把现有调试页直接改废；
+  - `web/src/app/auth-store.ts` 将持久化登录态里的 access token 接入 API client。
+- 增加 bearer 迁移回归测试：
+  - 新增 `tests/test_web_bearer_request_identity_api.py`，覆盖成员上传、管理员复核摘要/补材料提醒、发票录入、分摊、成员确认、导出任务等 bearer 场景；
+  - 新增 `web/src/lib/api/trms.test.ts`，校验前端在有 token 时剥离身份字段、无 token mock 会话时保留旧查询参数；
+  - `web/src/lib/api/client.test.ts` 补充 access token 自动注入测试。
+
+### 根因
+- 仓库已经有用户名密码登录和 bearer token，但 Web 业务 API 仍大量依赖前端自报 `actor_id`、`submitter_id`、`member_id`，导致登录态存在却没有真正进入业务请求链路。
+- 如果直接在各路由里散落地改参数解析，会继续复制身份判断逻辑；同时，当前任务成员语义仍主要绑定 `actor_id`，若不显式保留这层边界，简单把成员路径机械切到 `member_code` 会破坏现有成员任务主链路。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/confirmations.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/api/request_identity_http.py`
+- `src/trms_backend/api/splits.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/main.py`
+- `tests/test_web_bearer_request_identity_api.py`
+- `web/src/app/auth-store.ts`
+- `web/src/lib/api/client.test.ts`
+- `web/src/lib/api/client.ts`
+- `web/src/lib/api/trms.test.ts`
+- `web/src/lib/api/trms.ts`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_web_bearer_request_identity_api.py tests/test_materials_api.py tests/test_confirmations_api.py tests/test_exports_api.py`
+    - 53 个测试通过
+  - `cd web && npm test -- src/lib/api/client.test.ts src/lib/api/trms.test.ts`
+    - 2 个前端测试文件、9 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 283 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：Web 成员关键路径里的“当前成员”仍以账号 `actor_id` 对齐任务成员与分摊成员，而不是在本轮同步重构为独立的 `member_code` 体系；后续若要把权限模型完全切到 `member_code`，需要先统一任务成员主键语义。
+- 当前保守假设：无 token 的 mock 调试会话仍可继续通过旧字段访问现有调试页面，这只是开发过渡边界，不代表“基础权限控制”已经完成；下一任务仍应继续收口真正的业务鉴权要求。
+
 ## 2026-04-28 16:19 - Establish minimal request identity context placeholder
 
 ### 完成内容

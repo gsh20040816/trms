@@ -1,7 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field, model_validator
 
+from trms_backend.api.request_identity import (
+    RequestIdentity,
+    build_optional_request_identity_dependency,
+)
+from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
     AutomaticReminderTaskGenerate,
@@ -9,6 +15,7 @@ from trms_backend.domain.automatic_reminders import (
     generate_task_automatic_reminder_tasks,
     list_task_automatic_reminder_tasks,
 )
+from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.confirmations import (
     ConfirmationDisputeResolve,
     ConfirmationRepository,
@@ -70,7 +77,29 @@ from trms_backend.domain.tasks import (
 )
 
 
+class TaskMaterialReminderCreateRequest(BaseModel):
+    administrator_id: str | None = None
+    member_id: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def normalize_text(self) -> "TaskMaterialReminderCreateRequest":
+        if self.administrator_id is not None:
+            self.administrator_id = self.administrator_id.strip() or None
+        self.member_id = self.member_id.strip()
+        self.content = self.content.strip()
+        return self
+
+    def to_domain(self, *, administrator_id: str) -> MaterialReminderCreate:
+        return MaterialReminderCreate(
+            administrator_id=administrator_id,
+            member_id=self.member_id,
+            content=self.content,
+        )
+
+
 def build_task_router(
+    auth_repository: AuthRepository,
     repository: TaskRepository,
     global_invoice_config_repository: GlobalInvoiceConfigRepository,
     material_reminder_repository: MaterialReminderRepository,
@@ -83,6 +112,7 @@ def build_task_router(
     confirmation_repository: ConfirmationRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+    optional_request_identity = build_optional_request_identity_dependency(auth_repository)
 
     @router.post("", status_code=status.HTTP_201_CREATED)
     def create_task(payload: TaskCreateInput):
@@ -175,16 +205,25 @@ def build_task_router(
             ) from error
 
     @router.post("/{task_id}/material-reminders", status_code=status.HTTP_201_CREATED)
-    def create_material_reminder(task_id: str, payload: MaterialReminderCreate):
+    def create_material_reminder(
+        task_id: str,
+        payload: TaskMaterialReminderCreateRequest,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        administrator_id = resolve_required_actor_request_field(
+            identity,
+            payload.administrator_id,
+            field_name="administrator_id",
+        )
         try:
             return create_task_material_reminder(
                 task,
                 reminder_repository=material_reminder_repository,
-                payload=payload,
+                payload=payload.to_domain(administrator_id=administrator_id),
             )
         except TaskMaterialReminderActorNotAllowedError as error:
             raise HTTPException(
@@ -200,18 +239,24 @@ def build_task_router(
     @router.get("/{task_id}/material-reminders")
     def list_material_reminders(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             return {
                 "items": list_task_material_reminders(
                     task,
                     reminder_repository=material_reminder_repository,
-                    actor_id=actor_id,
+                    actor_id=resolved_actor_id,
                 )
             }
         except TaskMaterialReminderActorNotAllowedError as error:
@@ -223,7 +268,8 @@ def build_task_router(
     @router.get("/{task_id}/expense-details")
     def list_task_expense_details(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
@@ -238,10 +284,15 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             return build_expense_detail_list(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 invoices=invoices,
                 splits_by_invoice_id=splits_by_invoice_id,
                 confirmations_by_split_id=confirmations_by_split_id,
@@ -301,7 +352,8 @@ def build_task_router(
     @router.get("/{task_id}/missing-materials")
     def list_task_missing_materials(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
@@ -315,10 +367,15 @@ def build_task_router(
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             return build_visible_missing_material_list(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 invoices=invoices,
                 materials_by_id=materials_by_id,
                 validations_by_invoice_id=validations_by_invoice_id,
@@ -364,7 +421,8 @@ def build_task_router(
     @router.get("/{task_id}/overdue-confirmations")
     def list_task_overdue_confirmations(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
@@ -379,10 +437,15 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             return build_overdue_confirmation_list(
                 task,
-                administrator_id=actor_id,
+                administrator_id=resolved_actor_id,
                 invoices=invoices,
                 splits_by_invoice_id=splits_by_invoice_id,
                 confirmations_by_split_id=confirmations_by_split_id,
@@ -396,7 +459,8 @@ def build_task_router(
     @router.get("/{task_id}/review-summary")
     def get_task_review_summary(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
@@ -430,10 +494,15 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             return build_task_review_summary(
                 task,
-                administrator_id=actor_id,
+                administrator_id=resolved_actor_id,
                 materials=materials,
                 pending_assignment_materials=pending_assignment_materials,
                 latest_recognitions_by_material_id=latest_recognitions_by_material_id,

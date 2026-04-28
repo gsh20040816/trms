@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, getConfiguredApiAccessToken } from "./client";
 import type {
   ApiItemResponse,
   ApiListResponse,
@@ -47,6 +47,56 @@ function buildQuery(params: Record<string, string | undefined>) {
 
 function encodeSegment(value: string) {
   return encodeURIComponent(value);
+}
+
+function shouldUseBearerIdentity() {
+  return getConfiguredApiAccessToken() !== null;
+}
+
+function buildActorScopedQuery(actorId: string) {
+  return shouldUseBearerIdentity() ? "" : buildQuery({ actor_id: actorId });
+}
+
+function buildActorScopedExportQuery(
+  actorId: string,
+  format: "csv" | "json",
+) {
+  return shouldUseBearerIdentity()
+    ? buildQuery({ format })
+    : buildQuery({ actor_id: actorId, format });
+}
+
+function buildActorScopedBody<T extends Record<string, unknown>>(
+  payload: T,
+  actorFieldNames: Array<keyof T>,
+) {
+  if (!shouldUseBearerIdentity()) {
+    return payload;
+  }
+
+  const nextPayload = { ...payload };
+  for (const fieldName of actorFieldNames) {
+    delete nextPayload[fieldName];
+  }
+  return nextPayload;
+}
+
+function buildActorScopedFormData(
+  formData: FormData,
+  actorFieldNames: string[],
+) {
+  if (!shouldUseBearerIdentity()) {
+    return formData;
+  }
+
+  const nextFormData = new FormData();
+  for (const [key, value] of formData.entries()) {
+    if (actorFieldNames.includes(key)) {
+      continue;
+    }
+    nextFormData.append(key, value);
+  }
+  return nextFormData;
 }
 
 export const trmsApi = {
@@ -98,31 +148,31 @@ export const trmsApi = {
 
   getTaskReviewSummary(taskId: string, actorId: string) {
     return apiClient.request<TaskReviewSummary>(
-      `/tasks/${encodeSegment(taskId)}/review-summary${buildQuery({ actor_id: actorId })}`,
+      `/tasks/${encodeSegment(taskId)}/review-summary${buildActorScopedQuery(actorId)}`,
     );
   },
 
   listTaskExpenseDetails(taskId: string, actorId: string) {
     return apiClient.request<ExpenseDetailList>(
-      `/tasks/${encodeSegment(taskId)}/expense-details${buildQuery({ actor_id: actorId })}`,
+      `/tasks/${encodeSegment(taskId)}/expense-details${buildActorScopedQuery(actorId)}`,
     );
   },
 
   getTaskMissingMaterials(taskId: string, actorId: string) {
     return apiClient.request<VisibleMissingMaterialList>(
-      `/tasks/${encodeSegment(taskId)}/missing-materials${buildQuery({ actor_id: actorId })}`,
+      `/tasks/${encodeSegment(taskId)}/missing-materials${buildActorScopedQuery(actorId)}`,
     );
   },
 
   listTaskOverdueConfirmations(taskId: string, actorId: string) {
     return apiClient.request<OverdueConfirmationList>(
-      `/tasks/${encodeSegment(taskId)}/overdue-confirmations${buildQuery({ actor_id: actorId })}`,
+      `/tasks/${encodeSegment(taskId)}/overdue-confirmations${buildActorScopedQuery(actorId)}`,
     );
   },
 
   listTaskMaterialReminders(taskId: string, actorId: string) {
     return apiClient.request<ApiListResponse<MaterialReminderRecord>>(
-      `/tasks/${encodeSegment(taskId)}/material-reminders${buildQuery({ actor_id: actorId })}`,
+      `/tasks/${encodeSegment(taskId)}/material-reminders${buildActorScopedQuery(actorId)}`,
     );
   },
 
@@ -171,7 +221,7 @@ export const trmsApi = {
       `/tasks/${encodeSegment(taskId)}/materials`,
       {
         method: "POST",
-        body: formData,
+        body: buildActorScopedFormData(formData, ["submitter_id"]),
       },
     );
   },
@@ -197,7 +247,7 @@ export const trmsApi = {
       `/materials/${encodeSegment(materialId)}/invoice`,
       {
         method: "POST",
-        body: payload,
+        body: buildActorScopedBody(payload, ["actor_id"]),
       },
     );
   },
@@ -225,7 +275,7 @@ export const trmsApi = {
       `/invoices/${encodeSegment(invoiceId)}/splits`,
       {
         method: "PUT",
-        body: payload,
+        body: buildActorScopedBody(payload, ["actor_id"]),
       },
     );
   },
@@ -239,80 +289,62 @@ export const trmsApi = {
   submitSplitConfirmation(splitId: string, payload: ConfirmationSubmit) {
     return apiClient.request<ConfirmationRecord>(`/splits/${encodeSegment(splitId)}/confirmation`, {
       method: "PUT",
-      body: payload,
+      body: buildActorScopedBody(payload, ["actor_id", "member_id"]),
     });
   },
 
   getTaskExportCapabilities(taskId: string, actorId: string) {
     return apiClient.request<TaskExportBoundary>(
-      `/tasks/${encodeSegment(taskId)}/exports/capabilities${buildQuery({ actor_id: actorId })}`,
+      `/tasks/${encodeSegment(taskId)}/exports/capabilities${buildActorScopedQuery(actorId)}`,
     );
   },
 
   listTaskExportJobs(taskId: string, actorId: string) {
     return apiClient.request<TaskExportJobRecord[]>(
-      `/tasks/${encodeSegment(taskId)}/exports${buildQuery({ actor_id: actorId })}`,
+      `/tasks/${encodeSegment(taskId)}/exports${buildActorScopedQuery(actorId)}`,
     );
   },
 
   createTaskExportJob(taskId: string, payload: TaskExportJobRequest) {
     return apiClient.request<TaskExportJobRecord>(`/tasks/${encodeSegment(taskId)}/exports`, {
       method: "POST",
-      body: payload,
+      body: buildActorScopedBody(payload, ["actor_id"]),
     });
   },
 
   downloadReimbursementSummaryCsv(taskId: string, actorId: string) {
     return apiClient.request<string>(
-      `/tasks/${encodeSegment(taskId)}/exports/reimbursement-summary${buildQuery({
-        actor_id: actorId,
-        format: "csv",
-      })}`,
+      `/tasks/${encodeSegment(taskId)}/exports/reimbursement-summary${buildActorScopedExportQuery(actorId, "csv")}`,
     );
   },
 
   downloadMemberDetailsCsv(taskId: string, actorId: string) {
     return apiClient.request<string>(
-      `/tasks/${encodeSegment(taskId)}/exports/member-details${buildQuery({
-        actor_id: actorId,
-        format: "csv",
-      })}`,
+      `/tasks/${encodeSegment(taskId)}/exports/member-details${buildActorScopedExportQuery(actorId, "csv")}`,
     );
   },
 
   downloadInvoiceDetailsCsv(taskId: string, actorId: string) {
     return apiClient.request<string>(
-      `/tasks/${encodeSegment(taskId)}/exports/invoice-details${buildQuery({
-        actor_id: actorId,
-        format: "csv",
-      })}`,
+      `/tasks/${encodeSegment(taskId)}/exports/invoice-details${buildActorScopedExportQuery(actorId, "csv")}`,
     );
   },
 
   downloadMissingMaterialsCsv(taskId: string, actorId: string) {
     return apiClient.request<string>(
-      `/tasks/${encodeSegment(taskId)}/exports/missing-materials${buildQuery({
-        actor_id: actorId,
-        format: "csv",
-      })}`,
+      `/tasks/${encodeSegment(taskId)}/exports/missing-materials${buildActorScopedExportQuery(actorId, "csv")}`,
     );
   },
 
   exportFinanceDraft(taskId: string, actorId: string) {
     return apiClient.request<FinanceDraftExport>(
-      `/tasks/${encodeSegment(taskId)}/exports/finance-draft${buildQuery({
-        actor_id: actorId,
-        format: "json",
-      })}`,
+      `/tasks/${encodeSegment(taskId)}/exports/finance-draft${buildActorScopedExportQuery(actorId, "json")}`,
     );
   },
 
   exportMergedPdfPlan(taskId: string, actorId: string) {
     return apiClient.request<MergedPdfExportPlan>(
-      `/tasks/${encodeSegment(taskId)}/exports/merged-pdf${buildQuery({
-        actor_id: actorId,
-        format: "json",
-      })}`,
+      `/tasks/${encodeSegment(taskId)}/exports/merged-pdf${buildActorScopedExportQuery(actorId, "json")}`,
     );
   },
 };

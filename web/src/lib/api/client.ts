@@ -6,6 +6,8 @@ export type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: ApiRequestBody;
 };
 
+let apiAccessTokenProvider: (() => string | null) | null = null;
+
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, "");
 }
@@ -82,6 +84,12 @@ export class ApiClient {
     if (requestBody && shouldSerializeJson(options.body) && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
+    if (!headers.has("Authorization")) {
+      const accessToken = apiAccessTokenProvider?.() ?? null;
+      if (accessToken) {
+        headers.set("Authorization", `Bearer ${accessToken}`);
+      }
+    }
 
     let response: Response;
     try {
@@ -123,3 +131,11 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+export function setApiAccessTokenProvider(provider: (() => string | null) | null) {
+  apiAccessTokenProvider = provider;
+}
+
+export function getConfiguredApiAccessToken() {
+  return apiAccessTokenProvider?.() ?? null;
+}

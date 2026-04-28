@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiClient, ApiError, resolveApiBaseUrl } from "./client";
+import {
+  ApiClient,
+  ApiError,
+  resolveApiBaseUrl,
+  setApiAccessTokenProvider,
+} from "./client";
 
 describe("ApiClient", () => {
   const client = new ApiClient("/api");
 
   afterEach(() => {
     vi.restoreAllMocks();
+    setApiAccessTokenProvider(null);
   });
 
   it("defaults to same-origin /api when no API base URL is configured", () => {
@@ -86,5 +92,25 @@ describe("ApiClient", () => {
         detailLines: ["fetch failed"],
       },
     });
+  });
+
+  it("injects bearer authorization from the configured session provider", async () => {
+    setApiAccessTokenProvider(() => "access-token-123");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    await expect(client.request("/tasks")).resolves.toEqual({ ok: true });
+
+    const firstCall = fetchSpy.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const init = firstCall?.[1];
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer access-token-123");
   });
 });

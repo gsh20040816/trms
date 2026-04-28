@@ -131,6 +131,7 @@ def create_app(
     )
     app.include_router(
         build_task_router(
+            auth_repository,
             task_repository,
             global_invoice_config_repository,
             material_reminder_repository,
@@ -145,6 +146,7 @@ def create_app(
     )
     app.include_router(
         build_export_router(
+            auth_repository,
             task_repository,
             export_job_repository,
             invoice_repository,
@@ -157,6 +159,7 @@ def create_app(
     )
     app.include_router(
         build_material_router(
+            auth_repository,
             task_repository,
             material_repository,
             material_submission_service,
@@ -176,6 +179,7 @@ def create_app(
     )
     app.include_router(
         build_invoice_router(
+            auth_repository,
             task_repository,
             material_repository,
             invoice_repository,
@@ -185,6 +189,7 @@ def create_app(
     )
     app.include_router(
         build_split_router(
+            auth_repository,
             task_repository,
             material_repository,
             invoice_repository,
@@ -192,7 +197,12 @@ def create_app(
         )
     )
     app.include_router(
-        build_confirmation_router(invoice_repository, split_repository, confirmation_repository)
+        build_confirmation_router(
+            auth_repository,
+            invoice_repository,
+            split_repository,
+            confirmation_repository,
+        )
     )
     app.include_router(build_telegram_binding_router(telegram_account_binding_repository))
     return app
