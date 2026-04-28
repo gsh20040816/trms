@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-29 05:03 - Add pre-release security regression coverage
+
+### 完成内容
+- 新增 `tests/test_security_regressions.py`，把上线前需要反复确认的安全边界收敛成单独的 smoke regression 入口。
+- 新增回归覆盖以下 5 类边界：
+  - 成员越权：成员不能查看他人材料原文，也不能进入管理员复核摘要路径；
+  - 导出下载：只有负责该任务的管理员可以下载导出产物，相关成员和无关管理员都会被拒绝；
+  - 日志脱敏：运行日志中的 `authorization`、`storage_key`、本地路径、带签名下载 URL 会被脱敏，审计日志中的 `raw_response` 和 bearer 信息不会裸写；
+  - CORS 配置：生产环境缺少 `TRMS_CORS_ALLOWED_ORIGINS` 会显式报错，显式配置的 Origin 会真实下发到应用响应头；
+  - 生产注册策略：生产环境拒绝管理员自注册，但仍允许普通成员自注册。
+- 将 `TASKS.md` 中“增加上线前安全回归验证”标记为已完成。
+
+### 根因
+- 这些安全边界此前大多已经存在单点测试，但分散在权限、导出、运行配置、认证和日志等不同文件里，没有一组可直接代表“上线前安全回归”的集中入口。
+- 当前任务要求的是“增加上线前安全回归验证”，重点是把关键安全假设收口成稳定、可重复执行的一组验证，而不是继续改业务逻辑或声称外部依赖也已自动化覆盖。
+
+### 关键改动点
+- 新增集中式安全回归测试：
+  - `tests/test_security_regressions.py`
+- 更新任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮未修改任何生产业务实现，只新增测试；如果后续权限判断、导出下载授权、日志脱敏、CORS 约束或生产注册策略回归，这组测试会先暴露问题。
+- 本轮没有把 Telegram、邮件、真实 OCR、真实外部 LLM、对象存储权限策略或人工上线检查项伪装成自动化已覆盖；这些仍属于后续主流程演练或外部依赖联调范围。
+
+### 修改文件
+- `tests/test_security_regressions.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_security_regressions.py`
+    - 5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 418 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认“上线前安全回归验证”应以仓库内可自动执行的关键安全边界 smoke tests 为完成标准，而不是要求在同一轮内接入真实外部渠道、真实生产凭据或人工上线演练步骤。
+
 ## 2026-04-29 04:53 - Add backend main-flow E2E scaffold
 
 ### 完成内容
