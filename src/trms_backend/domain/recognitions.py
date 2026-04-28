@@ -160,6 +160,9 @@ class RecognitionTaskRepository(Protocol):
     def get(self, recognition_task_id: str) -> RecognitionTaskRecord | None:
         raise NotImplementedError
 
+    def list_pending(self, *, limit: int) -> list[RecognitionTaskRecord]:
+        raise NotImplementedError
+
     def get_latest_effective_by_material(self, material_id: str) -> RecognitionTaskRecord | None:
         raise NotImplementedError
 
@@ -172,6 +175,7 @@ class RecognitionTaskRepository(Protocol):
         target_status: RecognitionTaskStatus,
         result: RecognitionResultPayload | None = None,
         failure: RecognitionFailureDetail | None = None,
+        expected_current_status: RecognitionTaskStatus | None = None,
     ) -> RecognitionTaskRecord | None:
         raise NotImplementedError
 

@@ -66,6 +66,7 @@ def test_uploaded_material_auto_creates_placeholder_recognition_task_marks_ai_ou
     assert body["raw_response"] is None
     assert body["recognized_fields"] == {}
     assert body["manual_corrections"] == []
+    assert listing.json()["retry_count"] == 0
     assert listing.json()["latest_effective"] is None
 
 
@@ -83,6 +84,7 @@ def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path
 
     assert listed.status_code == 200
     items = listed.json()["items"]
+    assert listed.json()["retry_count"] == 1
     assert listed.json()["latest_effective"] is None
     assert len(items) == 2
     assert items[0]["status"] == "pending"
@@ -281,6 +283,7 @@ def test_recognition_task_listing_returns_latest_effective_result_and_full_histo
 
     assert listed_after_retry.status_code == 200
     retry_listing_body = listed_after_retry.json()
+    assert retry_listing_body["retry_count"] == 1
     assert [item["id"] for item in retry_listing_body["items"]] == [first_task_id, second_task_id]
     assert retry_listing_body["latest_effective"]["id"] == first_task_id
     assert retry_listing_body["latest_effective"]["recognized_fields"]["invoice_number"]["value"] == (
@@ -304,6 +307,7 @@ def test_recognition_task_listing_returns_latest_effective_result_and_full_histo
 
     assert listed_after_failure.status_code == 200
     failed_listing_body = listed_after_failure.json()
+    assert failed_listing_body["retry_count"] == 1
     assert [item["id"] for item in failed_listing_body["items"]] == [first_task_id, second_task_id]
     assert failed_listing_body["items"][0]["status"] == "succeeded"
     assert failed_listing_body["items"][1]["status"] == "failed"

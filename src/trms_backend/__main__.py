@@ -7,6 +7,22 @@ from collections.abc import Sequence
 import uvicorn
 
 from trms_backend.application.async_jobs import AsyncJobWorker
+from trms_backend.application.recognition_async_jobs import (
+    NoOpAsyncJobProcessor,
+    RecognitionAsyncJobProcessor,
+)
+from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
+from trms_backend.application.recognition_preparation import RecognitionPreparationService
+from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
+from trms_backend.infrastructure.database import build_session_factory, init_database
+from trms_backend.infrastructure.repositories import (
+    SqlAlchemyInvoiceRepository,
+    SqlAlchemyMaterialRepository,
+    SqlAlchemyRecognitionTaskRepository,
+    SqlAlchemyTaskRepository,
+    SqlAlchemyValidationRepository,
+)
+from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.runtime_config import RuntimeConfig, load_runtime_config
 
 
@@ -35,7 +51,40 @@ def run_api_command(argv: Sequence[str]) -> int:
 
 
 def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
-    return AsyncJobWorker(config.async_jobs)
+    session_factory = build_session_factory(config.database_url)
+    init_database(session_factory)
+    material_repository = SqlAlchemyMaterialRepository(session_factory)
+    task_repository = SqlAlchemyTaskRepository(session_factory)
+    invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
+    validation_repository = SqlAlchemyValidationRepository(session_factory)
+    recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
+    material_file_storage = LocalMaterialFileStorage(config.material_storage_dir)
+    recognition_llm_client = (
+        OpenAiCompatibleRecognitionClient(config.llm_provider)
+        if config.llm_provider is not None
+        else None
+    )
+    recognition_preparation_service = RecognitionPreparationService(
+        material_repository,
+        material_file_storage,
+        recognition_task_repository,
+        resolve_recognition_llm_capability(config),
+        recognition_llm_client,
+    )
+    return AsyncJobWorker(
+        config.async_jobs,
+        processors=(
+            RecognitionAsyncJobProcessor(
+                task_repository=task_repository,
+                material_repository=material_repository,
+                invoice_repository=invoice_repository,
+                validation_repository=validation_repository,
+                recognition_task_repository=recognition_task_repository,
+                recognition_preparation_service=recognition_preparation_service,
+            ),
+            NoOpAsyncJobProcessor("export"),
+        ),
+    )
 
 
 def run_worker_command(argv: Sequence[str]) -> int:

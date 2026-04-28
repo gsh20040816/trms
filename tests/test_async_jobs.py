@@ -1,5 +1,11 @@
+from datetime import datetime, timezone
+
 import trms_backend.__main__ as backend_main
+import trms_backend.application.recognition_async_jobs as recognition_async_jobs
 from trms_backend.application.async_jobs import AsyncJobWorker, AsyncJobWorkerModeError
+from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
+from trms_backend.application.recognition_preparation import RecognitionTaskExecutionConflictError
+from trms_backend.domain.recognitions import RecognitionTaskRecord, RecognitionTaskStatus
 from trms_backend.runtime_config import load_runtime_config
 
 
@@ -84,3 +90,56 @@ def test_backend_main_keeps_legacy_api_entrypoint(monkeypatch):
             "reload": True,
         }
     ]
+
+
+def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(monkeypatch):
+    refresh_calls: list[str] = []
+
+    monkeypatch.setattr(
+        recognition_async_jobs,
+        "refresh_validations_for_material",
+        lambda material_id, **_: refresh_calls.append(material_id),
+    )
+
+    now = datetime.now(timezone.utc)
+    task = RecognitionTaskRecord(
+        id="recognition-1",
+        material_id="material-1",
+        status=RecognitionTaskStatus.PENDING,
+        created_at=now,
+        updated_at=now,
+    )
+
+    class FakeRecognitionTaskRepository:
+        def list_pending(self, *, limit: int):
+            assert limit == 10
+            return [task, task]
+
+    class FakeRecognitionPreparationService:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def execute(self, recognition_task_id: str) -> RecognitionTaskRecord:
+            self.calls.append(recognition_task_id)
+            if len(self.calls) > 1:
+                raise RecognitionTaskExecutionConflictError(
+                    recognition_task_id,
+                    RecognitionTaskStatus.SUCCEEDED,
+                )
+            return task.model_copy(update={"status": RecognitionTaskStatus.SUCCEEDED})
+
+    preparation_service = FakeRecognitionPreparationService()
+    processor = RecognitionAsyncJobProcessor(
+        task_repository=object(),
+        material_repository=object(),
+        invoice_repository=object(),
+        validation_repository=object(),
+        recognition_task_repository=FakeRecognitionTaskRepository(),
+        recognition_preparation_service=preparation_service,
+    )
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+    assert preparation_service.calls == ["recognition-1", "recognition-1"]
+    assert refresh_calls == ["material-1"]

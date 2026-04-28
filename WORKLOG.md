@@ -1,5 +1,76 @@
 # WORKLOG
 
+## 2026-04-28 15:27 - Implement async recognition worker consumption and retry observability
+
+### 完成内容
+- 新增 `src/trms_backend/application/recognition_async_jobs.py`：
+  - 建立 `RecognitionAsyncJobProcessor`，由 worker 轮询并消费待执行的识别任务；
+  - 每次成功执行后立即刷新对应材料的校验结果；
+  - 保留 `export` processor 占位，避免本轮把导出异步链路一并拉进来。
+- 更新 `src/trms_backend/__main__.py`：
+  - worker 启动时不再只是空壳；
+  - 会按当前运行配置装配识别处理器、仓储、文件存储和可选 LLM 客户端；
+  - `uv run python -m trms_backend worker --once` 现在会真实消费 pending 识别任务。
+- 更新 `src/trms_backend/domain/recognitions.py` 与 `src/trms_backend/infrastructure/repositories.py`：
+  - 新增 `list_pending(limit=...)`，供 worker 按创建时间顺序拉取待执行识别任务；
+  - `update_status(...)` 新增 `expected_current_status` 条件更新边界，防止同一识别任务被重复投递时发生终态覆盖。
+- 更新 `src/trms_backend/application/recognition_preparation.py`：
+  - 识别执行落库时强制要求任务仍处于 `pending`；
+  - 如果任务已被其他执行路径处理完，会显式返回冲突，而不是覆盖已有成功/失败结果。
+- 更新 `src/trms_backend/api/recognitions.py`：
+  - 识别任务列表增加 `retry_count`，以材料维度显式返回已创建的重试次数；
+  - 保留现有手动 `POST /api/recognition-tasks/{id}/execute` 入口，继续作为开发和排障入口。
+- 更新 `README.md` 与 `docs/第一阶段验收映射.md`：
+  - 修正“worker 仍未消费识别任务”的过时描述；
+  - 将识别链路状态更新为“文本 PDF + LLM + worker 异步闭环已完成，OCR 和生产级队列仍未完成”。
+- 新增/更新测试：
+  - `tests/test_recognition_async_jobs.py` 覆盖真实 pending 识别任务被 worker 消费、失败原因可查询，以及重复轮询不重复执行；
+  - `tests/test_async_jobs.py` 覆盖同一识别任务重复投递时，处理器按冲突边界跳过重复结果写入；
+  - `tests/test_recognition_tasks_api.py` 覆盖 `retry_count` 查询结果。
+- 更新 `TASKS.md`，将“实现识别任务异步执行与重试可观测性”标记为已完成。
+
+### 根因
+- 上一轮虽然已经有共享 worker 入口、真实 PDF 文本提取和 OpenAI 兼容 LLM 结构化识别，但识别执行仍只存在手动 `/execute` 路径。
+- 这会导致两个问题：
+  - `TRMS_ASYNC_JOB_MODE=worker` 下 worker 实际不会消费任何识别任务，异步边界名义存在、行为缺失；
+  - 同一识别任务如果被 worker / 手动接口重复投递，原有 `update_status` 会直接覆盖终态，缺少最小幂等保护和可观测的重试计数。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `README.md`
+- `docs/第一阶段验收映射.md`
+- `src/trms_backend/__main__.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/application/recognition_async_jobs.py`
+- `src/trms_backend/application/recognition_preparation.py`
+- `src/trms_backend/domain/recognitions.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_async_jobs.py`
+- `tests/test_recognition_async_jobs.py`
+- `tests/test_recognition_tasks_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_async_jobs.py tests/test_recognition_async_jobs.py tests/test_recognition_tasks_api.py tests/test_recognition_execution_api.py`
+    - 22 个测试通过
+  - `python3 -m compileall src tests`
+    - 编译检查通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 255 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出相关测试路径中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量引用；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮把“重试可观测性”保守落在材料维度的 `retry_count` 和识别任务历史列表上，不在此轮引入新的数据库字段或单独的任务运行审计表。
+- 本轮只让 worker 真实消费识别任务；导出任务异步消费、产物状态查询和下载边界仍留给 `TASKS.md` 的下一项独立任务。
+
 ## 2026-04-28 14:56 - Establish shared async job runtime mode and worker entrypoint
 
 ### 完成内容

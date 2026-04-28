@@ -643,6 +643,16 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
             row = session.get(RecognitionTaskRow, recognition_task_id)
             return _recognition_task_from_row(row) if row else None
 
+    def list_pending(self, *, limit: int) -> list[RecognitionTaskRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(RecognitionTaskRow)
+                .where(RecognitionTaskRow.status == RecognitionTaskStatus.PENDING.value)
+                .order_by(RecognitionTaskRow.created_at)
+                .limit(limit)
+            ).all()
+            return [_recognition_task_from_row(row) for row in rows]
+
     def get_latest_effective_by_material(self, material_id: str) -> RecognitionTaskRecord | None:
         with session_scope(self._session_factory) as session:
             row = session.scalar(
@@ -671,10 +681,16 @@ class SqlAlchemyRecognitionTaskRepository(RecognitionTaskRepository):
         target_status: RecognitionTaskStatus,
         result: RecognitionResultPayload | None = None,
         failure: RecognitionFailureDetail | None = None,
+        expected_current_status: RecognitionTaskStatus | None = None,
     ) -> RecognitionTaskRecord | None:
         with session_scope(self._session_factory) as session:
             row = session.get(RecognitionTaskRow, recognition_task_id)
             if row is None:
+                return None
+            if (
+                expected_current_status is not None
+                and row.status != expected_current_status.value
+            ):
                 return None
             row.status = target_status.value
             row.failure_detail = failure.model_dump(mode="json") if failure is not None else None

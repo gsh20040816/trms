@@ -169,9 +169,10 @@ class RecognitionPreparationService:
             RecognitionTaskStatus.FAILED,
             result=RecognitionResultPayload(raw_response=raw_response),
             failure=failure,
+            expected_current_status=RecognitionTaskStatus.PENDING,
         )
         if updated is None:
-            raise RecognitionTaskExecutionNotFoundError(recognition_task_id)
+            self._raise_missing_or_conflict(recognition_task_id)
         return updated
 
     def _complete_task(
@@ -189,10 +190,17 @@ class RecognitionPreparationService:
                 raw_response=raw_response,
                 recognized_fields=recognized_fields,
             ),
+            expected_current_status=RecognitionTaskStatus.PENDING,
         )
         if updated is None:
-            raise RecognitionTaskExecutionNotFoundError(recognition_task_id)
+            self._raise_missing_or_conflict(recognition_task_id)
         return updated
+
+    def _raise_missing_or_conflict(self, recognition_task_id: str) -> None:
+        current = self._recognition_task_repository.get(recognition_task_id)
+        if current is None:
+            raise RecognitionTaskExecutionNotFoundError(recognition_task_id)
+        raise RecognitionTaskExecutionConflictError(recognition_task_id, current.status)
 
 
 def build_recognition_document_input(

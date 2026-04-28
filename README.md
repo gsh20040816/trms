@@ -82,7 +82,8 @@ OpenAI 兼容 LLM Provider 配置边界：
 - 开发和测试环境默认使用 `in_process`，便于当前同步接口和本地排障。
 - `TRMS_ENV=production` 时默认切换为 `worker`，并拒绝 `TRMS_ASYNC_JOB_MODE=in_process`，避免把耗时任务长期留在请求线程。
 - `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS` 默认 `5`，用于 worker 空闲轮询间隔。
-- 当前 worker 入口已经建立，但识别任务和导出任务的真正异步消费逻辑仍待后续任务接入；本轮只固化共享运行模式和命令入口。
+- 当前 worker 已可消费待执行的识别任务，并沿用现有识别状态、失败原因和重试历史查询接口。
+- 导出任务的真正异步消费逻辑仍待后续任务接入；当前 `export` processor 仍是占位。
 
 示例：
 
