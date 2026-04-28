@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-29 01:24 - Add VLM-based direct recognition for scanned PDFs and images
+
+### 完成内容
+- 接入扫描 PDF / 图片直提识别链路：
+  - `RecognitionPreparationService` 不再把图片和纯扫描 PDF 统一打回 `ocr_not_configured`；
+  - 文本型 PDF 继续走本地文本提取；
+  - 纯扫描 PDF 改为把 PDF 文件本体以 base64 data URL 形式直接交给 OpenAI 兼容多模态模型；
+  - JPEG / PNG / WebP 图片改为以 `image_url` data URL 形式直接交给 OpenAI 兼容多模态模型。
+- 保持原有“AI 结果只是识别建议”的边界：
+  - 结构化输出仍走既有 Pydantic 模型校验；
+  - 字段置信度仍决定 `recognized` / `needs_confirmation`；
+  - 多模态模型失败仍显式记录 `stage=ai` 和具体 `reason`，不会伪装成识别成功。
+- 同步识别输入抽象与文档：
+  - 新增文本 / PDF 文件 / 图片文件三类 `RecognitionDocumentInput` 载荷约束；
+  - `README.md` 和 `docs/第一阶段验收映射.md` 已同步去掉“扫描 PDF / 图片仍未接入”的过期描述。
+
+### 根因
+- `src/trms_backend/application/recognition_preparation.py` 之前只支持“PDF 可抽取文本”这一条准备路径；
+- 一旦 PDF 没有可抽取文本，或材料本身是图片，就直接失败为 `ocr_not_configured`，导致需求和架构文档中要求的“扫描件 / 图片走 VLM 直提”根本无法进入结构化识别主链路；
+- 识别客户端 `src/trms_backend/application/recognition_llm.py` 之前也只会构造纯文本 `chat.completions` 请求，无法向 OpenAI 兼容多模态模型传入 PDF 文件或图片内容。
+
+### 修改文件
+- `src/trms_backend/application/recognition_preparation.py`
+- `src/trms_backend/application/recognition_llm.py`
+- `tests/test_recognition_execution_api.py`
+- `tests/test_recognition_llm.py`
+- `README.md`
+- `docs/第一阶段验收映射.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_llm.py`
+    - 8 个测试通过
+  - `uv run pytest tests/test_recognition_execution_api.py`
+    - 14 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 338 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮对扫描 PDF 采用保守实现：只要 PDF 本地文本提取为空但能确认含有图像对象，就直接把原始 PDF 文件交给多模态模型，而不是在服务端新增 PDF 栅格化或传统 OCR 依赖。
+- 未实际联调真实外部 VLM Provider；当前只通过请求载荷测试和伪造客户端回归测试验证 OpenAI 兼容请求格式与主链路行为。
+
 ## 2026-04-29 01:05 - Tighten formatted email submission identity trust boundary
 
 ### 完成内容

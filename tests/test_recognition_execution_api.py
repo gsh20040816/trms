@@ -456,7 +456,7 @@ def test_execute_recognition_task_records_llm_failure_reason(tmp_path):
     assert item["raw_response"]["llm"]["response"]["choices"][0]["message"]["content"] == "not-json"
 
 
-def test_execute_recognition_task_marks_image_upload_as_ocr_not_configured(tmp_path):
+def test_execute_recognition_task_prepares_image_input_before_llm_capability_check(tmp_path):
     client = make_client(tmp_path)
     sample_path = tmp_path / "invoice-scan.png"
     sample_path.write_bytes(b"fake-image-scan")
@@ -479,13 +479,23 @@ def test_execute_recognition_task_marks_image_upload_as_ocr_not_configured(tmp_p
     item = response.json()["item"]
     assert item["status"] == "failed"
     assert item["failure"] == {
-        "stage": "ocr",
-        "reason": "ocr_not_configured",
+        "stage": "ai",
+        "reason": "llm_provider_not_configured",
     }
-    assert item["raw_response"]["preparation"]["material_id"] == material_id
+    assert item["raw_response"]["preparation"] == {
+        "material_id": material_id,
+        "original_filename": sample_path.name,
+        "content_type": "image/png",
+        "recognition_input": {
+            "source": "image_file",
+            "file_name": sample_path.name,
+            "media_type": "image/png",
+            "byte_count": len(sample_path.read_bytes()),
+        },
+    }
 
 
-def test_execute_recognition_task_marks_image_only_pdf_as_ocr_not_configured(tmp_path):
+def test_execute_recognition_task_prepares_scanned_pdf_input_before_llm_capability_check(tmp_path):
     client = make_client(tmp_path)
     sample_path = tmp_path / "image-only.pdf"
     sample_path.write_bytes(build_image_only_pdf_bytes())
@@ -506,8 +516,15 @@ def test_execute_recognition_task_marks_image_only_pdf_as_ocr_not_configured(tmp
 
     assert response.status_code == 200
     assert response.json()["item"]["failure"] == {
-        "stage": "ocr",
-        "reason": "ocr_not_configured",
+        "stage": "ai",
+        "reason": "llm_provider_not_configured",
+    }
+    assert response.json()["item"]["raw_response"]["preparation"]["recognition_input"] == {
+        "source": "pdf_file",
+        "file_name": sample_path.name,
+        "media_type": "application/pdf",
+        "byte_count": len(sample_path.read_bytes()),
+        "page_count": 1,
     }
 
 
@@ -593,3 +610,129 @@ def test_execute_recognition_task_records_encrypted_pdf(tmp_path):
         "reason": "encrypted_pdf",
     }
     assert item["raw_response"]["preparation"]["material_id"] == material_id
+
+
+def test_execute_recognition_task_passes_image_input_to_vlm_client(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "invoice_number": RecognitionFieldResult(
+                    value="IMG-001",
+                    source="ai",
+                    confidence=0.94,
+                ),
+                "material_type": RecognitionFieldResult(
+                    value="invoice",
+                    source="ai",
+                    confidence=0.96,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path),
+        recognition_llm_client=fake_llm,
+    )
+    sample_path = tmp_path / "invoice-scan.png"
+    sample_path.write_bytes(b"fake-image-scan")
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename=sample_path.name,
+        content=sample_path.read_bytes(),
+        content_type="image/png",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "succeeded"
+    assert fake_llm.calls[0]["document_input"]["source"] == "image_file"
+    assert fake_llm.calls[0]["document_input"]["media_type"] == "image/png"
+
+
+def test_execute_recognition_task_passes_scanned_pdf_to_vlm_client(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "invoice_number": RecognitionFieldResult(
+                    value="SCAN-001",
+                    source="ai",
+                    confidence=0.91,
+                )
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path),
+        recognition_llm_client=fake_llm,
+    )
+    sample_path = tmp_path / "image-only.pdf"
+    sample_path.write_bytes(build_image_only_pdf_bytes())
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename=sample_path.name,
+        content=sample_path.read_bytes(),
+        content_type="application/pdf",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "succeeded"
+    assert fake_llm.calls[0]["document_input"]["source"] == "pdf_file"
+    assert fake_llm.calls[0]["document_input"]["page_count"] == 1
+
+
+def test_execute_recognition_task_records_vlm_failure_reason_for_image_input(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        error=RecognitionLlmExecutionError(
+            failure=RecognitionFailureDetail(stage="ai", reason="llm_request_failed"),
+            raw_response={"response": {"error": "provider rejected image input"}},
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path),
+        recognition_llm_client=fake_llm,
+    )
+    sample_path = tmp_path / "invoice-scan.png"
+    sample_path.write_bytes(b"fake-image-scan")
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename=sample_path.name,
+        content=sample_path.read_bytes(),
+        content_type="image/png",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["failure"] == {
+        "stage": "ai",
+        "reason": "llm_request_failed",
+    }
+    assert response.json()["item"]["raw_response"]["llm"]["response"] == {
+        "error": "provider rejected image input"
+    }

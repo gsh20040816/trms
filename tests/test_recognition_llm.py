@@ -53,11 +53,12 @@ def build_material() -> MaterialRecord:
 
 
 def build_document_input() -> RecognitionDocumentInput:
+    text = "Invoice INV-001 Tongji University Amount 123.45"
     return RecognitionDocumentInput(
         source="pdf_text",
-        text="Invoice INV-001 Tongji University Amount 123.45",
+        text=text,
         page_count=1,
-        text_character_count=46,
+        text_character_count=len(text),
     )
 
 
@@ -116,6 +117,121 @@ def test_openai_compatible_recognition_client_parses_json_schema_response():
     assert result.recognized_fields["location"].status is RecognitionFieldStatus.NEEDS_CONFIRMATION
     assert result.recognized_fields["material_type"].value == "invoice"
     assert result.raw_response["attempts"] == 1
+
+
+def test_openai_compatible_recognition_client_sends_pdf_file_input_for_scanned_pdf():
+    captured_request = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request["payload"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "invoice_number": {
+                                            "value": "INV-SCAN-001",
+                                            "confidence": 0.93,
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    document_input = RecognitionDocumentInput(
+        source="pdf_file",
+        file_name="scan.pdf",
+        media_type="application/pdf",
+        data_url="data:application/pdf;base64,c2Nhbi1wZGY=",
+        byte_count=8,
+        page_count=2,
+    )
+
+    result = client.recognize(material=build_material(), document_input=document_input)
+
+    user_content = captured_request["payload"]["messages"][1]["content"]
+    assert isinstance(user_content, list)
+    assert user_content[0]["type"] == "text"
+    assert user_content[1] == {
+        "type": "file",
+        "file": {
+            "filename": "scan.pdf",
+            "file_data": "data:application/pdf;base64,c2Nhbi1wZGY=",
+        },
+    }
+    assert result.recognized_fields["invoice_number"].value == "INV-SCAN-001"
+
+
+def test_openai_compatible_recognition_client_sends_image_input_for_uploaded_image():
+    captured_request = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request["payload"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "material_type": {
+                                            "value": "invoice",
+                                            "confidence": 0.92,
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    document_input = RecognitionDocumentInput(
+        source="image_file",
+        file_name="invoice.png",
+        media_type="image/png",
+        data_url="data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+        byte_count=11,
+    )
+
+    result = client.recognize(material=build_material(), document_input=document_input)
+
+    user_content = captured_request["payload"]["messages"][1]["content"]
+    assert isinstance(user_content, list)
+    assert user_content[0]["type"] == "text"
+    assert user_content[1] == {
+        "type": "image_url",
+        "image_url": {
+            "url": "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+            "detail": "high",
+        },
+    }
+    assert result.recognized_fields["material_type"].value == "invoice"
 
 
 def test_deepseek_compatible_recognition_client_uses_json_object_response_format():

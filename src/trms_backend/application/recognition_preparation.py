@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from io import BytesIO
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from pypdf.errors import FileNotDecryptedError, PdfReadError, PdfStreamError
 from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.recognition_llm import (
     RecognitionDocumentInput,
+    RecognitionInputSource,
     RecognitionLlmClient,
     RecognitionLlmExecutionError,
 )
@@ -135,7 +137,7 @@ class RecognitionPreparationService:
                 request_id=request_id,
             )
 
-        base_payload["preparation"]["recognition_input"] = document_input.model_dump(mode="json")
+        base_payload["preparation"]["recognition_input"] = document_input.to_safe_log_payload()
         if self._llm_capability.status is RecognitionLlmCapabilityStatus.DISABLED:
             return self._fail_task(
                 recognition_task_id=recognition_task_id,
@@ -268,14 +270,9 @@ def build_recognition_document_input(
     content: bytes,
 ) -> RecognitionDocumentInput:
     if _is_pdf_material(material):
-        return _build_pdf_document_input(content)
+        return _build_pdf_document_input(material, content)
     if _is_image_material(material):
-        raise RecognitionPreparationError(
-            RecognitionFailureDetail(
-                stage=RecognitionFailureStage.OCR,
-                reason="ocr_not_configured",
-            )
-        )
+        return _build_image_document_input(material, content)
     raise RecognitionPreparationError(
         RecognitionFailureDetail(
             stage=RecognitionFailureStage.PDF,
@@ -284,7 +281,10 @@ def build_recognition_document_input(
     )
 
 
-def _build_pdf_document_input(content: bytes) -> RecognitionDocumentInput:
+def _build_pdf_document_input(
+    material: MaterialRecord,
+    content: bytes,
+) -> RecognitionDocumentInput:
     try:
         reader = PdfReader(BytesIO(content))
     except (PdfReadError, PdfStreamError, ValueError) as error:
@@ -330,17 +330,19 @@ def _build_pdf_document_input(content: bytes) -> RecognitionDocumentInput:
     extracted_text = "\n\n".join(extracted_segments).strip()
     if extracted_text:
         return RecognitionDocumentInput(
-            source=RecognitionFieldSource.PDF_TEXT,
+            source=RecognitionInputSource.PDF_TEXT,
             text=extracted_text,
             page_count=len(reader.pages),
             text_character_count=len(extracted_text),
         )
-    if image_count > 0:
-        raise RecognitionPreparationError(
-            RecognitionFailureDetail(
-                stage=RecognitionFailureStage.OCR,
-                reason="ocr_not_configured",
-            )
+    if image_count > 0 or _pdf_contains_xobject_images(reader):
+        return RecognitionDocumentInput(
+            source=RecognitionInputSource.PDF_FILE,
+            file_name=material.original_filename,
+            media_type="application/pdf",
+            data_url=_build_base64_data_url(content, media_type="application/pdf"),
+            byte_count=len(content),
+            page_count=len(reader.pages),
         )
     raise RecognitionPreparationError(
         RecognitionFailureDetail(
@@ -354,6 +356,65 @@ def _normalize_extracted_text(value: str) -> str:
     lines = [line.strip() for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
     non_empty_lines = [line for line in lines if line]
     return "\n".join(non_empty_lines)
+
+
+def _build_image_document_input(
+    material: MaterialRecord,
+    content: bytes,
+) -> RecognitionDocumentInput:
+    media_type = _resolve_image_media_type(material)
+    return RecognitionDocumentInput(
+        source=RecognitionInputSource.IMAGE_FILE,
+        file_name=material.original_filename,
+        media_type=media_type,
+        data_url=_build_base64_data_url(content, media_type=media_type),
+        byte_count=len(content),
+    )
+
+
+def _build_base64_data_url(content: bytes, *, media_type: str) -> str:
+    encoded = base64.b64encode(content).decode("ascii")
+    return f"data:{media_type};base64,{encoded}"
+
+
+def _pdf_contains_xobject_images(reader: PdfReader) -> bool:
+    try:
+        for page in reader.pages:
+            if _page_contains_xobject_images(page.get("/Resources")):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _page_contains_xobject_images(resources: object) -> bool:
+    if not hasattr(resources, "get"):
+        return False
+    xobjects = resources.get("/XObject")
+    if not hasattr(xobjects, "items"):
+        return False
+    for _, candidate in xobjects.items():
+        resolved = candidate.get_object() if hasattr(candidate, "get_object") else candidate
+        if not hasattr(resolved, "get"):
+            continue
+        subtype = resolved.get("/Subtype")
+        if subtype == "/Image":
+            return True
+        if subtype == "/Form" and _page_contains_xobject_images(resolved.get("/Resources")):
+            return True
+    return False
+
+
+def _resolve_image_media_type(material: MaterialRecord) -> str:
+    if material.content_type in {"image/jpeg", "image/png", "image/webp"}:
+        return material.content_type
+    suffix = Path(material.original_filename).suffix.lower()
+    return {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(suffix, "application/octet-stream")
 
 
 def _is_pdf_material(material: MaterialRecord) -> bool:
