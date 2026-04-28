@@ -39,32 +39,53 @@ class TelegramMaterialSubmissionService:
         task_id: str | None,
         material_type: MaterialType,
         files: list[SubmittedMaterialFile],
+        trust_form_telegram_user_id: bool,
         request_id: str | None = None,
     ) -> TelegramMaterialSubmissionResult:
         normalized_task_id = _normalize_optional_string(task_id)
-        submission_identity = self._submission_identity_resolver.resolve(telegram_user_id)
-        actor_id = _build_actor_id(
-            submission_identity=submission_identity,
-            telegram_user_id=telegram_user_id,
-        )
-
-        if (
-            submission_identity.status is TelegramSubmissionIdentityStatus.BOUND
-            and normalized_task_id is not None
-        ):
-            assert submission_identity.member_id is not None
-            batch_result = self._material_submission_service.submit_to_task(
-                task_id=normalized_task_id,
-                submitter_id=submission_identity.member_id,
-                actor_id=actor_id,
-                channel=SubmissionChannel.TELEGRAM,
-                material_type=material_type,
-                files=files,
-                request_id=request_id,
+        if trust_form_telegram_user_id:
+            submission_identity = self._submission_identity_resolver.resolve(telegram_user_id)
+            actor_id = _build_actor_id(
+                submission_identity=submission_identity,
+                telegram_user_id=telegram_user_id,
             )
+
+            if (
+                submission_identity.status is TelegramSubmissionIdentityStatus.BOUND
+                and normalized_task_id is not None
+            ):
+                assert submission_identity.member_id is not None
+                batch_result = self._material_submission_service.submit_to_task(
+                    task_id=normalized_task_id,
+                    submitter_id=submission_identity.member_id,
+                    actor_id=actor_id,
+                    channel=SubmissionChannel.TELEGRAM,
+                    material_type=material_type,
+                    files=files,
+                    request_id=request_id,
+                )
+            else:
+                batch_result = self._material_submission_service.submit_pending_assignment(
+                    actor_id=actor_id,
+                    channel=SubmissionChannel.TELEGRAM,
+                    material_type=material_type,
+                    files=files,
+                    task_id_hint=normalized_task_id,
+                    submitter_id_hint=_build_submitter_hint(
+                        submission_identity=submission_identity,
+                        telegram_user_id=telegram_user_id,
+                        telegram_username=telegram_username,
+                    ),
+                    request_id=request_id,
+                )
         else:
+            submission_identity = TelegramSubmissionIdentity(
+                telegram_user_id=telegram_user_id,
+                status=TelegramSubmissionIdentityStatus.PENDING_ASSIGNMENT,
+                member_id=None,
+            )
             batch_result = self._material_submission_service.submit_pending_assignment(
-                actor_id=actor_id,
+                actor_id=f"telegram_user_id:{telegram_user_id}",
                 channel=SubmissionChannel.TELEGRAM,
                 material_type=material_type,
                 files=files,

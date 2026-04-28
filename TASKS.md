@@ -74,7 +74,7 @@
     - bearer 身份与显式 `actor_id` / `member_id` 不一致时显式拒绝
     - 回归测试覆盖“知道成员编号但未登录”与“登录后冒充他人”两类失败路径
 
-- [ ] 收口 Telegram 绑定与提交身份边界
+- [x] 收口 Telegram 绑定与提交身份边界
   - Done when:
     - Telegram 账号绑定不能再由匿名调用方随意为任意 `telegram_user_id` 建立绑定
     - Telegram 入站材料提交不再直接信任表单里的 `telegram_user_id` 作为真实身份来源

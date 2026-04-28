@@ -201,7 +201,16 @@ def create_app(
         )
     )
     app.include_router(build_email_material_router(email_material_submission_service))
-    app.include_router(build_telegram_material_router(telegram_material_submission_service))
+    app.include_router(
+        build_telegram_material_router(
+            telegram_material_submission_service,
+            trusted_inbound_token=(
+                config.auth.telegram_inbound_token.get_secret_value()
+                if config.auth.telegram_inbound_token is not None
+                else None
+            ),
+        )
+    )
     app.include_router(
         build_recognition_router(
             auth_repository,
@@ -247,7 +256,12 @@ def create_app(
             audit_log_repository,
         )
     )
-    app.include_router(build_telegram_binding_router(telegram_account_binding_repository))
+    app.include_router(
+        build_telegram_binding_router(
+            auth_repository,
+            telegram_account_binding_repository,
+        )
+    )
     return app
 
 

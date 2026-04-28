@@ -1,6 +1,7 @@
+import hmac
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 
 from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.material_submission_http import build_batch_response, read_uploaded_files
@@ -15,6 +16,8 @@ from trms_backend.domain.tasks import TaskSubmissionDeadlinePassedError, TaskSub
 
 def build_telegram_material_router(
     telegram_material_submission_service: TelegramMaterialSubmissionService,
+    *,
+    trusted_inbound_token: str | None,
 ) -> APIRouter:
     router = APIRouter(tags=["telegram-materials"])
 
@@ -26,8 +29,16 @@ def build_telegram_material_router(
         files: Annotated[list[UploadFile], File(min_length=1)],
         task_id: Annotated[str | None, Form()] = None,
         telegram_username: Annotated[str | None, Form()] = None,
+        telegram_inbound_token: Annotated[
+            str | None,
+            Header(alias="X-TRMS-Telegram-Inbound-Token"),
+        ] = None,
     ):
         uploaded_files = await read_uploaded_files(files)
+        trust_form_telegram_user_id = _is_trusted_telegram_request(
+            configured_token=trusted_inbound_token,
+            request_token=telegram_inbound_token,
+        )
         try:
             result = telegram_material_submission_service.submit(
                 telegram_user_id=telegram_user_id,
@@ -35,6 +46,7 @@ def build_telegram_material_router(
                 task_id=task_id,
                 material_type=material_type,
                 files=uploaded_files,
+                trust_form_telegram_user_id=trust_form_telegram_user_id,
                 request_id=ensure_request_id(request),
             )
         except MaterialSubmissionTaskNotFoundError:
@@ -62,3 +74,25 @@ def build_telegram_material_router(
         )
 
     return router
+
+
+def _is_trusted_telegram_request(
+    *,
+    configured_token: str | None,
+    request_token: str | None,
+) -> bool:
+    normalized_configured_token = (configured_token or "").strip()
+    if not normalized_configured_token:
+        return False
+
+    normalized_request_token = (request_token or "").strip()
+    if not normalized_request_token:
+        return False
+
+    if not hmac.compare_digest(normalized_request_token, normalized_configured_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid telegram inbound token",
+        )
+
+    return True

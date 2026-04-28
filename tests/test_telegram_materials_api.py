@@ -2,14 +2,27 @@ from fastapi.testclient import TestClient
 
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
+from trms_backend.runtime_config import load_runtime_config
 
 from test_tasks_api import admin_auth_headers, create_task
 
+TRUSTED_TELEGRAM_TOKEN = "telegram-secret"
 
-def make_client(tmp_path):
+
+def make_client(tmp_path, *, trusted_inbound_token: str | None = None):
+    runtime_config = load_runtime_config(
+        env={
+            "DATABASE_URL": f"sqlite:///{tmp_path}/test.db",
+            **(
+                {"TRMS_AUTH_TELEGRAM_INBOUND_TOKEN": trusted_inbound_token}
+                if trusted_inbound_token is not None
+                else {}
+            ),
+        }
+    )
     return TestClient(
         create_app(
-            f"sqlite:///{tmp_path}/test.db",
+            runtime_config=runtime_config,
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
         )
     )
@@ -36,17 +49,19 @@ def assert_single_pending_recognition_task(client: TestClient, material_id: str)
     assert body["items"][0]["status"] == "pending"
 
 
-def test_telegram_material_submission_routes_bound_account_to_assigned_flow(tmp_path):
-    client = make_client(tmp_path)
+def test_telegram_material_submission_routes_trusted_bound_account_to_assigned_flow(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_TELEGRAM_TOKEN)
     task_id = create_open_task(client)
     bind_response = client.put(
         "/api/telegram-bindings/123456789",
         json={"member_id": "2250001", "telegram_username": "@TongjiCoder"},
+        headers=admin_auth_headers(client),
     )
     assert bind_response.status_code == 200
 
     response = client.post(
         "/api/telegram/materials",
+        headers={"X-TRMS-Telegram-Inbound-Token": TRUSTED_TELEGRAM_TOKEN},
         data={
             "telegram_user_id": "123456789",
             "telegram_username": "@TongjiCoder",
@@ -72,6 +87,66 @@ def test_telegram_material_submission_routes_bound_account_to_assigned_flow(tmp_
     assert material["channel"] == "telegram"
     assert material["storage_key"].startswith(f"{task_id}/")
     assert_single_pending_recognition_task(client, material["id"])
+
+
+def test_telegram_material_submission_without_trusted_header_keeps_bound_account_pending_assignment(
+    tmp_path,
+):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_TELEGRAM_TOKEN)
+    task_id = create_open_task(client)
+    bind_response = client.put(
+        "/api/telegram-bindings/123456789",
+        json={"member_id": "2250001", "telegram_username": "@TongjiCoder"},
+        headers=admin_auth_headers(client),
+    )
+    assert bind_response.status_code == 200
+
+    response = client.post(
+        "/api/telegram/materials",
+        data={
+            "telegram_user_id": "123456789",
+            "telegram_username": "@TongjiCoder",
+            "task_id": task_id,
+            "material_type": "invoice",
+        },
+        files={"files": ("invoice.pdf", b"telegram-pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["submission_identity"] == {
+        "telegram_user_id": 123456789,
+        "status": "pending_assignment",
+        "member_id": None,
+    }
+    material = body["items"][0]
+    assert material["status"] == "pending_assignment"
+    assert material["task_id"] is None
+    assert material["submitter_id"] is None
+    assert material["task_id_hint"] == task_id
+    assert material["submitter_id_hint"] == "telegram_user_id:123456789 (@tongjicoder)"
+    assert material["channel"] == "telegram"
+    assert material["storage_key"].startswith("_pending_assignment/")
+    assert_single_pending_recognition_task(client, material["id"])
+
+
+def test_telegram_material_submission_rejects_invalid_trusted_header(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_TELEGRAM_TOKEN)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        "/api/telegram/materials",
+        headers={"X-TRMS-Telegram-Inbound-Token": "wrong-token"},
+        data={
+            "telegram_user_id": "123456789",
+            "task_id": task_id,
+            "material_type": "invoice",
+        },
+        files={"files": ("invoice.pdf", b"telegram-pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid telegram inbound token"
 
 
 def test_telegram_material_submission_routes_unbound_account_to_pending_assignment(tmp_path):
@@ -107,18 +182,20 @@ def test_telegram_material_submission_routes_unbound_account_to_pending_assignme
     assert_single_pending_recognition_task(client, material["id"])
 
 
-def test_telegram_material_submission_routes_bound_account_without_task_to_pending_assignment(
+def test_telegram_material_submission_routes_trusted_bound_account_without_task_to_pending_assignment(
     tmp_path,
 ):
-    client = make_client(tmp_path)
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_TELEGRAM_TOKEN)
     bind_response = client.put(
         "/api/telegram-bindings/123456789",
         json={"member_id": "2250001"},
+        headers=admin_auth_headers(client),
     )
     assert bind_response.status_code == 200
 
     response = client.post(
         "/api/telegram/materials",
+        headers={"X-TRMS-Telegram-Inbound-Token": TRUSTED_TELEGRAM_TOKEN},
         data={
             "telegram_user_id": "123456789",
             "material_type": "payment_record",

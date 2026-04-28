@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-04-29 00:57 - Tighten Telegram binding and inbound identity trust boundaries
+
+### 完成内容
+- 收口 Telegram 绑定管理权限：
+  - `PUT /api/telegram-bindings/{telegram_user_id}`
+  - `GET /api/telegram-bindings/{telegram_user_id}`
+  - `GET /api/telegram-bindings/{telegram_user_id}/submission-identity`
+  以上接口现在都必须携带 bearer token，且仅 `admin` / `system_admin` 可以访问。
+- 收口 Telegram 入站身份信任边界：
+  - `/api/telegram/materials` 不再默认信任表单中的 `telegram_user_id`；
+  - 只有后端配置了 `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`，且请求头 `X-TRMS-Telegram-Inbound-Token` 与之匹配时，才会按 Telegram 绑定关系把材料直接写入成员主链路；
+  - 未携带可信入站 token 时，即使 Telegram 账号已绑定，材料也只进入待归属流程，不再直接归档到成员名下。
+- 补齐运行配置与部署说明：
+  - 新增 `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN` 运行配置；
+  - `.env.example`、`.env.development.example`、`deploy/docker-compose.yml`、`README.md` 已同步记录该配置及其安全边界。
+- 补齐回归测试：
+  - 绑定接口覆盖匿名拒绝、普通成员拒绝、管理员成功、未绑定解析和绑定冲突；
+  - Telegram 入站覆盖“可信 token + 已绑定直接归档”“缺少可信 token 转待归属”“错误 token 拒绝”“未绑定待归属”“已绑定但缺任务仍待归属”。
+
+### 根因
+- `src/trms_backend/api/telegram_bindings.py` 之前完全未鉴权，匿名调用方可以为任意 `telegram_user_id` 建立或查询绑定关系；
+- `src/trms_backend/api/telegram_materials.py` 与 `src/trms_backend/application/telegram_material_submission.py` 之前直接把表单里的 `telegram_user_id` 当作真实身份来源，只要该编号已绑定成员且提供了任务编号，就会直接进入成员提交主链路；
+- 这意味着调用方即使并不是真实 Telegram 入站器，也能伪造已绑定 Telegram 身份向任务提交材料，违背需求和架构文档中“渠道绑定必须受控、未确认身份只能待归属”的边界。
+
+### 修改文件
+- `src/trms_backend/api/telegram_bindings.py`
+- `src/trms_backend/api/telegram_materials.py`
+- `src/trms_backend/application/telegram_material_submission.py`
+- `src/trms_backend/runtime_config.py`
+- `tests/test_telegram_bindings_api.py`
+- `tests/test_telegram_materials_api.py`
+- `tests/test_runtime_config.py`
+- `.env.example`
+- `.env.development.example`
+- `deploy/docker-compose.yml`
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_telegram_bindings_api.py tests/test_telegram_materials_api.py tests/test_runtime_config.py`
+    - 26 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 331 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮采用最小可信入站边界：只有持有后端配置 token 的 Telegram 入站器才被视为受信任来源；未携带该 token 的请求仍允许把文件收进待归属，便于人工后续认领，但不会再直接借已绑定 `telegram_user_id` 越权落到成员主链路。
+
 ## 2026-04-29 00:50 - Require bearer identity for member-side status/detail reads
 
 ### 完成内容

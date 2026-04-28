@@ -101,6 +101,7 @@ class AsyncJobConfig(BaseModel):
 class AuthConfig(BaseModel):
     allow_admin_self_register: bool
     bootstrap_admin_token: SecretStr | None = None
+    telegram_inbound_token: SecretStr | None = None
 
     @field_validator("allow_admin_self_register", mode="before")
     @classmethod
@@ -128,12 +129,28 @@ class AuthConfig(BaseModel):
             return None
         return SecretStr(normalized)
 
+    @field_validator("telegram_inbound_token", mode="before")
+    @classmethod
+    def validate_telegram_inbound_token(
+        cls,
+        value: SecretStr | str | None,
+    ) -> SecretStr | None:
+        if value is None:
+            return None
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            return None
+        return SecretStr(normalized)
+
     def to_safe_log_fields(self) -> dict[str, object]:
         return sanitize_log_fields(
             {
-            "allow_admin_self_register": self.allow_admin_self_register,
-            "bootstrap_admin_token": "[redacted]" if self.bootstrap_admin_token else None,
-            "bootstrap_admin_token_configured": self.bootstrap_admin_token is not None,
+                "allow_admin_self_register": self.allow_admin_self_register,
+                "bootstrap_admin_token": "[redacted]" if self.bootstrap_admin_token else None,
+                "bootstrap_admin_token_configured": self.bootstrap_admin_token is not None,
+                "telegram_inbound_token": "[redacted]" if self.telegram_inbound_token else None,
+                "telegram_inbound_token_configured": self.telegram_inbound_token is not None,
             }
         )
 
@@ -342,6 +359,7 @@ def load_runtime_config(
     async_job_poll_interval_seconds: str | float | int | None = None,
     auth_allow_admin_self_register: bool | str | None = None,
     auth_bootstrap_admin_token: str | None = None,
+    auth_telegram_inbound_token: str | None = None,
     llm_api_key: str | None = None,
     llm_base_url: str | None = None,
     llm_model: str | None = None,
@@ -474,6 +492,10 @@ def load_runtime_config(
         auth_bootstrap_admin_token,
         environment_variables.get("TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN"),
     )
+    raw_auth_telegram_inbound_token = _resolve_value(
+        auth_telegram_inbound_token,
+        environment_variables.get("TRMS_AUTH_TELEGRAM_INBOUND_TOKEN"),
+    )
 
     if normalized_environment == "production" and str(raw_async_job_mode).strip() == "in_process":
         issues.append(
@@ -577,6 +599,7 @@ def load_runtime_config(
                 "auth": {
                     "allow_admin_self_register": raw_auth_allow_admin_self_register,
                     "bootstrap_admin_token": raw_auth_bootstrap_admin_token,
+                    "telegram_inbound_token": raw_auth_telegram_inbound_token,
                 },
                 "llm_provider": llm_provider_payload,
             }

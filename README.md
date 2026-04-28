@@ -67,6 +67,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS`
 - `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER`
 - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
+- `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`
 - `TRMS_LLM_API_KEY`
 - `TRMS_LLM_BASE_URL`
 - `TRMS_LLM_MODEL`
@@ -131,6 +132,13 @@ OpenAI 兼容 LLM Provider 配置边界：
 - `TRMS_LLM_TIMEOUT_SECONDS` 默认 `30`，`TRMS_LLM_MAX_RETRIES` 默认 `2`。
 - 当前仓库已接入“文本 PDF 提取 -> OpenAI 兼容 LLM 结构化识别”的最小同步执行链；扫描 PDF / 图片基于 VLM API 的直接结构化提取，以及完整异步 worker 消费链仍待后续任务补齐。
 - 未配置 LLM Provider 时，识别执行链会将任务显式视为 `disabled`，而不是伪造识别成功。
+
+Telegram 入站可信边界：
+
+- `PUT /api/telegram-bindings/*` 与 Telegram 绑定查询接口现在都要求 bearer 身份，且仅 `admin` / `system_admin` 可管理。
+- 只有在后端配置了 `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`，且请求头 `X-TRMS-Telegram-Inbound-Token` 与之匹配时，`/api/telegram/materials` 才会把表单中的 `telegram_user_id` 当作可信身份来源。
+- 未配置该 token，或请求未携带该 token 时，Telegram 材料仍会被接收，但只进入待归属流程，不会直接归档到成员主链路。
+- 该 token 只允许保留在后端环境变量或渠道入站器密钥管理中，不入库、不返回前端，也不应写入日志。
 
 异步任务运行模式边界：
 
