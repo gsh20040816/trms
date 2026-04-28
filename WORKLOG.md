@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-28 10:32 - Define CLI JSON output schema
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 的 `health` 命令增加 `--json` 输出模式，并固定第一版 JSON schema：
+  - `schema_version` 使用稳定值 `trms-cli.v1`；
+  - 成功输出包含 `ok`、`command` 和 `data`；
+  - 失败输出包含 `ok`、`command` 和结构化 `error.code` / `error.message`。
+- 保持原有非 JSON 模式不变：
+  - 成功仍输出 `TRMS API health: ok`；
+  - 失败仍输出 `Error: ...` 到标准错误。
+- 为现有 CLI 错误补充稳定错误码，占位区分 `http_error`、`network_error`、`invalid_json_response`、`health_unexpected_status`、`health_not_ready`。
+- 扩展 `tests/test_cli_health.py`，新增 `--json` 成功和失败路径测试。
+- 将 `TASKS.md` 中“定义 CLI JSON 输出规范”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `tests/test_cli_health.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 只有纯文本成功输出和纯文本错误输出，虽然足够人工查看，但不满足需求文档和架构文档中“CLI 需支持 `--json` 机器可读输出”的约束。
+- 如果不先固定第一版 JSON envelope 和 schema version，后续任务查询、上传、状态查询等 CLI 能力即使补上，也会缺少稳定的脚本消费契约，后续改动容易破坏自动化调用方。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_health.py`
+    - 4 个 CLI 测试通过，覆盖文本成功、文本失败、JSON 成功、JSON 失败
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 169 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只为已存在的 `health` 命令定义并验证 JSON 输出契约，没有提前扩展登录、任务列表、材料上传或状态查询命令。
+- `--json` 成功结果写入标准输出，`--json` 错误结果写入标准错误；两种情况下都只输出合法 JSON，不混入普通文本。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮将“定义 CLI JSON 输出规范”保守限定为给现有 `health` 命令建立可复用的第一版 envelope，而不是提前为所有未来命令设计完整字段集合；后续命令在保持 `schema_version`、`ok`、`command` 和结构化错误字段稳定的前提下扩展各自 `data` 载荷。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立 CLI 登录和 Token 存储占位”，优先固定登录命令边界、Token 落盘权限要求，以及避免在日志和错误输出中泄露凭据。
+
 ## 2026-04-28 10:26 - Establish CLI project skeleton
 
 ### 完成内容

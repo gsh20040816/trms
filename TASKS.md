@@ -540,7 +540,7 @@
     - 至少支持健康检查或任务列表调用的占位命令
     - README 或 WORKLOG 记录本地运行方式
 
-- [ ] 定义 CLI JSON 输出规范
+- [x] 定义 CLI JSON 输出规范
   - Done when:
     - CLI JSON 输出包含 schema version
     - 成功和失败输出都是合法 JSON
