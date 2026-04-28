@@ -3,6 +3,9 @@ import os
 from fastapi import FastAPI, Request
 
 from trms_backend.application.material_submission import MaterialSubmissionService
+from trms_backend.application.telegram_material_submission import (
+    TelegramMaterialSubmissionService,
+)
 from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
 from trms_backend.api.confirmations import build_confirmation_router
 from trms_backend.api.exports import build_export_router
@@ -10,6 +13,7 @@ from trms_backend.api.invoices import build_invoice_router
 from trms_backend.api.materials import build_material_router
 from trms_backend.api.recognitions import build_recognition_router
 from trms_backend.api.splits import build_split_router
+from trms_backend.api.telegram_materials import build_telegram_material_router
 from trms_backend.api.tasks import build_task_router
 from trms_backend.api.telegram_bindings import build_telegram_binding_router
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
@@ -66,6 +70,10 @@ def create_app(
         material_file_storage,
         recognition_task_repository,
     )
+    telegram_material_submission_service = TelegramMaterialSubmissionService(
+        telegram_account_binding_repository,
+        material_submission_service,
+    )
 
     @app.middleware("http")
     async def enforce_cli_compatibility(request: Request, call_next):
@@ -111,6 +119,7 @@ def create_app(
             material_submission_service,
         )
     )
+    app.include_router(build_telegram_material_router(telegram_material_submission_service))
     app.include_router(
         build_recognition_router(
             task_repository,

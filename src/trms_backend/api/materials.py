@@ -1,23 +1,15 @@
 from typing import Annotated
 
-from fastapi.encoders import jsonable_encoder
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import JSONResponse
 
+from trms_backend.api.material_submission_http import build_batch_response, read_uploaded_files
 from trms_backend.application.material_submission import (
-    MaterialSubmissionBatchResult,
     MaterialSubmissionService,
     MaterialSubmissionTaskNotFoundError,
     MaterialSubmissionTaskNotOpenError,
-    SubmittedMaterialFile,
 )
 from trms_backend.domain.materials import (
     MaterialStatus,
-    MaterialUploadEmptyFileError,
-    MaterialUploadMissingFilenameError,
-    MaterialUploadTooLargeError,
-    MaterialUploadUnsupportedContentTypeError,
-    MaterialUploadValidationError,
     MaterialRepository,
     MaterialType,
     SubmissionChannel,
@@ -28,90 +20,12 @@ from trms_backend.domain.tasks import (
     TaskSubmitterNotMemberError,
     ensure_task_has_member,
 )
-
-
-def _raise_material_upload_http_error(error: MaterialUploadValidationError) -> None:
-    if isinstance(error, MaterialUploadMissingFilenameError):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(error),
-        ) from error
-    if isinstance(error, MaterialUploadEmptyFileError):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(error),
-        ) from error
-    if isinstance(error, MaterialUploadUnsupportedContentTypeError):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=str(error),
-        ) from error
-    if isinstance(error, MaterialUploadTooLargeError):
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail=str(error),
-        ) from error
-    raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail=str(error),
-    ) from error
-
-
 def build_material_router(
     task_repository: TaskRepository,
     material_repository: MaterialRepository,
     material_submission_service: MaterialSubmissionService,
 ) -> APIRouter:
     router = APIRouter(tags=["materials"])
-
-    async def read_uploaded_files(files: list[UploadFile]) -> list[SubmittedMaterialFile]:
-        uploads: list[SubmittedMaterialFile] = []
-        for file in files:
-            uploads.append(
-                SubmittedMaterialFile(
-                    original_filename=file.filename,
-                    content_type=file.content_type,
-                    content=await file.read(),
-                )
-            )
-        return uploads
-
-    def build_batch_response(
-        result: MaterialSubmissionBatchResult,
-        *,
-        file_count: int,
-    ):
-        if file_count == 1 and not result.records and len(result.failures) == 1:
-            _raise_material_upload_http_error(result.failures[0].error)
-
-        failures = [
-            {
-                "original_filename": failure.original_filename,
-                "error_code": failure.error_code,
-                "detail": failure.detail,
-            }
-            for failure in result.failures
-        ]
-        response_body: dict[str, object] = {
-            "status": "success",
-            "items": result.records,
-        }
-        if not failures:
-            return response_body
-
-        response_body["failures"] = failures
-        if result.records:
-            response_body["status"] = "partial_success"
-            return JSONResponse(
-                status_code=status.HTTP_207_MULTI_STATUS,
-                content=jsonable_encoder(response_body),
-            )
-
-        response_body["status"] = "failed"
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content=jsonable_encoder(response_body),
-        )
 
     @router.post("/api/tasks/{task_id}/materials", status_code=status.HTTP_201_CREATED)
     async def submit_materials(

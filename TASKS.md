@@ -632,7 +632,7 @@
     - 未绑定账号提交材料进入待归属
     - 不记录 Telegram token 到仓库或日志
 
-- [ ] 增加 Telegram 材料提交接入占位
+- [x] 增加 Telegram 材料提交接入占位
   - Done when:
     - 存在 Telegram 入站处理模块或接口边界
     - 可将已绑定账号材料转入统一材料流程

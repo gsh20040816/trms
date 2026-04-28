@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-28 12:24 - Add Telegram material submission placeholder
+
+### 完成内容
+- 新增 `src/trms_backend/application/telegram_material_submission.py`，建立 `TelegramMaterialSubmissionService`：
+  - 先复用既有 Telegram 账号绑定解析边界判断 `bound` / `pending_assignment`；
+  - 已绑定且已提供 `task_id` 时，直接调用统一 `MaterialSubmissionService.submit_to_task`；
+  - 未绑定账号或尚未确定任务时，统一转入 `submit_pending_assignment`，并保留 `task_id_hint` 与 Telegram 身份线索。
+- 新增 `src/trms_backend/api/telegram_materials.py`，提供 `/api/telegram/materials` 占位入站接口：
+  - 接口只接收 `telegram_user_id`、可选 `telegram_username`、可选 `task_id`、材料类型和附件；
+  - 不接入真实 Telegram Bot、Webhook 签名校验或 Bot Token 管理，只固定后端接入边界。
+- 新增 `src/trms_backend/api/material_submission_http.py`，把多文件上传读取和批量成功/部分成功/失败响应拼装从 `api/materials.py` 抽成共享辅助函数，避免 Telegram 接入器复制一套 HTTP 结果映射逻辑。
+- 新增 `tests/test_telegram_materials_api.py`，覆盖：
+  - 已绑定账号且任务明确时进入已归属材料主链路；
+  - 未绑定账号时进入待归属材料；
+  - 已绑定账号但未提供任务时仍进入待归属，锁定“任务未识别不强行归档”的边界。
+- 更新 `src/trms_backend/main.py` 接入 Telegram 材料占位路由，并将 `TASKS.md` 中“增加 Telegram 材料提交接入占位”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/material_submission_http.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/api/telegram_materials.py`
+- `src/trms_backend/application/telegram_material_submission.py`
+- `src/trms_backend/main.py`
+- `tests/test_telegram_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 虽然上一轮已经建立了统一材料提交服务和 Telegram 账号绑定模型，但仓库里仍然没有一个明确的“Telegram 入站材料 -> 统一材料流程”的接入边界。
+- 如果继续缺这层占位，后续真实 Telegram Webhook 接入只能在 API 层或 Bot 适配层临时拼任务/成员分流逻辑，容易复制上传响应处理、绕过既有 `MaterialSubmissionService`，并破坏“渠道层只负责接入”的架构约束。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_telegram_materials_api.py tests/test_telegram_bindings_api.py tests/test_material_submission_service.py tests/test_materials_api.py`
+    - 30 个相关后端测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 213 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - `git diff --check` 通过
+- 既有警告：
+  - `pytest` 仍有 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  这些均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设 Telegram 占位接口只需要固化“账号身份解析 + 任务是否明确”的分流逻辑，不需要在本轮实现真实 Bot Webhook、消息轮询或 Telegram 平台签名校验。
+- 对未绑定 Telegram 账号，当前将原始外部身份线索保存在 `submitter_id_hint`，格式为 `telegram_user_id:<id>` 或 `telegram_user_id:<id> (@username)`；该字段在待归属阶段被视为人工认领线索，而不是已确认的成员 ID。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“定义格式化邮件提交规范”，先把邮件主题、任务编号、正文元数据和附件约束写死，再接入邮件入站占位。
+
 ## 2026-04-28 12:14 - Establish unified channel material submission boundary
 
 ### 完成内容
