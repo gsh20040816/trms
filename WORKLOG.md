@@ -1,5 +1,62 @@
 # WORKLOG
 
+## 2026-04-28 12:14 - Establish unified channel material submission boundary
+
+### 完成内容
+- 新增 `src/trms_backend/application/material_submission.py`，把材料提交主链路从 `api/materials.py` 抽为独立应用服务：
+  - 统一处理文件校验、批量部分成功语义、原始文件存储、材料记录创建和识别任务占位创建；
+  - 提供 `submit_to_task` 和 `submit_pending_assignment` 两个入口，分别覆盖“已识别任务/成员”的提交和“待归属材料”的提交。
+- 调整 `src/trms_backend/api/materials.py`：
+  - 路由层只保留 HTTP 参数解析、`UploadFile` 读取和错误映射；
+  - `/api/tasks/{task_id}/materials` 与 `/api/materials/pending-assignment` 都改为调用统一服务，不再各自拼装材料创建逻辑。
+- 调整 `src/trms_backend/main.py`，在应用启动时集中构造 `MaterialSubmissionService` 并注入材料路由，明确后续 Telegram/邮件入口应复用同一服务边界。
+- 新增 `tests/test_material_submission_service.py`，覆盖：
+  - Web、CLI、Telegram、Email 四种 `channel` 走同一“已归属材料提交”主链路；
+  - 待归属提交不会在渠道层派生独立业务规则，而是统一进入 `pending_assignment` 路径。
+- 更新 `TASKS.md`，将“建立渠道提交统一入口边界”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/application/__init__.py`
+- `src/trms_backend/application/material_submission.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/main.py`
+- `tests/test_material_submission_service.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前仓库虽然已经让 Web、CLI、待归属材料共用同一数据库模型，但真正的材料提交主链路仍然堆在 `api/materials.py`：
+  - 文件校验、批量失败处理、存储、材料创建和识别任务占位都由路由直接编排；
+  - `/api/tasks/{task_id}/materials` 和 `/api/materials/pending-assignment` 各自维护一份近似逻辑。
+- 这种结构会把后续 Telegram 和邮件接入逼到 API 层复制业务规则，违背需求文档和架构文档中“渠道只负责接入，不各自实现业务主流程”的边界。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_material_submission_service.py tests/test_materials_api.py tests/test_cli_submit.py`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 207 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只建立统一材料提交服务边界，没有提前实现下一项“Telegram 账号绑定模型”，也没有实现真实 Telegram Bot、邮件收取或渠道身份绑定。
+- `./scripts/verify.sh` 期间仍出现两类既有警告：
+  - `pytest` 中 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`；
+  - 前端测试期间若干 Node `--localstorage-file` 警告。
+  这些警告均为既有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设“统一渠道提交入口边界”的最小闭环是：
+  - 所有渠道最终都调用同一个后端材料提交服务；
+  - 渠道层只负责拿到文件、渠道标识和可选身份/任务提示，不在渠道层复制成员校验、文件存储、识别任务创建或批量失败语义。
+- 当前尚未接入真实 Telegram/邮件适配器，因此本轮通过服务注入边界和服务层测试来锁定未来调用方式；后续渠道实现应直接复用该服务，而不是重新实现一套材料提交流程。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立 Telegram 账号绑定模型”，并让未绑定 Telegram 账号的材料通过本轮建立的 `submit_pending_assignment` 路径进入待归属状态。
+
 ## 2026-04-28 12:10 - Evaluate CLI recursive directory upload
 
 ### 完成内容

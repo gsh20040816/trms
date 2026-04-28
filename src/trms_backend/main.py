@@ -2,6 +2,7 @@ import os
 
 from fastapi import FastAPI, Request
 
+from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
 from trms_backend.api.confirmations import build_confirmation_router
 from trms_backend.api.exports import build_export_router
@@ -56,6 +57,12 @@ def create_app(
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
+    material_submission_service = MaterialSubmissionService(
+        task_repository,
+        material_repository,
+        material_file_storage,
+        recognition_task_repository,
+    )
 
     @app.middleware("http")
     async def enforce_cli_compatibility(request: Request, call_next):
@@ -95,7 +102,11 @@ def create_app(
         )
     )
     app.include_router(
-        build_material_router(task_repository, material_repository, material_file_storage, recognition_task_repository)
+        build_material_router(
+            task_repository,
+            material_repository,
+            material_submission_service,
+        )
     )
     app.include_router(
         build_recognition_router(
