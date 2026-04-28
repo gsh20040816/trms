@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-04-28 07:58 - Implement member web task list page
+
+### 完成内容
+- 为成员入口补齐首个真实业务页面：
+  - 新增 `web/src/app/member-task-list.tsx`，在 `/member` 展示当前 mock 成员可见的报销任务列表；
+  - 页面复用现有 `GET /api/tasks`，前端按 `task.member_ids` 包含当前成员 `actor_id` 做可见范围过滤，不新增后端接口。
+- 将成员路由从占位页接入真实页面：
+  - 更新 `web/src/app/routes.tsx` 与 `web/src/app/auth.tsx`，让成员入口像管理员入口一样走嵌套路由；
+  - 保留系统管理员入口占位，不提前实现无关页面。
+- 补齐成员任务页测试：
+  - 新增 `web/src/app/member-task-list.test.tsx`，覆盖“只显示当前成员可见任务”和“无任务时空状态”；
+  - 更新 `web/src/app/App.test.tsx`，覆盖从 `/login?next=/member` 进入成员真实页面。
+- 将 `TASKS.md` 中“实现成员 Web 可提交任务页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/app/auth.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/app/App.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有前端只有管理员链路已进入真实业务页面，成员入口仍停留在纯占位提示，导致 Web 主流程缺少“成员先看到自己该向哪个任务提交材料”的起点。
+- 后端已经提供任务列表契约，且任务模型自带 `member_ids`；当前缺口只在前端可见性过滤、成员路由接入和空状态展示，不需要扩散到新的后端实现。
+
+### 验证结果
+- 已通过：
+  - `npm test -- member-task-list App`
+    - `web/src/app/member-task-list.test.tsx` 与相关路由测试通过，共 5 个测试文件、17 个测试通过
+  - `npm run lint`
+  - `./scripts/verify.sh`
+- 说明：
+  - `npm test` 期间仍打印 Node `--localstorage-file` 既有警告，但测试通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 在真实鉴权、成员参与历史和“已参与任务”专用聚合接口接入前，成员页当前只按 `task.member_ids` 过滤可见任务；这覆盖“本人可参与任务”主路径，但不额外推断已脱离成员名单的历史参与任务。
+- 本轮只实现成员任务列表页，不提前实现材料上传、材料状态、费用确认或成员侧其他业务页面。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现成员 Web 材料上传页面”，直接复用本轮已经打通的 `/member` 入口和可见任务列表。
+
 ## 2026-04-28 07:53 - Implement admin task detail page
 
 ### 完成内容

@@ -145,7 +145,7 @@ export function ProtectedRoleRoute({ roleRoute }: { roleRoute: RoleRouteConfig }
     );
   }
 
-  if (roleRoute.role === "admin") {
+  if (roleRoute.role === "admin" || roleRoute.role === "member") {
     return <Outlet />;
   }
 

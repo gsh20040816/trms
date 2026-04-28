@@ -79,6 +79,34 @@ describe("web app auth placeholder", () => {
     ).toBeInTheDocument();
   });
 
+  it("allows entering the requested route with a mock member session", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in auth test: ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/login?next=%2Fmember"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "以成员身份进入" }));
+
+    expect(await screen.findByRole("heading", { name: "成员可提交任务" })).toBeInTheDocument();
+    expect(await screen.findByText("当前没有可见报销任务")).toBeInTheDocument();
+  });
+
   it("shows a role mismatch placeholder for the wrong logged-in role", () => {
     setMockSession("member");
 

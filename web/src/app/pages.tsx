@@ -16,7 +16,7 @@ export function RootLayout() {
         <p className="eyebrow">TRMS Web Skeleton</p>
         <h1>报销收集前端入口与登录占位已建立</h1>
         <p className="hero-copy">
-          当前已固化入口、mock 登录态、角色路由门禁和 API 客户端边界，并补齐管理员任务列表首个真实业务页面。
+          当前已固化入口、mock 登录态、角色路由门禁和 API 客户端边界，并补齐管理员与成员两条前端主链路的首批真实业务页面。
         </p>
         <dl className="boundary-grid" aria-label="当前边界">
           <div>
@@ -132,7 +132,7 @@ export function HomePage() {
           FastAPI 常见 `detail` 错误、字段校验错误和网络失败提供统一展示入口；管理员任务列表已开始复用这些合同和错误边界。
         </p>
         <p className="status-note">
-          下一轮页面任务可继续复用统一 `trmsApi` 请求封装和 `ApiErrorNotice`
+          后续页面任务可继续复用统一 `trmsApi` 请求封装和 `ApiErrorNotice`
           错误组件，不需要在业务页面重复拼装错误文案。
         </p>
       </section>
