@@ -21,7 +21,7 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
-from test_tasks_api import admin_auth_headers, valid_task_payload
+from test_tasks_api import admin_auth_headers, create_task as create_admin_task
 
 
 def build_text_pdf_bytes() -> bytes:
@@ -73,7 +73,7 @@ def make_client(tmp_path, *, runtime_config):
 
 
 def create_task(client: TestClient) -> str:
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_admin_task(client)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import admin_auth_headers, valid_task_payload
+from test_tasks_api import admin_auth_headers, create_task
 
 
 def make_client(tmp_path):
@@ -16,7 +16,7 @@ def make_client(tmp_path):
 
 
 def create_open_task(client: TestClient) -> str:
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},

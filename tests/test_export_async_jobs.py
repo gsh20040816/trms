@@ -22,9 +22,9 @@ from test_exports_api import create_export_job, create_invoice_with_splits
 from test_tasks_api import (
     admin_auth_headers,
     auth_headers,
+    create_task as create_admin_task,
     register_and_get_token,
     update_task_row,
-    valid_task_payload,
 )
 
 
@@ -51,9 +51,7 @@ def make_client(tmp_path, *, runtime_config):
 
 
 def create_task(client: TestClient) -> str:
-    response = client.post("/api/tasks", json=valid_task_payload())
-    assert response.status_code == 201
-    return response.json()["id"]
+    return create_admin_task(client)["id"]
 
 
 def member_auth_headers(client: TestClient) -> dict[str, str]:

@@ -22,10 +22,10 @@ from api_error_assertions import assert_api_error
 from test_tasks_api import (
     admin_auth_headers,
     auth_headers,
+    create_task,
     create_invoice,
     register_and_get_token,
     update_task_row,
-    valid_task_payload,
 )
 
 
@@ -39,7 +39,7 @@ def make_client(tmp_path):
 
 
 def create_open_task(client: TestClient) -> str:
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
@@ -174,7 +174,10 @@ def test_pending_assignment_material_stays_hidden_from_task_material_list(tmp_pa
     assert material["task_id_hint"] == task_id
     assert material["submitter_id_hint"] == "2250999"
 
-    listed = client.get(f"/api/tasks/{task_id}/materials")
+    listed = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
     assert listed.status_code == 200
     assert listed.json()["items"] == []
 
@@ -213,7 +216,10 @@ def test_administrator_can_claim_pending_assignment_material(tmp_path):
     assert material["claimed_by"] == "admin-1"
     assert material["claimed_at"] is not None
 
-    listed = client.get(f"/api/tasks/{task_id}/materials")
+    listed = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()["items"]] == [material_id]
 
@@ -323,7 +329,10 @@ def test_task_administrator_can_mark_material_deleted_without_removing_file(tmp_
 
     assert response.status_code == 200
     assert response.json()["item"]["status"] == "deleted"
-    listed = client.get(f"/api/tasks/{task_id}/materials")
+    listed = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
     assert listed.status_code == 200
     assert listed.json()["items"] == []
     stored = get_material_record(tmp_path, material["id"])
@@ -618,7 +627,7 @@ def test_submit_material_rejects_non_member_across_all_channels(tmp_path):
 
 def test_submit_material_rejects_draft_task(tmp_path):
     client = make_client(tmp_path)
-    task_id = client.post("/api/tasks", json=valid_task_payload()).json()["id"]
+    task_id = create_task(client)["id"]
 
     response = client.post(
         f"/api/tasks/{task_id}/materials",
@@ -697,7 +706,10 @@ def test_submit_material_returns_partial_success_for_batch_upload(tmp_path):
         }
     ]
 
-    listed = client.get(f"/api/tasks/{task_id}/materials")
+    listed = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
     assert listed.status_code == 200
     assert [item["original_filename"] for item in listed.json()["items"]] == ["ticket.pdf"]
 
@@ -739,7 +751,10 @@ def test_submit_material_returns_failed_batch_result_when_all_files_fail(tmp_pat
         },
     ]
 
-    listed = client.get(f"/api/tasks/{task_id}/materials")
+    listed = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
     assert listed.status_code == 200
     assert listed.json()["items"] == []
 
@@ -770,7 +785,10 @@ def test_submit_material_rejects_task_after_deadline(tmp_path):
 def test_member_submission_deadline_boundary_rejects_equal_now(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)
-    task = client.get(f"/api/tasks/{task_id}").json()
+    task = client.get(
+        f"/api/tasks/{task_id}",
+        headers=admin_auth_headers(client),
+    ).json()
     deadline = datetime(2026, 12, 1, tzinfo=UTC)
     task["deadline"] = deadline.isoformat()
     reimbursement_task = ReimbursementTask.model_validate(task)
@@ -899,7 +917,10 @@ def test_list_materials_by_task(tmp_path):
         ],
     )
 
-    response = client.get(f"/api/tasks/{task_id}/materials")
+    response = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     assert [item["original_filename"] for item in response.json()["items"]] == [
@@ -915,7 +936,10 @@ def test_list_materials_by_task(tmp_path):
 def test_list_materials_rejects_missing_task(tmp_path):
     client = make_client(tmp_path)
 
-    response = client.get("/api/tasks/missing/materials")
+    response = client.get(
+        "/api/tasks/missing/materials",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "task not found"

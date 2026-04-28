@@ -10,6 +10,7 @@ from trms_backend.main import create_app
 from test_tasks_api import (
     admin_auth_headers,
     auth_headers,
+    create_task as create_admin_task,
     register_and_get_token,
     update_task_row,
     valid_invoice_payload,
@@ -27,15 +28,11 @@ def make_client(tmp_path):
 
 
 def create_task(client: TestClient) -> str:
-    response = client.post("/api/tasks", json=valid_task_payload())
-    assert response.status_code == 201
-    return response.json()["id"]
+    return create_admin_task(client)["id"]
 
 
 def create_task_with_overrides(client: TestClient, **overrides) -> str:
-    response = client.post("/api/tasks", json=valid_task_payload() | overrides)
-    assert response.status_code == 201
-    return response.json()["id"]
+    return create_admin_task(client, payload=valid_task_payload() | overrides)["id"]
 
 
 def create_export_job(

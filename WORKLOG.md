@@ -1,5 +1,75 @@
 # WORKLOG
 
+## 2026-04-29 00:37 - Tighten task creation and task query auth boundaries
+
+### 完成内容
+- 收口任务创建权限：
+  - `POST /api/tasks` 现在必须携带 bearer token；
+  - 只有 `admin` 或 `system_admin` 角色可以创建任务；
+  - 请求体里的 `administrator_id` 必须与认证身份一致，匿名请求和普通成员请求都会被拒绝。
+- 收口任务查询权限：
+  - `GET /api/tasks`、`GET /api/tasks/{task_id}`、`GET /api/tasks/{task_id}/members`、`GET /api/tasks/{task_id}/materials` 现在都要求 bearer 身份；
+  - 成员仍只能看到自己可见的任务和本人提交的任务材料；
+  - 任务管理员仍可查看本任务详情、成员和全部任务材料；
+  - 无关管理员不再能读取其他管理员名下任务详情、成员或材料。
+- 补齐并修正回归测试：
+  - `tests/test_tasks_api.py` 增加匿名、普通成员、任务管理员、无关管理员四类路径覆盖；
+  - 将全仓库受影响测试统一切到“管理员 bearer 创建任务”的新前提；
+  - 同步修复 `missing_materials`、`task_member_status`、`recognition` 等 fixture 中对匿名建任务的旧假设。
+
+### 根因
+- `src/trms_backend/api/tasks.py` 中任务创建接口此前完全未鉴权，匿名请求可直接创建报销任务；
+- 任务列表接口会在匿名场景下返回全部任务或按 `member_id` 过滤后的任务，详情/成员接口又把匿名身份解析成可访问 scope；
+- `src/trms_backend/api/materials.py` 中任务材料列表也沿用了同样的匿名可见假设，导致任务主链路存在明显越权读取面。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/api/materials.py`
+- `tests/test_api_error_responses.py`
+- `tests/test_automatic_reminder_tasks_api.py`
+- `tests/test_email_materials_api.py`
+- `tests/test_expense_details_api.py`
+- `tests/test_expense_disputes_api.py`
+- `tests/test_export_async_jobs.py`
+- `tests/test_exports_api.py`
+- `tests/test_invoices_api.py`
+- `tests/test_material_storage.py`
+- `tests/test_materials_api.py`
+- `tests/test_metrics.py`
+- `tests/test_missing_materials_api.py`
+- `tests/test_overdue_confirmations_api.py`
+- `tests/test_recognition_async_jobs.py`
+- `tests/test_recognition_execution_api.py`
+- `tests/test_recognition_tasks_api.py`
+- `tests/test_task_member_status_api.py`
+- `tests/test_task_review_summary_api.py`
+- `tests/test_tasks_api.py`
+- `tests/test_telegram_materials_api.py`
+- `tests/test_web_bearer_request_identity_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py tests/test_materials_api.py tests/test_web_bearer_request_identity_api.py tests/test_api_error_responses.py tests/test_invoices_api.py tests/test_exports_api.py tests/test_recognition_tasks_api.py tests/test_recognition_execution_api.py tests/test_recognition_async_jobs.py tests/test_automatic_reminder_tasks_api.py tests/test_email_materials_api.py tests/test_telegram_materials_api.py tests/test_overdue_confirmations_api.py tests/test_task_review_summary_api.py tests/test_expense_details_api.py tests/test_expense_disputes_api.py tests/test_export_async_jobs.py tests/test_metrics.py`
+    - 194 个测试通过
+  - `uv run pytest tests/test_missing_materials_api.py tests/test_task_member_status_api.py`
+    - 5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 322 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮采用保守权限边界：即使是 `system_admin`，创建任务时也必须使用与 bearer 身份一致的 `administrator_id`，不开放“替其他管理员代建任务”的隐式代理能力；若后续确有代建需求，应作为独立权限任务显式设计和测试。
+
 ## 2026-04-29 00:32 - Review prototype image and document current UI design gaps
 
 ### 完成内容

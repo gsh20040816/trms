@@ -9,8 +9,8 @@ from trms_backend.main import create_app
 from test_tasks_api import (
     admin_auth_headers,
     auth_headers,
+    create_task as create_admin_task,
     register_and_get_token,
-    valid_task_payload,
 )
 
 
@@ -24,7 +24,7 @@ def make_client(tmp_path):
 
 
 def create_task(client: TestClient) -> str:
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_admin_task(client)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},

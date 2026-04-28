@@ -15,7 +15,7 @@ from trms_backend.runtime_config import S3FileStorageConfig
 
 from fastapi.testclient import TestClient
 
-from test_tasks_api import admin_auth_headers, valid_task_payload
+from test_tasks_api import admin_auth_headers, create_task
 
 
 def test_local_material_storage_uses_distinct_keys_for_same_filename(tmp_path):
@@ -67,7 +67,7 @@ def test_material_record_persists_storage_key_for_saved_file(tmp_path):
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
         )
     )
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},

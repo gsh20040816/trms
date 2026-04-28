@@ -21,8 +21,8 @@ from trms_backend.runtime_config import load_runtime_config
 from test_tasks_api import (
     admin_auth_headers,
     auth_headers,
+    create_task as create_admin_task,
     register_and_get_token,
-    valid_task_payload,
 )
 
 
@@ -78,7 +78,7 @@ def make_llm_runtime_config(tmp_path):
 
 
 def create_task(client: TestClient) -> str:
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_admin_task(client)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},

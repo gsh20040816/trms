@@ -71,6 +71,21 @@ def admin_auth_headers(client: TestClient) -> dict[str, str]:
     )
 
 
+def create_task(
+    client: TestClient,
+    *,
+    payload: dict | None = None,
+    headers: dict[str, str] | None = None,
+):
+    response = client.post(
+        "/api/tasks",
+        json=valid_task_payload() if payload is None else payload,
+        headers=admin_auth_headers(client) if headers is None else headers,
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
 def update_task_row(tmp_path, task_id: str, **updates):
     session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
     with session_scope(session_factory) as session:
@@ -183,7 +198,11 @@ def test_health_check(tmp_path):
 def test_create_and_get_task(tmp_path):
     client = make_client(tmp_path)
 
-    created = client.post("/api/tasks", json=valid_task_payload())
+    created = client.post(
+        "/api/tasks",
+        json=valid_task_payload(),
+        headers=admin_auth_headers(client),
+    )
 
     assert created.status_code == 201
     body = created.json()
@@ -192,10 +211,44 @@ def test_create_and_get_task(tmp_path):
     assert body["competition_name"] == "ICPC Asia Regional"
     assert body["invoice_title"] == "同济大学"
 
-    fetched = client.get(f"/api/tasks/{body['id']}")
+    fetched = client.get(
+        f"/api/tasks/{body['id']}",
+        headers=admin_auth_headers(client),
+    )
 
     assert fetched.status_code == 200
     assert fetched.json()["id"] == body["id"]
+
+
+def test_create_task_requires_authenticated_admin(tmp_path):
+    client = make_client(tmp_path)
+
+    anonymous_response = client.post("/api/tasks", json=valid_task_payload())
+    assert_api_error(
+        anonymous_response,
+        status_code=401,
+        code="unauthorized",
+        detail="invalid or missing bearer token",
+    )
+
+    member_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    member_response = client.post(
+        "/api/tasks",
+        json=valid_task_payload() | {"administrator_id": "2250001"},
+        headers=auth_headers(member_token),
+    )
+    assert_api_error(
+        member_response,
+        status_code=403,
+        code="forbidden",
+        detail="actor is not allowed to create reimbursement tasks",
+    )
 
 
 def test_create_task_inherits_global_invoice_config(tmp_path):
@@ -210,7 +263,7 @@ def test_create_task_inherits_global_invoice_config(tmp_path):
     payload.pop("invoice_title")
     payload.pop("tax_number")
 
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/tasks", json=payload, headers=admin_auth_headers(client))
 
     assert response.status_code == 201
     body = response.json()
@@ -231,7 +284,7 @@ def test_create_task_allows_task_level_invoice_override(tmp_path):
         "tax_number": "TASK-TAX-NUMBER",
     }
 
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/tasks", json=payload, headers=admin_auth_headers(client))
 
     assert response.status_code == 201
     body = response.json()
@@ -245,7 +298,7 @@ def test_create_task_rejects_missing_invoice_config_without_global_default(tmp_p
     payload.pop("invoice_title")
     payload.pop("tax_number")
 
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/tasks", json=payload, headers=admin_auth_headers(client))
 
     assert response.status_code == 422
     assert response.json()["detail"] == (
@@ -258,10 +311,10 @@ def test_list_tasks_returns_created_tasks(tmp_path):
     first = valid_task_payload()
     second = valid_task_payload() | {"competition_name": "CCPC Final"}
 
-    client.post("/api/tasks", json=first)
-    client.post("/api/tasks", json=second)
+    client.post("/api/tasks", json=first, headers=admin_auth_headers(client))
+    client.post("/api/tasks", json=second, headers=admin_auth_headers(client))
 
-    response = client.get("/api/tasks")
+    response = client.get("/api/tasks", headers=admin_auth_headers(client))
 
     assert response.status_code == 200
     assert [task["competition_name"] for task in response.json()] == [
@@ -272,16 +325,27 @@ def test_list_tasks_returns_created_tasks(tmp_path):
 
 def test_list_tasks_filters_by_member_id(tmp_path):
     client = make_client(tmp_path)
-    first = valid_task_payload()
-    second = valid_task_payload() | {
+    create_task(client)
+    create_task(
+        client,
+        payload=valid_task_payload() | {
         "competition_name": "CCPC Final",
         "member_ids": ["2250003", "2250999"],
-    }
+        },
+    )
+    member_token = register_and_get_token(
+        client,
+        username="member-filter",
+        role="member",
+        actor_id="2250999",
+        member_code="2250999",
+    )
 
-    client.post("/api/tasks", json=first)
-    client.post("/api/tasks", json=second)
-
-    response = client.get("/api/tasks", params={"member_id": "2250999"})
+    response = client.get(
+        "/api/tasks",
+        params={"member_id": "2250999"},
+        headers=auth_headers(member_token),
+    )
 
     assert response.status_code == 200
     assert [task["competition_name"] for task in response.json()] == ["CCPC Final"]
@@ -289,9 +353,20 @@ def test_list_tasks_filters_by_member_id(tmp_path):
 
 def test_list_tasks_returns_empty_when_member_has_no_visible_tasks(tmp_path):
     client = make_client(tmp_path)
-    client.post("/api/tasks", json=valid_task_payload())
+    create_task(client)
+    member_token = register_and_get_token(
+        client,
+        username="member-empty",
+        role="member",
+        actor_id="2250888",
+        member_code="2250888",
+    )
 
-    response = client.get("/api/tasks", params={"member_id": "2250888"})
+    response = client.get(
+        "/api/tasks",
+        params={"member_id": "2250888"},
+        headers=auth_headers(member_token),
+    )
 
     assert response.status_code == 200
     assert response.json() == []
@@ -301,7 +376,7 @@ def test_rejects_empty_member_list(tmp_path):
     client = make_client(tmp_path)
     payload = valid_task_payload() | {"member_ids": []}
 
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/tasks", json=payload, headers=admin_auth_headers(client))
 
     assert response.status_code == 422
 
@@ -310,7 +385,7 @@ def test_rejects_unsupported_fee_categories(tmp_path):
     client = make_client(tmp_path)
     payload = valid_task_payload() | {"fee_categories": ["registration", "meals"]}
 
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/tasks", json=payload, headers=admin_auth_headers(client))
 
     assert response.status_code == 422
     assert "unsupported fee categories: meals" in response.text
@@ -323,7 +398,7 @@ def test_rejects_end_date_before_start_date(tmp_path):
         "competition_end_date": "2026-11-01",
     }
 
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/tasks", json=payload, headers=admin_auth_headers(client))
 
     assert response.status_code == 422
 
@@ -333,7 +408,7 @@ def test_rejects_past_deadline(tmp_path):
     past_deadline = datetime(2025, 1, 1, tzinfo=UTC).isoformat()
     payload = valid_task_payload() | {"deadline": past_deadline}
 
-    response = client.post("/api/tasks", json=payload)
+    response = client.post("/api/tasks", json=payload, headers=admin_auth_headers(client))
 
     assert response.status_code == 422
 
@@ -341,7 +416,7 @@ def test_rejects_past_deadline(tmp_path):
 def test_get_missing_task_returns_404(tmp_path):
     client = make_client(tmp_path)
 
-    response = client.get("/api/tasks/missing")
+    response = client.get("/api/tasks/missing", headers=admin_auth_headers(client))
 
     assert_api_error(
         response,
@@ -353,17 +428,69 @@ def test_get_missing_task_returns_404(tmp_path):
 
 def test_get_task_members_returns_member_list(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
 
-    response = client.get(f"/api/tasks/{created['id']}/members")
+    response = client.get(
+        f"/api/tasks/{created['id']}/members",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     assert response.json() == {"items": ["2250001", "2250002", "2250003"]}
 
 
+def test_task_queries_require_bearer_and_enforce_scope(tmp_path):
+    client = make_client(tmp_path)
+    task = create_task(client)
+    member_token = register_and_get_token(
+        client,
+        username="taskmember",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    outsider_admin_token = register_and_get_token(
+        client,
+        username="outsider-admin",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+
+    for path in (
+        f"/api/tasks/{task['id']}",
+        f"/api/tasks/{task['id']}/members",
+    ):
+        anonymous_response = client.get(path)
+        assert_api_error(
+            anonymous_response,
+            status_code=401,
+            code="unauthorized",
+            detail="invalid or missing bearer token",
+        )
+
+        member_response = client.get(path, headers=auth_headers(member_token))
+        assert member_response.status_code == 200
+
+        administrator_response = client.get(path, headers=admin_auth_headers(client))
+        assert administrator_response.status_code == 200
+
+        outsider_response = client.get(path, headers=auth_headers(outsider_admin_token))
+        assert_api_error(
+            outsider_response,
+            status_code=403,
+            code="forbidden",
+            detail=(
+                "actor is not allowed to view this task"
+                if path.endswith(task["id"])
+                else "actor is not allowed to view task members for this task"
+            ),
+        )
+
+
 def test_administrator_can_record_and_list_material_reminders(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
 
     create_response = client.post(
         f"/api/tasks/{task['id']}/material-reminders",
@@ -395,7 +522,7 @@ def test_administrator_can_record_and_list_material_reminders(tmp_path):
 
 def test_create_material_reminder_rejects_non_administrator(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     member_token = register_and_get_token(
         client,
         username="member1",
@@ -420,7 +547,7 @@ def test_create_material_reminder_rejects_non_administrator(tmp_path):
 
 def test_create_material_reminder_rejects_member_outside_task(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
 
     response = client.post(
         f"/api/tasks/{task['id']}/material-reminders",
@@ -438,7 +565,7 @@ def test_create_material_reminder_rejects_member_outside_task(tmp_path):
 
 def test_list_material_reminders_rejects_non_administrator(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     create_response = client.post(
         f"/api/tasks/{task['id']}/material-reminders",
         json={
@@ -469,7 +596,7 @@ def test_list_material_reminders_rejects_non_administrator(tmp_path):
 
 def test_update_task_members_allows_replace_in_draft(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
 
     response = client.put(
         f"/api/tasks/{created['id']}/members",
@@ -480,14 +607,17 @@ def test_update_task_members_allows_replace_in_draft(tmp_path):
     assert response.status_code == 200
     assert response.json() == {"items": ["2250001", "2250003", "2250999"]}
 
-    fetched = client.get(f"/api/tasks/{created['id']}")
+    fetched = client.get(
+        f"/api/tasks/{created['id']}",
+        headers=admin_auth_headers(client),
+    )
     assert fetched.status_code == 200
     assert fetched.json()["member_ids"] == ["2250001", "2250003", "2250999"]
 
 
 def test_update_task_members_rejects_non_draft_task(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
@@ -519,7 +649,7 @@ def test_update_missing_task_members_returns_404(tmp_path):
 
 def test_update_task_status_allows_valid_transition(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
 
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
@@ -533,7 +663,7 @@ def test_update_task_status_allows_valid_transition(tmp_path):
 
 def test_update_task_status_allows_transition_from_closed_to_reviewing(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
 
     closed = client.patch(
@@ -556,7 +686,7 @@ def test_update_task_status_allows_transition_from_closed_to_reviewing(tmp_path)
 
 def test_update_task_status_rejects_open_when_member_list_missing(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     update_task_row(tmp_path, created["id"], member_ids=[])
 
     response = client.patch(
@@ -571,7 +701,7 @@ def test_update_task_status_rejects_open_when_member_list_missing(tmp_path):
 
 def test_update_task_status_rejects_open_when_fee_categories_missing(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     update_task_row(tmp_path, created["id"], fee_categories=[])
 
     response = client.patch(
@@ -588,7 +718,7 @@ def test_update_task_status_rejects_open_when_fee_categories_missing(tmp_path):
 
 def test_update_task_status_rejects_open_when_project_info_missing(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     update_task_row(tmp_path, created["id"], project_info="   ")
 
     response = client.patch(
@@ -603,7 +733,7 @@ def test_update_task_status_rejects_open_when_project_info_missing(tmp_path):
 
 def test_update_task_status_rejects_open_when_reimburser_info_missing(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     update_task_row(tmp_path, created["id"], reimburser_info="   ")
 
     response = client.patch(
@@ -620,7 +750,7 @@ def test_update_task_status_rejects_open_when_reimburser_info_missing(tmp_path):
 
 def test_update_task_status_rejects_invalid_transition(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
 
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
@@ -634,7 +764,7 @@ def test_update_task_status_rejects_invalid_transition(tmp_path):
 
 def test_update_task_status_allows_ready_to_export_after_review_conditions_met(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
@@ -656,7 +786,7 @@ def test_update_task_status_allows_ready_to_export_when_only_warning_validations
     tmp_path,
 ):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(
@@ -680,7 +810,7 @@ def test_update_task_status_allows_ready_to_export_when_only_warning_validations
 
 def test_update_task_status_rejects_ready_to_export_when_blocker_validation_fails(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id, buyer_name="错误抬头")
@@ -702,7 +832,7 @@ def test_update_task_status_rejects_ready_to_export_when_blocker_validation_fail
 
 def test_update_task_status_rejects_ready_to_export_when_member_confirmation_missing(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
@@ -726,7 +856,7 @@ def test_update_task_status_rejects_ready_to_export_when_member_confirmation_is_
     tmp_path,
 ):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
@@ -779,7 +909,7 @@ def test_update_task_status_rejects_ready_to_export_when_pending_assignment_mate
     tmp_path,
 ):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
@@ -817,7 +947,7 @@ def test_update_task_status_rejects_ready_to_export_when_split_amount_changes_af
     tmp_path,
 ):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
@@ -873,7 +1003,7 @@ def test_update_task_status_rejects_ready_to_export_when_split_amount_changes_af
 
 def test_update_task_status_rejects_completed_before_export_completion_is_recorded(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
@@ -914,7 +1044,7 @@ def test_update_missing_task_status_returns_404(tmp_path):
 
 def test_run_task_deadline_check_closes_expired_open_task(tmp_path):
     client = make_client(tmp_path)
-    created = client.post("/api/tasks", json=valid_task_payload()).json()
+    created = create_task(client)
     client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
@@ -934,18 +1064,21 @@ def test_run_task_deadline_check_closes_expired_open_task(tmp_path):
         "closed_task_ids": [created["id"]],
     }
 
-    fetched = client.get(f"/api/tasks/{created['id']}")
+    fetched = client.get(
+        f"/api/tasks/{created['id']}",
+        headers=admin_auth_headers(client),
+    )
     assert fetched.status_code == 200
     assert fetched.json()["status"] == "closed"
 
 
 def test_run_task_deadline_check_ignores_non_open_tasks(tmp_path):
     client = make_client(tmp_path)
-    draft_task = client.post("/api/tasks", json=valid_task_payload()).json()
-    open_task = client.post(
-        "/api/tasks",
-        json=valid_task_payload() | {"competition_name": "CCPC Final"},
-    ).json()
+    draft_task = create_task(client)
+    open_task = create_task(
+        client,
+        payload=valid_task_payload() | {"competition_name": "CCPC Final"},
+    )
     client.patch(
         f"/api/tasks/{open_task['id']}/status",
         json={"target_status": "open"},
@@ -965,7 +1098,10 @@ def test_run_task_deadline_check_ignores_non_open_tasks(tmp_path):
         "closed_task_ids": [],
     }
 
-    fetched = client.get(f"/api/tasks/{draft_task['id']}")
+    fetched = client.get(
+        f"/api/tasks/{draft_task['id']}",
+        headers=admin_auth_headers(client),
+    )
     assert fetched.status_code == 200
     assert fetched.json()["status"] == "draft"
 
@@ -975,7 +1111,7 @@ def test_task_persists_across_app_instances(tmp_path):
     first_client = TestClient(
         create_app(database_url, material_file_storage=LocalMaterialFileStorage(tmp_path / "first"))
     )
-    task = first_client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(first_client)
 
     second_client = TestClient(
         create_app(
@@ -983,7 +1119,10 @@ def test_task_persists_across_app_instances(tmp_path):
             material_file_storage=LocalMaterialFileStorage(tmp_path / "second"),
         )
     )
-    response = second_client.get(f"/api/tasks/{task['id']}")
+    response = second_client.get(
+        f"/api/tasks/{task['id']}",
+        headers=admin_auth_headers(second_client),
+    )
 
     assert response.status_code == 200
     assert response.json()["id"] == task["id"]

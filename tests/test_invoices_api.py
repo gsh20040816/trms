@@ -16,7 +16,7 @@ from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepositor
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import admin_auth_headers, valid_task_payload
+from test_tasks_api import admin_auth_headers, create_task as create_admin_task, valid_task_payload
 
 
 def make_client(tmp_path):
@@ -29,7 +29,7 @@ def make_client(tmp_path):
 
 
 def create_material(client: TestClient) -> tuple[str, str]:
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_admin_task(client)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},
@@ -40,7 +40,7 @@ def create_material(client: TestClient) -> tuple[str, str]:
 
 def create_airfare_material(client: TestClient) -> tuple[str, str]:
     task_payload = valid_task_payload() | {"fee_categories": ["airfare"]}
-    task = client.post("/api/tasks", json=task_payload).json()
+    task = create_admin_task(client, payload=task_payload)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},
@@ -51,7 +51,7 @@ def create_airfare_material(client: TestClient) -> tuple[str, str]:
 
 def create_local_transport_material(client: TestClient) -> tuple[str, str]:
     task_payload = valid_task_payload() | {"fee_categories": ["local_transport"]}
-    task = client.post("/api/tasks", json=task_payload).json()
+    task = create_admin_task(client, payload=task_payload)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},
@@ -1882,7 +1882,7 @@ def test_manual_invoice_correction_on_retry_keeps_older_recognition_history_unch
 def test_create_invoice_rejects_expense_type_not_allowed_by_task(tmp_path):
     client = make_client(tmp_path)
     task_payload = valid_task_payload() | {"fee_categories": ["registration", "hotel"]}
-    task = client.post("/api/tasks", json=task_payload).json()
+    task = create_admin_task(client, payload=task_payload)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},
@@ -1921,7 +1921,7 @@ def test_create_invoice_rejects_missing_material(tmp_path):
 
 def test_create_invoice_rejects_non_invoice_material(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_admin_task(client)
     client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "open"},

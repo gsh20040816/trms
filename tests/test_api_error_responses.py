@@ -11,7 +11,13 @@ from test_auth_api import (
     register_payload,
 )
 from test_materials_api import create_open_task
-from test_tasks_api import auth_headers, register_and_get_token, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    create_task,
+    register_and_get_token,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path, runtime_config=None):
@@ -74,7 +80,10 @@ def test_request_validation_error_uses_standard_error_payload(tmp_path):
 def test_request_id_header_is_propagated_on_error_response(tmp_path):
     client = make_client(tmp_path)
 
-    response = client.get("/api/tasks/missing", headers={"X-Request-ID": "client-request-123"})
+    response = client.get(
+        "/api/tasks/missing",
+        headers={"X-Request-ID": "client-request-123", **admin_auth_headers(client)},
+    )
 
     assert response.status_code == 404
     assert response.headers["X-Request-ID"] == "client-request-123"
@@ -114,7 +123,7 @@ def test_unhandled_error_logs_request_id_and_returns_standard_500_payload(tmp_pa
 def test_not_found_route_uses_standard_error_payload(tmp_path):
     client = make_client(tmp_path)
 
-    response = client.get("/api/tasks/missing")
+    response = client.get("/api/tasks/missing", headers=admin_auth_headers(client))
 
     assert_api_error(
         response,
@@ -140,7 +149,7 @@ def test_conflict_error_uses_standard_error_payload(tmp_path):
 
 def test_forbidden_error_uses_standard_error_payload(tmp_path):
     client = make_client(tmp_path)
-    task = client.post("/api/tasks", json=valid_task_payload()).json()
+    task = create_task(client)
     outsider_headers = auth_headers(
         register_and_get_token(
             client,

@@ -123,8 +123,31 @@ def build_task_router(
         auth_repository
     )
 
+    def ensure_task_management_role(
+        identity: RequestIdentity,
+        *,
+        forbidden_detail: str,
+    ) -> None:
+        if identity.role not in {UserRole.ADMIN, UserRole.SYSTEM_ADMIN}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=forbidden_detail,
+            )
+
     @router.post("", status_code=status.HTTP_201_CREATED)
-    def create_task(payload: TaskCreateInput):
+    def create_task(
+        payload: TaskCreateInput,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        ensure_task_management_role(
+            identity,
+            forbidden_detail="actor is not allowed to create reimbursement tasks",
+        )
+        resolve_required_actor_request_field(
+            identity,
+            payload.administrator_id,
+            field_name="administrator_id",
+        )
         try:
             task_create = resolve_task_create(payload, global_invoice_config_repository.get())
         except MissingTaskInvoiceConfigError as error:
@@ -136,7 +159,7 @@ def build_task_router(
 
     @router.get("")
     def list_tasks(
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         member_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         if identity.is_authenticated and identity.role is UserRole.MEMBER:
@@ -152,14 +175,12 @@ def build_task_router(
                 for task in repository.list()
                 if task.administrator_id == identity.actor_id
             ]
-        if member_id is None:
-            return repository.list()
-        return repository.list_for_member(member_id)
+        return []
 
     @router.get("/{task_id}")
     def get_task(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         task = repository.get(task_id)
         if task is None:
@@ -174,7 +195,7 @@ def build_task_router(
     @router.get("/{task_id}/members")
     def get_task_members(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         task = repository.get(task_id)
         if task is None:

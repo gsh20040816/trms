@@ -379,7 +379,7 @@ def build_material_router(
     @router.get("/api/tasks/{task_id}/materials")
     def list_materials(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         task = task_repository.get(task_id)
         if task is None:

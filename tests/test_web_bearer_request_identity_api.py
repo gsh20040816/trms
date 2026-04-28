@@ -3,7 +3,12 @@ from fastapi.testclient import TestClient
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import update_task_row, valid_invoice_payload, valid_task_payload
+from test_tasks_api import (
+    create_task as create_admin_task,
+    update_task_row,
+    valid_invoice_payload,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path) -> TestClient:
@@ -50,9 +55,7 @@ def register_and_get_token(
 
 
 def create_task(client: TestClient) -> str:
-    response = client.post("/api/tasks", json=valid_task_payload())
-    assert response.status_code == 201
-    return response.json()["id"]
+    return create_admin_task(client)["id"]
 
 
 def open_task(client: TestClient, task_id: str) -> None:
@@ -111,11 +114,10 @@ def test_member_bearer_task_queries_filter_visible_tasks_and_reject_mismatched_i
         member_code="2250001",
     )
     visible_task_id = create_task(client)
-    hidden_task_response = client.post(
-        "/api/tasks",
-        json=valid_task_payload() | {"member_ids": ["2250002", "2250003"]},
-    )
-    assert hidden_task_response.status_code == 201
+    hidden_task_id = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"member_ids": ["2250002", "2250003"]},
+    )["id"]
 
     list_response = client.get(
         "/api/tasks",
@@ -136,6 +138,7 @@ def test_member_bearer_task_queries_filter_visible_tasks_and_reject_mismatched_i
         "member_id does not match the authenticated request identity: "
         "expected '2250001', got '2250002'"
     )
+    assert hidden_task_id != visible_task_id
 
 
 def test_admin_bearer_review_summary_and_material_reminders_do_not_require_actor_fields(tmp_path):

@@ -7,7 +7,12 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 from test_invoices_api import valid_invoice_payload
-from test_tasks_api import admin_auth_headers, auth_headers, register_and_get_token, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    create_task as create_admin_task,
+    register_and_get_token,
+)
 
 
 def make_client(tmp_path):
@@ -27,8 +32,7 @@ def list_split_audit_logs(tmp_path, split_id: str):
 
 
 def create_task(client: TestClient) -> str:
-    response = client.post("/api/tasks", json=valid_task_payload())
-    task_id = response.json()["id"]
+    task_id = create_admin_task(client)["id"]
     response = client.patch(
         f"/api/tasks/{task_id}/status",
         json={"target_status": "open"},

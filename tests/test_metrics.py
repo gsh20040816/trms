@@ -5,7 +5,7 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 from test_invoices_api import valid_invoice_payload
-from test_tasks_api import admin_auth_headers, update_task_row, valid_task_payload
+from test_tasks_api import admin_auth_headers, create_task, update_task_row
 
 
 def make_client(tmp_path, metrics_collector: InMemoryMetricsCollector) -> TestClient:
@@ -22,9 +22,7 @@ def test_metrics_collector_tracks_upload_validation_and_export_boundaries(tmp_pa
     metrics_collector = InMemoryMetricsCollector()
     client = make_client(tmp_path, metrics_collector)
 
-    task_response = client.post("/api/tasks", json=valid_task_payload())
-    assert task_response.status_code == 201
-    task_id = task_response.json()["id"]
+    task_id = create_task(client)["id"]
     client.patch(
         f"/api/tasks/{task_id}/status",
         json={"target_status": "open"},
