@@ -161,6 +161,7 @@ def test_task_administrator_can_get_review_summary(tmp_path):
     assert body["task_id"] == task_id
     assert body["administrator_id"] == "admin-1"
     assert body["counts"]["material_count"] == 2
+    assert body["counts"]["pending_assignment_material_count"] == 0
     assert body["counts"]["invoice_count"] == 1
     assert body["counts"]["split_count"] == 2
     assert body["counts"]["confirmed_split_count"] == 1
@@ -183,6 +184,7 @@ def test_task_administrator_can_get_review_summary(tmp_path):
         "stage": "ocr",
         "reason": "failed to extract amount from payment screenshot",
     }
+    assert body["pending_assignment_materials"] == []
 
     assert len(body["invoices"]) == 1
     invoice_item = body["invoices"][0]
@@ -197,6 +199,42 @@ def test_task_administrator_can_get_review_summary(tmp_path):
     assert splits_by_member_id["2250002"]["confirmation"]["dispute_reason"] == (
         "shared amount should be lower"
     )
+
+
+def test_review_summary_includes_pending_assignment_materials_for_task_hint(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        "/api/materials/pending-assignment",
+        data={
+            "channel": "email",
+            "material_type": "payment_record",
+            "task_id_hint": task_id,
+            "submitter_id_hint": "2250002",
+        },
+        files={"files": ("pending-pay.pdf", b"pending payment", "application/pdf")},
+    )
+    assert response.status_code == 201
+    pending_material = response.json()["items"][0]
+
+    response = client.get(
+        f"/api/tasks/{task_id}/review-summary",
+        params={"actor_id": "admin-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["counts"]["material_count"] == 0
+    assert body["counts"]["pending_assignment_material_count"] == 1
+    assert len(body["pending_assignment_materials"]) == 1
+    summary_pending_material = body["pending_assignment_materials"][0]
+    assert summary_pending_material["id"] == pending_material["id"]
+    assert summary_pending_material["status"] == "pending_assignment"
+    assert summary_pending_material["task_id_hint"] == task_id
+    assert summary_pending_material["submitter_id_hint"] == "2250002"
+    assert summary_pending_material["original_filename"] == "pending-pay.pdf"
+    assert body["materials"] == []
 
 
 def test_non_administrator_cannot_get_review_summary(tmp_path):

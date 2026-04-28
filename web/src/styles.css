@@ -235,7 +235,9 @@ select {
 .admin-create-hero,
 .admin-form-card,
 .admin-task-detail-hero,
-.admin-task-detail-panel {
+.admin-task-detail-panel,
+.admin-review-hero,
+.admin-review-panel {
   max-width: none;
 }
 
@@ -751,6 +753,85 @@ select {
   margin-top: 18px;
 }
 
+.admin-review-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.admin-review-summary-grid div,
+.admin-review-meta-grid div,
+.admin-review-subsection {
+  border-radius: 18px;
+  background: rgba(244, 239, 228, 0.7);
+}
+
+.admin-review-summary-grid div,
+.admin-review-meta-grid div {
+  padding: 16px;
+}
+
+.admin-review-summary-grid dt,
+.admin-review-meta-grid dt {
+  margin-bottom: 6px;
+  color: #11253d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.admin-review-summary-grid dd,
+.admin-review-meta-grid dd {
+  margin: 0;
+  color: #35506f;
+}
+
+.admin-review-subsection {
+  margin-top: 18px;
+  padding: 18px;
+}
+
+.admin-review-subsection h4 {
+  margin: 0;
+  color: #11253d;
+}
+
+.admin-review-record-list,
+.admin-review-list {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-review-record-card {
+  display: grid;
+  gap: 18px;
+  border-radius: 20px;
+  padding: 18px;
+  background: rgba(244, 239, 228, 0.56);
+}
+
+.admin-review-list li {
+  display: grid;
+  gap: 6px;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #35506f;
+}
+
+.admin-review-list strong {
+  color: #11253d;
+}
+
+.admin-review-inline-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .recognition-field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -948,6 +1029,7 @@ select {
   .task-detail-grid,
   .invoice-editor-layout,
   .split-editor-layout,
+  .admin-review-summary-grid,
   .recognition-field-grid,
   .split-summary-card,
   .checkbox-grid {

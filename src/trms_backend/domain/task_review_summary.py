@@ -36,6 +36,7 @@ class TaskReviewSummaryInvoiceItem(BaseModel):
 
 class TaskReviewSummaryCounts(BaseModel):
     material_count: int = Field(ge=0)
+    pending_assignment_material_count: int = Field(ge=0)
     invoice_count: int = Field(ge=0)
     validation_count: int = Field(ge=0)
     blocker_failed_validation_count: int = Field(ge=0)
@@ -54,6 +55,7 @@ class TaskReviewSummary(BaseModel):
     administrator_id: str = Field(min_length=1)
     counts: TaskReviewSummaryCounts
     materials: list[TaskReviewSummaryMaterialItem]
+    pending_assignment_materials: list[MaterialRecord]
     invoices: list[TaskReviewSummaryInvoiceItem]
 
 
@@ -62,6 +64,7 @@ def build_task_review_summary(
     *,
     administrator_id: str,
     materials: list[MaterialRecord],
+    pending_assignment_materials: list[MaterialRecord],
     latest_recognitions_by_material_id: dict[str, RecognitionTaskRecord | None],
     invoices: list[InvoiceRecord],
     invoice_by_material_id: dict[str, InvoiceRecord],
@@ -154,6 +157,7 @@ def build_task_review_summary(
         administrator_id=normalized_administrator_id,
         counts=TaskReviewSummaryCounts(
             material_count=len(material_items),
+            pending_assignment_material_count=len(pending_assignment_materials),
             invoice_count=len(invoice_items),
             validation_count=validation_count,
             blocker_failed_validation_count=blocker_failed_validation_count,
@@ -167,5 +171,6 @@ def build_task_review_summary(
             needs_confirmation_recognition_count=needs_confirmation_recognition_count,
         ),
         materials=material_items,
+        pending_assignment_materials=pending_assignment_materials,
         invoices=invoice_items,
     )

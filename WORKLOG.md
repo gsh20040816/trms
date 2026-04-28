@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-04-28 09:21 - Implement admin review overview page
+
+### 完成内容
+- 为管理员补齐复核总览页面：
+  - 新增 `web/src/app/admin-review-overview.tsx`，在 `/admin/tasks/:taskId/review` 聚合展示任务级风险摘要、待归属材料、材料识别状态、发票校验结果以及分摊/确认状态；
+  - 页面只复用 `GET /api/tasks/{taskId}`、`GET /api/tasks/{taskId}/review-summary` 和 `GET /api/tasks/{taskId}/overdue-confirmations`，不新增独立前端业务流程。
+- 为满足复核页“待归属材料突出显示”要求，最小扩展后端复核摘要：
+  - 更新 `src/trms_backend/domain/task_review_summary.py` 与 `src/trms_backend/api/tasks.py`，把当前任务 `task_id_hint` 下的待归属材料和计数并入 `review-summary` 返回；
+  - 不新增单独待归属查询接口，避免把本轮任务扩散为新的后台能力。
+- 打通管理员入口与测试：
+  - 更新 `web/src/app/routes.tsx` 注册 `/admin/tasks/:taskId/review`；
+  - 更新 `web/src/app/admin-task-detail.tsx`，从任务详情页增加“进入复核总览”入口；
+  - 新增 `web/src/app/admin-review-overview.test.tsx`，覆盖“突出显示 Must 级失败/待归属/待确认/异议并展示复核明细”“成员身份不可访问管理员复核页”；
+  - 更新 `tests/test_task_review_summary_api.py` 和 `web/src/app/admin-task-detail.test.tsx`，覆盖新的复核摘要字段和详情页入口。
+- 将 `TASKS.md` 中“实现管理员复核总览页面”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/task_review_summary.py`
+- `tests/test_task_review_summary_api.py`
+- `web/src/app/admin-review-overview.tsx`
+- `web/src/app/admin-review-overview.test.tsx`
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/lib/api/types.ts`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前几轮已经完成管理员发票录入、分摊编辑和成员确认页面，但管理员仍缺少一个聚合视图，在单页内同时判断“哪些材料还待归属、哪些识别/校验仍异常、哪些成员尚未确认或已提出异议”，导致 Web 端主链路在“成员确认 -> 管理员复核 -> 准备导出”之间仍然断开。
+- 现有后端 `review-summary` 已能覆盖材料、识别、校验、分摊和确认大部分明细，但没有暴露与当前任务 `task_id_hint` 相关的待归属材料；如果不先补这块摘要，前端无法满足任务要求中的“待归属材料突出显示”。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_task_review_summary_api.py`
+    - 3 个用例通过
+  - `cd web && npm test -- admin-review-overview admin-task-detail`
+    - 2 个前端测试文件、5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 162 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，13 个前端测试文件、36 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 复核页当前把“待归属材料”限定为 `task_id_hint` 已指向当前任务、但尚未被管理员认领的材料；对完全没有任务提示的待归属材料，本页不会越权展示。
+- “未完成确认成员”当前保守地按 `confirmation` 缺失或状态为 `pending` 的分摊来聚合；`disputed` 会在风险摘要和异议列表中单独高亮，但不伪装成已确认。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现缺失材料清单页面”，优先复用现有缺失材料导出与校验聚合结果，分别补管理员视角和成员本人视角。
+
 ## 2026-04-28 09:08 - Implement member expense confirmation page
 
 ### 完成内容

@@ -316,6 +316,7 @@ def build_task_router(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
         materials = material_repository.list_by_task(task_id)
+        pending_assignment_materials = material_repository.list_pending_assignment_by_task_hint(task_id)
         latest_recognitions_by_material_id = {}
         for material in materials:
             recognition_tasks = recognition_task_repository.list_by_material(material.id)
@@ -347,6 +348,7 @@ def build_task_router(
                 task,
                 administrator_id=actor_id,
                 materials=materials,
+                pending_assignment_materials=pending_assignment_materials,
                 latest_recognitions_by_material_id=latest_recognitions_by_material_id,
                 invoices=invoices,
                 invoice_by_material_id=invoice_by_material_id,

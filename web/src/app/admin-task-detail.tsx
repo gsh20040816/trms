@@ -168,6 +168,9 @@ export function AdminTaskDetailPage() {
               <Link className="route-link" to={`/admin/tasks/${taskId}/invoices`}>
                 录入或更正发票
               </Link>
+              <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/review`}>
+                进入复核总览
+              </Link>
               <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/splits`}>
                 编辑费用分摊
               </Link>

@@ -310,6 +310,7 @@ export type TaskExportJobRecord = {
 
 export type TaskReviewSummaryCounts = {
   material_count: number;
+  pending_assignment_material_count: number;
   invoice_count: number;
   validation_count: number;
   blocker_failed_validation_count: number;
@@ -328,6 +329,7 @@ export type TaskReviewSummary = {
   administrator_id: string;
   counts: TaskReviewSummaryCounts;
   materials: TaskReviewSummaryMaterialItem[];
+  pending_assignment_materials: MaterialRecord[];
   invoices: TaskReviewSummaryInvoiceItem[];
 };
 
