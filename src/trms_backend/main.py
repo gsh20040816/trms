@@ -11,6 +11,7 @@ from trms_backend.api.materials import build_material_router
 from trms_backend.api.recognitions import build_recognition_router
 from trms_backend.api.splits import build_split_router
 from trms_backend.api.tasks import build_task_router
+from trms_backend.api.telegram_bindings import build_telegram_binding_router
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 from trms_backend.domain.materials import MaterialFileStorage
 from trms_backend.infrastructure.database import build_session_factory, init_database
@@ -25,6 +26,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyMaterialRepository,
     SqlAlchemyRecognitionTaskRepository,
     SqlAlchemyTaskRepository,
+    SqlAlchemyTelegramAccountBindingRepository,
     SqlAlchemyValidationRepository,
 )
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
@@ -55,6 +57,7 @@ def create_app(
     invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
+    telegram_account_binding_repository = SqlAlchemyTelegramAccountBindingRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     material_submission_service = MaterialSubmissionService(
@@ -137,6 +140,7 @@ def create_app(
     app.include_router(
         build_confirmation_router(invoice_repository, split_repository, confirmation_repository)
     )
+    app.include_router(build_telegram_binding_router(telegram_account_binding_repository))
     return app
 
 

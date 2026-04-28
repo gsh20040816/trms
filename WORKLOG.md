@@ -4505,3 +4505,50 @@
 
 ### 后续建议
 - 下一轮优先执行 `TASKS.md` 中“确认项目技术栈和启动方式”，把当前技术栈、入口、测试命令和需求覆盖状态记录清楚。
+
+## 2026-04-28 12:14 - Establish Telegram account binding model
+
+### 完成内容
+- 新增 `src/trms_backend/domain/telegram_bindings.py`，建立 Telegram 账号绑定领域模型、冲突约束和提交身份解析边界：
+  - 绑定以 `telegram_user_id` 作为稳定身份键；
+  - 同一 Telegram 账号只能绑定一个成员，同一成员也只能绑定一个 Telegram 账号，冲突时显式返回错误；
+  - 未绑定账号解析结果显式返回 `pending_assignment`，为后续 Telegram 入站接入复用现有待归属材料流程提供边界。
+- 新增 `src/trms_backend/infrastructure/models.py` 与 `src/trms_backend/infrastructure/repositories.py` 中的持久化实现，落地 `telegram_account_bindings` 表和 SQLAlchemy 仓储。
+- 新增 `src/trms_backend/api/telegram_bindings.py` 并接入 `src/trms_backend/main.py`：
+  - `PUT /api/telegram-bindings/{telegram_user_id}` 用于绑定账号；
+  - `GET /api/telegram-bindings/{telegram_user_id}` 用于查询绑定；
+  - `GET /api/telegram-bindings/{telegram_user_id}/submission-identity` 用于解析“已绑定 / 待归属”提交身份。
+- 新增 `tests/test_telegram_bindings_api.py`，覆盖绑定成功、未绑定解析为待归属、成员冲突拒绝三条主路径。
+- 将 `TASKS.md` 中“建立 Telegram 账号绑定模型”标记为已完成。
+
+### 根因
+- 上一轮虽然已经把 Web、CLI、Telegram、邮件的材料提交主链路统一到 `MaterialSubmissionService`，但 Telegram 渠道仍缺少最基础的“外部账号 -> 成员身份”绑定层。
+- 如果不先固定这一层，后续 Telegram 入站只能在渠道代码里临时拼接成员识别逻辑，既会破坏“渠道层只接入、不复制业务规则”的架构约束，也无法稳定落到“未绑定即待归属”的需求边界。
+
+### 修改文件
+- `src/trms_backend/domain/telegram_bindings.py`
+- `src/trms_backend/api/telegram_bindings.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_telegram_bindings_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_telegram_bindings_api.py`
+  - `uv run pytest tests/test_material_submission_service.py tests/test_materials_api.py`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 210 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前将 Telegram 账号绑定的稳定键保守定义为 `telegram_user_id`，而不是可变的 `username`；`telegram_username` 仅作为可选展示信息保存。
+- 本轮只建立绑定模型和解析边界，不接入真实 Telegram Bot、Webhook、Bot Token 管理或消息收取流程；因此仓库和日志中不新增任何 Telegram token。
+- 当前没有独立成员主数据表，因此成员身份仍沿用既有 `member_id` 字符串边界，不在本轮扩展到统一认证或权限上下文。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 Telegram 材料提交接入占位”，直接复用本轮的 `submission-identity` 解析边界，把已绑定账号导入统一材料提交流程，未绑定账号导入 `pending_assignment` 路径。

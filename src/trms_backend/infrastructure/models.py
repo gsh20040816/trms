@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import BigInteger, JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trms_backend.infrastructure.database import Base
@@ -63,6 +63,17 @@ class MaterialRow(Base):
     claimed_by: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TelegramAccountBindingRow(Base):
+    __tablename__ = "telegram_account_bindings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, index=True)
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    telegram_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class InvoiceRow(Base):

@@ -70,6 +70,12 @@ from trms_backend.domain.tasks import (
     TaskCreate,
     TaskStatus,
 )
+from trms_backend.domain.telegram_bindings import (
+    TelegramAccountBindingConflictError,
+    TelegramAccountBindingRecord,
+    TelegramAccountBindingRepository,
+    TelegramAccountBindingUpsert,
+)
 from trms_backend.infrastructure.database import session_scope
 from trms_backend.infrastructure.models import (
     AutomaticReminderTaskRow,
@@ -83,6 +89,7 @@ from trms_backend.infrastructure.models import (
     MaterialRow,
     RecognitionTaskRow,
     TaskRow,
+    TelegramAccountBindingRow,
     ValidationResultRow,
 )
 
@@ -278,6 +285,72 @@ class SqlAlchemyMaterialRepository:
             .order_by(MaterialRow.created_at)
             .limit(1)
         )
+
+
+class SqlAlchemyTelegramAccountBindingRepository(TelegramAccountBindingRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def upsert(self, data: TelegramAccountBindingUpsert) -> TelegramAccountBindingRecord:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(TelegramAccountBindingRow)
+                .where(TelegramAccountBindingRow.telegram_user_id == data.telegram_user_id)
+                .limit(1)
+            )
+            if row is not None:
+                if row.member_id != data.member_id:
+                    raise TelegramAccountBindingConflictError(
+                        "telegram user is already bound to another member: "
+                        f"{data.telegram_user_id}"
+                    )
+                row.telegram_username = data.telegram_username
+                row.updated_at = now
+                session.add(row)
+                return _telegram_account_binding_from_row(row)
+
+            member_row = session.scalar(
+                select(TelegramAccountBindingRow)
+                .where(TelegramAccountBindingRow.member_id == data.member_id)
+                .limit(1)
+            )
+            if member_row is not None:
+                raise TelegramAccountBindingConflictError(
+                    "member is already bound to another telegram user: "
+                    f"{data.member_id}"
+                )
+
+            row = TelegramAccountBindingRow(
+                id=str(uuid4()),
+                created_at=now,
+                updated_at=now,
+                **data.model_dump(),
+            )
+            session.add(row)
+        return _telegram_account_binding_from_row(row)
+
+    def get_by_telegram_user_id(self, telegram_user_id: int) -> TelegramAccountBindingRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(TelegramAccountBindingRow)
+                .where(TelegramAccountBindingRow.telegram_user_id == telegram_user_id)
+                .limit(1)
+            )
+            return _telegram_account_binding_from_row(row) if row else None
+
+    def get_by_member_id(self, member_id: str) -> TelegramAccountBindingRecord | None:
+        normalized_member_id = member_id.strip()
+        if not normalized_member_id:
+            return None
+
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(TelegramAccountBindingRow)
+                .where(TelegramAccountBindingRow.member_id == normalized_member_id)
+                .limit(1)
+            )
+            return _telegram_account_binding_from_row(row) if row else None
 
 
 class SqlAlchemyInvoiceRepository:
@@ -1024,6 +1097,19 @@ def _material_from_row(row: MaterialRow) -> MaterialRecord:
         claimed_by=row.claimed_by,
         claimed_at=row.claimed_at,
         created_at=row.created_at,
+    )
+
+
+def _telegram_account_binding_from_row(
+    row: TelegramAccountBindingRow,
+) -> TelegramAccountBindingRecord:
+    return TelegramAccountBindingRecord(
+        id=row.id,
+        telegram_user_id=row.telegram_user_id,
+        member_id=row.member_id,
+        telegram_username=row.telegram_username,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
