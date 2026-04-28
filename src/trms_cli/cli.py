@@ -50,11 +50,30 @@ class MaterialUploadSummary:
 
 
 @dataclass(frozen=True)
+class MaterialUploadFailure:
+    original_filename: str | None
+    error_code: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class MaterialUploadBatchResult:
+    status: str
+    items: list[MaterialUploadSummary]
+    failures: list[MaterialUploadFailure]
+
+
+@dataclass(frozen=True)
 class MultipartUploadFile:
     field_name: str
     filename: str
     content_type: str
     content: bytes
+
+
+EXIT_SUCCESS = 0
+EXIT_FAILURE = 1
+EXIT_PARTIAL_SUCCESS = 2
 
 
 def emit_json(payload: dict[str, object], *, stream: object | None = None) -> None:
@@ -105,7 +124,9 @@ def post_multipart_json(
             payload = json.load(response)
             return response.status, payload
     except HTTPError as error:
-        detail = read_http_error_detail(error)
+        detail, payload = read_http_error_payload(error)
+        if error.code == 422 and is_material_upload_failed_payload(payload):
+            return error.code, payload
         if detail:
             raise CliError(
                 f"request failed with status {error.code}: {detail}",
@@ -118,21 +139,27 @@ def post_multipart_json(
         raise CliError("TRMS API returned invalid JSON", code="invalid_json_response") from error
 
 
-def read_http_error_detail(error: HTTPError) -> str | None:
+def read_http_error_payload(error: HTTPError) -> tuple[str | None, object | None]:
     payload = error.read().decode("utf-8", errors="replace").strip()
     if not payload:
-        return None
+        return None, None
 
     try:
         parsed = json.loads(payload)
     except json.JSONDecodeError:
-        return payload
+        return payload, None
 
     if isinstance(parsed, dict):
         detail = parsed.get("detail")
         if isinstance(detail, str) and detail.strip():
-            return detail.strip()
-    return payload
+            return detail.strip(), parsed
+    return payload, parsed
+
+
+def is_material_upload_failed_payload(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("status") == "failed" and isinstance(payload.get("failures"), list)
 
 
 def encode_multipart_form_data(
@@ -221,7 +248,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     submit_parser = subparsers.add_parser(
         "submit",
-        help="upload one local material file to a visible reimbursement task",
+        help="upload one or more local material files to a visible reimbursement task",
     )
     submit_parser.add_argument(
         "--task-id",
@@ -234,8 +261,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="material type such as invoice or payment_record",
     )
     submit_parser.add_argument(
-        "file_path",
-        help="local file path to upload",
+        "file_paths",
+        nargs="+",
+        help="one or more local file paths to upload",
     )
     submit_parser.add_argument(
         "--json",
@@ -388,7 +416,7 @@ def run_submit_command(args: argparse.Namespace) -> int:
     except TokenStoreError as error:
         raise CliError(str(error), code="login_required") from error
 
-    upload_file = load_upload_file(args.file_path)
+    upload_files = [load_upload_file(file_path) for file_path in args.file_paths]
     base_url = session.base_url.rstrip("/")
     status_code, payload = post_multipart_json(
         build_material_submit_url(base_url, task_id=args.task_id),
@@ -398,37 +426,27 @@ def run_submit_command(args: argparse.Namespace) -> int:
             "channel": "cli",
             "material_type": args.material_type,
         },
-        files=[upload_file],
+        files=upload_files,
     )
-    if status_code != 201:
+    if status_code not in {201, 207, 422}:
         raise CliError(
             f"material submit endpoint returned unexpected status {status_code}",
             code="material_submit_unexpected_status",
         )
 
-    upload = parse_material_upload_summary(payload)
+    result = parse_material_upload_batch_result(payload)
+    exit_code = material_submit_exit_code(result)
     if args.json_output:
-        emit_json(
-            {
-                "schema_version": CLI_JSON_SCHEMA_VERSION,
-                "ok": True,
-                "command": "submit",
-                "data": {
-                    "base_url": base_url,
-                    "task_id": upload.task_id,
-                    "member_id": session.member_id,
-                    "item": asdict(upload),
-                },
-            }
+        emit_submit_json_result(
+            base_url=base_url,
+            requested_task_id=args.task_id,
+            member_id=session.member_id,
+            result=result,
         )
-        return 0
+        return exit_code
 
-    print(
-        "Uploaded material "
-        f"{upload.id} for task {upload.task_id} "
-        f"({upload.original_filename}, recognition: {upload.recognition_status})"
-    )
-    return 0
+    emit_submit_text_result(result)
+    return exit_code
 
 
 def build_task_list_url(base_url: str, *, member_id: str) -> str:
@@ -470,7 +488,7 @@ def load_upload_file(file_path: str) -> MultipartUploadFile:
     )
 
 
-def parse_material_upload_summary(payload: object) -> MaterialUploadSummary:
+def parse_material_upload_batch_result(payload: object) -> MaterialUploadBatchResult:
     if not isinstance(payload, dict):
         raise CliError(
             "TRMS API returned invalid material upload payload",
@@ -478,13 +496,36 @@ def parse_material_upload_summary(payload: object) -> MaterialUploadSummary:
         )
 
     items = payload.get("items")
-    if not isinstance(items, list) or len(items) != 1:
+    if not isinstance(items, list):
         raise CliError(
             "TRMS API returned invalid material upload payload",
             code="material_submit_invalid_response",
         )
 
-    item = items[0]
+    status = payload.get("status")
+    if status not in {"success", "partial_success", "failed"}:
+        raise CliError(
+            "TRMS API returned invalid material upload payload",
+            code="material_submit_invalid_response",
+        )
+
+    failures = payload.get("failures", [])
+    if failures is None:
+        failures = []
+    if not isinstance(failures, list):
+        raise CliError(
+            "TRMS API returned invalid material upload payload",
+            code="material_submit_invalid_response",
+        )
+
+    return MaterialUploadBatchResult(
+        status=status,
+        items=[parse_material_upload_summary(item) for item in items],
+        failures=[parse_material_upload_failure(item) for item in failures],
+    )
+
+
+def parse_material_upload_summary(item: object) -> MaterialUploadSummary:
     if not isinstance(item, dict):
         raise CliError(
             "TRMS API returned invalid material upload payload",
@@ -500,6 +541,105 @@ def parse_material_upload_summary(payload: object) -> MaterialUploadSummary:
         status=_require_non_empty_material_field(item, "status"),
         recognition_status="pending",
     )
+
+
+def parse_material_upload_failure(item: object) -> MaterialUploadFailure:
+    if not isinstance(item, dict):
+        raise CliError(
+            "TRMS API returned invalid material upload payload",
+            code="material_submit_invalid_response",
+        )
+
+    original_filename = item.get("original_filename")
+    if original_filename is not None and not isinstance(original_filename, str):
+        raise CliError(
+            "TRMS API returned invalid material upload payload",
+            code="material_submit_invalid_response",
+        )
+
+    return MaterialUploadFailure(
+        original_filename=original_filename,
+        error_code=_require_non_empty_material_field(item, "error_code"),
+        detail=_require_non_empty_material_field(item, "detail"),
+    )
+
+
+def material_submit_exit_code(result: MaterialUploadBatchResult) -> int:
+    if result.status == "success":
+        return EXIT_SUCCESS
+    if result.status == "partial_success":
+        return EXIT_PARTIAL_SUCCESS
+    return EXIT_FAILURE
+
+
+def emit_submit_json_result(
+    *,
+    base_url: str,
+    requested_task_id: str,
+    member_id: str,
+    result: MaterialUploadBatchResult,
+) -> None:
+    if is_single_success_result(result):
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "submit",
+                "data": {
+                    "base_url": base_url,
+                    "task_id": result.items[0].task_id,
+                    "member_id": member_id,
+                    "item": asdict(result.items[0]),
+                },
+            }
+        )
+        return
+
+    emit_json(
+        {
+            "schema_version": CLI_JSON_SCHEMA_VERSION,
+            "ok": result.status == "success",
+            "command": "submit",
+            "data": {
+                "base_url": base_url,
+                "task_id": requested_task_id,
+                "member_id": member_id,
+                "status": result.status,
+                "success_count": len(result.items),
+                "failure_count": len(result.failures),
+                "items": [asdict(item) for item in result.items],
+                "failures": [asdict(item) for item in result.failures],
+            },
+        }
+    )
+
+
+def emit_submit_text_result(result: MaterialUploadBatchResult) -> None:
+    if is_single_success_result(result):
+        upload = result.items[0]
+        print(
+            "Uploaded material "
+            f"{upload.id} for task {upload.task_id} "
+            f"({upload.original_filename}, recognition: {upload.recognition_status})"
+        )
+        return
+
+    print(
+        "Submit result: "
+        f"{result.status} ({len(result.items)} uploaded, {len(result.failures)} failed)"
+    )
+    for item in result.items:
+        print(
+            "OK\t"
+            f"{item.original_filename}\t{item.id}\t{item.task_id}\t{item.recognition_status}"
+        )
+    for failure in result.failures:
+        filename = failure.original_filename or "<unknown>"
+        print(f"FAIL\t{filename}\t{failure.error_code}\t{failure.detail}")
+
+
+def is_single_success_result(result: MaterialUploadBatchResult) -> bool:
+    return result.status == "success" and len(result.items) == 1 and not result.failures
 
 
 def _require_non_empty_material_field(item: dict[str, object], field_name: str) -> str:

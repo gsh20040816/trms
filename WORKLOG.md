@@ -1,5 +1,71 @@
 # WORKLOG
 
+## 2026-04-28 11:04 - Add CLI batch submit per-file results
+
+### 完成内容
+- 扩展 `src/trms_cli/cli.py` 的 `submit` 命令，从单文件上传改为支持一次提交一个或多个本地文件：
+  - 保留既有 session 读取、成员绑定和单次 multipart 请求方式；
+  - 多文件仍通过同一个后端批量上传接口提交，不额外引入新的业务入口。
+- 为 CLI 对齐后端批量上传返回契约，新增逐文件结果解析：
+  - 解析 `success`、`partial_success`、`failed` 三种批量状态；
+  - 成功项返回材料编号、任务编号、文件名和识别占位状态；
+  - 失败项返回原始文件名、错误码和失败原因。
+- 明确批量提交退出码和输出语义：
+  - 全部成功返回退出码 `0`；
+  - 部分成功返回退出码 `2`，同时输出成功项和失败项；
+  - 全部失败返回退出码 `1`，JSON 模式仍输出结构化逐文件失败结果。
+- 保留单文件成功场景的既有兼容输出：
+  - 文本模式继续输出单行 `Uploaded material ...`；
+  - JSON 模式继续保留原来的单项 `item` 结构，避免本轮把旧调用方一起打破。
+- 扩充 `tests/test_cli_submit.py`，新增覆盖：
+  - 多文件批量提交的部分成功文本输出与退出码；
+  - 多文件全部失败时的结构化 JSON 返回。
+- 将 `TASKS.md` 中“增加 CLI 批量上传逐文件结果”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `tests/test_cli_submit.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 上一轮 CLI `submit` 命令虽然已经能把单个文件上传到后端，但需求文档中的 CLI 提交流程明确要求“上传一个或多个文件”。
+- 后端批量上传接口早已支持逐文件成功/失败和 `partial_success` 语义，而 CLI 仍把响应强行收缩为“只允许一项成功结果”，导致：
+  - 成员无法在一次命令中上传多个材料；
+  - 接口返回部分成功时，CLI 无法准确暴露逐文件结果；
+  - 批量失败的结构化失败项会被退化成笼统 HTTP 错误，和需求里的“逐文件结果”不一致。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_submit.py`
+    - 6 个 CLI 提交相关测试通过
+  - `uv run pytest tests/test_cli_health.py tests/test_cli_login.py tests/test_cli_tasks.py tests/test_cli_submit.py`
+    - 17 个 CLI 相关测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 184 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只处理“批量上传逐文件结果”，没有提前实现下一项“CLI 本地预检查”：
+  - CLI 仍只保留现有的本地路径存在、是否为文件、是否可读检查；
+  - 文件大小和基础类型的本地预检查仍留给下一轮独立任务。
+- 批量全部失败时，CLI 仍把后端的结构化失败列表输出到标准输出，并通过退出码 `1` 表示命令未成功完成；这和此前“普通错误输出到标准错误”的路径不同，是为了满足“逐文件失败结果可见”的任务要求。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设“批量上传逐文件结果”的最小闭环是：
+  - 多个本地文件一次性提交到既有后端批量接口；
+  - CLI 负责忠实暴露接口逐文件成功/失败结果；
+  - 不在本轮提前增加目录递归、自动拆批、大小阈值预判或内容类型本地拦截。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 本地预检查”，优先把大小和基础类型检查补到 CLI 本地侧，并保持错误信息逐文件可定位。
+
 ## 2026-04-28 10:58 - Add CLI material submission placeholder
 
 ### 完成内容
