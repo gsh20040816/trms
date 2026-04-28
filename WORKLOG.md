@@ -1,5 +1,71 @@
 # WORKLOG
 
+## 2026-04-28 13:44 - Add unified backend runtime configuration
+
+### 完成内容
+- 新增 `src/trms_backend/runtime_config.py`，集中解析并校验后端运行配置：
+  - `TRMS_ENV`
+  - `DATABASE_URL`
+  - `MATERIAL_STORAGE_DIR`
+  - `TRMS_CORS_ALLOWED_ORIGINS`
+  - `TRMS_PUBLIC_API_BASE_URL`
+  - `TRMS_API_HOST`
+  - `TRMS_API_PORT`
+- 更新 `src/trms_backend/main.py`：
+  - `create_app()` 改为通过统一配置对象初始化数据库、文件存储和 CORS 中间件；
+  - 将运行配置挂到 `app.state.runtime_config`，为后续权限、审计和导出配置收口保留统一入口。
+- 新增 `src/trms_backend/__main__.py` 启动入口：
+  - 支持 `uv run python -m trms_backend --host ... --port ...`
+  - `--host`、`--port` 会覆盖对应环境变量，并在启动前经过统一配置校验。
+- 新增 `tests/test_runtime_config.py`，覆盖：
+  - 开发环境默认配置；
+  - `TRMS_ENV=production` 时缺少必填配置直接报错；
+  - 非法端口配置直接报错；
+  - 配置过的 CORS 允许源实际生效。
+- 更新 `README.md`，补充开发/生产配置说明与启动示例。
+- 更新 `TASKS.md`，将“建立统一后端运行配置模型”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/runtime_config.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/__main__.py`
+- `tests/test_runtime_config.py`
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前后端只在 `main.py` 中零散读取 `DATABASE_URL` 和 `MATERIAL_STORAGE_DIR`，其余运行参数没有统一模型，导致：
+  - CORS、公开 API base URL、监听 host/port 缺少集中约束；
+  - 开发默认值与生产必填值边界不清；
+  - 后续接入 LLM Provider、对象存储、部署基线时缺少统一配置入口。
+- 继续沿用“在各处直接 `os.getenv()`”会让生产配置散落在多个模块里，既难验证，也容易在生产环境静默回退到开发默认值。
+
+### 当前结论
+- 后端运行配置现在已经形成统一模型，开发环境仍保留最小默认值，生产环境则要求显式提供全部关键配置。
+- 监听 host/port 现在既可通过环境变量配置，也可通过 `python -m trms_backend --host/--port` 在启动时覆盖，且会经过同一套校验逻辑。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_runtime_config.py tests/test_health_api.py`
+    - 5 个测试通过
+  - `python3 -m compileall src tests`
+    - 编译检查通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 228 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - `git diff --check` 通过
+- 既有警告：
+  - `pytest` 仍有 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告
+  这些均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮保守假设“生产环境”由 `TRMS_ENV=production` 明确声明；只有该模式下才禁止静默回退到开发默认值。
+- 本轮保守假设 `TRMS_PUBLIC_API_BASE_URL` 是后端对外公开的绝对 API 前缀，允许带 `/api` 路径，但不允许 query 或 fragment。
+- 本轮保守假设 CORS 允许源应为不带路径的 `http(s)` origin，因此对带 path 的配置直接视为错误，而不是尝试自动纠正。
+
 ## 2026-04-28 13:20 - Refresh acceptance mapping and production readiness gaps
 
 ### 完成内容

@@ -1,6 +1,5 @@
-import os
-
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.material_submission import MaterialSubmissionService
@@ -38,17 +37,26 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyValidationRepository,
 )
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
+from trms_backend.runtime_config import RuntimeConfig, load_runtime_config
 
 
 def create_app(
     database_url: str | None = None,
     global_invoice_config: GlobalInvoiceConfig | None = None,
     material_file_storage: MaterialFileStorage | None = None,
+    runtime_config: RuntimeConfig | None = None,
 ) -> FastAPI:
+    config = runtime_config or load_runtime_config(database_url=database_url)
     app = FastAPI(title="TRMS API")
-    session_factory = build_session_factory(
-        database_url or os.getenv("DATABASE_URL", "sqlite:///./trms.db")
+    app.state.runtime_config = config
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(config.cors_allowed_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
+    session_factory = build_session_factory(config.database_url)
     init_database(session_factory)
     global_invoice_config_repository = SqlAlchemyGlobalInvoiceConfigRepository(session_factory)
     auth_repository = SqlAlchemyAuthRepository(session_factory)
@@ -57,9 +65,7 @@ def create_app(
     task_repository = SqlAlchemyTaskRepository(session_factory)
     material_repository = SqlAlchemyMaterialRepository(session_factory)
     if material_file_storage is None:
-        material_file_storage = LocalMaterialFileStorage(
-            os.getenv("MATERIAL_STORAGE_DIR", "./data/materials")
-        )
+        material_file_storage = LocalMaterialFileStorage(config.material_storage_dir)
     material_reminder_repository = SqlAlchemyMaterialReminderRepository(session_factory)
     automatic_reminder_task_repository = SqlAlchemyAutomaticReminderTaskRepository(session_factory)
     export_job_repository = SqlAlchemyExportJobRepository(session_factory)
