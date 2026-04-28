@@ -2,12 +2,14 @@ import os
 
 from fastapi import FastAPI, Request
 
+from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.telegram_material_submission import (
     TelegramMaterialSubmissionService,
 )
 from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
 from trms_backend.api.confirmations import build_confirmation_router
+from trms_backend.api.email_materials import build_email_material_router
 from trms_backend.api.exports import build_export_router
 from trms_backend.api.invoices import build_invoice_router
 from trms_backend.api.materials import build_material_router
@@ -70,6 +72,9 @@ def create_app(
         material_file_storage,
         recognition_task_repository,
     )
+    email_material_submission_service = EmailMaterialSubmissionService(
+        material_submission_service,
+    )
     telegram_material_submission_service = TelegramMaterialSubmissionService(
         telegram_account_binding_repository,
         material_submission_service,
@@ -119,6 +124,7 @@ def create_app(
             material_submission_service,
         )
     )
+    app.include_router(build_email_material_router(email_material_submission_service))
     app.include_router(build_telegram_material_router(telegram_material_submission_service))
     app.include_router(
         build_recognition_router(

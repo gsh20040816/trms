@@ -1,5 +1,62 @@
 # WORKLOG
 
+## 2026-04-28 12:35 - Add email material submission placeholder
+
+### 完成内容
+- 新增 `src/trms_backend/application/email_material_submission.py`，建立 `EmailMaterialSubmissionService`：
+  - 解析格式化邮件主题和正文元数据，固化 `[TRMS] task:<task_id>`、`material_type`、可选 `submitter_id` / `task_id` / `note` 的最小边界；
+  - 对 `invalid_subject_prefix`、`missing_task_id`、`duplicate_task_id_marker`、`missing_metadata_block`、`missing_material_type`、`unsupported_material_type`、`task_id_mismatch` 等格式错误显式抛出稳定失败码；
+  - 已有 `resolved_member_id` 且任务存在时，复用统一 `MaterialSubmissionService.submit_to_task`；
+  - 发件人未解析到成员身份，或主题里的任务编号在系统内不存在时，复用 `submit_pending_assignment`，把邮件转入待归属材料主链路而不是静默丢弃或直接 404。
+- 新增 `src/trms_backend/api/email_materials.py`，提供 `/api/email/materials` 占位入站接口：
+  - 接口只接收 `sender_email`、`subject`、`body`、可选 `resolved_member_id` 和附件；
+  - 对缺少附件返回 `missing_attachments`；
+  - 对附件缺少文件名的逐文件失败结果映射为 `attachment_missing_filename`，并保留现有批量部分成功语义。
+- 更新 `src/trms_backend/main.py`，把邮件接入占位路由接入主应用。
+- 新增 `tests/test_email_materials_api.py`，覆盖：
+  - 已解析成员身份时进入已归属材料主链路；
+  - 未解析成员身份时进入待归属材料；
+  - 主题任务不存在时进入待归属材料；
+  - 主题前缀错误、正文 `task_id` 不一致等格式错误返回稳定失败码；
+  - 合法附件与缺少文件名附件混合时返回 `partial_success`。
+- 更新 `TASKS.md`，将“增加邮件材料提交接入占位”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/application/email_material_submission.py`
+- `src/trms_backend/api/email_materials.py`
+- `src/trms_backend/main.py`
+- `tests/test_email_materials_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 需求文档 FR-002、异常场景 30 和架构文档中的邮件接入边界都要求“格式化邮件提交”进入统一材料池，并在格式错误时返回明确失败原因。
+- 上一轮虽然已经冻结了邮件主题/正文/附件规范，但仓库里仍然没有任何“邮件入站 -> 统一材料提交服务”的接线层。
+- 如果继续缺这层占位，后续真实 IMAP 或邮件网关接入只能在适配器里临时发明主题解析、失败码和待归属策略，容易绕过既有 `MaterialSubmissionService`，也会让“任务不存在时应待归属而不是丢件”的需求边界失真。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_email_materials_api.py tests/test_materials_api.py tests/test_telegram_materials_api.py`
+    - 31 个相关后端测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 219 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - `git diff --check` 通过
+- 既有警告：
+  - `pytest` 仍有 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  这些均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设邮件接入占位不实现邮箱绑定持久化；`resolved_member_id` 由未来真实邮件适配器在进入该接口前解析得到，本轮只固化“已解析身份/未解析身份”两条主链路。
+- 当前保守假设邮件主题中的 `task_id` 是唯一权威任务来源；正文中的 `task_id` 只做冗余校验，不参与自动纠错。
+- 由于现有待归属材料模型只有一个 `submitter_id_hint` 字段，本轮将“发件人邮箱 + 可选正文 `submitter_id` 线索”串成单个字符串保存，供后续管理员认领时参考。
+- 当前保守假设邮件元数据中的 `material_type: other` 需要兼容映射到现有领域枚举 `other_attachment`，以保持邮件规范文档与现有后端材料类型边界一致。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立最小请求身份上下文占位”，不要在当前邮件占位基础上提前扩展真实邮箱绑定、IMAP 轮询或 SMTP 回执。
+
 ## 2026-04-28 12:26 - Define formatted email submission specification
 
 ### 完成内容
