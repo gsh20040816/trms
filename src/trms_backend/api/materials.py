@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel, Field
 
 from trms_backend.api.error_responses import ensure_request_id
+from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
 from trms_backend.api.material_submission_http import build_batch_response, read_uploaded_files
 from trms_backend.api.request_identity import (
     RequestIdentity,
@@ -19,6 +20,14 @@ from trms_backend.application.material_deletion import (
     MaterialDeletionService,
     MaterialDeletionTaskNotFoundError,
 )
+from trms_backend.application.material_type_update import (
+    MaterialTypeUpdateActorNotAllowedError,
+    MaterialTypeUpdateConflictError,
+    MaterialTypeUpdateNotFoundError,
+    MaterialTypeUpdateService,
+    MaterialTypeUpdateTaskNotFoundError,
+)
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.material_submission import (
     MaterialSubmissionService,
     MaterialSubmissionTaskNotFoundError,
@@ -26,12 +35,14 @@ from trms_backend.application.material_submission import (
 )
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.auth import AuthRepository
+from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import (
     MaterialStatus,
     MaterialRepository,
     MaterialType,
     SubmissionChannel,
 )
+from trms_backend.domain.recognitions import RecognitionTaskRepository
 from trms_backend.domain.tasks import (
     TaskRepository,
     TaskSubmissionDeadlinePassedError,
@@ -44,19 +55,30 @@ class MaterialDeletionMarkRequest(BaseModel):
     administrator_id: str = Field(min_length=1)
 
 
+class MaterialTypeUpdateRequest(BaseModel):
+    actor_id: str | None = None
+    material_type: MaterialType
+
+
 def build_material_router(
     auth_repository: AuthRepository,
     task_repository: TaskRepository,
     material_repository: MaterialRepository,
+    invoice_repository: InvoiceRepository,
+    validation_repository: ValidationRepository,
+    recognition_task_repository: RecognitionTaskRepository,
     material_submission_service: MaterialSubmissionService,
     material_deletion_service: MaterialDeletionService,
+    material_type_update_service: MaterialTypeUpdateService,
     audit_log_repository: AuditLogRepository,
+    metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["materials"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
     authenticated_request_identity = build_authenticated_request_identity_dependency(
         auth_repository
     )
+    metrics = metrics_collector or NoOpMetricsCollector()
 
     @router.post("/api/tasks/{task_id}/materials", status_code=status.HTTP_201_CREATED)
     async def submit_materials(
@@ -376,6 +398,141 @@ def build_material_router(
         )
         return {"item": deleted_material}
 
+    @router.patch("/api/materials/{material_id}/material-type")
+    def update_material_type(
+        material_id: str,
+        request: Request,
+        payload: MaterialTypeUpdateRequest,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        request_id = ensure_request_id(request)
+        try:
+            actor_id = resolve_required_actor_request_field(
+                identity,
+                payload.actor_id,
+                field_name="actor_id",
+            )
+        except HTTPException as error:
+            _record_material_type_update_audit(
+                audit_log_repository,
+                actor_id=identity.actor_id or payload.actor_id or "",
+                material_id=material_id,
+                task_id=None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject material type update for {material_id}",
+                detail={
+                    "failure_reason": error.detail,
+                    "requested_actor_id": payload.actor_id,
+                    "requested_material_type": payload.material_type.value,
+                },
+                request_id=request_id,
+            )
+            raise
+
+        existing_material = material_repository.get(material_id)
+        try:
+            updated_material = material_type_update_service.update_material_type(
+                material_id=material_id,
+                actor_id=actor_id,
+                material_type=payload.material_type,
+            )
+        except MaterialTypeUpdateNotFoundError:
+            _record_material_type_update_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=None,
+                result=AuditLogResult.FAILED,
+                summary=f"fail to update material type for {material_id}",
+                detail={
+                    "failure_reason": "material not found",
+                    "requested_material_type": payload.material_type.value,
+                },
+                request_id=request_id,
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        except MaterialTypeUpdateTaskNotFoundError as error:
+            _record_material_type_update_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=error.task_id,
+                result=AuditLogResult.FAILED,
+                summary=f"fail to update material type for {material_id}",
+                detail={
+                    "failure_reason": "task not found",
+                    "requested_material_type": payload.material_type.value,
+                },
+                request_id=request_id,
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        except MaterialTypeUpdateActorNotAllowedError as error:
+            _record_material_type_update_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=existing_material.task_id if existing_material is not None else None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject material type update for {material_id}",
+                detail={
+                    "failure_reason": str(error),
+                    "requested_material_type": payload.material_type.value,
+                },
+                request_id=request_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except MaterialTypeUpdateConflictError as error:
+            _record_material_type_update_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=existing_material.task_id if existing_material is not None else None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject material type update for {material_id}",
+                detail={
+                    "failure_reason": str(error),
+                    "current_material_type": (
+                        existing_material.material_type.value if existing_material is not None else None
+                    ),
+                    "requested_material_type": payload.material_type.value,
+                },
+                request_id=request_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+
+        refresh_validations_for_material(
+            material_id,
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            validation_repository=validation_repository,
+            recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics,
+        )
+        _record_material_type_update_audit(
+            audit_log_repository,
+            actor_id=actor_id,
+            material_id=material_id,
+            task_id=updated_material.task_id,
+            result=AuditLogResult.SUCCEEDED,
+            summary=f"update material type for {material_id}",
+            detail={
+                "previous_material_type": (
+                    existing_material.material_type.value if existing_material is not None else None
+                ),
+                "updated_material_type": updated_material.material_type.value,
+                "submitter_id": updated_material.submitter_id,
+            },
+            request_id=request_id,
+        )
+        return {"item": updated_material}
+
     @router.get("/api/tasks/{task_id}/materials")
     def list_materials(
         task_id: str,
@@ -458,6 +615,32 @@ def _record_material_deletion_audit(
             object_type="material",
             object_id=material_id,
             action="mark_material_deleted",
+            result=result,
+            summary=summary,
+            detail=detail,
+            task_id=task_id,
+            request_id=request_id,
+        )
+    )
+
+
+def _record_material_type_update_audit(
+    audit_log_repository: AuditLogRepository,
+    *,
+    actor_id: str,
+    material_id: str,
+    task_id: str | None,
+    result: AuditLogResult,
+    summary: str,
+    detail: dict[str, object],
+    request_id: str | None,
+) -> None:
+    audit_log_repository.create(
+        AuditLogCreate(
+            actor_id=actor_id,
+            object_type="material",
+            object_id=material_id,
+            action="update_material_type",
             result=result,
             summary=summary,
             detail=detail,

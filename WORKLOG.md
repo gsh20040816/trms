@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-04-29 02:17 - Add member self-service material type correction
+
+### 完成内容
+- 新增成员侧材料类型更正主链路：
+  - 后端增加 `PATCH /api/materials/{material_id}/material-type`；
+  - 仅允许材料提交人修改本人、已归属、且所属任务仍处于 `open` 的材料类型；
+  - 修改后立即刷新关联发票校验结果，避免“材料类型已改但缺失材料/校验状态仍旧滞后”。
+- 收口不一致状态边界：
+  - 已形成发票主记录的材料，不允许再从 `invoice` 改成辅助材料；
+  - 已作为辅助材料挂到发票上的材料，不允许再改成 `invoice`；
+  - 越权访问、非法类型和非 `open` 任务下的修改都会返回明确错误。
+- 成员发票工作台接入材料类型编辑入口：
+  - 每条本人材料卡片增加材料类型下拉和保存按钮；
+  - 保存成功后自动刷新当前任务摘要；
+  - 保存失败时在卡片内显示明确错误信息。
+- 新增测试覆盖：
+  - 后端 `tests/test_member_material_type_update_api.py` 覆盖本人成功、越权失败、非法类型、非开放任务拒绝和校验刷新；
+  - 前端 `web/src/app/member-invoice-workbench.test.tsx` 覆盖成员在工作台修改材料类型并触发摘要刷新。
+
+### 根因
+- 现有成员端虽然能查看材料类型，但没有稳定的自助更正入口；成员一旦上传时选错类型，只能依赖管理员后续人工兜底。
+- `material_type` 直接参与支付记录、比赛通知、行程单等附件完整性校验；如果只改前端展示而不刷新后端校验，成员看到的缺失项会长期滞后，形成假状态。
+- 材料类型又和发票主记录/辅助材料关联共同构成业务不变量；若不限制某些方向的修改，会出现“已有发票主记录却不是 invoice 类型”这类自相矛盾状态。
+
+### 修改文件
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/application/material_type_update.py`
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_member_material_type_update_api.py`
+- `web/src/app/member-invoice-workbench.tsx`
+- `web/src/app/member-invoice-workbench.test.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_member_material_type_update_api.py`
+    - 5 个测试通过
+  - `cd web && npm test -- --run member-invoice-workbench.test.tsx`
+    - 3 个测试通过
+  - `cd web && npm run build`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 345 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关失败。
+
+### 假设
+- 本轮只提供成员对“本人材料类型”的自助更正，不扩展到管理员代改或跨成员代改；管理员更广义的审核编辑边界仍由后续审核/导航任务继续收口。
+- 为避免破坏已形成的发票主链路，本轮保守拒绝“已有发票主记录的材料改成非 `invoice`”和“已挂为附件的材料改成 `invoice`”这两类修改；若后续产品要求支持，需要同时设计发票主记录迁移或解除关联流程。
+
 ## 2026-04-29 01:59 - Build member invoice workbench single-task summary view
 
 ### 完成内容

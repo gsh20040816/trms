@@ -5,6 +5,7 @@ from trms_backend.application.email_material_submission import EmailMaterialSubm
 from trms_backend.application.material_deletion import MaterialDeletionService
 from trms_backend.application.metrics import InMemoryMetricsCollector, MetricsCollector
 from trms_backend.application.material_submission import MaterialSubmissionService
+from trms_backend.application.material_type_update import MaterialTypeUpdateService
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
@@ -113,6 +114,11 @@ def create_app(
         material_repository,
         invoice_repository,
     )
+    material_type_update_service = MaterialTypeUpdateService(
+        task_repository,
+        material_repository,
+        invoice_repository,
+    )
     recognition_preparation_service = RecognitionPreparationService(
         material_repository,
         material_file_storage,
@@ -195,9 +201,14 @@ def create_app(
             auth_repository,
             task_repository,
             material_repository,
+            invoice_repository,
+            validation_repository,
+            recognition_task_repository,
             material_submission_service,
             material_deletion_service,
+            material_type_update_service,
             audit_log_repository,
+            app.state.metrics_collector,
         )
     )
     app.include_router(

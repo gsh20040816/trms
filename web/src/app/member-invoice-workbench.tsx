@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { ApiError } from "../lib/api/client";
 import {
   EmptyState,
   PageHeader,
@@ -17,6 +18,7 @@ import type {
   ExpenseSplitRecord,
   InvoiceRecord,
   MaterialRecord,
+  MaterialType,
   RecognitionFieldResult,
   RecognitionTaskRecord,
   ReimbursementTask,
@@ -73,6 +75,15 @@ type WorkbenchInvoiceItem = {
   relatedExpenseDetails: ExpenseDetailItem[];
   missingMaterials: TaskMemberStatusReport["missing_materials"];
 };
+
+const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
+  { value: "invoice", label: "发票" },
+  { value: "payment_record", label: "支付记录" },
+  { value: "competition_notice", label: "比赛通知" },
+  { value: "itinerary", label: "行程单" },
+  { value: "order_screenshot", label: "订单截图" },
+  { value: "other_attachment", label: "其他材料" },
+];
 
 const FIELD_ORDER = [
   "invoice_number",
@@ -334,6 +345,10 @@ export function MemberInvoiceWorkbenchPage() {
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [workbenchState, setWorkbenchState] = useState<SelectedTaskWorkbenchState>({ status: "idle" });
+  const [materialTypeDrafts, setMaterialTypeDrafts] = useState<Record<string, MaterialType>>({});
+  const [materialTypeErrors, setMaterialTypeErrors] = useState<Record<string, string>>({});
+  const [updatingMaterialId, setUpdatingMaterialId] = useState<string | null>(null);
+  const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -431,6 +446,12 @@ export function MemberInvoiceWorkbenchPage() {
             new Map(confirmationEntries),
           ),
         });
+        setMaterialTypeDrafts(
+          Object.fromEntries(
+            report.materials.map((material) => [material.material_id, material.material_type] as const),
+          ),
+        );
+        setMaterialTypeErrors({});
       } catch (error) {
         if (cancelled) {
           return;
@@ -457,7 +478,7 @@ export function MemberInvoiceWorkbenchPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedTaskId, session, taskState]);
+  }, [selectedTaskId, session, taskState, workbenchReloadVersion]);
 
   const visibleTasks = taskState.status === "ready" ? taskState.visibleTasks : [];
   const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
@@ -471,6 +492,39 @@ export function MemberInvoiceWorkbenchPage() {
     }
     return workbenchState.items.reduce((count, item) => count + collectAbnormalReasons(item).length, 0);
   }, [workbenchState]);
+
+  async function handleMaterialTypeSave(materialId: string) {
+    if (!session) {
+      return;
+    }
+    const materialType = materialTypeDrafts[materialId];
+    if (!materialType) {
+      return;
+    }
+
+    setUpdatingMaterialId(materialId);
+    setMaterialTypeErrors((current) => {
+      const next = { ...current };
+      delete next[materialId];
+      return next;
+    });
+
+    try {
+      await trmsApi.updateMaterialType(materialId, {
+        actor_id: session.actorId,
+        material_type: materialType,
+      });
+      setWorkbenchReloadVersion((current) => current + 1);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.summary.message : "材料类型更新失败，请稍后重试。";
+      setMaterialTypeErrors((current) => ({
+        ...current,
+        [materialId]: message,
+      }));
+    } finally {
+      setUpdatingMaterialId((current) => (current === materialId ? null : current));
+    }
+  }
 
   if (!session || session.role !== "member") {
     return null;
@@ -636,6 +690,59 @@ export function MemberInvoiceWorkbenchPage() {
                     <dd>{formatValidationStatus(item.material.validation_status)}</dd>
                   </div>
                 </dl>
+
+                <section className="member-status-section">
+                  <div className="member-status-section-header">
+                    <h4>材料类型</h4>
+                    <span className="status-chip">可自助更正</span>
+                  </div>
+                  <div className="admin-form-grid">
+                    <label className="field-stack">
+                      <span>当前材料类型</span>
+                      <select
+                        aria-label={`${item.material.material_id} 材料类型`}
+                        value={materialTypeDrafts[item.material.material_id] ?? item.material.material_type}
+                        onChange={(event) => {
+                          const nextMaterialType = event.target.value as MaterialType;
+                          setMaterialTypeDrafts((current) => ({
+                            ...current,
+                            [item.material.material_id]: nextMaterialType,
+                          }));
+                        }}
+                        disabled={updatingMaterialId === item.material.material_id}
+                      >
+                        {MATERIAL_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="field-stack">
+                      <span>操作</span>
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        onClick={() => {
+                          void handleMaterialTypeSave(item.material.material_id);
+                        }}
+                        disabled={
+                          updatingMaterialId === item.material.material_id
+                          || (materialTypeDrafts[item.material.material_id] ?? item.material.material_type)
+                            === item.material.material_type
+                        }
+                      >
+                        {updatingMaterialId === item.material.material_id ? "保存中..." : "保存材料类型"}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="field-hint">
+                    仅收集中任务允许成员修改本人材料类型；若该材料已经形成发票主记录或存在不兼容关联，系统会明确拒绝。
+                  </p>
+                  {materialTypeErrors[item.material.material_id] ? (
+                    <p className="field-error field-error-block">{materialTypeErrors[item.material.material_id]}</p>
+                  ) : null}
+                </section>
 
                 <section className="member-status-section">
                   <div className="member-status-section-header">

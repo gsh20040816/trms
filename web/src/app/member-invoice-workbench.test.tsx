@@ -797,4 +797,133 @@ describe("MemberInvoiceWorkbenchPage", () => {
       "/member/expenses/confirm?taskId=TASK-OPEN",
     );
   });
+
+  it("allows members to update material type from the workbench and refreshes the task summary", async () => {
+    let currentMaterialType = "other_attachment";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway", "hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 1,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-EDIT-001",
+              submitter_id: "2250001",
+              material_type: currentMaterialType,
+              original_filename: "payment.pdf",
+              material_status: "assigned",
+              recognition_status: null,
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: null,
+              invoice_number: null,
+              validation_status: "not_applicable",
+              validation_messages: [],
+              created_at: "2026-04-28T10:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/materials/MAT-EDIT-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: null,
+          items: [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-EDIT-001/material-type" && method === "PATCH") {
+        if (typeof init?.body !== "string") {
+          throw new Error("expected PATCH body to be serialized JSON");
+        }
+        const payload = JSON.parse(init.body) as { material_type: string };
+        currentMaterialType = payload.material_type;
+        return Promise.resolve(jsonResponse({
+          item: {
+            id: "MAT-EDIT-001",
+            status: "assigned",
+            task_id: "TASK-OPEN",
+            submitter_id: "2250001",
+            task_id_hint: null,
+            submitter_id_hint: null,
+            channel: "web",
+            material_type: currentMaterialType,
+            storage_key: "TASK-OPEN/payment.pdf",
+            original_filename: "payment.pdf",
+            content_type: "application/pdf",
+            size_bytes: 16,
+            sha256: "a".repeat(64),
+            duplicate_of: null,
+            claimed_by: null,
+            claimed_at: null,
+            created_at: "2026-04-28T10:00:00+08:00",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    const select = await screen.findByLabelText("MAT-EDIT-001 材料类型");
+    expect(select).toHaveValue("other_attachment");
+
+    fireEvent.change(select, { target: { value: "payment_record" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存材料类型" }));
+
+    await screen.findByText("支付记录 / MAT-EDIT-001");
+    expect(screen.getByLabelText("MAT-EDIT-001 材料类型")).toHaveValue("payment_record");
+  });
 });

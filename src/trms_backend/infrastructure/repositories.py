@@ -390,6 +390,20 @@ class SqlAlchemyMaterialRepository:
             session.add(row)
         return _material_from_row(row)
 
+    def update_material_type(
+        self,
+        *,
+        material_id: str,
+        material_type: MaterialType,
+    ) -> MaterialRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(MaterialRow, material_id)
+            if row is None or row.status != MaterialStatus.ASSIGNED.value:
+                return None
+            row.material_type = material_type.value
+            session.add(row)
+        return _material_from_row(row)
+
     def list_by_task(self, task_id: str) -> list[MaterialRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(

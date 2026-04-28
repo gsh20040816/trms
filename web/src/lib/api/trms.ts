@@ -18,6 +18,7 @@ import type {
   MaterialReminderCreate,
   MaterialReminderRecord,
   MaterialRecord,
+  MaterialTypeUpdatePayload,
   MergedPdfExportPlan,
   VisibleMissingMaterialList,
   OverdueConfirmationList,
@@ -257,6 +258,16 @@ export const trmsApi = {
       {
         method: "POST",
         body: formData,
+      },
+    );
+  },
+
+  updateMaterialType(materialId: string, payload: MaterialTypeUpdatePayload) {
+    return apiClient.request<ApiItemResponse<MaterialRecord>>(
+      `/materials/${encodeSegment(materialId)}/material-type`,
+      {
+        method: "PATCH",
+        body: buildActorScopedBody(payload, ["actor_id"]),
       },
     );
   },

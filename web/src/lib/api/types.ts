@@ -154,6 +154,11 @@ export type MaterialRecord = {
   created_at: ApiDateTime;
 };
 
+export type MaterialTypeUpdatePayload = {
+  actor_id?: string | null;
+  material_type: MaterialType;
+};
+
 export type MaterialUploadFailure = {
   original_filename: string | null;
   error_code: string;

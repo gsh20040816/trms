@@ -154,6 +154,14 @@ class MaterialRepository(Protocol):
     def mark_deleted(self, material_id: str) -> MaterialRecord | None:
         raise NotImplementedError
 
+    def update_material_type(
+        self,
+        *,
+        material_id: str,
+        material_type: MaterialType,
+    ) -> MaterialRecord | None:
+        raise NotImplementedError
+
     def get(self, material_id: str) -> MaterialRecord | None:
         raise NotImplementedError
 
@@ -263,6 +271,21 @@ class InMemoryMaterialRepository:
                 return None
 
             updated = material.model_copy(update={"status": MaterialStatus.DELETED})
+            self._materials[material_id] = updated
+            return updated
+
+    def update_material_type(
+        self,
+        *,
+        material_id: str,
+        material_type: MaterialType,
+    ) -> MaterialRecord | None:
+        with self._lock:
+            material = self._materials.get(material_id)
+            if material is None or material.status is not MaterialStatus.ASSIGNED:
+                return None
+
+            updated = material.model_copy(update={"material_type": material_type})
             self._materials[material_id] = updated
             return updated
 
