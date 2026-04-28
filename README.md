@@ -33,6 +33,68 @@ uv run pytest
 uv run python -m trms_backend --reload
 ```
 
+## 第一阶段本地运行闭环
+
+当前仓库适合验证“本地 API + 本地/假外部依赖 + Web 前端 + 占位 CLI”的第一阶段闭环，不应把它理解为真实 Telegram、真实邮件、真实财务系统或完整生产凭据流程已经联通。
+
+推荐的本地最小启动顺序：
+
+```bash
+cp .env.development.example .env
+uv sync
+uv run alembic upgrade head
+uv run python -m trms_backend --reload
+```
+
+如果要验证独立 worker 模式，而不是请求内同步处理异步任务，再开一个终端运行：
+
+```bash
+TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker
+```
+
+如果要联调 Web 前端：
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+本地回归验证统一使用：
+
+```bash
+./scripts/verify.sh
+```
+
+该脚本当前会执行 Python 编译检查、Alembic `upgrade -> downgrade -> upgrade` 验证、`pytest`、Web `lint/test/build`、Docker Compose 配置检查和 `git diff --check`。
+
+## CLI 当前状态
+
+第一阶段 CLI 目前已实现这些命令：
+
+- `login`
+- `health`
+- `tasks`
+- `submit`
+- `status`
+- `missing-materials`
+- `split`
+- `confirm-expense`
+
+当前仓库还没有安装型 `trms-cli` console script，实际调用方式是：
+
+```bash
+uv run python -m trms_cli.cli --help
+```
+
+CLI `login` 目前只是“本地 token 会话保存占位”，不是完整登录闭环：
+
+- 它会读取预先提供的 `TRMS_CLI_ACCESS_TOKEN` 和 `TRMS_CLI_REFRESH_TOKEN`，并安全写入本地 session 文件；
+- 默认 session 文件路径是 `~/.config/trms/session.json`，也可用 `TRMS_CLI_CONFIG_DIR` 覆盖；
+- 目前尚未对接 CLI 专用 token 签发 / 刷新流程，也不等同于 Web 登录已经自动可复用到 CLI。
+
+因此，README 当前只把 CLI 视为“已有命令和本地会话边界的开发入口”，不把它表述为已具备完整终端登录发布流程。
+
 默认使用本地 SQLite 文件 `trms.db`。如需连接 PostgreSQL，可设置 `DATABASE_URL`。
 
 ```bash
@@ -180,6 +242,16 @@ TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker
 ```bash
 TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker --once
 ```
+
+## 当前未实现或未联通的外部依赖
+
+以下能力不要按“README 已写到就等于可直接使用”理解：
+
+- Telegram 渠道目前只完成后端可信边界和待归属语义，未提供真实 Bot / Webhook 联通说明。
+- 格式化邮件渠道目前只完成格式规范和受信任入站边界，未实现真实 IMAP 轮询、Webhook 收件或邮箱绑定闭环。
+- OpenAI 兼容 LLM Provider 只有在显式配置 `TRMS_LLM_*` 后才会启用；未配置时识别会显式停在 `disabled`，不会伪装为识别成功。
+- Browser Use / 财务系统自动录入明确属于第一阶段范围外，不应被当作现成功能。
+- XLSX 导出仍未实现；当前可落盘并下载的是 CSV / JSON / `merged_pdf`。
 
 ## Web 前端
 

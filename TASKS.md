@@ -1087,7 +1087,7 @@
     - `WORKLOG.md` 明确记录仍未验证的外部依赖和上线风险
     - 不把 Telegram、邮件、真实 OCR 或 Browser Use 的未接入能力伪装为已演练
 
-- [ ] 更新 README 的第一阶段运行说明
+- [x] 更新 README 的第一阶段运行说明
   - Done when:
     - README 记录后端启动、测试、CLI 占位、当前未实现外部依赖
     - 不夸大未实现功能

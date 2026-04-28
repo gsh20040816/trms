@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-29 05:19 - Update README first-phase run instructions
+
+### 完成内容
+- 更新 `README.md`，补齐面向当前第一阶段代码状态的运行说明：
+  - 新增“第一阶段本地运行闭环”，明确 `.env` 准备、依赖安装、Alembic 迁移、后端启动、独立 worker 启动、Web 前端联调和统一验证入口；
+  - 新增“CLI 当前状态”，明确现有命令集合、当前只能通过 `uv run python -m trms_cli.cli` 调用、`login` 仅是本地 token 会话保存占位而非完整登录闭环；
+  - 新增“当前未实现或未联通的外部依赖”，明确 Telegram、格式化邮件、LLM Provider、Browser Use / 财务系统自动录入和 XLSX 导出的当前边界。
+- 将 `TASKS.md` 中“更新 README 的第一阶段运行说明”标记为已完成。
+
+### 根因
+- 现有 `README.md` 已积累大量配置和部署边界，但缺少一个面向“当前第一阶段仓库到底怎么跑、CLI 现在处于什么状态、哪些外部能力还没接通”的最小运行说明。
+- 这会导致阅读者容易把零散配置项误解为“已有完整运行闭环”，尤其是：
+  - 会误以为仓库已经提供可直接执行的 `trms-cli` 命令；
+  - 会误以为 Telegram、邮件、LLM 和财务系统自动录入已经在 README 层面可直接联通；
+  - 会忽略 `./scripts/verify.sh` 才是仓库要求的统一验证入口。
+
+### 关键改动点
+- 运行说明文档收口：
+  - `README.md`
+- 任务状态同步：
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只修改文档和任务记录，不改动任何生产业务逻辑、测试逻辑或运行配置默认值。
+- 风险主要在于 README 描述是否与仓库当前实现一致；本轮已按代码现状保守表述，不把占位能力写成已完成外部集成。
+
+### 修改文件
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 418 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮将“CLI 占位”保守解释为：README 需要准确描述当前 CLI 只是已有命令和本地 token 会话边界，不额外发明不存在的 CLI 安装、签发或刷新流程。
+- 本轮将“当前未实现外部依赖”聚焦到 README 最容易被误读为已联通的能力：Telegram、格式化邮件、LLM Provider、Browser Use / 财务系统自动录入和 XLSX 导出；不在同一轮里扩散成新的需求评审文档。
+
 ## 2026-04-29 05:10 - Execute pre-release main-flow E2E drill
 
 ### 完成内容
