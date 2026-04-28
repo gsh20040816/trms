@@ -151,6 +151,8 @@ class SqlAlchemyAuthRepository(AuthRepository):
             actor_id=data.actor_id,
             display_name=data.display_name,
             member_code=data.member_code,
+            registration_source=data.registration_source.value,
+            created_by_user_id=data.created_by_user_id,
             created_at=now,
             updated_at=now,
         )
@@ -205,6 +207,17 @@ class SqlAlchemyAuthRepository(AuthRepository):
             row.revoked_at = datetime.now(timezone.utc)
             session.add(row)
             return True
+
+    def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
+        normalized_roles = tuple(role.value for role in roles)
+        if not normalized_roles:
+            return 0
+        with session_scope(self._session_factory) as session:
+            return (
+                session.query(UserAccountRow)
+                .filter(UserAccountRow.role.in_(normalized_roles))
+                .count()
+            )
 
 
 class SqlAlchemyTaskRepository:

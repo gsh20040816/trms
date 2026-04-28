@@ -42,4 +42,4 @@ def test_init_database_accepts_schema_at_alembic_head(tmp_path):
 
     init_database(session_factory, allow_schema_bootstrap=False)
 
-    assert get_alembic_head_revisions() == ("20260428_01",)
+    assert get_alembic_head_revisions() == ("20260428_02",)

@@ -23,6 +23,11 @@ class UserRole(StrEnum):
     SYSTEM_ADMIN = "system_admin"
 
 
+class UserRegistrationSource(StrEnum):
+    SELF_SERVICE = "self_service"
+    BOOTSTRAP_TOKEN = "bootstrap_token"
+
+
 class UserRegisterInput(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=256)
@@ -57,6 +62,8 @@ class UserCreate(BaseModel):
     actor_id: str
     display_name: str
     member_code: str | None
+    registration_source: UserRegistrationSource
+    created_by_user_id: str | None = None
 
 
 class AuthenticatedUser(BaseModel):
@@ -90,6 +97,35 @@ class InvalidCredentialsError(ValueError):
         super().__init__("invalid username or password")
 
 
+class PrivilegedSelfRegistrationDisabledError(ValueError):
+    def __init__(self, role: UserRole) -> None:
+        super().__init__(f"self-service registration for role '{role.value}' is disabled")
+
+
+class PrivilegedBootstrapDisabledError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("privileged account bootstrap is not configured")
+
+
+class InvalidBootstrapTokenError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("invalid bootstrap token")
+
+
+class InvalidBootstrapRoleError(ValueError):
+    def __init__(self, role: UserRole) -> None:
+        super().__init__(
+            f"bootstrap endpoint only supports privileged roles, got '{role.value}'"
+        )
+
+
+class PrivilegedBootstrapAlreadyCompletedError(ValueError):
+    def __init__(self) -> None:
+        super().__init__(
+            "privileged account bootstrap is already completed; use an audited invite or approval flow"
+        )
+
+
 class AuthRepository(Protocol):
     def create_user(self, data: UserCreate) -> AuthenticatedUser:
         raise NotImplementedError
@@ -106,20 +142,55 @@ class AuthRepository(Protocol):
     def revoke_session(self, *, token_hash: str) -> bool:
         raise NotImplementedError
 
+    def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
+        raise NotImplementedError
 
-def register_user(repository: AuthRepository, payload: UserRegisterInput) -> AuthSession:
-    username = payload.username.lower()
-    display_name = payload.display_name or payload.username
-    actor_id = payload.actor_id or payload.username
-    member_code = payload.member_code if payload.role is UserRole.MEMBER else None
+
+def register_user(
+    repository: AuthRepository,
+    payload: UserRegisterInput,
+    *,
+    allow_privileged_self_registration: bool = True,
+) -> AuthSession:
+    if _is_privileged_role(payload.role) and not allow_privileged_self_registration:
+        raise PrivilegedSelfRegistrationDisabledError(payload.role)
     user = repository.create_user(
-        UserCreate(
-            username=username,
-            password_hash=hash_password(payload.password),
-            role=payload.role,
-            actor_id=actor_id,
-            display_name=display_name,
-            member_code=member_code,
+        _build_user_create(
+            payload,
+            registration_source=UserRegistrationSource.SELF_SERVICE,
+        )
+    )
+    return _create_auth_session(repository, user)
+
+
+def bootstrap_privileged_user(
+    repository: AuthRepository,
+    payload: UserRegisterInput,
+    *,
+    bootstrap_token: str | None,
+    configured_bootstrap_token: str | None,
+) -> AuthSession:
+    if not _is_privileged_role(payload.role):
+        raise InvalidBootstrapRoleError(payload.role)
+
+    normalized_configured_token = (configured_bootstrap_token or "").strip()
+    if not normalized_configured_token:
+        raise PrivilegedBootstrapDisabledError()
+
+    normalized_bootstrap_token = (bootstrap_token or "").strip()
+    if not normalized_bootstrap_token or not hmac.compare_digest(
+        normalized_bootstrap_token,
+        normalized_configured_token,
+    ):
+        raise InvalidBootstrapTokenError()
+
+    if repository.count_users_with_roles((UserRole.ADMIN, UserRole.SYSTEM_ADMIN)) > 0:
+        raise PrivilegedBootstrapAlreadyCompletedError()
+
+    user = repository.create_user(
+        _build_user_create(
+            payload,
+            registration_source=UserRegistrationSource.BOOTSTRAP_TOKEN,
         )
     )
     return _create_auth_session(repository, user)
@@ -193,6 +264,30 @@ def _create_auth_session(repository: AuthRepository, user: AuthenticatedUser) ->
     access_token = secrets.token_urlsafe(ACCESS_TOKEN_BYTES)
     repository.create_session(user_id=user.id, token_hash=hash_token(access_token))
     return AuthSession(access_token=access_token, user=user)
+
+
+def _build_user_create(
+    payload: UserRegisterInput,
+    *,
+    registration_source: UserRegistrationSource,
+) -> UserCreate:
+    username = payload.username.lower()
+    display_name = payload.display_name or payload.username
+    actor_id = payload.actor_id or payload.username
+    member_code = payload.member_code if payload.role is UserRole.MEMBER else None
+    return UserCreate(
+        username=username,
+        password_hash=hash_password(payload.password),
+        role=payload.role,
+        actor_id=actor_id,
+        display_name=display_name,
+        member_code=member_code,
+        registration_source=registration_source,
+    )
+
+
+def _is_privileged_role(role: UserRole) -> bool:
+    return role in {UserRole.ADMIN, UserRole.SYSTEM_ADMIN}
 
 
 def _normalize_required(value: str) -> str:

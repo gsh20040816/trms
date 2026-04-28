@@ -5,9 +5,15 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 from trms_backend.domain.auth import (
     AuthRepository,
     InvalidCredentialsError,
+    InvalidBootstrapRoleError,
+    InvalidBootstrapTokenError,
+    PrivilegedBootstrapAlreadyCompletedError,
+    PrivilegedBootstrapDisabledError,
+    PrivilegedSelfRegistrationDisabledError,
     UserLoginInput,
     UserRegisterInput,
     UsernameAlreadyExistsError,
+    bootstrap_privileged_user,
     get_user_by_access_token,
     login_user,
     register_user,
@@ -15,13 +21,68 @@ from trms_backend.domain.auth import (
 )
 
 
-def build_auth_router(repository: AuthRepository) -> APIRouter:
+def build_auth_router(
+    repository: AuthRepository,
+    *,
+    allow_privileged_self_registration: bool,
+    bootstrap_admin_token: str | None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
 
     @router.post("/register", status_code=status.HTTP_201_CREATED)
     def register(payload: UserRegisterInput):
         try:
-            return register_user(repository, payload)
+            return register_user(
+                repository,
+                payload,
+                allow_privileged_self_registration=allow_privileged_self_registration,
+            )
+        except UsernameAlreadyExistsError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        except PrivilegedSelfRegistrationDisabledError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.post("/bootstrap-admin", status_code=status.HTTP_201_CREATED)
+    def bootstrap_admin(
+        payload: UserRegisterInput,
+        bootstrap_token: Annotated[
+            str | None,
+            Header(alias="X-TRMS-Bootstrap-Token"),
+        ] = None,
+    ):
+        try:
+            return bootstrap_privileged_user(
+                repository,
+                payload,
+                bootstrap_token=bootstrap_token,
+                configured_bootstrap_token=bootstrap_admin_token,
+            )
+        except InvalidBootstrapRoleError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+        except PrivilegedBootstrapDisabledError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except InvalidBootstrapTokenError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(error),
+            ) from error
+        except PrivilegedBootstrapAlreadyCompletedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
         except UsernameAlreadyExistsError as error:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

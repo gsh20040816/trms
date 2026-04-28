@@ -27,6 +27,11 @@ DEFAULT_ASYNC_JOB_MODE_BY_ENV: dict[RuntimeEnvironment, AsyncJobMode] = {
     "production": "worker",
 }
 DEFAULT_ASYNC_JOB_POLL_INTERVAL_SECONDS = 5.0
+DEFAULT_ALLOW_ADMIN_SELF_REGISTER_BY_ENV: dict[RuntimeEnvironment, bool] = {
+    "development": True,
+    "test": True,
+    "production": False,
+}
 VALID_ENVIRONMENTS = frozenset({"development", "test", "production"})
 
 
@@ -87,6 +92,44 @@ class AsyncJobConfig(BaseModel):
         if normalized not in {"in_process", "worker"}:
             raise ValueError("async_jobs.mode must be one of: in_process, worker")
         return normalized
+
+
+class AuthConfig(BaseModel):
+    allow_admin_self_register: bool
+    bootstrap_admin_token: SecretStr | None = None
+
+    @field_validator("allow_admin_self_register", mode="before")
+    @classmethod
+    def validate_allow_admin_self_register(cls, value: bool | str) -> bool:
+        if isinstance(value, bool):
+            return value
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError("auth.allow_admin_self_register must be a boolean")
+
+    @field_validator("bootstrap_admin_token", mode="before")
+    @classmethod
+    def validate_bootstrap_admin_token(
+        cls,
+        value: SecretStr | str | None,
+    ) -> SecretStr | None:
+        if value is None:
+            return None
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            return None
+        return SecretStr(normalized)
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return {
+            "allow_admin_self_register": self.allow_admin_self_register,
+            "bootstrap_admin_token": "[redacted]" if self.bootstrap_admin_token else None,
+            "bootstrap_admin_token_configured": self.bootstrap_admin_token is not None,
+        }
 
 
 class LocalFileStorageConfig(BaseModel):
@@ -185,6 +228,7 @@ class RuntimeConfig(BaseModel):
     api_host: str
     api_port: int = Field(ge=1, le=65535)
     async_jobs: AsyncJobConfig
+    auth: AuthConfig
     llm_provider: LLMProviderConfig | None = None
 
     @field_validator("database_url")
@@ -265,6 +309,8 @@ def load_runtime_config(
     storage_s3_key_prefix: str | None = None,
     async_job_mode: str | None = None,
     async_job_poll_interval_seconds: str | float | int | None = None,
+    auth_allow_admin_self_register: bool | str | None = None,
+    auth_bootstrap_admin_token: str | None = None,
     llm_api_key: str | None = None,
     llm_base_url: str | None = None,
     llm_model: str | None = None,
@@ -385,6 +431,18 @@ def load_runtime_config(
     )
     if raw_async_job_poll_interval_seconds is None:
         raw_async_job_poll_interval_seconds = DEFAULT_ASYNC_JOB_POLL_INTERVAL_SECONDS
+    raw_auth_allow_admin_self_register = _resolve_value(
+        auth_allow_admin_self_register,
+        environment_variables.get("TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER"),
+    )
+    if raw_auth_allow_admin_self_register is None:
+        raw_auth_allow_admin_self_register = DEFAULT_ALLOW_ADMIN_SELF_REGISTER_BY_ENV[
+            normalized_environment
+        ]
+    raw_auth_bootstrap_admin_token = _resolve_value(
+        auth_bootstrap_admin_token,
+        environment_variables.get("TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN"),
+    )
 
     if normalized_environment == "production" and str(raw_async_job_mode).strip() == "in_process":
         issues.append(
@@ -484,6 +542,10 @@ def load_runtime_config(
                 "async_jobs": {
                     "mode": raw_async_job_mode,
                     "worker_poll_interval_seconds": raw_async_job_poll_interval_seconds,
+                },
+                "auth": {
+                    "allow_admin_self_register": raw_auth_allow_admin_self_register,
+                    "bootstrap_admin_token": raw_auth_bootstrap_admin_token,
                 },
                 "llm_provider": llm_provider_payload,
             }

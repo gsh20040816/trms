@@ -23,6 +23,8 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.api_port == 8000
     assert config.async_jobs.mode == "in_process"
     assert config.async_jobs.worker_poll_interval_seconds == 5
+    assert config.auth.allow_admin_self_register is True
+    assert config.auth.bootstrap_admin_token is None
     assert config.llm_provider is None
 
 
@@ -65,6 +67,7 @@ def test_load_runtime_config_defaults_to_worker_mode_in_production():
 
     assert config.environment == "production"
     assert config.async_jobs.mode == "worker"
+    assert config.auth.allow_admin_self_register is False
     assert config.file_storage.backend == "s3"
 
 
@@ -166,6 +169,25 @@ def test_llm_provider_safe_log_fields_redact_api_key():
     assert safe_log_fields["api_key"] == "[redacted]"
     assert safe_log_fields["api_key_configured"] is True
     assert "sk-live-secret-value" not in str(safe_log_fields)
+
+
+def test_auth_config_reads_bootstrap_token_and_redacts_it_from_logs():
+    config = load_runtime_config(
+        env={
+            "TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER": "false",
+            "TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN": " bootstrap-secret ",
+        }
+    )
+
+    assert config.auth.allow_admin_self_register is False
+    assert config.auth.bootstrap_admin_token is not None
+    assert config.auth.bootstrap_admin_token.get_secret_value() == "bootstrap-secret"
+
+    safe_log_fields = config.auth.to_safe_log_fields()
+
+    assert safe_log_fields["bootstrap_admin_token"] == "[redacted]"
+    assert safe_log_fields["bootstrap_admin_token_configured"] is True
+    assert "bootstrap-secret" not in str(safe_log_fields)
 
 
 def test_s3_file_storage_safe_log_fields_redact_credentials():

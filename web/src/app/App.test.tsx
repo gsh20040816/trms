@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
+import { MockLoginPage } from "./auth";
 import { clearMockSession, setMockSession } from "./auth-store";
 import { routes } from "./routes";
 
@@ -134,6 +135,37 @@ describe("web app account auth", () => {
 
     expect(await screen.findByRole("heading", { name: "成员可提交任务" })).toBeInTheDocument();
     expect(await screen.findByText("当前没有可见报销任务")).toBeInTheDocument();
+  });
+
+  it("hides dev role entries and privileged self-registration when auth ui config disables them", () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/login",
+          element: (
+            <MockLoginPage
+              uiConfig={{
+                enableDevRoleEntries: false,
+                allowPrivilegedSelfRegistration: false,
+              }}
+            />
+          ),
+        },
+      ],
+      {
+        initialEntries: ["/login"],
+      },
+    );
+
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "注册" }));
+
+    expect(screen.queryByLabelText("角色")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("开发调试角色入口")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("当前环境仅开放成员自注册；管理员与系统管理员账号必须通过受控初始化或后续邀请/审批流程创建。"),
+    ).toBeInTheDocument();
   });
 
   it("shows a role mismatch placeholder for the wrong logged-in role", () => {

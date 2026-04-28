@@ -12,6 +12,7 @@ import {
   setMockSession,
   useAuthSession,
 } from "./auth-store";
+import { resolveAuthUiConfig, type AuthUiConfig } from "./auth-ui-config";
 import {
   findRoleRouteByRole,
   roleRoutes,
@@ -34,7 +35,7 @@ function normalizeNextPath(rawPath: string | null) {
   return rawPath;
 }
 
-export function MockLoginPage() {
+export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?: AuthUiConfig }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const session = useAuthSession();
@@ -49,6 +50,9 @@ export function MockLoginPage() {
   const [error, setError] = useState<unknown>(null);
   const nextPath = normalizeNextPath(searchParams.get("next"));
   const activeRoleRoute = session ? getRoleRouteOrThrow(session.role) : null;
+  const registrationRoleRoutes = uiConfig.allowPrivilegedSelfRegistration
+    ? roleRoutes
+    : roleRoutes.filter((roleRoute) => roleRoute.role === "member");
 
   function handleCredentialSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,22 +157,28 @@ export function MockLoginPage() {
           </label>
           {mode === "register" ? (
             <>
-              <label className="field-stack">
-                <span>角色</span>
-                <select
-                  name="role"
-                  value={role}
-                  onChange={(event) => {
-                    setRole(event.target.value as UserRole);
-                  }}
-                >
-                  {roleRoutes.map((roleRoute) => (
-                    <option key={roleRoute.role} value={roleRoute.role}>
-                      {roleRoute.loginLabel}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {uiConfig.allowPrivilegedSelfRegistration ? (
+                <label className="field-stack">
+                  <span>角色</span>
+                  <select
+                    name="role"
+                    value={role}
+                    onChange={(event) => {
+                      setRole(event.target.value as UserRole);
+                    }}
+                  >
+                    {registrationRoleRoutes.map((roleRoute) => (
+                      <option key={roleRoute.role} value={roleRoute.role}>
+                        {roleRoute.loginLabel}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <p className="status-note">
+                  当前环境仅开放成员自注册；管理员与系统管理员账号必须通过受控初始化或后续邀请/审批流程创建。
+                </p>
+              )}
               <label className="field-stack">
                 <span>显示名称</span>
                 <input
@@ -212,28 +222,30 @@ export function MockLoginPage() {
         </form>
       </section>
       {error ? <ApiErrorNotice error={error} /> : null}
-      <section className="card-grid" aria-label="开发调试角色入口">
-        {roleRoutes.map((roleRoute) => (
-          <article key={roleRoute.role} className="route-card">
-            <p className="card-kicker">{roleRoute.emphasis}</p>
-            <h2>{roleRoute.loginLabel}</h2>
-            <p>{roleRoute.summary}</p>
-            <p className="role-card-meta">
-              开发调试身份：{roleRoute.mockDisplayName}
-              {roleRoute.mockMemberCode ? `（${roleRoute.mockMemberCode}）` : ""}
-            </p>
-            <button
-              className="route-link route-link-secondary"
-              type="button"
-              onClick={() => {
-                handleLogin(roleRoute.role);
-              }}
-            >
-              以{roleRoute.loginLabel}进入
-            </button>
-          </article>
-        ))}
-      </section>
+      {uiConfig.enableDevRoleEntries ? (
+        <section className="card-grid" aria-label="开发调试角色入口">
+          {roleRoutes.map((roleRoute) => (
+            <article key={roleRoute.role} className="route-card">
+              <p className="card-kicker">{roleRoute.emphasis}</p>
+              <h2>{roleRoute.loginLabel}</h2>
+              <p>{roleRoute.summary}</p>
+              <p className="role-card-meta">
+                开发调试身份：{roleRoute.mockDisplayName}
+                {roleRoute.mockMemberCode ? `（${roleRoute.mockMemberCode}）` : ""}
+              </p>
+              <button
+                className="route-link route-link-secondary"
+                type="button"
+                onClick={() => {
+                  handleLogin(roleRoute.role);
+                }}
+              >
+                以{roleRoute.loginLabel}进入
+              </button>
+            </article>
+          ))}
+        </section>
+      ) : null}
       {activeRoleRoute && session ? (
         <section className="status-card">
           <p className="eyebrow">Current Session</p>

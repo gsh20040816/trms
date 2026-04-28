@@ -118,7 +118,17 @@ def create_app(
     def health():
         return {"status": "ok"}
 
-    app.include_router(build_auth_router(auth_repository))
+    app.include_router(
+        build_auth_router(
+            auth_repository,
+            allow_privileged_self_registration=config.auth.allow_admin_self_register,
+            bootstrap_admin_token=(
+                config.auth.bootstrap_admin_token.get_secret_value()
+                if config.auth.bootstrap_admin_token is not None
+                else None
+            ),
+        )
+    )
     app.include_router(
         build_task_router(
             task_repository,

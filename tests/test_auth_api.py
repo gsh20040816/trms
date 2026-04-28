@@ -1,12 +1,41 @@
+from alembic import command
 from fastapi.testclient import TestClient
 
-from trms_backend.infrastructure.database import build_session_factory, session_scope
+from trms_backend.infrastructure.database import (
+    build_alembic_config,
+    build_session_factory,
+    session_scope,
+)
 from trms_backend.infrastructure.models import UserAccountRow
 from trms_backend.main import create_app
+from trms_backend.runtime_config import load_runtime_config
 
 
-def make_client(tmp_path):
+def make_client(tmp_path, runtime_config=None):
+    if runtime_config is not None and runtime_config.environment == "production":
+        command.upgrade(build_alembic_config(runtime_config.database_url), "head")
+    if runtime_config is not None:
+        return TestClient(create_app(runtime_config=runtime_config))
     return TestClient(create_app(f"sqlite:///{tmp_path}/test.db"))
+
+
+def make_production_runtime_config(tmp_path, **overrides):
+    return load_runtime_config(
+        env={
+            "TRMS_ENV": "production",
+            "DATABASE_URL": f"sqlite:///{tmp_path}/production.db",
+            "TRMS_STORAGE_BACKEND": "s3",
+            "TRMS_STORAGE_S3_ENDPOINT": "https://minio.example.com",
+            "TRMS_STORAGE_S3_BUCKET": "trms-prod",
+            "TRMS_STORAGE_S3_ACCESS_KEY_ID": "prod-access",
+            "TRMS_STORAGE_S3_SECRET_ACCESS_KEY": "prod-secret",
+            "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
+            "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
+            "TRMS_API_HOST": "0.0.0.0",
+            "TRMS_API_PORT": "8000",
+        }
+        | overrides
+    )
 
 
 def register_payload(**overrides):
@@ -101,3 +130,90 @@ def test_logout_revokes_current_token(tmp_path):
     assert logout_response.status_code == 204
     me_response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me_response.status_code == 401
+
+
+def test_production_register_rejects_admin_self_registration(tmp_path):
+    client = make_client(tmp_path, runtime_config=make_production_runtime_config(tmp_path))
+
+    response = client.post(
+        "/api/auth/register",
+        json=register_payload(role="admin", actor_id="admin-1", member_code=None),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "self-service registration for role 'admin' is disabled"
+
+
+def test_production_register_still_allows_member_self_registration(tmp_path):
+    client = make_client(tmp_path, runtime_config=make_production_runtime_config(tmp_path))
+
+    response = client.post("/api/auth/register", json=register_payload())
+
+    assert response.status_code == 201
+    assert response.json()["user"]["role"] == "member"
+
+
+def test_bootstrap_admin_creates_privileged_account_and_records_audit_source(tmp_path):
+    runtime_config = make_production_runtime_config(
+        tmp_path,
+        TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN=" bootstrap-secret ",
+    )
+    client = make_client(tmp_path, runtime_config=runtime_config)
+
+    response = client.post(
+        "/api/auth/bootstrap-admin",
+        headers={"X-TRMS-Bootstrap-Token": "bootstrap-secret"},
+        json=register_payload(
+            username="admin1",
+            role="admin",
+            display_name="张管理员",
+            actor_id="admin-1",
+            member_code=None,
+        ),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["user"]["role"] == "admin"
+
+    session_factory = build_session_factory(f"sqlite:///{tmp_path}/production.db")
+    with session_scope(session_factory) as session:
+        row = session.query(UserAccountRow).filter_by(username="admin1").one()
+        assert row.registration_source == "bootstrap_token"
+        assert row.created_by_user_id is None
+
+
+def test_bootstrap_admin_rejects_second_privileged_bootstrap(tmp_path):
+    runtime_config = make_production_runtime_config(
+        tmp_path,
+        TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN="bootstrap-secret",
+    )
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    payload = register_payload(
+        username="admin1",
+        role="admin",
+        display_name="张管理员",
+        actor_id="admin-1",
+        member_code=None,
+    )
+
+    assert client.post(
+        "/api/auth/bootstrap-admin",
+        headers={"X-TRMS-Bootstrap-Token": "bootstrap-secret"},
+        json=payload,
+    ).status_code == 201
+
+    response = client.post(
+        "/api/auth/bootstrap-admin",
+        headers={"X-TRMS-Bootstrap-Token": "bootstrap-secret"},
+        json=register_payload(
+            username="sysadmin1",
+            role="system_admin",
+            display_name="赵系统管理员",
+            actor_id="sysadmin-1",
+            member_code=None,
+        ),
+    )
+
+    assert response.status_code == 409
+    assert "bootstrap is already completed" in response.json()["detail"]

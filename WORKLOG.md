@@ -1,5 +1,73 @@
 # WORKLOG
 
+## 2026-04-28 15:56 - Close production account bootstrap and registration policy
+
+### 完成内容
+- 收口后端生产注册策略：
+  - `src/trms_backend/runtime_config.py` 新增 `auth` 配置块，支持 `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER` 与 `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`；
+  - 开发/测试环境默认仍允许高权限自注册，`TRMS_ENV=production` 下默认禁止 `admin` / `system_admin` 通过 `POST /api/auth/register` 自注册。
+- 增加受控的高权限初始化入口：
+  - `src/trms_backend/api/auth.py` 新增 `POST /api/auth/bootstrap-admin`，要求请求头提供 `X-TRMS-Bootstrap-Token`；
+  - `src/trms_backend/domain/auth.py` 将高权限初始化与普通自注册分成两条路径，只允许该入口创建首个 `admin` 或 `system_admin`；
+  - 一旦库中已经存在任一高权限账号，初始化入口会显式拒绝再次使用，并把后续邀请/审批流程保留为明确的后续边界。
+- 补最小审计元数据：
+  - `src/trms_backend/infrastructure/models.py` 与 `alembic/versions/20260428_02_auth_registration_audit_fields.py` 为 `user_accounts` 增加 `registration_source` 与 `created_by_user_id`；
+  - 当前能区分 `self_service` 与 `bootstrap_token` 两类创建来源，为后续邀请/审批留出字段边界。
+- 收口前端登录页暴露面：
+  - 新增 `web/src/app/auth-ui-config.ts`，默认在生产构建下关闭开发调试角色入口和高权限自注册入口；
+  - `web/src/app/auth.tsx` 在关闭时隐藏 mock 角色卡片，并把注册页收敛到成员自注册提示；
+  - `README.md` 更新生产注册策略、初始化入口和 `VITE_ENABLE_DEV_AUTH_ROUTES` 的使用说明。
+- 更新任务记录：
+  - `TASKS.md` 将“收口生产账号初始化和注册策略”标记为完成。
+
+### 根因
+- 现有账号闭环虽然已经提供用户名密码注册登录，但注册接口无条件接受 `admin` 和 `system_admin`，生产环境缺少任何收口。
+- 前端登录页默认公开开发调试角色入口和高权限角色注册选项，会把仅用于本地调试的能力直接暴露到生产构建。
+- 仓库当时也没有记录“高权限账号是自注册还是初始化创建”的最小审计来源，无法为后续邀请/审批演进保留可信边界。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `README.md`
+- `src/trms_backend/api/auth.py`
+- `src/trms_backend/domain/auth.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/runtime_config.py`
+- `tests/test_auth_api.py`
+- `tests/test_database_migrations.py`
+- `tests/test_runtime_config.py`
+- `web/src/app/App.test.tsx`
+- `web/src/app/auth-ui-config.test.ts`
+- `web/src/app/auth-ui-config.ts`
+- `web/src/app/auth.tsx`
+- `web/src/vite-env.d.ts`
+- `alembic/versions/20260428_02_auth_registration_audit_fields.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_auth_api.py tests/test_runtime_config.py tests/test_database_migrations.py`
+    - 25 个测试通过
+  - `cd web && npm test -- src/app/App.test.tsx src/app/auth-ui-config.test.ts`
+    - 2 个前端测试文件、8 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 272 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 19 个测试文件、55 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前把“生产首个高权限账号创建”保守收敛为一次性 bootstrap token 入口，而不是在本轮直接实现完整邀请/审批工作流；后者仍需与统一身份上下文、审计和权限模型一起设计。
+- `created_by_user_id` 本轮先作为后续邀请/审批的预留审计字段，当前 bootstrap 场景保持为空，不伪装成已经实现了完整审批链。
+- 生产环境如需临时恢复高权限自注册，只能通过显式配置 `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER=true` 开启；该能力默认不应在正式部署中启用。
+
 ## 2026-04-28 15:38 - Productionize object storage and export artifact access
 
 ### 完成内容

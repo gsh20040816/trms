@@ -26,6 +26,8 @@ class UserAccountRow(Base):
     actor_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     member_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    registration_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
