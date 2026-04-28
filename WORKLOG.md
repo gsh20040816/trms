@@ -1,5 +1,75 @@
 # WORKLOG
 
+## 2026-04-28 12:56 - Add username password account auth
+
+### 完成内容
+- 新增后端基础账号认证闭环：
+  - `POST /api/auth/register` 注册用户名密码账号并返回 bearer session；
+  - `POST /api/auth/login` 校验用户名密码并返回新 session；
+  - `GET /api/auth/me` 通过 bearer token 恢复当前用户；
+  - `POST /api/auth/logout` 吊销当前 token。
+- 新增 `user_accounts` 与 `auth_sessions` 表模型：
+  - 密码使用 PBKDF2-SHA256 加盐哈希保存；
+  - session 只保存 token hash，不保存明文 token；
+  - 用户身份包含 `role`、`actor_id`、`display_name`、可选 `member_code`。
+- 前端登录页从纯 mock 角色入口升级为账号登录/注册表单：
+  - 注册/登录成功后保存后端返回的 bearer token 和用户身份；
+  - 既有成员、管理员、系统管理员业务页面继续通过统一 `useAuthSession()` 读取角色和 `actorId`；
+  - 保留开发调试角色入口，仅用于现有页面测试和本地调试。
+- 更新 `TASKS.md`：
+  - 新增并完成“实现用户名密码注册登录基础闭环”；
+  - 新增后续任务“将 Web 业务 API 迁移到 bearer 身份上下文”；
+  - 保留“建立最小请求身份上下文占位”和“基础权限控制”为后续未完成工作，避免把当前登录能力伪装成全量权限收口。
+- 更新 `README.md`，记录账号 API、前端 API 地址配置和当前权限迁移限制。
+
+### 修改文件
+- `src/trms_backend/domain/auth.py`
+- `src/trms_backend/api/auth.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_auth_api.py`
+- `web/src/app/auth-store.ts`
+- `web/src/app/auth.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/app/App.test.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `TASKS.md`
+- `README.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有 Web 端只有本地 mock 角色会话，无法交付一个可用的基础系统；用户无法注册账号、登录、退出或恢复后端会话。
+- 架构文档第 5.1 节已要求 Web 端优先支持账号密码或轻量 OAuth，并且当前 `TASKS.md` 已进入 P3 权限与身份收口阶段。
+- 如果继续让业务页面只依赖 mock 身份，后续权限控制、审计和 Web 真实使用都会缺少可信用户来源。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_auth_api.py`
+    - 5 个认证 API 测试通过
+  - `cd web && npm run lint && npm test`
+    - 前端 lint 通过
+    - 18 个前端测试文件、50 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 224 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - `git diff --check` 通过
+- 既有警告：
+  - `pytest` 仍有 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  这些均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设第一阶段允许用户在注册时选择 `member`、`admin` 或 `system_admin` 角色；这解决本地可用性，不等同于生产级管理员邀请或审批机制。
+- 当前 `actor_id` 仍由注册表单提供或默认使用用户名，目的是兼容既有业务页面和 API；后续需要把业务 API 从前端自报身份迁移到 bearer token 解析出的身份上下文。
+- 当前不新增第三方密码库，使用 Python 标准库 PBKDF2-SHA256，避免为基础闭环引入额外依赖；若进入正式部署，应进一步评估密码策略、速率限制、管理员初始化和账号禁用机制。
+
+### 后续建议
+- 下一轮优先继续 `TASKS.md` 中“建立最小请求身份上下文占位”，把已实现的账号 token 接入统一请求身份依赖。
+- 随后推进“将 Web 业务 API 迁移到 bearer 身份上下文”，避免继续扩大 `actor_id` / `submitter_id` 由前端自报的范围。
+
 ## 2026-04-28 12:35 - Add email material submission placeholder
 
 ### 完成内容

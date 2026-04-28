@@ -652,11 +652,24 @@
 
 ## P3 - 权限、安全、审计与可观测性
 
+- [x] 实现用户名密码注册登录基础闭环
+  - Done when:
+    - 后端提供 `/api/auth/register`、`/api/auth/login`、`/api/auth/me`、`/api/auth/logout`
+    - 密码只保存哈希，不以明文落库或返回
+    - Web 前端可注册、登录、保存会话并进入成员、管理员或系统管理员入口
+    - 保留现有业务 API 的 `actor_id` / `submitter_id` 迁移边界，不伪装为已完成全量权限收口
+
 - [ ] 建立最小请求身份上下文占位
   - Done when:
     - API 有统一方式表达当前用户、角色和成员编号
     - 现有直接传 `submitter_id` 或 `member_id` 的路径有迁移边界
     - 不要求接入真实 OAuth
+
+- [ ] 将 Web 业务 API 迁移到 bearer 身份上下文
+  - Done when:
+    - Web 前端业务请求携带登录返回的 bearer token
+    - 后端从 token 解析当前用户，替代关键路径中的前端自报 `actor_id`、`submitter_id`、`member_id`
+    - 保留 CLI、Telegram、邮件接入器的独立身份边界，不把渠道身份混入 Web 会话
 
 - [ ] 增加基础权限控制
   - Done when:

@@ -2,6 +2,8 @@ import { apiClient } from "./client";
 import type {
   ApiItemResponse,
   ApiListResponse,
+  AuthenticatedUser,
+  AuthSessionResponse,
   ConfirmationRecord,
   ConfirmationSubmit,
   ExpenseDetailList,
@@ -9,6 +11,7 @@ import type {
   ExpenseSplitReplace,
   FinanceDraftExport,
   InvoiceRecord,
+  LoginPayload,
   ManualInvoiceEntry,
   ManualInvoiceEntryResponse,
   MaterialBatchUploadResponse,
@@ -19,6 +22,7 @@ import type {
   VisibleMissingMaterialList,
   OverdueConfirmationList,
   RecognitionTaskList,
+  RegisterPayload,
   ReimbursementTask,
   TaskCreateInput,
   TaskExportBoundary,
@@ -46,6 +50,37 @@ function encodeSegment(value: string) {
 }
 
 export const trmsApi = {
+  register(payload: RegisterPayload) {
+    return apiClient.request<AuthSessionResponse>("/auth/register", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  login(payload: LoginPayload) {
+    return apiClient.request<AuthSessionResponse>("/auth/login", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  getCurrentUser(accessToken: string) {
+    return apiClient.request<AuthenticatedUser>("/auth/me", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+  },
+
+  logout(accessToken: string) {
+    return apiClient.request<void>("/auth/logout", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+  },
+
   createTask(payload: TaskCreateInput) {
     return apiClient.request<ReimbursementTask>("/tasks", {
       method: "POST",

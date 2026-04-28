@@ -58,6 +58,38 @@ export type RecognitionTaskStatus = "pending" | "succeeded" | "failed" | "needs_
 export type RecognitionFieldSource = "ocr" | "pdf_text" | "ai" | "manual";
 export type RecognitionFieldStatus = "recognized" | "needs_confirmation";
 export type RecognitionFailureStage = "ocr" | "pdf" | "ai";
+export type UserRole = "member" | "admin" | "system_admin";
+
+export type AuthenticatedUser = {
+  id: string;
+  username: string;
+  role: UserRole;
+  actor_id: string;
+  display_name: string;
+  member_code: string | null;
+  created_at: ApiDateTime;
+  updated_at: ApiDateTime;
+};
+
+export type AuthSessionResponse = {
+  access_token: string;
+  token_type: "bearer";
+  user: AuthenticatedUser;
+};
+
+export type RegisterPayload = {
+  username: string;
+  password: string;
+  role: UserRole;
+  display_name?: string | null;
+  actor_id?: string | null;
+  member_code?: string | null;
+};
+
+export type LoginPayload = {
+  username: string;
+  password: string;
+};
 
 export type ReimbursementTask = {
   id: string;

@@ -8,6 +8,7 @@ from trms_backend.application.telegram_material_submission import (
     TelegramMaterialSubmissionService,
 )
 from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
+from trms_backend.api.auth import build_auth_router
 from trms_backend.api.confirmations import build_confirmation_router
 from trms_backend.api.email_materials import build_email_material_router
 from trms_backend.api.exports import build_export_router
@@ -23,6 +24,7 @@ from trms_backend.domain.materials import MaterialFileStorage
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
     SqlAlchemyAutomaticReminderTaskRepository,
+    SqlAlchemyAuthRepository,
     SqlAlchemyConfirmationRepository,
     SqlAlchemyExportJobRepository,
     SqlAlchemyInvoiceRepository,
@@ -49,6 +51,7 @@ def create_app(
     )
     init_database(session_factory)
     global_invoice_config_repository = SqlAlchemyGlobalInvoiceConfigRepository(session_factory)
+    auth_repository = SqlAlchemyAuthRepository(session_factory)
     if global_invoice_config is not None:
         global_invoice_config_repository.set(global_invoice_config)
     task_repository = SqlAlchemyTaskRepository(session_factory)
@@ -91,6 +94,7 @@ def create_app(
     def health():
         return {"status": "ok"}
 
+    app.include_router(build_auth_router(auth_repository))
     app.include_router(
         build_task_router(
             task_repository,

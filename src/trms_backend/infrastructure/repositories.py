@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from trms_backend.domain.automatic_reminders import (
@@ -12,6 +13,14 @@ from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskRecord,
     AutomaticReminderTaskRepository,
     AutomaticReminderTaskStatus,
+)
+from trms_backend.domain.auth import (
+    AuthenticatedUser,
+    AuthRepository,
+    StoredAuthUser,
+    UserCreate,
+    UsernameAlreadyExistsError,
+    UserRole,
 )
 from trms_backend.domain.confirmations import (
     ConfirmationRecord,
@@ -78,6 +87,7 @@ from trms_backend.domain.telegram_bindings import (
 )
 from trms_backend.infrastructure.database import session_scope
 from trms_backend.infrastructure.models import (
+    AuthSessionRow,
     AutomaticReminderTaskRow,
     ConfirmationRow,
     ExpenseSplitRow,
@@ -90,6 +100,7 @@ from trms_backend.infrastructure.models import (
     RecognitionTaskRow,
     TaskRow,
     TelegramAccountBindingRow,
+    UserAccountRow,
     ValidationResultRow,
 )
 
@@ -122,6 +133,76 @@ class SqlAlchemyGlobalInvoiceConfigRepository(GlobalInvoiceConfigRepository):
                 row.updated_at = now
             session.add(row)
         return _global_invoice_config_from_row(row)
+
+
+class SqlAlchemyAuthRepository(AuthRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create_user(self, data: UserCreate) -> AuthenticatedUser:
+        now = datetime.now(timezone.utc)
+        row = UserAccountRow(
+            id=str(uuid4()),
+            username=data.username,
+            password_hash=data.password_hash,
+            role=data.role.value,
+            actor_id=data.actor_id,
+            display_name=data.display_name,
+            member_code=data.member_code,
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            with session_scope(self._session_factory) as session:
+                session.add(row)
+        except IntegrityError as error:
+            raise UsernameAlreadyExistsError(data.username) from error
+        return _authenticated_user_from_row(row)
+
+    def get_user_by_username(self, username: str) -> StoredAuthUser | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalars(
+                select(UserAccountRow).where(UserAccountRow.username == username)
+            ).first()
+            return _stored_auth_user_from_row(row) if row else None
+
+    def get_user_by_token_hash(self, token_hash: str) -> AuthenticatedUser | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalars(
+                select(UserAccountRow)
+                .join(AuthSessionRow, AuthSessionRow.user_id == UserAccountRow.id)
+                .where(
+                    AuthSessionRow.token_hash == token_hash,
+                    AuthSessionRow.revoked_at.is_(None),
+                )
+            ).first()
+            return _authenticated_user_from_row(row) if row else None
+
+    def create_session(self, *, user_id: str, token_hash: str) -> None:
+        with session_scope(self._session_factory) as session:
+            session.add(
+                AuthSessionRow(
+                    id=str(uuid4()),
+                    user_id=user_id,
+                    token_hash=token_hash,
+                    created_at=datetime.now(timezone.utc),
+                    revoked_at=None,
+                )
+            )
+
+    def revoke_session(self, *, token_hash: str) -> bool:
+        with session_scope(self._session_factory) as session:
+            row = session.scalars(
+                select(AuthSessionRow).where(
+                    AuthSessionRow.token_hash == token_hash,
+                    AuthSessionRow.revoked_at.is_(None),
+                )
+            ).first()
+            if row is None:
+                return False
+            row.revoked_at = datetime.now(timezone.utc)
+            session.add(row)
+            return True
 
 
 class SqlAlchemyTaskRepository:
@@ -1075,6 +1156,33 @@ def _global_invoice_config_from_row(row: GlobalInvoiceConfigRow) -> GlobalInvoic
     return GlobalInvoiceConfig(
         invoice_title=row.invoice_title,
         tax_number=row.tax_number,
+    )
+
+
+def _authenticated_user_from_row(row: UserAccountRow) -> AuthenticatedUser:
+    return AuthenticatedUser(
+        id=row.id,
+        username=row.username,
+        role=UserRole(row.role),
+        actor_id=row.actor_id,
+        display_name=row.display_name,
+        member_code=row.member_code,
+        created_at=_ensure_utc_datetime(row.created_at),
+        updated_at=_ensure_utc_datetime(row.updated_at),
+    )
+
+
+def _stored_auth_user_from_row(row: UserAccountRow) -> StoredAuthUser:
+    return StoredAuthUser(
+        id=row.id,
+        username=row.username,
+        password_hash=row.password_hash,
+        role=UserRole(row.role),
+        actor_id=row.actor_id,
+        display_name=row.display_name,
+        member_code=row.member_code,
+        created_at=_ensure_utc_datetime(row.created_at),
+        updated_at=_ensure_utc_datetime(row.updated_at),
     )
 
 

@@ -1,8 +1,11 @@
 import { useSyncExternalStore } from "react";
 
+import { trmsApi } from "../lib/api/trms";
+import type { AuthSessionResponse } from "../lib/api/types";
 import { findRoleRouteByRole, type UserRole } from "./role-routes";
 
 const STORAGE_KEY = "trms.mock-role";
+const SESSION_STORAGE_KEY = "trms.auth-session";
 const listeners = new Set<() => void>();
 const memoryStorage = new Map<string, string>();
 
@@ -11,6 +14,9 @@ export type AuthSession = {
   actorId: string;
   displayName: string;
   memberCode: string | null;
+  username: string | null;
+  accessToken: string | null;
+  isMock: boolean;
 };
 
 function isUserRole(value: unknown): value is UserRole {
@@ -32,25 +38,28 @@ function createSession(role: UserRole): AuthSession {
     actorId: roleRoute.mockActorId,
     displayName: roleRoute.mockDisplayName,
     memberCode: roleRoute.mockMemberCode,
+    username: null,
+    accessToken: null,
+    isMock: true,
   };
 }
 
-function readPersistedRole() {
+function readPersistedItem(storageKey: string) {
   if (typeof window !== "undefined") {
     const storage = window.localStorage;
     if (storage && typeof storage.getItem === "function") {
       try {
-        return storage.getItem(STORAGE_KEY);
+        return storage.getItem(storageKey);
       } catch {
-        return memoryStorage.get(STORAGE_KEY) ?? null;
+        return memoryStorage.get(storageKey) ?? null;
       }
     }
   }
 
-  return memoryStorage.get(STORAGE_KEY) ?? null;
+  return memoryStorage.get(storageKey) ?? null;
 }
 
-function persistRole(role: UserRole | null) {
+function persistItem(storageKey: string, value: string | null) {
   if (typeof window !== "undefined") {
     const storage = window.localStorage;
     if (
@@ -59,10 +68,10 @@ function persistRole(role: UserRole | null) {
       && typeof storage.removeItem === "function"
     ) {
       try {
-        if (role) {
-          storage.setItem(STORAGE_KEY, role);
+        if (value) {
+          storage.setItem(storageKey, value);
         } else {
-          storage.removeItem(STORAGE_KEY);
+          storage.removeItem(storageKey);
         }
         return;
       } catch {
@@ -71,20 +80,73 @@ function persistRole(role: UserRole | null) {
     }
   }
 
-  if (role) {
-    memoryStorage.set(STORAGE_KEY, role);
+  if (value) {
+    memoryStorage.set(storageKey, value);
   } else {
-    memoryStorage.delete(STORAGE_KEY);
+    memoryStorage.delete(storageKey);
   }
 }
 
 function readStoredRole(): UserRole | null {
-  const rawRole = readPersistedRole();
+  const rawRole = readPersistedItem(STORAGE_KEY);
   return isUserRole(rawRole) ? rawRole : null;
 }
 
-const initialRole = readStoredRole();
-let currentSession = initialRole ? createSession(initialRole) : null;
+function persistRole(role: UserRole | null) {
+  persistItem(STORAGE_KEY, role);
+}
+
+function createSessionFromAuthResponse(response: AuthSessionResponse): AuthSession {
+  return {
+    role: response.user.role,
+    actorId: response.user.actor_id,
+    displayName: response.user.display_name,
+    memberCode: response.user.member_code,
+    username: response.user.username,
+    accessToken: response.access_token,
+    isMock: false,
+  };
+}
+
+function readStoredSession(): AuthSession | null {
+  const rawSession = readPersistedItem(SESSION_STORAGE_KEY);
+  if (!rawSession) {
+    const legacyRole = readStoredRole();
+    return legacyRole ? createSession(legacyRole) : null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawSession) as Partial<AuthSession>;
+    if (
+      isUserRole(parsed.role)
+      && typeof parsed.actorId === "string"
+      && typeof parsed.displayName === "string"
+      && (typeof parsed.accessToken === "string" || parsed.accessToken === null)
+    ) {
+      return {
+        role: parsed.role,
+        actorId: parsed.actorId,
+        displayName: parsed.displayName,
+        memberCode: typeof parsed.memberCode === "string" ? parsed.memberCode : null,
+        username: typeof parsed.username === "string" ? parsed.username : null,
+        accessToken: typeof parsed.accessToken === "string" ? parsed.accessToken : null,
+        isMock: Boolean(parsed.isMock),
+      };
+    }
+  } catch {
+    // Invalid persisted sessions are discarded instead of being treated as login.
+  }
+
+  persistItem(SESSION_STORAGE_KEY, null);
+  return null;
+}
+
+function persistSession(session: AuthSession | null) {
+  persistRole(null);
+  persistItem(SESSION_STORAGE_KEY, session ? JSON.stringify(session) : null);
+}
+
+let currentSession = readStoredSession();
 
 function emitChange() {
   listeners.forEach((listener) => listener());
@@ -114,14 +176,54 @@ export function buildLoginPath(nextPath?: string) {
 
 export function setMockSession(role: UserRole) {
   currentSession = createSession(role);
-  persistRole(role);
+  persistSession(currentSession);
   emitChange();
 }
 
 export function clearMockSession() {
   currentSession = null;
-  persistRole(null);
+  persistSession(null);
   emitChange();
+}
+
+export async function registerWithPassword(payload: {
+  username: string;
+  password: string;
+  role: UserRole;
+  displayName?: string;
+  actorId?: string;
+  memberCode?: string;
+}) {
+  const response = await trmsApi.register({
+    username: payload.username,
+    password: payload.password,
+    role: payload.role,
+    display_name: payload.displayName || null,
+    actor_id: payload.actorId || null,
+    member_code: payload.memberCode || null,
+  });
+  currentSession = createSessionFromAuthResponse(response);
+  persistSession(currentSession);
+  emitChange();
+  return currentSession;
+}
+
+export async function loginWithPassword(payload: { username: string; password: string }) {
+  const response = await trmsApi.login(payload);
+  currentSession = createSessionFromAuthResponse(response);
+  persistSession(currentSession);
+  emitChange();
+  return currentSession;
+}
+
+export async function logoutCurrentSession() {
+  const accessToken = currentSession?.accessToken ?? null;
+  currentSession = null;
+  persistSession(null);
+  emitChange();
+  if (accessToken) {
+    await trmsApi.logout(accessToken);
+  }
 }
 
 export function useAuthSession() {
