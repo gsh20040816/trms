@@ -1,7 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 
+from trms_backend.api.request_identity import (
+    RequestIdentity,
+    build_authenticated_request_identity_dependency,
+    build_invalid_bearer_token_exception,
+    build_optional_request_identity_dependency,
+    extract_bearer_token,
+)
 from trms_backend.domain.auth import (
     AuthRepository,
     InvalidCredentialsError,
@@ -14,7 +21,6 @@ from trms_backend.domain.auth import (
     UserRegisterInput,
     UsernameAlreadyExistsError,
     bootstrap_privileged_user,
-    get_user_by_access_token,
     login_user,
     register_user,
     revoke_access_token,
@@ -28,6 +34,8 @@ def build_auth_router(
     bootstrap_admin_token: str | None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
+    optional_request_identity = build_optional_request_identity_dependency(repository)
+    authenticated_request_identity = build_authenticated_request_identity_dependency(repository)
 
     @router.post("/register", status_code=status.HTTP_201_CREATED)
     def register(payload: UserRegisterInput):
@@ -100,48 +108,28 @@ def build_auth_router(
                 headers={"WWW-Authenticate": "Bearer"},
             ) from error
 
+    @router.get("/request-context")
+    def get_request_context(
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
+        return identity
+
     @router.get("/me")
-    def me(authorization: Annotated[str | None, Header()] = None):
-        return _require_authenticated_user(repository, authorization)
+    def me(identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)]):
+        assert identity.user is not None
+        return identity.user
 
     @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-    def logout(response: Response, authorization: Annotated[str | None, Header()] = None):
-        access_token = _extract_bearer_token(authorization)
+    def logout(
+        response: Response,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        authorization: Annotated[str | None, Header()] = None,
+    ):
+        assert identity.user is not None
+        access_token = extract_bearer_token(authorization)
         if access_token is None or not revoke_access_token(repository, access_token):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="invalid or missing bearer token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            raise build_invalid_bearer_token_exception()
         response.status_code = status.HTTP_204_NO_CONTENT
         return None
 
     return router
-
-
-def _require_authenticated_user(repository: AuthRepository, authorization: str | None):
-    access_token = _extract_bearer_token(authorization)
-    if access_token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid or missing bearer token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    user = get_user_by_access_token(repository, access_token)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid or missing bearer token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
-
-
-def _extract_bearer_token(authorization: str | None) -> str | None:
-    if authorization is None:
-        return None
-    scheme, separator, token = authorization.partition(" ")
-    if separator != " " or scheme.lower() != "bearer":
-        return None
-    normalized_token = token.strip()
-    return normalized_token if normalized_token else None

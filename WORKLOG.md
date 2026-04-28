@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-04-28 16:19 - Establish minimal request identity context placeholder
+
+### 完成内容
+- 建立统一请求身份上下文占位：
+  - 新增 `src/trms_backend/api/request_identity.py`，统一解析 bearer token 并输出 `RequestIdentity`；
+  - 上下文显式表达 `is_authenticated`、`source`、`role`、`actor_id`、`member_id` 和当前 `user`，为后续业务 API 迁移提供单一入口；
+  - 对匿名请求保持显式 `anonymous` 状态，不把无 token 与无效 token 混为一谈。
+- 收口认证路由对身份解析的重复实现：
+  - `src/trms_backend/api/auth.py` 改为复用统一请求身份依赖；
+  - 新增 `GET /api/auth/request-context`，用于稳定返回当前请求身份上下文；
+  - `GET /api/auth/me` 与 `POST /api/auth/logout` 继续保持既有 bearer 行为，但不再各自维护独立 token 解析逻辑。
+- 补迁移边界辅助函数与测试：
+  - 新增 `resolve_actor_id_for_request()`、`resolve_member_id_for_request()`、`resolve_submitter_id_for_request()`；
+  - 这些辅助函数用于后续将 Web 业务 API 从显式 `actor_id` / `member_id` / `submitter_id` 参数迁移到 bearer 身份上下文时，校验“请求自报身份”和“token 身份”是否一致；
+  - 新增认证 API 和迁移辅助函数测试，覆盖匿名上下文、已认证上下文和不一致拒绝路径。
+
+### 根因
+- 当前仓库虽然已经有用户名密码登录、bearer token 和 `/api/auth/me`，但 bearer 解析逻辑只存在于认证路由内部，业务 API 没有可复用的统一请求身份入口。
+- 同时，现有业务路径仍大量依赖调用方直接传 `actor_id`、`member_id` 或 `submitter_id`。如果不先建立统一上下文和迁移辅助边界，后续把 Web 业务 API 迁到 bearer 身份时只能在各路由内重复堆逻辑，容易继续扩散身份判断。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/auth.py`
+- `src/trms_backend/api/request_identity.py`
+- `tests/test_auth_api.py`
+- `tests/test_request_identity.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_auth_api.py tests/test_request_identity.py`
+    - 16 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 279 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 19 个测试文件、55 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：请求身份上下文中的 `member_id` 暂时映射自账号模型里的 `member_code`，用于表达“当前登录成员编号”，而不是在本轮提前重构用户模型字段命名。
+- 本轮只建立身份上下文和迁移辅助边界，不提前修改 Web 业务 API 的请求参数契约；下一任务仍应是把 Web 业务请求逐步迁到 bearer 身份上下文。
+
 ## 2026-04-28 16:05 - Split pre-launch security and recovery drill task
 
 ### 完成内容

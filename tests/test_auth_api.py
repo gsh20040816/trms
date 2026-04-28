@@ -103,6 +103,52 @@ def test_login_returns_new_session_and_me_resolves_token(tmp_path):
     assert me_response.json()["actor_id"] == "2250001"
 
 
+def test_request_context_returns_anonymous_identity_without_bearer_token(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.get("/api/auth/request-context")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "is_authenticated": False,
+        "source": "anonymous",
+        "role": None,
+        "actor_id": None,
+        "member_id": None,
+        "user": None,
+    }
+
+
+def test_request_context_returns_authenticated_identity_with_member_mapping(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post("/api/auth/register", json=register_payload())
+    token = register_response.json()["access_token"]
+
+    response = client.get(
+        "/api/auth/request-context",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "is_authenticated": True,
+        "source": "bearer",
+        "role": "member",
+        "actor_id": "2250001",
+        "member_id": "MEM-001",
+        "user": {
+            "id": register_response.json()["user"]["id"],
+            "username": "member1",
+            "role": "member",
+            "actor_id": "2250001",
+            "display_name": "王队员",
+            "member_code": "MEM-001",
+            "created_at": register_response.json()["user"]["created_at"],
+            "updated_at": register_response.json()["user"]["updated_at"],
+        },
+    }
+
+
 def test_login_rejects_wrong_password_without_exposing_hash(tmp_path):
     client = make_client(tmp_path)
     assert client.post("/api/auth/register", json=register_payload()).status_code == 201
