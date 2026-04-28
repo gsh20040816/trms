@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from trms_cli.token_store import TokenStoreError, save_token_session
 
 DEFAULT_BASE_URL = os.getenv("TRMS_API_BASE_URL", "http://127.0.0.1:8000")
 CLI_JSON_SCHEMA_VERSION = "trms-cli.v1"
+ACCESS_TOKEN_ENV = "TRMS_CLI_ACCESS_TOKEN"
+REFRESH_TOKEN_ENV = "TRMS_CLI_REFRESH_TOKEN"
 
 
 class CliError(Exception):
@@ -48,6 +52,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trms-cli", description="TRMS command line client")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    login_parser = subparsers.add_parser(
+        "login",
+        help="store pre-issued CLI access and refresh tokens",
+    )
+    login_parser.add_argument(
+        "--base-url",
+        default=DEFAULT_BASE_URL,
+        help="TRMS API base URL, defaults to TRMS_API_BASE_URL or http://127.0.0.1:8000",
+    )
+    login_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit machine-readable JSON output",
+    )
+    login_parser.set_defaults(handler=run_login_command)
+
     health_parser = subparsers.add_parser("health", help="check TRMS API health")
     health_parser.add_argument(
         "--base-url",
@@ -63,6 +84,62 @@ def build_parser() -> argparse.ArgumentParser:
     health_parser.set_defaults(handler=run_health_command)
 
     return parser
+
+
+def is_interactive_input() -> bool:
+    return sys.stdin.isatty()
+
+
+def load_secret(*, label: str, env_name: str) -> str:
+    if env_value := os.getenv(env_name):
+        secret = env_value.strip()
+        if secret:
+            return secret
+        raise CliError(f"{env_name} is empty", code="login_token_missing")
+
+    if not is_interactive_input():
+        raise CliError(
+            f"{env_name} is not set and CLI cannot prompt in non-interactive mode",
+            code="login_token_missing",
+        )
+
+    secret = getpass.getpass(f"{label}: ").strip()
+    if not secret:
+        raise CliError(f"{label} is required", code="login_token_missing")
+    return secret
+
+
+def run_login_command(args: argparse.Namespace) -> int:
+    base_url = args.base_url.rstrip("/")
+    access_token = load_secret(label="TRMS CLI access token", env_name=ACCESS_TOKEN_ENV)
+    refresh_token = load_secret(label="TRMS CLI refresh token", env_name=REFRESH_TOKEN_ENV)
+
+    try:
+        token_store_path = save_token_session(
+            base_url=base_url,
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except TokenStoreError as error:
+        raise CliError(str(error), code="token_store_error") from error
+
+    if args.json_output:
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "login",
+                "data": {
+                    "base_url": base_url,
+                    "token_store_backend": "local_file",
+                    "token_store_path": str(token_store_path),
+                },
+            }
+        )
+        return 0
+
+    print(f"Stored TRMS CLI tokens at {token_store_path}")
+    return 0
 
 
 def run_health_command(args: argparse.Namespace) -> int:

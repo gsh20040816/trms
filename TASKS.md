@@ -546,7 +546,7 @@
     - 成功和失败输出都是合法 JSON
     - 测试覆盖 `--json` 成功和错误路径
 
-- [ ] 建立 CLI 登录和 Token 存储占位
+- [x] 建立 CLI 登录和 Token 存储占位
   - Done when:
     - CLI 有登录或绑定身份命令边界
     - Token 不打印到日志

@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-28 10:38 - Establish CLI login and token storage placeholder
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 新增 `login` 命令，占位支持 CLI 登录边界：
+  - 命令读取 `TRMS_CLI_ACCESS_TOKEN` 和 `TRMS_CLI_REFRESH_TOKEN`；
+  - 若环境变量未提供，则仅在交互式终端下通过 `getpass` 安全提示输入；
+  - 非交互模式且未提供 token 时显式失败，不伪装为登录成功。
+- 新增 `src/trms_cli/token_store.py`，建立本地 token 存储策略：
+  - 默认落盘到 `XDG_CONFIG_HOME/trms/session.json`，若未设置则使用 `~/.config/trms/session.json`；
+  - 支持通过 `TRMS_CLI_CONFIG_DIR` 覆盖配置目录，便于测试和后续运行环境定制；
+  - 在 Unix 平台上强制把目录权限收敛到 `0700`、文件权限收敛到 `0600`，并在权限不满足时显式报错。
+- 新增 `tests/test_cli_login.py`，覆盖：
+  - 文本模式登录成功；
+  - JSON 模式登录成功；
+  - 非交互模式缺少 token 时失败；
+  - 成功和失败输出均不泄露 access token 或 refresh token。
+- 将 `TASKS.md` 中“建立 CLI 登录和 Token 存储占位”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `src/trms_cli/token_store.py`
+- `tests/test_cli_login.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 只有 `health` 命令，没有任何“成员如何以 CLI 身份访问后端”的本地边界，后续任务查询、材料上传和状态查询都缺少可复用的认证载体。
+- 同时，需求和架构文档都要求 CLI 采用 Token 登录，并明确禁止把 token 打到日志；如果不先固定最小登录命令和本地落盘约束，后续 CLI 功能容易各自临时拼接 token 读取方式，导致安全边界和兼容行为失控。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_health.py tests/test_cli_login.py`
+    - 7 个 CLI 相关测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 172 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 当前实现是“登录占位”而不是真实 OAuth / Token 交换流程：CLI 只负责安全读取和保存预先签发的 access token / refresh token，尚未对接后端登录接口。
+- 按架构文档长期目标，优先方案应是系统密钥链；本轮由于仓库当前无跨平台密钥链依赖，也无真实登录后端，因此先采用“权限受限本地文件”这一明确记录的降级方案，为后续任务提供可复用存储边界。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 在后端真实 CLI 登录 API 尚未落地前，本轮将“建立 CLI 登录和 Token 存储占位”保守解释为：CLI 建立安全输入、稳定落盘和可测试错误语义，不提前实现服务端 token 签发、刷新或身份绑定交换。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 任务查询能力”，优先复用本轮 token 存储边界，为任务列表请求补 `Authorization` 头和最小输出格式。
+
 ## 2026-04-28 10:32 - Define CLI JSON output schema
 
 ### 完成内容
