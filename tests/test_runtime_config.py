@@ -210,6 +210,39 @@ def test_s3_file_storage_safe_log_fields_redact_credentials():
     assert "secret-secret" not in str(safe_log_fields)
 
 
+def test_local_file_storage_safe_log_fields_redact_root_dir():
+    config = load_runtime_config(
+        env={},
+        material_storage_dir="/srv/trms/materials",
+    )
+
+    safe_log_fields = config.file_storage.to_safe_log_fields()
+
+    assert safe_log_fields["backend"] == "local"
+    assert safe_log_fields["root_dir"] == "[redacted-path]"
+    assert "/srv/trms/materials" not in str(safe_log_fields)
+
+
+def test_runtime_config_safe_log_fields_redact_nested_secrets_and_paths():
+    config = load_runtime_config(
+        env={
+            "TRMS_LLM_API_KEY": "sk-live-secret-value",
+            "TRMS_LLM_MODEL": "gpt-4.1-mini",
+            "TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN": "bootstrap-secret",
+        },
+        material_storage_dir="/srv/trms/materials",
+    )
+
+    safe_log_fields = config.to_safe_log_fields()
+
+    assert safe_log_fields["file_storage"]["root_dir"] == "[redacted-path]"
+    assert safe_log_fields["auth"]["bootstrap_admin_token"] == "[redacted]"
+    assert safe_log_fields["llm_provider"]["api_key"] == "[redacted]"
+    assert "bootstrap-secret" not in str(safe_log_fields)
+    assert "sk-live-secret-value" not in str(safe_log_fields)
+    assert "/srv/trms/materials" not in str(safe_log_fields)
+
+
 def test_create_app_applies_configured_cors_origins(tmp_path):
     config = load_runtime_config(
         env={},

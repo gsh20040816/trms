@@ -1,5 +1,56 @@
 # WORKLOG
 
+## 2026-04-28 19:00 - Add sensitive log redaction rules
+
+### 完成内容
+- 为普通日志场景补齐统一脱敏辅助：
+  - 新增 `src/trms_backend/logging_safety.py`，集中处理敏感键、Bearer token、文件 URL 和本地路径的日志脱敏；
+  - 对 `telegram_bot_token`、`oauth_*_secret`、`mail_password`、`authorization=Bearer ...` 等键值或文本片段统一输出 `[redacted]`；
+  - 对 `artifact_url`、`download_url` 等文件 URL 仅保留协议和主机，路径统一替换为 `[redacted-path]`；
+  - 对 `root_dir`、`storage_path` 一类本地路径统一替换为 `[redacted-path]`。
+- 将 `src/trms_backend/runtime_config.py` 中现有各类 `to_safe_log_fields()` 收口到同一辅助函数：
+  - 保留 LLM base URL、S3 endpoint、bucket、模式等非敏感配置；
+  - 继续显式隐藏 API key、bootstrap token、S3 access key / secret；
+  - 新增 `RuntimeConfig.to_safe_log_fields()`，为后续启动日志或错误日志提供统一安全序列化入口。
+- 补充回归测试：
+  - 新增 `tests/test_logging_safety.py`，覆盖 secret、Bearer token、文件 URL 和本地路径脱敏；
+  - `tests/test_runtime_config.py` 新增本地存储根目录和嵌套配置脱敏断言。
+
+### 根因
+- 仓库此前只有零散的“安全日志字段”实现，主要覆盖 API key、bootstrap token 和 S3 凭据，没有统一普通日志脱敏入口。
+- 这种分散实现会留下两个问题：
+  - 本地材料目录等路径仍可能以明文形式进入日志；
+  - 后续若新增日志字段或直接记录文本消息，容易遗漏 Telegram Bot Token、邮件密码、Bearer token 等敏感值。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/logging_safety.py`
+- `src/trms_backend/runtime_config.py`
+- `tests/test_logging_safety.py`
+- `tests/test_runtime_config.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_logging_safety.py tests/test_runtime_config.py`
+    - 17 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 310 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：对文件 URL 的日志脱敏只保留协议和主机，完整路径、query 和 fragment 一律不进入日志；这样既能区分存储来源，也不会泄露对象 key、签名参数或下载路径。
+- 当前保守假设：本地路径在日志中统一折叠为 `[redacted-path]`，不保留目录层级或文件名；若未来排障确实需要更细粒度路径信息，应单独设计受控白名单字段，而不是在通用日志里放开明文路径。
+
 ## 2026-04-28 18:52 - Record export job and download audit logs
 
 ### 完成内容

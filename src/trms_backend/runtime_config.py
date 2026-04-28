@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
+from trms_backend.logging_safety import sanitize_log_fields
 
 RuntimeEnvironment = Literal["development", "test", "production"]
 AsyncJobMode = Literal["in_process", "worker"]
@@ -71,14 +72,16 @@ class LLMProviderConfig(BaseModel):
         return normalized
 
     def to_safe_log_fields(self) -> dict[str, object]:
-        return {
+        return sanitize_log_fields(
+            {
             "base_url": self.base_url,
             "model": self.model,
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
             "api_key": "[redacted]",
             "api_key_configured": True,
-        }
+            }
+        )
 
 
 class AsyncJobConfig(BaseModel):
@@ -125,11 +128,13 @@ class AuthConfig(BaseModel):
         return SecretStr(normalized)
 
     def to_safe_log_fields(self) -> dict[str, object]:
-        return {
+        return sanitize_log_fields(
+            {
             "allow_admin_self_register": self.allow_admin_self_register,
             "bootstrap_admin_token": "[redacted]" if self.bootstrap_admin_token else None,
             "bootstrap_admin_token_configured": self.bootstrap_admin_token is not None,
-        }
+            }
+        )
 
 
 class LocalFileStorageConfig(BaseModel):
@@ -145,10 +150,12 @@ class LocalFileStorageConfig(BaseModel):
         return Path(normalized)
 
     def to_safe_log_fields(self) -> dict[str, object]:
-        return {
+        return sanitize_log_fields(
+            {
             "backend": self.backend,
             "root_dir": str(self.root_dir),
-        }
+            }
+        )
 
 
 class S3FileStorageConfig(BaseModel):
@@ -201,7 +208,8 @@ class S3FileStorageConfig(BaseModel):
         return normalized or None
 
     def to_safe_log_fields(self) -> dict[str, object]:
-        return {
+        return sanitize_log_fields(
+            {
             "backend": self.backend,
             "endpoint": self.endpoint,
             "bucket": self.bucket,
@@ -210,7 +218,8 @@ class S3FileStorageConfig(BaseModel):
             "access_key_id": "[redacted]",
             "secret_access_key": "[redacted]",
             "credentials_configured": True,
-        }
+            }
+        )
 
 
 FileStorageConfig = Annotated[
@@ -288,6 +297,27 @@ class RuntimeConfig(BaseModel):
         if isinstance(self.file_storage, LocalFileStorageConfig):
             return self.file_storage.root_dir
         raise RuntimeError("material_storage_dir is only available for local file storage")
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return sanitize_log_fields(
+            {
+                "environment": self.environment,
+                "database_url": self.database_url,
+                "file_storage": self.file_storage.to_safe_log_fields(),
+                "cors_allowed_origins": list(self.cors_allowed_origins),
+                "public_api_base_url": self.public_api_base_url,
+                "api_host": self.api_host,
+                "api_port": self.api_port,
+                "async_jobs": {
+                    "mode": self.async_jobs.mode,
+                    "worker_poll_interval_seconds": self.async_jobs.worker_poll_interval_seconds,
+                },
+                "auth": self.auth.to_safe_log_fields(),
+                "llm_provider": (
+                    self.llm_provider.to_safe_log_fields() if self.llm_provider is not None else None
+                ),
+            }
+        )
 
 
 def load_runtime_config(
