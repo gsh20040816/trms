@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-28 11:36 - Add CLI split submission
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 新增独立 `split` 命令：
+  - 从已登录 session 读取 `base_url`、`member_id` 和 access token；
+  - 调用后端既有 `PUT /api/invoices/{invoice_id}/splits` 接口替换发票分摊；
+  - 使用重复 `--member MEMBER_ID:AMOUNT_CENTS` 参数提交一个或多个分摊项。
+- 固化命令输出契约：
+  - 文本模式按发票输出分摊数量和逐项列表；
+  - `--json` 模式输出 `schema_version`、`invoice_id`、`member_id`、`item_count` 和结构化 `items`。
+- 新增 `tests/test_cli_split.py`，覆盖：
+  - 文本模式成功提交分摊；
+  - `--json` 模式结构化输出；
+  - 分摊金额合计不匹配时透传服务端 `409` 错误；
+  - 未登录 session 时的错误输出。
+- 将 `TASKS.md` 中“增加 CLI 分摊提交能力”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `tests/test_cli_split.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 已支持成员登录、查询任务、上传材料、查看状态和缺失材料，但成员仍无法通过 CLI 直接补充分摊信息。
+- 后端分摊接口和金额一致性约束已经存在，CLI 缺的只是最小接入层：
+  - 没有面向成员的命令把分摊参数组织成后端请求；
+  - 没有稳定的文本和 JSON 输出契约用于反馈分摊结果；
+  - 没有显式证明“金额合计不匹配”由服务端裁决，而不是在 CLI 复制业务规则。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_split.py`
+    - 4 个 CLI 分摊命令测试通过
+  - `uv run pytest tests/test_splits_api.py`
+    - 10 个分摊 API 测试通过
+  - `uv run pytest tests/test_cli_submit.py tests/test_cli_status.py tests/test_cli_missing_materials.py tests/test_cli_tasks.py tests/test_cli_login.py`
+    - 21 个相邻 CLI 回归测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 198 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只处理“CLI 分摊提交能力”，没有提前实现下一项“CLI 个人费用确认能力”。
+- CLI 只做参数格式校验和整数分解析，没有复制“金额合计必须等于发票金额”这类服务端业务规则；金额不匹配仍由后端返回明确错误。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设第一阶段 CLI 分摊的最小输入格式是重复 `--member MEMBER_ID:AMOUNT_CENTS`：
+  - 先满足成员通过 CLI 替换整张发票的分摊列表；
+  - 分摊备注 `note`、从文件导入分摊明细等更复杂输入留给后续独立任务。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 个人费用确认能力”，优先复用已有费用明细与确认接口，避免在 CLI 侧重新拼装确认状态机。
+
 ## 2026-04-28 11:30 - Add CLI missing materials query
 
 ### 完成内容

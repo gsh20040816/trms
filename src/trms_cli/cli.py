@@ -144,6 +144,22 @@ class VisibleMissingMaterialReport:
     items: list[MissingMaterialStatus]
 
 
+@dataclass(frozen=True)
+class ExpenseSplitSubmissionItem:
+    id: str
+    invoice_id: str
+    member_id: str
+    amount_cents: int
+    note: str | None
+    version: int
+
+
+@dataclass(frozen=True)
+class ExpenseSplitSubmissionResult:
+    invoice_id: str
+    items: list[ExpenseSplitSubmissionItem]
+
+
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL_SUCCESS = 2
@@ -171,6 +187,42 @@ def fetch_json(url: str, *, headers: dict[str, str] | None = None) -> tuple[int,
             return response.status, payload
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace").strip()
+        if detail:
+            raise CliError(
+                f"request failed with status {error.code}: {detail}",
+                code="http_error",
+            ) from error
+        raise CliError(f"request failed with status {error.code}", code="http_error") from error
+    except URLError as error:
+        raise CliError(f"unable to reach TRMS API: {error.reason}", code="network_error") from error
+    except json.JSONDecodeError as error:
+        raise CliError("TRMS API returned invalid JSON", code="invalid_json_response") from error
+
+
+def put_json(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    payload: dict[str, object],
+) -> tuple[int, object]:
+    request_headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if headers:
+        request_headers.update(headers)
+    request = Request(
+        url,
+        method="PUT",
+        headers=request_headers,
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            response_payload = json.load(response)
+            return response.status, response_payload
+    except HTTPError as error:
+        detail, _ = read_http_error_payload(error)
         if detail:
             raise CliError(
                 f"request failed with status {error.code}: {detail}",
@@ -386,6 +438,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit machine-readable JSON output",
     )
     missing_materials_parser.set_defaults(handler=run_missing_materials_command)
+
+    split_parser = subparsers.add_parser(
+        "split",
+        help="replace invoice expense splits for one or more task members",
+    )
+    split_parser.add_argument(
+        "--invoice-id",
+        required=True,
+        help="target invoice id",
+    )
+    split_parser.add_argument(
+        "--member",
+        dest="members",
+        action="append",
+        required=True,
+        metavar="MEMBER_ID:AMOUNT_CENTS",
+        help="split target in the form member_id:amount_cents; may be repeated",
+    )
+    split_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit machine-readable JSON output",
+    )
+    split_parser.set_defaults(handler=run_split_command)
 
     return parser
 
@@ -651,6 +728,50 @@ def run_missing_materials_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_split_command(args: argparse.Namespace) -> int:
+    try:
+        session = load_token_session()
+    except TokenStoreError as error:
+        raise CliError(str(error), code="login_required") from error
+
+    items = [parse_split_member_argument(item) for item in args.members]
+    base_url = session.base_url.rstrip("/")
+    status_code, payload = put_json(
+        build_invoice_splits_url(base_url, invoice_id=args.invoice_id),
+        headers={"Authorization": f"Bearer {session.access_token}"},
+        payload={
+            "actor_id": session.member_id,
+            "items": items,
+        },
+    )
+    if status_code != 200:
+        raise CliError(
+            f"invoice split endpoint returned unexpected status {status_code}",
+            code="split_submit_unexpected_status",
+        )
+
+    result = parse_split_submission_result(payload, invoice_id=args.invoice_id)
+    if args.json_output:
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "split",
+                "data": {
+                    "base_url": base_url,
+                    "invoice_id": result.invoice_id,
+                    "member_id": session.member_id,
+                    "item_count": len(result.items),
+                    "items": [asdict(item) for item in result.items],
+                },
+            }
+        )
+        return 0
+
+    emit_split_text_result(result)
+    return 0
+
+
 def build_task_list_url(base_url: str, *, member_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     query_string = urlencode({"member_id": member_id})
@@ -695,6 +816,43 @@ def build_task_missing_materials_url(base_url: str, *, task_id: str, actor_id: s
     if normalized_base_url.endswith("/api"):
         return f"{normalized_base_url}/tasks/{normalized_task_id}/missing-materials?{query_string}"
     return f"{normalized_base_url}/api/tasks/{normalized_task_id}/missing-materials?{query_string}"
+
+
+def build_invoice_splits_url(base_url: str, *, invoice_id: str) -> str:
+    normalized_base_url = base_url.rstrip("/")
+    normalized_invoice_id = invoice_id.strip()
+    if not normalized_invoice_id:
+        raise CliError("invoice id is required", code="invoice_id_required")
+    if normalized_base_url.endswith("/api"):
+        return f"{normalized_base_url}/invoices/{normalized_invoice_id}/splits"
+    return f"{normalized_base_url}/api/invoices/{normalized_invoice_id}/splits"
+
+
+def parse_split_member_argument(value: str) -> dict[str, object]:
+    member_id, separator, amount_text = value.partition(":")
+    normalized_member_id = member_id.strip()
+    normalized_amount_text = amount_text.strip()
+    if separator != ":" or not normalized_member_id or not normalized_amount_text:
+        raise CliError(
+            "split member must use MEMBER_ID:AMOUNT_CENTS format",
+            code="split_member_invalid",
+        )
+    try:
+        amount_cents = int(normalized_amount_text)
+    except ValueError as error:
+        raise CliError(
+            f"split amount must be an integer number of cents: {value}",
+            code="split_amount_invalid",
+        ) from error
+    if amount_cents <= 0:
+        raise CliError(
+            f"split amount must be greater than zero: {value}",
+            code="split_amount_invalid",
+        )
+    return {
+        "member_id": normalized_member_id,
+        "amount_cents": amount_cents,
+    }
 
 
 def prepare_upload_files(
@@ -1038,6 +1196,24 @@ def parse_visible_missing_material_report(payload: object) -> VisibleMissingMate
     )
 
 
+def parse_split_submission_result(
+    payload: object,
+    *,
+    invoice_id: str,
+) -> ExpenseSplitSubmissionResult:
+    if not isinstance(payload, dict):
+        raise CliError("TRMS API returned invalid split payload", code="split_submit_invalid_response")
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        raise CliError("TRMS API returned invalid split payload", code="split_submit_invalid_response")
+
+    return ExpenseSplitSubmissionResult(
+        invoice_id=invoice_id.strip(),
+        items=[parse_split_submission_item(item) for item in items],
+    )
+
+
 def parse_task_status_counts(payload: dict[str, object]) -> TaskStatusCounts:
     return TaskStatusCounts(
         material_count=_require_int_status_field(payload, "material_count"),
@@ -1126,6 +1302,24 @@ def parse_expense_confirmation_status(item: object) -> ExpenseConfirmationStatus
     )
 
 
+def parse_split_submission_item(item: object) -> ExpenseSplitSubmissionItem:
+    if not isinstance(item, dict):
+        raise CliError("TRMS API returned invalid split payload", code="split_submit_invalid_response")
+
+    note = item.get("note")
+    if note is not None and not isinstance(note, str):
+        raise CliError("TRMS API returned invalid split payload", code="split_submit_invalid_response")
+
+    return ExpenseSplitSubmissionItem(
+        id=_require_non_empty_split_field(item, "id"),
+        invoice_id=_require_non_empty_split_field(item, "invoice_id"),
+        member_id=_require_non_empty_split_field(item, "member_id"),
+        amount_cents=_require_int_split_field(item, "amount_cents"),
+        note=note.strip() or None if note is not None else None,
+        version=_require_int_split_field(item, "version"),
+    )
+
+
 def emit_status_text_result(report: TaskStatusReport) -> None:
     print(f"Task status for task {report.task_id} member {report.actor_id}")
     print(f"Materials: {report.counts.material_count}")
@@ -1175,6 +1369,20 @@ def emit_missing_materials_text_result(report: VisibleMissingMaterialReport) -> 
     print("No missing materials.")
 
 
+def emit_split_text_result(result: ExpenseSplitSubmissionResult) -> None:
+    print(f"Updated splits for invoice {result.invoice_id}")
+    print(f"Count: {len(result.items)}")
+    if not result.items:
+        print("No splits returned.")
+        return
+
+    print("split_id\tmember_id\tamount_cents\tversion\tnote")
+    for item in result.items:
+        print(
+            f"{item.id}\t{item.member_id}\t{item.amount_cents}\t{item.version}\t{item.note or ''}"
+        )
+
+
 def _require_non_empty_task_field(item: dict[str, object], field_name: str) -> str:
     value = item.get(field_name)
     if not isinstance(value, str) or not value.strip():
@@ -1215,12 +1423,32 @@ def _require_non_empty_missing_material_field(item: dict[str, object], field_nam
     return value.strip()
 
 
+def _require_non_empty_split_field(item: dict[str, object], field_name: str) -> str:
+    value = item.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise CliError(
+            f"TRMS API split payload is missing a valid {field_name!r} field",
+            code="split_submit_invalid_response",
+        )
+    return value.strip()
+
+
 def _require_int_status_field(item: dict[str, object], field_name: str) -> int:
     value = item.get(field_name)
     if not isinstance(value, int):
         raise CliError(
             f"TRMS API task status payload is missing a valid {field_name!r} field",
             code="task_status_invalid_response",
+    )
+    return value
+
+
+def _require_int_split_field(item: dict[str, object], field_name: str) -> int:
+    value = item.get(field_name)
+    if not isinstance(value, int):
+        raise CliError(
+            f"TRMS API split payload is missing a valid {field_name!r} field",
+            code="split_submit_invalid_response",
         )
     return value
 
