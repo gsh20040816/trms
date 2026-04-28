@@ -1,5 +1,56 @@
 # WORKLOG
 
+## 2026-04-28 08:08 - Implement member web material upload page
+
+### 完成内容
+- 为成员入口补齐 Web 材料上传页面：
+  - 新增 `web/src/app/member-material-upload.tsx`，在 `/member/materials/upload` 提供任务选择、材料类型选择和多文件上传表单；
+  - 上传请求固定走现有 `POST /api/tasks/{task_id}/materials`，前端显式写死 `channel=web`，不伪造其他渠道。
+- 将成员任务列表与上传页连通：
+  - 更新 `web/src/app/member-task-list.tsx` 与 `web/src/app/routes.tsx`，对开放中的可见任务增加“上传材料”入口，并支持通过 `taskId` 查询参数预选任务。
+- 补齐成员上传页测试与结果展示：
+  - 新增 `web/src/app/member-material-upload.test.tsx`，覆盖“仅允许当前成员可见且开放的任务上传”“批量上传部分成功时展示材料编号、重复状态和逐文件失败原因”“无开放任务时空状态”；
+  - 更新 `web/src/app/member-task-list.test.tsx`，覆盖成员任务卡片到上传页的导航入口。
+- 将 `TASKS.md` 中“实现成员 Web 材料上传页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/member-material-upload.tsx`
+- `web/src/app/member-material-upload.test.tsx`
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮成员入口已经能列出本人可见任务，但仍缺少“成员实际把发票或附件交进系统”的下一步页面，导致成员 Web 主流程停在任务浏览，无法覆盖 FR-002 的 Web 提交主路径。
+- 后端已经具备材料上传接口、批量部分成功返回、重复文件标记和失败原因暴露能力；当前缺口只在前端路由、表单和结果展示边界，不需要扩散到新的后端实现。
+
+### 验证结果
+- 已通过：
+  - `npm test -- member-material-upload member-task-list App`
+    - 6 个前端测试文件、19 个测试通过
+  - `npm run lint`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，8 个前端测试文件、23 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于后端已有 `HTTP_422_UNPROCESSABLE_ENTITY` 常量使用，不是本轮新增问题。
+  - `npm test` 期间仍打印 Node `--localstorage-file` 既有警告，但前端测试与构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 成员上传页当前只允许选择状态为 `open` 且 `task.member_ids` 包含当前 mock 成员的任务；对已关闭、复核中或已归档任务，不在前端伪造“补交仍可成功”的路径。
+- 提交渠道在成员 Web 页固定为 `web`，页面只暴露材料类型选择，不提前实现 CLI、Telegram 或邮件渠道切换入口。
+- 上传结果当前仅展示后端已直接返回的材料记录、重复关系和失败原因，不额外推断识别状态、校验状态或缺失材料提示；这些内容留给后续“成员材料状态页面”任务。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现成员材料状态页面”，直接复用本轮已经接入的成员任务可见性边界和上传结果入口。
+
 ## 2026-04-28 07:58 - Implement member web task list page
 
 ### 完成内容

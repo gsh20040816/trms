@@ -503,6 +503,53 @@ select {
   color: #35506f;
 }
 
+.member-upload-meta-grid {
+  margin-top: 22px;
+}
+
+.upload-file-list,
+.upload-failure-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-file-list li,
+.upload-failure-list li {
+  display: grid;
+  gap: 4px;
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(244, 239, 228, 0.72);
+}
+
+.upload-file-list strong,
+.upload-failure-list strong {
+  color: #11253d;
+}
+
+.upload-file-list span,
+.upload-failure-list span {
+  color: #35506f;
+}
+
+.upload-status-success {
+  background: rgba(20, 130, 76, 0.14);
+  color: #0d5a34;
+}
+
+.upload-status-partial_success {
+  background: rgba(168, 90, 17, 0.16);
+  color: #7a3c07;
+}
+
+.upload-status-failed {
+  background: rgba(180, 35, 24, 0.14);
+  color: #8d241a;
+}
+
 .task-anomaly-panel {
   margin-top: 18px;
   padding: 18px;

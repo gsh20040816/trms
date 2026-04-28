@@ -96,6 +96,10 @@ describe("MemberTaskListPage", () => {
     }
     expect(within(taskCard).getByText("ICPC Xi'an Regional")).toBeInTheDocument();
     expect(within(taskCard).getAllByText("开放提交")).toHaveLength(2);
+    expect(within(taskCard).getByRole("link", { name: "上传材料" })).toHaveAttribute(
+      "href",
+      "/member/materials/upload?taskId=TASK-OPEN",
+    );
     expect(screen.queryByText("CCPC Final")).not.toBeInTheDocument();
   });
 

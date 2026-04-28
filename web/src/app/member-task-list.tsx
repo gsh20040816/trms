@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useAuthSession } from "./auth-store";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
@@ -151,6 +152,18 @@ export function MemberTaskListPage() {
                   <dd>{session.displayName}</dd>
                 </div>
               </dl>
+              <div className="inline-actions">
+                {task.status === "open" ? (
+                  <Link
+                    className="route-link"
+                    to={`/member/materials/upload?taskId=${encodeURIComponent(task.id)}`}
+                  >
+                    上传材料
+                  </Link>
+                ) : (
+                  <span className="status-note">当前任务未处于开放提交状态，暂不能从成员端继续上传材料。</span>
+                )}
+              </div>
             </article>
           ))}
         </section>

@@ -3,6 +3,7 @@ import type { RouteObject } from "react-router-dom";
 import { AdminTaskDetailPage } from "./admin-task-detail";
 import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminTaskListPage } from "./admin-task-list";
+import { MemberMaterialUploadPage } from "./member-material-upload";
 import { MemberTaskListPage } from "./member-task-list";
 import { MockLoginPage, ProtectedRoleRoute } from "./auth";
 import { HomePage, NotFoundPage, RootLayout } from "./pages";
@@ -39,6 +40,10 @@ export const routes: RouteObject[] = [
           {
             index: true,
             element: <MemberTaskListPage />,
+          },
+          {
+            path: "materials/upload",
+            element: <MemberMaterialUploadPage />,
           },
         ],
       },
