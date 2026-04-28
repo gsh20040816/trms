@@ -6807,3 +6807,92 @@
 
 ### 后续建议
 - 下一轮按顺序处理 `TASKS.md` 中“增加基础指标边界”，优先为上传、识别、校验和导出建立最小指标抽象，不要直接引入重量级监控组件。
+
+## 2026-04-28 19:51 - Execute backup and object-storage restore drill
+
+### 完成内容
+- 新增 `scripts/backup-restore-drill.sh`，固化一套可重复执行的恢复演练流程：
+  - 生成隔离 `.env`；
+  - 按 `deploy/docker-compose.yml` 拉起 `postgres`、`minio`、`api`、`web`、`reverse-proxy` 和 `worker`；
+  - 通过真实 API 创建管理员、成员、任务并上传样本材料；
+  - 执行 PostgreSQL 逻辑备份、MinIO bucket 镜像备份；
+  - 销毁卷后恢复数据库与对象存储对象，再核对材料记录、`storage_key` 对象和材料审计记录。
+- 修复两处直接阻塞本次演练的部署基线问题：
+  - `deploy/docker-compose.yml` 中 `minio` 健康检查原先调用镜像内不存在的 `wget`，导致 `minio-init` 永远等待；本轮改为使用镜像内实际存在的 `curl`。
+  - `deploy/Dockerfile.api` 原先未把 `/app/src` 加入 `PYTHONPATH`，导致容器内 `python -m trms_backend` 启动失败；本轮补齐 `PYTHONPATH=/app/src`。
+- 演练脚本中补齐了三类运行时细节，确保后续可重复执行：
+  - 启动前显式 `compose build`，避免复用旧镜像掩盖部署问题；
+  - `minio/mc` 容器显式覆盖 entrypoint 为 `/bin/sh`；
+  - `mc` 镜像运行时显式设置 `MC_CONFIG_DIR=/tmp/.mc` 并以宿主机 UID/GID 写入挂载目录，避免对象备份目录清理失败。
+- 将 `TASKS.md` 中“执行数据库与对象存储备份恢复演练”标记为已完成。
+
+### 根因
+- 当前仓库虽然已经补了部署文档和恢复策略文档，但在真正按 Compose 基线执行恢复演练前，仍有两处未被验证脚本覆盖的部署缺陷：
+  - `minio` 健康检查命令与镜像内容不一致；
+  - API 镜像运行时找不到 `src/` 下的应用模块。
+- 如果不先做这次真实演练，这两处问题会一直藏在“文档完整、配置可读”表象下，直到上线前或故障恢复现场才暴露。
+
+### 修改文件
+- `deploy/docker-compose.yml`
+- `deploy/Dockerfile.api`
+- `scripts/backup-restore-drill.sh`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 演练命令
+- 主命令：
+  - `./scripts/backup-restore-drill.sh`
+- 脚本内部执行的关键命令：
+  - `docker compose --project-name trms-backup-drill --env-file <temp-env> -f deploy/docker-compose.yml up -d postgres redis minio`
+  - `docker compose --project-name trms-backup-drill --env-file <temp-env> -f deploy/docker-compose.yml up minio-init`
+  - `docker compose --project-name trms-backup-drill --env-file <temp-env> -f deploy/docker-compose.yml build api worker web migrate`
+  - `docker compose --project-name trms-backup-drill --env-file <temp-env> -f deploy/docker-compose.yml run --rm migrate`
+  - `docker compose --project-name trms-backup-drill --env-file <temp-env> -f deploy/docker-compose.yml exec -T postgres pg_dump -U trms -d trms -Fc`
+  - `docker compose --project-name trms-backup-drill --env-file <temp-env> -f deploy/docker-compose.yml exec -T postgres pg_restore -U trms -d trms --clean --if-exists`
+  - `docker run --rm --network trms-backup-drill_default -v <backup-dir>:/backup --entrypoint /bin/sh minio/mc:latest -ec 'mc mirror ...'`
+
+### 演练结果
+- 已通过：
+  - `./scripts/backup-restore-drill.sh`
+  - 首次恢复前核对：
+    - `task_count_before=1`
+    - `material_count_before=1`
+    - `audit_count_before=1`
+    - `object_count_before=1`
+  - 恢复后核对：
+    - `task_count_after=1`
+    - `material_count_after=1`
+    - `audit_count_after=1`
+    - `object_count_after=1`
+    - `material_audit=submit_material|succeeded|req_8c3bd401c54e43bcb05d67c2662b6620`
+  - 样本核对：
+    - 恢复前后 `material_id` 一致；
+    - 恢复前后 `storage_key` 一致；
+    - MinIO 中样本对象内容可读；
+    - 恢复后 `worker` 能在当前基线上启动。
+  - 耗时：
+    - `duration_seconds=66`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 314 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮沿用第一阶段生产边界：数据库使用 PostgreSQL，原始材料存储使用 S3 兼容对象存储；不为生产环境补充本地目录恢复方案。
+- 演练样本保守选择“原始材料对象”而不是“导出产物对象”，因为当前任务 Done when 允许二选一，且原始材料优先级更高。
+- 为避免恢复核对阶段被识别 worker 异步写入新审计干扰，脚本在完成数据库/对象/材料审计核对后才启动 `worker`。
+
+### 未覆盖风险
+- 本轮只验证了单任务、单材料、单对象的最小恢复闭环，未覆盖多任务、多成员、大体量对象和长时间运行下的恢复耗时。
+- 本轮没有额外抽样导出产物恢复；当前结论只证明“数据库 + 原始材料对象”闭环成立，不代表 `_exports/` 前缀已经完成同等强度验证。
+- 脚本运行过程中，`mc find` 会输出一条 `Requested path `` not found` 的噪音日志，但不影响对象镜像、恢复和最终计数核对；后续可单独收敛这条输出。
+
+### 后续建议
+- 下一轮优先补“增加规则层单元测试覆盖矩阵”，继续按 `TASKS.md` 顺序推进。
+- 如果后续需要把恢复演练纳入上线清单，建议把 `scripts/backup-restore-drill.sh` 再拆成“造数 + 备份 + 恢复 + 报告”四段，便于共享环境按需复用。
