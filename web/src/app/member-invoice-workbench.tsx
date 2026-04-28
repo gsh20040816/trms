@@ -24,6 +24,7 @@ import type {
   ReimbursementTask,
   TaskMemberMaterialStatusItem,
   TaskMemberStatusReport,
+  TaskSharedInvoiceItem,
   ValidationResult,
 } from "../lib/api/types";
 import {
@@ -53,6 +54,7 @@ type SelectedTaskWorkbenchState =
     task: ReimbursementTask;
     report: TaskMemberStatusReport;
     items: WorkbenchInvoiceItem[];
+    sharedInvoices: TaskSharedInvoiceItem[];
   };
 
 type PendingAction = {
@@ -444,8 +446,18 @@ function buildSummaryStats(task: ReimbursementTask, report: TaskMemberStatusRepo
   ];
 }
 
+function formatSupportingMaterialSummary(item: TaskSharedInvoiceItem) {
+  if (item.supporting_materials.length === 0) {
+    return "当前还没有已关联的必要附件摘要。";
+  }
+  return item.supporting_materials
+    .map((material) => `${formatMaterialType(material.material_type)} ${material.count} 份`)
+    .join(" / ");
+}
+
 export function MemberInvoiceWorkbenchPage() {
   const session = useAuthSession();
+  const actorId = session?.actorId ?? "";
   const [searchParams] = useSearchParams();
   const preferredTaskId = searchParams.get("taskId");
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
@@ -501,8 +513,9 @@ export function MemberInvoiceWorkbenchPage() {
       setWorkbenchState({ status: "loading", task });
 
       try {
-        const [report, invoicesResponse] = await Promise.all([
+        const [report, sharedInvoicesReport, invoicesResponse] = await Promise.all([
           trmsApi.getTaskMemberStatus(task.id, session!.actorId),
+          trmsApi.getTaskSharedInvoices(task.id, session!.actorId),
           trmsApi.listTaskInvoices(task.id),
         ]);
         const invoices = invoicesResponse.items;
@@ -555,6 +568,9 @@ export function MemberInvoiceWorkbenchPage() {
           task,
           report,
           items,
+          sharedInvoices: [...sharedInvoicesReport.items].sort(
+            (left, right) => right.updated_at.localeCompare(left.updated_at),
+          ),
         });
         setMaterialTypeDrafts(
           Object.fromEntries(
@@ -597,6 +613,9 @@ export function MemberInvoiceWorkbenchPage() {
   const summaryStats = workbenchState.status === "ready" ? buildSummaryStats(workbenchState.task, workbenchState.report) : [];
   const pendingActions = workbenchState.status === "ready"
     ? summarizePendingActions(workbenchState.task, workbenchState.report)
+    : [];
+  const sharedInvoices = workbenchState.status === "ready"
+    ? workbenchState.sharedInvoices.filter((item) => item.submitter_id !== actorId)
     : [];
   const abnormalCount = useMemo(() => {
     if (workbenchState.status !== "ready") {
@@ -1241,6 +1260,99 @@ export function MemberInvoiceWorkbenchPage() {
             );
           })}
         </section>
+      ) : null}
+
+      {workbenchState.status === "ready" ? (
+        <SectionCard
+          title="任务内其他成员已上传发票"
+          description="这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。"
+          action={(
+            <StatusBadge tone="info">
+              {sharedInvoices.length} 张
+            </StatusBadge>
+          )}
+        >
+          {sharedInvoices.length > 0 ? (
+            <section className="member-status-list" aria-label="任务内共享发票摘要列表">
+              {sharedInvoices.map((item) => (
+                <article key={item.invoice_id} className="task-card member-status-card">
+                  <div className="member-status-section-header">
+                    <div>
+                      <p className="task-card-id">共享摘要 / {item.invoice_id}</p>
+                      <h2>{item.invoice_number}</h2>
+                    </div>
+                    <StatusBadge tone="info">{formatExpenseType(item.expense_type)}</StatusBadge>
+                  </div>
+
+                  <dl className="task-meta-grid member-status-meta-grid">
+                    <div>
+                      <dt>上传成员</dt>
+                      <dd>{item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}</dd>
+                    </div>
+                    <div>
+                      <dt>发票金额</dt>
+                      <dd>{formatCurrencyFromCents(item.amount_cents)}</dd>
+                    </div>
+                    <div>
+                      <dt>开票日期</dt>
+                      <dd>{item.issue_date ?? "未填写"}</dd>
+                    </div>
+                    <div>
+                      <dt>最近更新</dt>
+                      <dd>{formatDateTime(item.updated_at)}</dd>
+                    </div>
+                  </dl>
+
+                  <section className="member-status-section">
+                    <div className="member-status-section-header">
+                      <h4>基础元数据</h4>
+                      <span className="status-chip">只读摘要</span>
+                    </div>
+                    <ul className="member-status-message-list">
+                      <li>
+                        <strong>发票抬头</strong>
+                        <span>{item.buyer_name}</span>
+                      </li>
+                      <li>
+                        <strong>销售方</strong>
+                        <span>{item.seller_name ?? "未填写"}</span>
+                      </li>
+                    </ul>
+                  </section>
+
+                  <section className="member-status-section">
+                    <div className="member-status-section-header">
+                      <h4>当前分摊去向</h4>
+                      <span className="status-chip">{item.splits.length} 条</span>
+                    </div>
+                    {item.splits.length > 0 ? (
+                      <ul className="member-status-message-list">
+                        {item.splits.map((split) => (
+                          <li key={`${item.invoice_id}:${split.member_id}`}>
+                            <strong>{formatMemberLabel(split.member_id)}</strong>
+                            <span>{formatCurrencyFromCents(split.amount_cents)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="field-hint">当前还没有已保存的分摊方案。</p>
+                    )}
+                  </section>
+
+                  <section className="member-status-section">
+                    <div className="member-status-section-header">
+                      <h4>必要附件摘要</h4>
+                      <span className="status-chip">{item.supporting_materials.length} 类</span>
+                    </div>
+                    <p className="field-hint">{formatSupportingMaterialSummary(item)}</p>
+                  </section>
+                </article>
+              ))}
+            </section>
+          ) : (
+            <p className="field-hint">当前任务里还没有其他成员上传可共享查看的发票摘要。</p>
+          )}
+        </SectionCard>
       ) : null}
     </RoleWorkspace>
   );

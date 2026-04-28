@@ -504,6 +504,37 @@ export type TaskMemberStatusReport = {
   expense_details: ExpenseDetailItem[];
 };
 
+export type TaskSharedInvoiceSplitSummary = {
+  member_id: string;
+  amount_cents: number;
+};
+
+export type TaskSharedInvoiceSupportingMaterialSummary = {
+  material_type: MaterialType;
+  count: number;
+};
+
+export type TaskSharedInvoiceItem = {
+  invoice_id: string;
+  invoice_number: string;
+  issue_date: ApiDate | null;
+  buyer_name: string;
+  seller_name: string | null;
+  amount_cents: number;
+  expense_type: ExpenseType;
+  submitter_id: string | null;
+  supporting_materials: TaskSharedInvoiceSupportingMaterialSummary[];
+  splits: TaskSharedInvoiceSplitSummary[];
+  created_at: ApiDateTime;
+  updated_at: ApiDateTime;
+};
+
+export type TaskSharedInvoiceReport = {
+  task_id: string;
+  actor_id: string;
+  items: TaskSharedInvoiceItem[];
+};
+
 export type OverdueConfirmationList = {
   task_id: string;
   administrator_id: string;

@@ -1,5 +1,70 @@
 # WORKLOG
 
+## 2026-04-29 03:00 - Share task invoice summaries among members
+
+### 完成内容
+- 新增任务内共享发票摘要读接口：
+  - 后端增加 `GET /api/tasks/{task_id}/shared-invoices`；
+  - 同任务成员和任务管理员可读取当前任务下全部发票的共享摘要；
+  - 共享摘要只返回发票基础元数据、当前分摊去向、必要附件类型摘要，不返回税号、交易时间、附件原始文件名、附件存储位置、分摊备注或识别原始响应。
+- 成员发票工作台接入共享摘要区：
+  - 在“本人发票完整工作台”之外，新增“任务内其他成员已上传发票”只读区域；
+  - 同任务成员现在可在单任务上下文中查看队友已上传发票的基础信息、当前分摊去向和附件摘要；
+  - 页面文案显式说明该区域不提供原始文件下载、支付截图全文或识别原始响应。
+- 同步更新权限测试假设：
+  - 保留原有原始接口边界，成员仍不能通过原材料、识别、校验、附件详情等读接口查看无关成员的完整原件信息；
+  - 新增测试覆盖“共享摘要可见，但原始附件/无关账号信息仍不可见”的产品边界。
+
+### 根因
+- 需求分析文档 V0.2 与架构文档 V0.1 的原始约束默认成员只能查看本人相关材料和费用，但 `TASKS.md` 已明确记录新的产品变更：同一比赛任务内成员之间应可互相查看当前已上传发票。
+- 当前实现虽然已经允许发票提交人看到本人上传发票的完整分摊信息，但其他成员仍完全看不到同任务已上传发票，导致成员无法在任务内建立共享报销上下文。
+- 直接放开现有材料、识别、校验和附件详情接口会把原件文件名、支付截图全文、识别原始响应等敏感信息一并暴露，因此不能简单靠“放宽已有接口”完成任务。
+
+### 关键改动点
+- 新增领域模型 `src/trms_backend/domain/task_shared_invoices.py`，专门构造共享摘要响应。
+- 在 `src/trms_backend/api/tasks.py` 增加共享摘要路由，并沿用 bearer 身份绑定当前成员/管理员权限。
+- 前端 `web/src/app/member-invoice-workbench.tsx` 新增共享摘要展示区；`web/src/lib/api/trms.ts`、`web/src/lib/api/types.ts` 补充对应接口和类型。
+- 新增后端测试 `tests/test_task_shared_invoices_api.py`，并扩展 `tests/test_web_bearer_request_identity_api.py`；前端补充 `web/src/app/member-invoice-workbench.test.tsx` 回归。
+
+### 风险与影响面
+- 本轮只新增“共享摘要”读模型，不改变既有原始材料、识别任务、校验详情、附件详情和分摊编辑接口的权限语义；若后续需要共享更多字段，应继续单独定义脱敏边界。
+- 共享摘要目前按附件类型聚合计数，不展示附件原始文件名或正文内容；如果后续产品要求展示更细粒度附件信息，需要重新评估支付账号、订单号等敏感字段脱敏规则。
+- 这是相对需求分析文档 V0.2/架构文档 V0.1 的产品变更；后续涉及“成员可见性”的任务和测试，都应以“共享摘要可见、敏感原件不可见”为新默认假设。
+
+### 修改文件
+- `src/trms_backend/domain/task_shared_invoices.py`
+- `src/trms_backend/api/tasks.py`
+- `tests/test_task_shared_invoices_api.py`
+- `tests/test_web_bearer_request_identity_api.py`
+- `web/src/app/member-invoice-workbench.tsx`
+- `web/src/app/member-invoice-workbench.test.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_task_shared_invoices_api.py tests/test_web_bearer_request_identity_api.py tests/test_task_member_status_api.py`
+    - 18 个测试通过
+  - `cd web && npm test -- --run member-invoice-workbench.test.tsx`
+    - 6 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 350 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- “共享发票可见”本轮仅指任务内共享摘要可见，不等于开放原始文件下载、附件全文预览、识别原始输出、税号或交易时间等更敏感字段。
+- 本轮没有把成员端其它页面统一改成共享摘要模式，只在单任务发票工作台内提供这部分读视图；如果后续要求在更多页面暴露共享摘要，应优先复用本轮新增的专用接口，而不是继续放宽原始读接口。
+
 ## 2026-04-29 02:42 - Funnel member entry points into invoice workbench
 
 ### 完成内容

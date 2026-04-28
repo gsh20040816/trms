@@ -48,7 +48,7 @@ from trms_backend.domain.material_reminders import (
     create_task_material_reminder,
     list_task_material_reminders,
 )
-from trms_backend.domain.materials import MaterialRepository
+from trms_backend.domain.materials import MaterialRecord, MaterialRepository
 from trms_backend.domain.missing_materials import (
     TaskMissingMaterialActorNotAllowedError,
     build_visible_missing_material_list,
@@ -62,6 +62,10 @@ from trms_backend.domain.task_review_summary import (
 from trms_backend.domain.task_member_status import (
     TaskMemberStatusActorNotAllowedError,
     build_task_member_status_report,
+)
+from trms_backend.domain.task_shared_invoices import (
+    TaskSharedInvoiceActorNotAllowedError,
+    build_task_shared_invoice_report,
 )
 from trms_backend.domain.tasks import (
     TaskCreateInput,
@@ -426,6 +430,52 @@ def build_task_router(
                 confirmations_by_split_id=confirmations_by_split_id,
             )
         except TaskMemberStatusActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/shared-invoices")
+    def get_task_shared_invoices(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
+        invoices = invoice_repository.list_by_task(task_id)
+        materials_by_id = {
+            material.id: material for material in material_repository.list_by_task(task_id)
+        }
+        supporting_materials_by_invoice_id: dict[str, list[MaterialRecord]] = {}
+        for invoice in invoices:
+            supporting_materials = []
+            for link in invoice_repository.list_supporting_material_links(invoice.id):
+                material = material_repository.get(link.material_id)
+                if material is not None:
+                    supporting_materials.append(material)
+            supporting_materials_by_invoice_id[invoice.id] = supporting_materials
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+
+        try:
+            return build_task_shared_invoice_report(
+                task,
+                actor_id=resolved_actor_id,
+                invoices=invoices,
+                materials_by_id=materials_by_id,
+                supporting_materials_by_invoice_id=supporting_materials_by_invoice_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+            )
+        except TaskSharedInvoiceActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),

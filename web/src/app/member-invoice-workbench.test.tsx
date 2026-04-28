@@ -519,6 +519,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
         }));
       }
 
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: url.split("/")[3] ?? "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in member invoice workbench test: ${url}`);
     });
 
@@ -771,6 +779,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
         }));
       }
 
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: url.split("/")[3] ?? "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in member invoice workbench test: ${url}`);
     });
 
@@ -909,6 +925,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
             claimed_at: null,
             created_at: "2026-04-28T10:00:00+08:00",
           },
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: url.split("/")[3] ?? "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
         }));
       }
 
@@ -1160,6 +1184,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
         return Promise.resolve(jsonResponse({ items: currentConfirmations }));
       }
 
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: url.split("/")[3] ?? "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in member invoice workbench split test: ${url}`);
     });
 
@@ -1381,6 +1413,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
         }));
       }
 
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: url.split("/")[3] ?? "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in member invoice workbench split failure test: ${url}`);
     });
 
@@ -1396,5 +1436,113 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(
       await screen.findByText("split amount total must equal invoice amount"),
     ).toBeInTheDocument();
+  });
+
+  it("shows shared invoice summaries for other task members without exposing raw attachment details", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: 0,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/shared-invoices?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [
+            {
+              invoice_id: "INV-TEAM-001",
+              invoice_number: "TEAM-001",
+              issue_date: "2026-04-26",
+              buyer_name: "同济大学",
+              seller_name: "12306",
+              amount_cents: 20000,
+              expense_type: "railway",
+              submitter_id: "2250002",
+              supporting_materials: [
+                { material_type: "payment_record", count: 1 },
+                { material_type: "order_screenshot", count: 1 },
+              ],
+              splits: [
+                { member_id: "2250001", amount_cents: 12000 },
+                { member_id: "2250002", amount_cents: 8000 },
+              ],
+              created_at: "2026-04-28T13:00:00+08:00",
+              updated_at: "2026-04-28T13:05:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench shared summary test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByText("任务内其他成员已上传发票")).toBeInTheDocument();
+    expect(screen.getByText("TEAM-001")).toBeInTheDocument();
+    expect(
+      screen.getByText("这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("支付记录 1 份 / 订单截图 1 份")).toBeInTheDocument();
+
+    const sharedCard = screen.getByRole("heading", { name: "TEAM-001" }).closest("article");
+    expect(sharedCard).not.toBeNull();
+    expect(within(sharedCard as HTMLElement).getAllByText("成员 2250002")).toHaveLength(2);
+    expect(within(sharedCard as HTMLElement).getByText("￥120.00")).toBeInTheDocument();
+    expect(within(sharedCard as HTMLElement).getByText("￥80.00")).toBeInTheDocument();
+    expect(within(sharedCard as HTMLElement).queryByText("member-two-order.png")).not.toBeInTheDocument();
   });
 });

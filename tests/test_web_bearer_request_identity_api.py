@@ -702,6 +702,24 @@ def test_member_bearer_fee_and_confirmation_queries_only_expose_own_records(tmp_
         own_support_material_id
     ]
 
+    shared_invoices_response = client.get(
+        f"/api/tasks/{task_id}/shared-invoices",
+        headers=auth_headers(member_two_token),
+    )
+    assert shared_invoices_response.status_code == 200
+    shared_invoice = shared_invoices_response.json()["items"][0]
+    assert shared_invoice["submitter_id"] == "2250001"
+    assert shared_invoice["splits"] == [
+        {"member_id": "2250001", "amount_cents": 12000},
+        {"member_id": "2250002", "amount_cents": 8000},
+    ]
+    assert shared_invoice["supporting_materials"] == [
+        {"material_type": "payment_record", "count": 2},
+    ]
+    assert "tax_number" not in shared_invoice
+    assert all("original_filename" not in item for item in shared_invoice["supporting_materials"])
+    assert all("note" not in item for item in shared_invoice["splits"])
+
     mismatch_confirmation = client.put(
         f"/api/splits/{split_ids['2250001']}/confirmation",
         headers=auth_headers(member_one_token),
