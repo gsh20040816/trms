@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-04-28 20:05 - Add backup and recovery strategy notes
+
+### 完成内容
+- 新增 [docs/备份与恢复策略说明.md](docs/备份与恢复策略说明.md)，明确当前第一阶段部署基线下的备份与恢复边界：
+  - PostgreSQL 需要至少保留逻辑备份和存储级快照两类能力；
+  - S3 兼容对象存储需要覆盖原始材料、导出产物和识别中间文件，并建议启用版本管理或周期镜像；
+  - 原始材料恢复优先级高于可再生成的导出产物，不能只备份 `_exports/` 前缀。
+- 在策略文档中补充了基于当前 `deploy/docker-compose.yml` 的参考命令边界：
+  - 使用 `pg_dump -Fc` 执行 PostgreSQL 逻辑备份；
+  - 使用 `mc mirror` 作为 MinIO / S3 兼容对象存储镜像的参考方案；
+  - 明确这些命令仅为建议，不代表仓库已内置自动化调度。
+- 更新 `README.md` 增加策略文档入口，避免部署文档与恢复策略分散后不可见。
+
+### 根因
+- 架构文档已经要求 PostgreSQL、对象存储和原始材料具备备份机制，并明确“上线前需要恢复演练”，但仓库里此前只有零散的迁移和部署说明，没有单独的恢复策略文档。
+- 如果继续保持现状，后续代理或运维人员只能从部署文档里看到“删卷前先备份”这类弱提示，无法明确知道该备份什么、优先级如何排序、以及为什么恢复演练仍是上线阻断项。
+
+### 修改文件
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+- `docs/备份与恢复策略说明.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 314 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：第一阶段生产部署继续以 PostgreSQL + S3 兼容对象存储为正式持久化边界，因此恢复策略不再为生产环境设计本地目录备份方案。
+- 当前保守假设：导出产物虽然理论上可再生成，但在恢复演练里仍应抽样验证其可读性，避免数据库元数据恢复后下载链路仍然失效。
+
 ## 2026-04-28 19:24 - Add baseline metrics boundaries
 
 ### 完成内容
