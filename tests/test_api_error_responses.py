@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from trms_backend.main import create_app
@@ -67,6 +69,46 @@ def test_request_validation_error_uses_standard_error_payload(tmp_path):
         code="validation_error",
     )
     assert payload["detail"][0]["loc"][-1] == "material_type"
+
+
+def test_request_id_header_is_propagated_on_error_response(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.get("/api/tasks/missing", headers={"X-Request-ID": "client-request-123"})
+
+    assert response.status_code == 404
+    assert response.headers["X-Request-ID"] == "client-request-123"
+    assert response.json()["request_id"] == "client-request-123"
+
+
+def test_unhandled_error_logs_request_id_and_returns_standard_500_payload(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path}/test.db")
+
+    @app.get("/boom")
+    def boom():
+        raise RuntimeError("boom")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    with patch("trms_backend.api.error_responses.LOGGER.exception") as log_exception:
+        response = client.get("/boom", headers={"X-Request-ID": "client-request-500"})
+
+    assert response.status_code == 500
+    payload = response.json()
+    assert payload == {
+        "code": "internal_server_error",
+        "message": "internal server error",
+        "request_id": "client-request-500",
+        "detail": "internal server error",
+    }
+    assert response.headers["X-Request-ID"] == "client-request-500"
+    log_exception.assert_called_once()
+    assert log_exception.call_args.args == (
+        "unhandled request error method=%s route=%s request_id=%s",
+        "GET",
+        "/boom",
+        "client-request-500",
+    )
+    assert log_exception.call_args.kwargs["extra"]["request_id"] == "client-request-500"
 
 
 def test_not_found_route_uses_standard_error_payload(tmp_path):

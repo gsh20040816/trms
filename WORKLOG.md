@@ -6657,3 +6657,49 @@
 
 ### 后续建议
 - 下一轮按 `TASKS.md` 顺序处理“记录分摊和确认审计”，继续沿用统一 `audit_logs` 仓储和结果语义，不要在分摊/确认 API 内另起一套日志格式。
+
+## 2026-04-28 19:09 - Establish request ID logging context
+
+### 完成内容
+- 为 API 请求补齐 `request_id` 透传与日志上下文：
+  - 新增 `src/trms_backend/request_context_logging.py`，使用 `ContextVar` 绑定当前请求的 `request_id`，并通过 `LogRecordFactory` 为日志记录补充 `request_id` 字段；
+  - `src/trms_backend/main.py` 中的 HTTP 中间件改为在请求入口统一生成或透传 `X-Request-ID`，并在请求结束后清理上下文；
+  - `src/trms_backend/api/error_responses.py` 支持优先透传合法入站 `X-Request-ID`，否则回退到服务端生成的 `req_*`；
+  - 为未处理异常增加统一 500 错误处理，错误响应继续返回标准化 `request_id`，同时记录带 `request_id` 的错误日志。
+- 新增 API 测试覆盖：
+  - 断言客户端自带 `X-Request-ID` 时，404 错误响应会原样透传；
+  - 断言未处理异常会返回标准化 500 错误响应，并调用带 `request_id` 的错误日志。
+- 将 `TASKS.md` 中“建立请求 ID 日志上下文”标记为已完成。
+
+### 根因
+- 仓库此前已经在错误响应体、响应头和多处审计日志里生成 `request_id`，但它还只是“响应字段”，没有形成真正的请求级上下文。
+- 具体缺口有两处：
+  - API 不会透传调用方提供的 `X-Request-ID`，导致外部调用链无法稳定对齐后端请求；
+  - 统一错误处理没有把 `request_id` 绑定到错误日志，出现 500 或后端异常时，日志与响应之间缺少可直接关联的键。
+- 如果继续维持现状，请求审计和错误排查仍需靠时间与路径人工拼接，达不到当前任务要求的最小可追溯性。
+
+### 修改文件
+- `src/trms_backend/request_context_logging.py`
+- `src/trms_backend/api/error_responses.py`
+- `src/trms_backend/main.py`
+- `tests/test_api_error_responses.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_api_error_responses.py`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 312 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮对客户端透传的 `X-Request-ID` 采用保守白名单格式，只接受长度不超过 64 且由字母、数字、`.`、`_`、`-` 组成的值；非法值回退为服务端生成的 `req_*`，避免把异常 header 值直接写入响应头和日志。
+- “错误日志包含 `request_id`” 当前先收敛到统一未处理异常日志，不额外把全部 4xx 业务拒绝都升级为错误级别日志，避免把正常用户输入错误误记为服务端故障。
+
+### 后续建议
+- 下一轮按顺序处理 `TASKS.md` 中“增加基础指标边界”，优先为上传、识别、校验和导出建立最小指标抽象，不要直接引入重量级监控组件。

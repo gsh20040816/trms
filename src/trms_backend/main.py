@@ -43,6 +43,11 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyValidationRepository,
 )
 from trms_backend.infrastructure.storage import build_material_file_storage
+from trms_backend.request_context_logging import (
+    bind_request_id,
+    install_request_id_log_record_factory,
+    reset_request_id,
+)
 from trms_backend.runtime_config import RuntimeConfig, load_runtime_config
 
 
@@ -54,6 +59,7 @@ def create_app(
     recognition_llm_client: OpenAiCompatibleRecognitionClient | None = None,
 ) -> FastAPI:
     config = runtime_config or load_runtime_config(database_url=database_url)
+    install_request_id_log_record_factory()
     app = FastAPI(title="TRMS API")
     register_error_response_handlers(app)
     app.state.runtime_config = config
@@ -122,12 +128,16 @@ def create_app(
     @app.middleware("http")
     async def enforce_cli_compatibility(request: Request, call_next):
         request_id = ensure_request_id(request)
-        rejection = reject_incompatible_cli_request(request, request_id=request_id)
-        if rejection is not None:
-            return rejection
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        context_token = bind_request_id(request_id)
+        try:
+            rejection = reject_incompatible_cli_request(request, request_id=request_id)
+            if rejection is not None:
+                return rejection
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            reset_request_id(context_token)
 
     @app.get("/health")
     def health():
