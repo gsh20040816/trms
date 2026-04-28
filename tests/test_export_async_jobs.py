@@ -16,7 +16,13 @@ from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
 from test_exports_api import create_export_job, create_invoice_with_splits
-from test_tasks_api import update_task_row, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    register_and_get_token,
+    update_task_row,
+    valid_task_payload,
+)
 
 
 def make_runtime_config(tmp_path):
@@ -45,6 +51,18 @@ def create_task(client: TestClient) -> str:
     response = client.post("/api/tasks", json=valid_task_payload())
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def member_auth_headers(client: TestClient) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
 
 
 def build_processor(tmp_path, runtime_config) -> ExportAsyncJobProcessor:
@@ -90,7 +108,7 @@ def test_export_async_processor_persists_artifact_and_exposes_download(tmp_path)
 
     status_response = client.get(
         f"/api/tasks/exports/{export_job['id']}",
-        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
     assert status_response.status_code == 200
     status_body = status_response.json()
@@ -108,7 +126,7 @@ def test_export_async_processor_persists_artifact_and_exposes_download(tmp_path)
 
     download_response = client.get(
         f"/api/tasks/exports/{export_job['id']}/artifact",
-        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
     assert download_response.status_code == 200
     assert download_response.headers["content-type"].startswith("text/csv")
@@ -133,16 +151,20 @@ def test_export_artifact_download_reports_not_ready_and_rejects_non_admin(tmp_pa
 
     pending_download = client.get(
         f"/api/tasks/exports/{export_job['id']}/artifact",
-        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
     assert pending_download.status_code == 409
     assert pending_download.json()["detail"] == (
         "export artifact is not ready; current status is pending"
     )
 
+    anonymous_status = client.get(f"/api/tasks/exports/{export_job['id']}")
+    assert anonymous_status.status_code == 401
+    assert anonymous_status.json()["detail"] == "invalid or missing bearer token"
+
     forbidden_status = client.get(
         f"/api/tasks/exports/{export_job['id']}",
-        params={"actor_id": "2250001"},
+        headers=member_auth_headers(client),
     )
     assert forbidden_status.status_code == 403
     assert forbidden_status.json()["detail"] == (
@@ -169,7 +191,7 @@ def test_export_async_processor_marks_unimplemented_job_failed(tmp_path):
 
     status_response = client.get(
         f"/api/tasks/exports/{export_job['id']}",
-        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "failed"
@@ -179,7 +201,7 @@ def test_export_async_processor_marks_unimplemented_job_failed(tmp_path):
 
     failed_download = client.get(
         f"/api/tasks/exports/{export_job['id']}/artifact",
-        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
     assert failed_download.status_code == 409
     assert failed_download.json()["detail"] == (

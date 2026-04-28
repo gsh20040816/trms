@@ -3,7 +3,12 @@ from fastapi.testclient import TestClient
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import admin_auth_headers, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    register_and_get_token,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path):
@@ -53,6 +58,18 @@ def get_single_recognition_task(client: TestClient, material_id: str) -> dict:
     return items[0]
 
 
+def member_auth_headers(client: TestClient) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+
+
 def test_uploaded_material_auto_creates_placeholder_recognition_task_marks_ai_output_non_final(
     tmp_path,
 ):
@@ -79,7 +96,10 @@ def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path
     task_id = create_task(client)
     material_id = upload_material(client, task_id)
 
-    response = client.post(f"/api/materials/{material_id}/recognition-tasks")
+    response = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 201
     created = response.json()["item"]
@@ -101,6 +121,43 @@ def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path
     assert items[1]["manual_corrections"] == []
 
 
+def test_recognition_management_routes_require_admin_bearer(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    material_id = upload_material(client, task_id)
+    recognition_task_id = get_single_recognition_task(client, material_id)["id"]
+
+    anonymous_create = client.post(f"/api/materials/{material_id}/recognition-tasks")
+    assert anonymous_create.status_code == 401
+    assert anonymous_create.json()["detail"] == "invalid or missing bearer token"
+
+    forbidden_create = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=member_auth_headers(client),
+    )
+    assert forbidden_create.status_code == 403
+    assert forbidden_create.json()["detail"] == (
+        "actor is not allowed to manage recognition tasks for this material"
+    )
+
+    anonymous_update = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        json={"target_status": "succeeded"},
+    )
+    assert anonymous_update.status_code == 401
+    assert anonymous_update.json()["detail"] == "invalid or missing bearer token"
+
+    forbidden_update = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=member_auth_headers(client),
+        json={"target_status": "succeeded"},
+    )
+    assert forbidden_update.status_code == 403
+    assert forbidden_update.json()["detail"] == (
+        "actor is not allowed to manage recognition tasks for this material"
+    )
+
+
 def test_recognition_task_can_move_to_needs_confirmation_then_succeeded(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
@@ -109,10 +166,12 @@ def test_recognition_task_can_move_to_needs_confirmation_then_succeeded(tmp_path
 
     pending_to_confirmation = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={"target_status": "needs_confirmation"},
     )
     confirmation_to_success = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={"target_status": "succeeded"},
     )
 
@@ -130,10 +189,12 @@ def test_recognition_task_can_move_to_failed(tmp_path):
 
     missing_failure_detail = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={"target_status": "failed"},
     )
     response = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "failed",
             "failure": {
@@ -172,11 +233,13 @@ def test_recognition_task_rejects_invalid_terminal_transition(tmp_path):
     recognition_task_id = get_single_recognition_task(client, material_id)["id"]
     client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={"target_status": "succeeded"},
     )
 
     response = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={"target_status": "pending"},
     )
 
@@ -214,6 +277,7 @@ def test_low_confidence_fields_require_needs_confirmation_and_are_persisted(tmp_
 
     invalid_success = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "succeeded",
             "result": recognition_result,
@@ -227,6 +291,7 @@ def test_low_confidence_fields_require_needs_confirmation_and_are_persisted(tmp_
 
     response = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "needs_confirmation",
             "result": recognition_result,
@@ -270,6 +335,7 @@ def test_recognition_task_listing_returns_latest_effective_result_and_full_histo
     }
     first_update = client.patch(
         f"/api/recognition-tasks/{first_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "succeeded",
             "result": first_result,
@@ -278,7 +344,10 @@ def test_recognition_task_listing_returns_latest_effective_result_and_full_histo
 
     assert first_update.status_code == 200
 
-    retry_create = client.post(f"/api/materials/{material_id}/recognition-tasks")
+    retry_create = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
 
     assert retry_create.status_code == 201
     second_task_id = retry_create.json()["item"]["id"]
@@ -296,6 +365,7 @@ def test_recognition_task_listing_returns_latest_effective_result_and_full_histo
 
     second_update = client.patch(
         f"/api/recognition-tasks/{second_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "failed",
             "failure": {

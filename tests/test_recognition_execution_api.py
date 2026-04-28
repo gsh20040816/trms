@@ -18,7 +18,12 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
-from test_tasks_api import admin_auth_headers, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    register_and_get_token,
+    valid_task_payload,
+)
 
 
 class FakeRecognitionLlmClient(RecognitionLlmClient):
@@ -109,6 +114,18 @@ def latest_recognition_task_id(client: TestClient, material_id: str) -> str:
     return response.json()["items"][-1]["id"]
 
 
+def member_auth_headers(client: TestClient) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+
+
 def build_text_pdf_bytes() -> bytes:
     writer = PdfWriter()
     page = writer.add_blank_page(width=300, height=144)
@@ -189,7 +206,10 @@ def test_execute_recognition_task_extracts_pdf_text_into_preparation_payload(tmp
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]
@@ -208,6 +228,34 @@ def test_execute_recognition_task_extracts_pdf_text_into_preparation_payload(tmp
         "page_count": 1,
         "text_character_count": 47,
     }
+
+
+def test_execute_recognition_task_requires_admin_bearer(tmp_path):
+    client = make_client(tmp_path)
+    sample_path = tmp_path / "text-invoice.pdf"
+    sample_path.write_bytes(build_text_pdf_bytes())
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename=sample_path.name,
+        content=sample_path.read_bytes(),
+        content_type="application/pdf",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    anonymous_response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    assert anonymous_response.status_code == 401
+    assert anonymous_response.json()["detail"] == "invalid or missing bearer token"
+
+    forbidden_response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=member_auth_headers(client),
+    )
+    assert forbidden_response.status_code == 403
+    assert forbidden_response.json()["detail"] == (
+        "actor is not allowed to manage recognition tasks for this material"
+    )
 
 
 def test_execute_recognition_task_persists_structured_llm_result(tmp_path):
@@ -275,7 +323,10 @@ def test_execute_recognition_task_persists_structured_llm_result(tmp_path):
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]
@@ -324,7 +375,10 @@ def test_execute_recognition_task_marks_low_confidence_result_as_needs_confirmat
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]
@@ -356,7 +410,10 @@ def test_execute_recognition_task_records_llm_failure_reason(tmp_path):
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]
@@ -382,7 +439,10 @@ def test_execute_recognition_task_marks_image_upload_as_ocr_not_configured(tmp_p
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]
@@ -408,7 +468,10 @@ def test_execute_recognition_task_marks_image_only_pdf_as_ocr_not_configured(tmp
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     assert response.json()["item"]["failure"] == {
@@ -431,7 +494,10 @@ def test_execute_recognition_task_records_pdf_parse_failure_for_corrupted_pdf(tm
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]
@@ -456,7 +522,10 @@ def test_execute_recognition_task_records_blank_pdf(tmp_path):
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]
@@ -481,7 +550,10 @@ def test_execute_recognition_task_records_encrypted_pdf(tmp_path):
     )
     recognition_task_id = latest_recognition_task_id(client, material_id)
 
-    response = client.post(f"/api/recognition-tasks/{recognition_task_id}/execute")
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     item = response.json()["item"]

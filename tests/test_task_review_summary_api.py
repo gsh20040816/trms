@@ -78,6 +78,7 @@ def create_review_fixture(client: TestClient) -> tuple[str, str, str, str]:
     invoice_recognition_task_id = latest_recognition_task_id(client, invoice_material_id)
     response = client.patch(
         f"/api/recognition-tasks/{invoice_recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "needs_confirmation",
             "result": {
@@ -104,6 +105,7 @@ def create_review_fixture(client: TestClient) -> tuple[str, str, str, str]:
     payment_recognition_task_id = latest_recognition_task_id(client, payment_material_id)
     response = client.patch(
         f"/api/recognition-tasks/{payment_recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "failed",
             "failure": {

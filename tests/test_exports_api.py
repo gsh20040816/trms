@@ -7,7 +7,14 @@ from pypdf import PdfWriter
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import update_task_row, valid_invoice_payload, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    register_and_get_token,
+    update_task_row,
+    valid_invoice_payload,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path):
@@ -38,11 +45,12 @@ def create_export_job(
     kind: str = "reimbursement_summary",
     format: str = "xlsx",
     parameters: dict | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict:
     response = client.post(
         f"/api/tasks/{task_id}/exports",
+        headers=headers or admin_auth_headers(client),
         json={
-            "actor_id": "admin-1",
             "kind": kind,
             "format": format,
             "parameters": parameters or {},
@@ -50,6 +58,23 @@ def create_export_job(
     )
     assert response.status_code == 201
     return response.json()
+
+
+def member_auth_headers(
+    client: TestClient,
+    *,
+    username: str,
+    actor_id: str,
+) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username=username,
+            role="member",
+            actor_id=actor_id,
+            member_code=actor_id,
+        )
+    )
 
 
 def upload_invoice_material(
@@ -165,6 +190,7 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     response = client.get(
         f"/api/tasks/{task_id}/exports/capabilities",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -275,6 +301,7 @@ def test_task_administrator_can_export_reimbursement_summary_csv(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/reimbursement-summary",
         params={"actor_id": "admin-1", "format": "csv"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -370,6 +397,7 @@ def test_task_administrator_can_export_member_details_csv_with_current_split_ver
     response = client.get(
         f"/api/tasks/{task_id}/exports/member-details",
         params={"actor_id": "admin-1", "format": "csv"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -462,6 +490,7 @@ def test_task_administrator_can_export_invoice_details_csv_with_validation_summa
     response = client.get(
         f"/api/tasks/{task_id}/exports/invoice-details",
         params={"actor_id": "admin-1", "format": "csv"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -549,6 +578,7 @@ def test_task_administrator_can_export_missing_materials_csv(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/missing-materials",
         params={"actor_id": "admin-1", "format": "csv"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -620,6 +650,7 @@ def test_task_administrator_can_export_empty_missing_materials_csv(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/missing-materials",
         params={"actor_id": "admin-1", "format": "csv"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -664,6 +695,7 @@ def test_task_administrator_can_export_finance_draft_json(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/finance-draft",
         params={"actor_id": "admin-1", "format": "json"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -775,6 +807,7 @@ def test_task_administrator_can_preview_merged_pdf_plan_in_default_order(tmp_pat
     response = client.get(
         f"/api/tasks/{task_id}/exports/merged-pdf",
         params={"actor_id": "admin-1", "format": "pdf"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -818,6 +851,7 @@ def test_merged_pdf_preview_reports_encrypted_material_id(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/merged-pdf",
         params={"actor_id": "admin-1", "format": "pdf"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 422
@@ -841,6 +875,7 @@ def test_merged_pdf_preview_reports_unreadable_material_id(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/merged-pdf",
         params={"actor_id": "admin-1", "format": "pdf"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 422
@@ -857,6 +892,7 @@ def test_finance_draft_xlsx_is_not_implemented_yet(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/finance-draft",
         params={"actor_id": "admin-1", "format": "xlsx"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 422
@@ -873,6 +909,7 @@ def test_export_capabilities_report_blocking_reason_before_final_confirmation(tm
     response = client.get(
         f"/api/tasks/{task_id}/exports/capabilities",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -882,6 +919,31 @@ def test_export_capabilities_report_blocking_reason_before_final_confirmation(tm
     ]
 
 
+def test_export_routes_require_bearer_identity(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    capabilities_response = client.get(f"/api/tasks/{task_id}/exports/capabilities")
+    assert capabilities_response.status_code == 401
+    assert capabilities_response.json()["detail"] == "invalid or missing bearer token"
+
+    create_response = client.post(
+        f"/api/tasks/{task_id}/exports",
+        json={
+            "kind": "reimbursement_summary",
+            "format": "csv",
+            "parameters": {},
+        },
+    )
+    assert create_response.status_code == 401
+    assert create_response.json()["detail"] == "invalid or missing bearer token"
+
+    list_response = client.get(f"/api/tasks/{task_id}/exports")
+    assert list_response.status_code == 401
+    assert list_response.json()["detail"] == "invalid or missing bearer token"
+
+
 def test_non_administrator_cannot_get_export_capabilities(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
@@ -889,6 +951,7 @@ def test_non_administrator_cannot_get_export_capabilities(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/capabilities",
         params={"actor_id": "2250001"},
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
     )
 
     assert response.status_code == 403
@@ -903,6 +966,7 @@ def test_non_administrator_cannot_export_reimbursement_summary(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/exports/reimbursement-summary",
         params={"actor_id": "2250001", "format": "csv"},
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
     )
 
     assert response.status_code == 403
@@ -943,6 +1007,7 @@ def test_create_and_list_export_jobs_persist_requested_parameters(tmp_path):
     listed = client.get(
         f"/api/tasks/{task_id}/exports",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert listed.status_code == 200
@@ -970,6 +1035,7 @@ def test_export_jobs_are_marked_stale_after_task_data_changes(tmp_path):
     listed = client.get(
         f"/api/tasks/{task_id}/exports",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert listed.status_code == 200
@@ -1006,6 +1072,7 @@ def test_export_job_retry_count_increments_for_same_request_signature(tmp_path):
     listed = client.get(
         f"/api/tasks/{task_id}/exports",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert listed.status_code == 200
@@ -1024,7 +1091,8 @@ def test_export_job_status_transitions_cover_running_succeeded_and_failed(tmp_pa
 
     running = client.patch(
         f"/api/tasks/exports/{first_job['id']}/status",
-        json={"actor_id": "admin-1", "target_status": "running"},
+        headers=admin_auth_headers(client),
+        json={"target_status": "running"},
     )
     assert running.status_code == 200
     assert running.json()["status"] == "running"
@@ -1036,7 +1104,8 @@ def test_export_job_status_transitions_cover_running_succeeded_and_failed(tmp_pa
 
     succeeded = client.patch(
         f"/api/tasks/exports/{first_job['id']}/status",
-        json={"actor_id": "admin-1", "target_status": "succeeded"},
+        headers=admin_auth_headers(client),
+        json={"target_status": "succeeded"},
     )
     assert succeeded.status_code == 200
     assert succeeded.json()["status"] == "succeeded"
@@ -1055,8 +1124,8 @@ def test_export_job_status_transitions_cover_running_succeeded_and_failed(tmp_pa
     )
     failed = client.patch(
         f"/api/tasks/exports/{second_job['id']}/status",
+        headers=admin_auth_headers(client),
         json={
-            "actor_id": "admin-1",
             "target_status": "failed",
             "failure_reason": "failed to read encrypted material PDF",
         },
@@ -1077,8 +1146,8 @@ def test_create_export_job_requires_ready_to_export_or_completed_task(tmp_path):
 
     response = client.post(
         f"/api/tasks/{task_id}/exports",
+        headers=admin_auth_headers(client),
         json={
-            "actor_id": "admin-1",
             "kind": "reimbursement_summary",
             "format": "xlsx",
             "parameters": {},
@@ -1100,8 +1169,8 @@ def test_non_administrator_cannot_manage_export_jobs(tmp_path):
 
     create_response = client.post(
         f"/api/tasks/{task_id}/exports",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
         json={
-            "actor_id": "2250001",
             "kind": "reimbursement_summary",
             "format": "xlsx",
             "parameters": {},
@@ -1115,6 +1184,7 @@ def test_non_administrator_cannot_manage_export_jobs(tmp_path):
     list_response = client.get(
         f"/api/tasks/{task_id}/exports",
         params={"actor_id": "2250001"},
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
     )
     assert list_response.status_code == 403
     assert list_response.json()["detail"] == (
@@ -1123,7 +1193,8 @@ def test_non_administrator_cannot_manage_export_jobs(tmp_path):
 
     update_response = client.patch(
         f"/api/tasks/exports/{export_job['id']}/status",
-        json={"actor_id": "2250001", "target_status": "running"},
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+        json={"target_status": "running"},
     )
     assert update_response.status_code == 403
     assert update_response.json()["detail"] == (

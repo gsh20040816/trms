@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-28 17:24 - Close export and async job permission boundaries
+
+### 完成内容
+- 收口导出任务与导出文件访问边界：
+  - `GET /api/tasks/{task_id}/exports/capabilities`、各类导出预览接口、`POST /api/tasks/{task_id}/exports`、`GET /api/tasks/{task_id}/exports`、`GET /api/tasks/exports/{export_job_id}`、`GET /api/tasks/exports/{export_job_id}/artifact`、`PATCH /api/tasks/exports/{export_job_id}/status` 全部改为必须消费 bearer 请求身份；
+  - 导出任务详情、下载和状态更新不再接受匿名 `actor_id` 伪装，已认证请求仍可保留显式 `actor_id`，但与 bearer 身份不一致时会显式拒绝。
+- 收口识别异步作业管理边界：
+  - `POST /api/materials/{material_id}/recognition-tasks`、`PATCH /api/recognition-tasks/{recognition_task_id}/status`、`POST /api/recognition-tasks/{recognition_task_id}/execute` 改为要求已认证身份；
+  - 对已归属任务的材料，上述识别任务管理接口只允许任务负责人执行；成员即使能查看本人材料识别历史，也不能自行重试、执行或改写识别任务状态。
+- 补回归测试覆盖：
+  - `tests/test_exports_api.py`、`tests/test_export_async_jobs.py` 新增导出路由 bearer 正向、匿名 `401` 和成员越权 `403` 覆盖；
+  - `tests/test_recognition_tasks_api.py`、`tests/test_recognition_execution_api.py` 新增识别任务管理接口的管理员 bearer、匿名拒绝和成员越权覆盖；
+  - 受影响的发票、复核汇总等测试统一切到管理员 bearer 调用新的识别任务管理接口。
+
+### 根因
+- 上一轮虽然已经收口了成员侧与管理员侧的任务/复核接口，但导出和异步作业接口仍残留两类旧边界：
+  - 导出任务详情、下载和状态更新继续依赖裸 `actor_id` 查询参数或请求体字段，匿名请求仍可伪装任务负责人；
+  - 识别任务的重试、执行和状态更新接口没有接入请求身份上下文，导致任何知道任务编号的人都可直接驱动异步作业状态。
+- 这会使“只有任务负责人才能管理自己任务的导出和相关异步作业”在后端层面仍不成立。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/api/recognitions.py`
+- `tests/test_export_async_jobs.py`
+- `tests/test_exports_api.py`
+- `tests/test_invoices_api.py`
+- `tests/test_recognition_execution_api.py`
+- `tests/test_recognition_tasks_api.py`
+- `tests/test_task_review_summary_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py tests/test_export_async_jobs.py tests/test_recognition_tasks_api.py tests/test_recognition_execution_api.py tests/test_invoices_api.py tests/test_task_review_summary_api.py`
+    - 81 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 291 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：第一阶段识别任务的“管理者”仍以 `task.administrator_id` 对应的账号 `actor_id` 表达，不在本轮扩展为独立的异步作业管理员模型。
+- 当前保守假设：对 `task_id` 仍为空的待归属材料，识别任务管理先仅开放给已认证 `admin` / `system_admin` 角色，避免成员通过材料编号直接驱动未归属异步作业；更细的待归属材料处理权限边界留待后续任务单独收口。
+
 ## 2026-04-28 17:15 - Close administrator task management and review permissions
 
 ### 完成内容

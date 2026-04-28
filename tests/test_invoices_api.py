@@ -103,6 +103,7 @@ def set_recognition_result(
     ]
     response = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": target_status,
             "result": {
@@ -407,6 +408,7 @@ def test_create_invoice_marks_missing_recognized_title_and_tax_as_pending(tmp_pa
 
     recognition_update = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "succeeded",
             "result": {
@@ -461,6 +463,7 @@ def test_create_invoice_keeps_failed_when_manual_title_and_tax_mismatch_after_mi
 
     recognition_update = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "failed",
             "failure": {
@@ -1416,12 +1419,16 @@ def test_retry_payment_record_recognition_revalidates_failed_amount_match_to_pas
         if item["rule_code"] == "invoice_payment_record_amount_match"
     )["status"] == "failed"
 
-    retry_create = client.post(f"/api/materials/{payment_record_material_id}/recognition-tasks")
+    retry_create = client.post(
+        f"/api/materials/{payment_record_material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
 
     assert retry_create.status_code == 201
     retry_task_id = retry_create.json()["item"]["id"]
     retry_update = client.patch(
         f"/api/recognition-tasks/{retry_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "succeeded",
             "result": {
@@ -1564,12 +1571,16 @@ def test_retry_invoice_recognition_revalidates_failed_competition_location_to_pa
         COMPETITION_LOCATION_RANGE_RULE_CODE,
     )["status"] == "failed"
 
-    retry_create = client.post(f"/api/materials/{material_id}/recognition-tasks")
+    retry_create = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
 
     assert retry_create.status_code == 201
     retry_task_id = retry_create.json()["item"]["id"]
     retry_update = client.patch(
         f"/api/recognition-tasks/{retry_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "succeeded",
             "result": {
@@ -1714,6 +1725,7 @@ def test_manual_invoice_correction_updates_recognition_fields_and_keeps_diff_his
     }
     client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "needs_confirmation",
             "result": recognition_result,
@@ -1782,6 +1794,7 @@ def test_manual_invoice_correction_on_retry_keeps_older_recognition_history_unch
     }
     first_update = client.patch(
         f"/api/recognition-tasks/{first_recognition_task_id}/status",
+        headers=admin_auth_headers(client),
         json={
             "target_status": "needs_confirmation",
             "result": first_result,
@@ -1790,7 +1803,10 @@ def test_manual_invoice_correction_on_retry_keeps_older_recognition_history_unch
 
     assert first_update.status_code == 200
 
-    retry_create = client.post(f"/api/materials/{material_id}/recognition-tasks")
+    retry_create = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
 
     assert retry_create.status_code == 201
     retry_task_id = retry_create.json()["item"]["id"]
