@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-28 10:06 - Establish frontend permission visibility tests
+
+### 完成内容
+- 新增 `web/src/app/permission-visibility.test.tsx`，集中补齐前端权限可见性测试：
+  - 覆盖成员任务页只渲染成员操作，不出现“创建新任务”“录入或更正发票”“进入复核总览”“进入导出管理”“编辑费用分摊”等管理员操作入口；
+  - 覆盖成员身份直接访问管理员路由时，由 `ProtectedRoleRoute` 在发起任何管理员数据请求前拦截，并显示明确的角色错配提示；
+  - 覆盖成员页加载中状态，以及管理员页错误状态；
+  - 覆盖管理员页不渲染系统管理员入口文案，也不出现 `access token`、`refresh token`、`cookie`、`VITE_API_BASE_URL` 等无关长期凭证或敏感配置文本。
+- 将 `TASKS.md` 中“建立前端权限可见性测试”标记为已完成。
+
+### 修改文件
+- `web/src/app/permission-visibility.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前前端已经具备成员/管理员路由门禁和多页业务入口，但已有测试主要按页面功能拆分，缺少一组从“权限可见性”视角出发的回归用例。
+- 结果是“成员页面不应出现管理员操作”“错误或未授权状态下不应先发起越权请求”“管理员页面不应混入系统级敏感配置提示”这些边界虽然在实现里已有约束，却没有被独立锁定，后续页面迭代时容易回归。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- permission-visibility`
+    - 1 个前端测试文件、5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 165 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，17 个前端测试文件、47 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮将“管理员页面不泄露无关长期凭证或敏感配置”保守解释为：管理员业务页不渲染系统管理员入口文案，也不暴露与当前页面职责无关的长期凭证或配置关键字；真实敏感配置展示与否，后续应由系统管理员页面和服务端鉴权单独约束。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立前端表单和上传组件测试”，优先补任务创建、材料上传、分摊编辑和成员确认这四类已落地页面的组件/集成测试边界。
+
 ## 2026-04-28 10:00 - Implement export management page
 
 ### 完成内容
