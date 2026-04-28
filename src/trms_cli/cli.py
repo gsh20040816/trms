@@ -160,6 +160,36 @@ class ExpenseSplitSubmissionResult:
     items: list[ExpenseSplitSubmissionItem]
 
 
+@dataclass(frozen=True)
+class ExpenseDetailConfirmationItem:
+    split_id: str
+    split_version: int
+    invoice_id: str
+    invoice_number: str
+    amount_cents: int
+    confirmation_status: str | None
+    dispute_reason: str | None
+
+
+@dataclass(frozen=True)
+class ExpenseDetailConfirmationReport:
+    task_id: str
+    actor_id: str
+    scope: str
+    total_amount_cents: int
+    items: list[ExpenseDetailConfirmationItem]
+
+
+@dataclass(frozen=True)
+class ExpenseConfirmationSubmissionResult:
+    split_id: str
+    member_id: str
+    split_version: int
+    status: str
+    dispute_reason: str | None
+    is_current: bool
+
+
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL_SUCCESS = 2
@@ -463,6 +493,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit machine-readable JSON output",
     )
     split_parser.set_defaults(handler=run_split_command)
+
+    confirm_expense_parser = subparsers.add_parser(
+        "confirm-expense",
+        help="list current member expense details or submit a confirmation for one split",
+    )
+    confirm_expense_parser.add_argument(
+        "--task-id",
+        required=True,
+        help="target reimbursement task id",
+    )
+    confirm_expense_parser.add_argument(
+        "--split-id",
+        help="target expense split id to confirm or dispute",
+    )
+    confirm_expense_parser.add_argument(
+        "--split-version",
+        type=int,
+        help="expected split version from the latest expense detail list",
+    )
+    confirm_expense_parser.add_argument(
+        "--status",
+        choices=("confirmed", "disputed"),
+        help="confirmation result to submit for the target split",
+    )
+    confirm_expense_parser.add_argument(
+        "--dispute-reason",
+        help="required when submitting disputed status",
+    )
+    confirm_expense_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit machine-readable JSON output",
+    )
+    confirm_expense_parser.set_defaults(handler=run_confirm_expense_command)
 
     return parser
 
@@ -772,6 +837,91 @@ def run_split_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_confirm_expense_command(args: argparse.Namespace) -> int:
+    try:
+        session = load_token_session()
+    except TokenStoreError as error:
+        raise CliError(str(error), code="login_required") from error
+
+    action = resolve_confirm_expense_action(args)
+    base_url = session.base_url.rstrip("/")
+    report = fetch_expense_detail_confirmation_report(
+        base_url=base_url,
+        task_id=args.task_id,
+        actor_id=session.member_id,
+        access_token=session.access_token,
+    )
+    if action == "list":
+        if args.json_output:
+            emit_json(
+                {
+                    "schema_version": CLI_JSON_SCHEMA_VERSION,
+                    "ok": True,
+                    "command": "confirm-expense",
+                    "data": {
+                        "base_url": base_url,
+                        "mode": "list",
+                        "task_id": report.task_id,
+                        "member_id": report.actor_id,
+                        "scope": report.scope,
+                        "count": len(report.items),
+                        "total_amount_cents": report.total_amount_cents,
+                        "items": [asdict(item) for item in report.items],
+                    },
+                }
+            )
+            return 0
+
+        emit_confirm_expense_list_text_result(report)
+        return 0
+
+    assert args.split_id is not None
+    assert args.split_version is not None
+    assert args.status is not None
+    detail = find_current_expense_detail(
+        report,
+        split_id=args.split_id,
+        expected_split_version=args.split_version,
+        task_id=args.task_id,
+    )
+    status_code, payload = put_json(
+        build_split_confirmation_url(base_url, split_id=detail.split_id),
+        headers={"Authorization": f"Bearer {session.access_token}"},
+        payload={
+            "actor_id": session.member_id,
+            "member_id": session.member_id,
+            "status": args.status,
+            "dispute_reason": normalize_dispute_reason(args.dispute_reason, status=args.status),
+        },
+    )
+    if status_code != 200:
+        raise CliError(
+            f"split confirmation endpoint returned unexpected status {status_code}",
+            code="expense_confirmation_unexpected_status",
+        )
+
+    result = parse_expense_confirmation_submission_result(payload)
+    if args.json_output:
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "confirm-expense",
+                "data": {
+                    "base_url": base_url,
+                    "mode": "submit",
+                    "task_id": args.task_id,
+                    "member_id": session.member_id,
+                    "item": asdict(result),
+                },
+            }
+        )
+        return 0
+
+    emit_confirm_expense_submission_text_result(result)
+    return 0
+
+
 def build_task_list_url(base_url: str, *, member_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     query_string = urlencode({"member_id": member_id})
@@ -818,6 +968,20 @@ def build_task_missing_materials_url(base_url: str, *, task_id: str, actor_id: s
     return f"{normalized_base_url}/api/tasks/{normalized_task_id}/missing-materials?{query_string}"
 
 
+def build_task_expense_details_url(base_url: str, *, task_id: str, actor_id: str) -> str:
+    normalized_base_url = base_url.rstrip("/")
+    normalized_task_id = task_id.strip()
+    normalized_actor_id = actor_id.strip()
+    if not normalized_task_id:
+        raise CliError("task id is required", code="task_id_required")
+    if not normalized_actor_id:
+        raise CliError("member id is required", code="member_binding_required")
+    query_string = urlencode({"actor_id": normalized_actor_id})
+    if normalized_base_url.endswith("/api"):
+        return f"{normalized_base_url}/tasks/{normalized_task_id}/expense-details?{query_string}"
+    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/expense-details?{query_string}"
+
+
 def build_invoice_splits_url(base_url: str, *, invoice_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     normalized_invoice_id = invoice_id.strip()
@@ -826,6 +990,16 @@ def build_invoice_splits_url(base_url: str, *, invoice_id: str) -> str:
     if normalized_base_url.endswith("/api"):
         return f"{normalized_base_url}/invoices/{normalized_invoice_id}/splits"
     return f"{normalized_base_url}/api/invoices/{normalized_invoice_id}/splits"
+
+
+def build_split_confirmation_url(base_url: str, *, split_id: str) -> str:
+    normalized_base_url = base_url.rstrip("/")
+    normalized_split_id = split_id.strip()
+    if not normalized_split_id:
+        raise CliError("split id is required", code="split_id_required")
+    if normalized_base_url.endswith("/api"):
+        return f"{normalized_base_url}/splits/{normalized_split_id}/confirmation"
+    return f"{normalized_base_url}/api/splits/{normalized_split_id}/confirmation"
 
 
 def parse_split_member_argument(value: str) -> dict[str, object]:
@@ -1196,6 +1370,40 @@ def parse_visible_missing_material_report(payload: object) -> VisibleMissingMate
     )
 
 
+def parse_expense_detail_confirmation_report(
+    payload: object,
+    *,
+    task_id: str,
+) -> ExpenseDetailConfirmationReport:
+    if not isinstance(payload, dict):
+        raise CliError(
+            "TRMS API returned invalid expense detail payload",
+            code="expense_confirmation_invalid_response",
+        )
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        raise CliError(
+            "TRMS API returned invalid expense detail payload",
+            code="expense_confirmation_invalid_response",
+        )
+
+    scope = payload.get("scope")
+    if scope not in {"task", "member"}:
+        raise CliError(
+            "TRMS API returned invalid expense detail payload",
+            code="expense_confirmation_invalid_response",
+        )
+
+    return ExpenseDetailConfirmationReport(
+        task_id=task_id.strip(),
+        actor_id=_require_non_empty_expense_detail_field(payload, "actor_id"),
+        scope=scope,
+        total_amount_cents=_require_int_expense_detail_field(payload, "total_amount_cents"),
+        items=[parse_expense_detail_confirmation_item(item) for item in items],
+    )
+
+
 def parse_split_submission_result(
     payload: object,
     *,
@@ -1302,6 +1510,44 @@ def parse_expense_confirmation_status(item: object) -> ExpenseConfirmationStatus
     )
 
 
+def parse_expense_detail_confirmation_item(item: object) -> ExpenseDetailConfirmationItem:
+    if not isinstance(item, dict):
+        raise CliError(
+            "TRMS API returned invalid expense detail payload",
+            code="expense_confirmation_invalid_response",
+        )
+    invoice = item.get("invoice")
+    if not isinstance(invoice, dict):
+        raise CliError(
+            "TRMS API returned invalid expense detail payload",
+            code="expense_confirmation_invalid_response",
+        )
+    confirmation = item.get("confirmation")
+    if confirmation is not None and not isinstance(confirmation, dict):
+        raise CliError(
+            "TRMS API returned invalid expense detail payload",
+            code="expense_confirmation_invalid_response",
+        )
+
+    return ExpenseDetailConfirmationItem(
+        split_id=_require_non_empty_expense_detail_field(item, "split_id"),
+        split_version=_require_int_expense_detail_field(item, "split_version"),
+        invoice_id=_require_non_empty_expense_detail_field(invoice, "id"),
+        invoice_number=_require_non_empty_expense_detail_field(invoice, "invoice_number"),
+        amount_cents=_require_int_expense_detail_field(item, "amount_cents"),
+        confirmation_status=(
+            _require_non_empty_expense_detail_field(confirmation, "status")
+            if confirmation is not None
+            else None
+        ),
+        dispute_reason=(
+            _optional_expense_detail_string(confirmation, "dispute_reason")
+            if confirmation is not None
+            else None
+        ),
+    )
+
+
 def parse_split_submission_item(item: object) -> ExpenseSplitSubmissionItem:
     if not isinstance(item, dict):
         raise CliError("TRMS API returned invalid split payload", code="split_submit_invalid_response")
@@ -1317,6 +1563,37 @@ def parse_split_submission_item(item: object) -> ExpenseSplitSubmissionItem:
         amount_cents=_require_int_split_field(item, "amount_cents"),
         note=note.strip() or None if note is not None else None,
         version=_require_int_split_field(item, "version"),
+    )
+
+
+def parse_expense_confirmation_submission_result(payload: object) -> ExpenseConfirmationSubmissionResult:
+    if not isinstance(payload, dict):
+        raise CliError(
+            "TRMS API returned invalid expense confirmation payload",
+            code="expense_confirmation_invalid_response",
+        )
+
+    dispute_reason = payload.get("dispute_reason")
+    if dispute_reason is not None and not isinstance(dispute_reason, str):
+        raise CliError(
+            "TRMS API returned invalid expense confirmation payload",
+            code="expense_confirmation_invalid_response",
+        )
+
+    is_current = payload.get("is_current")
+    if not isinstance(is_current, bool):
+        raise CliError(
+            "TRMS API returned invalid expense confirmation payload",
+            code="expense_confirmation_invalid_response",
+        )
+
+    return ExpenseConfirmationSubmissionResult(
+        split_id=_require_non_empty_expense_detail_field(payload, "split_id"),
+        member_id=_require_non_empty_expense_detail_field(payload, "member_id"),
+        split_version=_require_int_expense_detail_field(payload, "split_version"),
+        status=_require_non_empty_expense_detail_field(payload, "status"),
+        dispute_reason=dispute_reason.strip() or None if dispute_reason is not None else None,
+        is_current=is_current,
     )
 
 
@@ -1383,6 +1660,32 @@ def emit_split_text_result(result: ExpenseSplitSubmissionResult) -> None:
         )
 
 
+def emit_confirm_expense_list_text_result(report: ExpenseDetailConfirmationReport) -> None:
+    print(f"Expense details for task {report.task_id} member {report.actor_id}")
+    print(f"Count: {len(report.items)} (total {report.total_amount_cents} cents)")
+    if not report.items:
+        print("No related expense details.")
+        return
+
+    print("split_id\tsplit_version\tinvoice_number\tamount_cents\tconfirmation_status")
+    for item in report.items:
+        print(
+            f"{item.split_id}\t{item.split_version}\t{item.invoice_number}\t"
+            f"{item.amount_cents}\t{item.confirmation_status or 'missing'}"
+        )
+
+
+def emit_confirm_expense_submission_text_result(
+    result: ExpenseConfirmationSubmissionResult,
+) -> None:
+    print(
+        "Submitted expense confirmation for split "
+        f"{result.split_id} version {result.split_version}: {result.status}"
+    )
+    if result.dispute_reason:
+        print(f"Dispute reason: {result.dispute_reason}")
+
+
 def _require_non_empty_task_field(item: dict[str, object], field_name: str) -> str:
     value = item.get(field_name)
     if not isinstance(value, str) or not value.strip():
@@ -1409,6 +1712,39 @@ def _optional_status_string(item: dict[str, object], field_name: str) -> str | N
         return None
     if not isinstance(value, str):
         raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+    normalized = value.strip()
+    return normalized or None
+
+
+def _require_non_empty_expense_detail_field(item: dict[str, object], field_name: str) -> str:
+    value = item.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise CliError(
+            f"TRMS API expense detail payload is missing a valid {field_name!r} field",
+            code="expense_confirmation_invalid_response",
+        )
+    return value.strip()
+
+
+def _require_int_expense_detail_field(item: dict[str, object], field_name: str) -> int:
+    value = item.get(field_name)
+    if not isinstance(value, int):
+        raise CliError(
+            f"TRMS API expense detail payload is missing a valid {field_name!r} field",
+            code="expense_confirmation_invalid_response",
+        )
+    return value
+
+
+def _optional_expense_detail_string(item: dict[str, object], field_name: str) -> str | None:
+    value = item.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise CliError(
+            "TRMS API returned invalid expense detail payload",
+            code="expense_confirmation_invalid_response",
+        )
     normalized = value.strip()
     return normalized or None
 
@@ -1451,6 +1787,98 @@ def _require_int_split_field(item: dict[str, object], field_name: str) -> int:
             code="split_submit_invalid_response",
         )
     return value
+
+
+def resolve_confirm_expense_action(args: argparse.Namespace) -> str:
+    has_submit_argument = any(
+        value is not None
+        for value in (args.split_id, args.split_version, args.status, args.dispute_reason)
+    )
+    if not has_submit_argument:
+        return "list"
+
+    if not isinstance(args.split_id, str) or not args.split_id.strip():
+        raise CliError(
+            "split id is required when submitting expense confirmation",
+            code="expense_confirmation_argument_invalid",
+        )
+    if not isinstance(args.split_version, int) or args.split_version <= 0:
+        raise CliError(
+            "split version must be a positive integer when submitting expense confirmation",
+            code="expense_confirmation_argument_invalid",
+        )
+    if args.status is None:
+        raise CliError(
+            "status is required when submitting expense confirmation",
+            code="expense_confirmation_argument_invalid",
+        )
+    normalize_dispute_reason(args.dispute_reason, status=args.status)
+    return "submit"
+
+
+def normalize_dispute_reason(
+    dispute_reason: str | None,
+    *,
+    status: str,
+) -> str | None:
+    normalized_reason = dispute_reason.strip() if dispute_reason is not None else ""
+    if status == "disputed":
+        if not normalized_reason:
+            raise CliError(
+                "dispute reason is required when submitting disputed confirmation",
+                code="expense_confirmation_argument_invalid",
+            )
+        return normalized_reason
+    if normalized_reason:
+        raise CliError(
+            "dispute reason is only allowed with disputed status",
+            code="expense_confirmation_argument_invalid",
+        )
+    return None
+
+
+def fetch_expense_detail_confirmation_report(
+    *,
+    base_url: str,
+    task_id: str,
+    actor_id: str,
+    access_token: str,
+) -> ExpenseDetailConfirmationReport:
+    status_code, payload = fetch_json(
+        build_task_expense_details_url(base_url, task_id=task_id, actor_id=actor_id),
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    if status_code != 200:
+        raise CliError(
+            f"task expense details endpoint returned unexpected status {status_code}",
+            code="expense_confirmation_unexpected_status",
+        )
+    return parse_expense_detail_confirmation_report(payload, task_id=task_id)
+
+
+def find_current_expense_detail(
+    report: ExpenseDetailConfirmationReport,
+    *,
+    split_id: str,
+    expected_split_version: int,
+    task_id: str,
+) -> ExpenseDetailConfirmationItem:
+    normalized_split_id = split_id.strip()
+    current_item = next((item for item in report.items if item.split_id == normalized_split_id), None)
+    if current_item is None:
+        raise CliError(
+            "expense detail is stale or no longer visible; "
+            f"rerun `trms-cli confirm-expense --task-id {task_id}` to refresh",
+            code="expense_confirmation_stale",
+        )
+    if current_item.split_version != expected_split_version:
+        raise CliError(
+            "expense detail version is stale; "
+            f"expected {expected_split_version}, current {current_item.split_version}. "
+            f"Rerun `trms-cli confirm-expense --task-id {task_id}` to refresh",
+            code="expense_confirmation_stale",
+        )
+    return current_item
 
 
 def parse_task_deadline(value: str) -> datetime:

@@ -1,5 +1,71 @@
 # WORKLOG
 
+## 2026-04-28 11:46 - Add CLI expense confirmation
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 新增独立 `confirm-expense` 命令：
+  - 仅传 `--task-id` 时，从已登录 session 读取 `base_url`、`member_id` 和 access token，调用后端既有 `GET /api/tasks/{task_id}/expense-details` 接口列出本人当前费用明细；
+  - 传 `--split-id --split-version --status` 时，调用后端既有 `PUT /api/splits/{split_id}/confirmation` 接口提交确认或异议；
+  - `disputed` 状态要求显式传入 `--dispute-reason`，避免把空异议原因提交给服务端。
+- 固化命令输出契约：
+  - 文本模式按任务输出费用明细数量、总金额、`split_id`、`split_version`、发票号、金额和当前确认状态；
+  - `--json` 模式区分 `mode=list` 和 `mode=submit`，分别输出结构化明细列表或确认结果。
+- 增加版本过旧保护：
+  - 提交确认前先重新拉取当前费用明细；
+  - 若目标 `split_id` 已不再可见，或当前 `split_version` 与用户传入版本不一致，CLI 直接提示重新拉取，不把旧明细静默当作当前版本。
+- 新增 `tests/test_cli_confirm_expense.py`，覆盖：
+  - 文本模式列出本人费用明细；
+  - `--json` 模式提交确认；
+  - 提交异议说明；
+  - 明细版本过旧时拒绝提交并提示刷新；
+  - 未登录 session 时的错误输出。
+- 将 `TASKS.md` 中“增加 CLI 个人费用确认能力”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `tests/test_cli_confirm_expense.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 已支持成员查询综合状态、缺失材料和分摊提交，但仍缺少“查看本人费用明细并完成确认”的闭环入口。
+- 费用确认链路的关键约束不是简单调用确认接口，而是成员确认必须绑定到自己刚查看过的费用明细版本：
+  - 现有 CLI 没有独立明细列表输出，成员看不到 `split_version`；
+  - 现有 CLI 也没有在提交前校验“我现在要确认的是否还是刚才那版明细”，因此无法在分摊已变化时给出明确的重新拉取提示。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_confirm_expense.py`
+    - 5 个 CLI 费用确认命令测试通过
+  - `uv run pytest tests/test_expense_details_api.py tests/test_confirmations_api.py`
+    - 11 个费用明细/确认 API 测试通过
+  - `uv run pytest tests/test_cli_status.py`
+    - 3 个 CLI 状态查询回归测试通过
+  - `uv run pytest tests/test_cli_split.py`
+    - 4 个 CLI 分摊提交回归测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 203 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只处理“CLI 个人费用确认能力”，没有提前实现下一项“记录 CLI 版本兼容策略”。
+- CLI 继续复用后端既有费用明细与确认接口，没有在本地复制“谁能确认谁、确认状态是否合法”这类服务端业务规则。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设“CLI 版本过旧提示”的最小闭环是：
+  - 提交前重新拉取一次当前费用明细；
+  - 以 `split_id + split_version` 比对用户正在确认的对象是否还是刚看到的那一版。
+- 当前后端确认接口仍未提供显式 `expected_split_version` 的原子校验，因此 CLI 可以在提交前发现大多数陈旧视图，但不能单靠客户端彻底消除“拉取后到提交前又发生并发变更”的竞态。本轮先不扩展后端协议，后续若要彻底封闭该竞态，应在服务端增加基于版本号的乐观并发校验。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“记录 CLI 版本兼容策略”，优先明确客户端能力标识和服务端版本过旧错误语义，再决定是否需要补专用请求头或查询参数。
+
 ## 2026-04-28 11:36 - Add CLI split submission
 
 ### 完成内容
