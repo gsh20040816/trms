@@ -11,6 +11,7 @@ from trms_backend.domain.tasks import (
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
+from api_error_assertions import assert_api_error
 from test_tasks_api import admin_auth_headers, update_task_row, valid_task_payload
 
 
@@ -192,9 +193,11 @@ def test_claim_pending_assignment_material_rejects_non_administrator(tmp_path):
         },
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == (
-        "administrator is not allowed to claim materials for this task"
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="administrator is not allowed to claim materials for this task",
     )
 
 
@@ -220,8 +223,12 @@ def test_claim_pending_assignment_material_rejects_assigned_material(tmp_path):
         },
     )
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "material is not pending assignment"
+    assert_api_error(
+        response,
+        status_code=409,
+        code="conflict",
+        detail="material is not pending assignment",
+    )
 
 
 def test_submit_material_accepts_supported_material_types(tmp_path):
@@ -475,9 +482,12 @@ def test_submit_material_rejects_invalid_material_type(tmp_path):
         files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
     )
 
-    assert response.status_code == 422
-    error = response.json()["detail"][0]
-    assert error["loc"][-1] == "material_type"
+    payload = assert_api_error(
+        response,
+        status_code=422,
+        code="validation_error",
+    )
+    assert payload["detail"][0]["loc"][-1] == "material_type"
 
 
 def test_submit_material_rejects_missing_filename(tmp_path):

@@ -8,6 +8,8 @@ from trms_backend.infrastructure.models import TaskRow
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
+from api_error_assertions import assert_api_error
+
 
 def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = None):
     return TestClient(
@@ -341,8 +343,12 @@ def test_get_missing_task_returns_404(tmp_path):
 
     response = client.get("/api/tasks/missing")
 
-    assert response.status_code == 404
-    assert response.json()["detail"] == "task not found"
+    assert_api_error(
+        response,
+        status_code=404,
+        code="not_found",
+        detail="task not found",
+    )
 
 
 def test_get_task_members_returns_member_list(tmp_path):

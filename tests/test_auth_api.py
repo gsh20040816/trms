@@ -10,6 +10,8 @@ from trms_backend.infrastructure.models import UserAccountRow
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
+from api_error_assertions import assert_api_error
+
 
 def make_client(tmp_path, runtime_config=None):
     if runtime_config is not None and runtime_config.environment == "production":
@@ -82,8 +84,12 @@ def test_register_rejects_duplicate_username(tmp_path):
 
     response = client.post("/api/auth/register", json=register_payload())
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "username already exists: member1"
+    assert_api_error(
+        response,
+        status_code=409,
+        code="conflict",
+        detail="username already exists: member1",
+    )
 
 
 def test_login_returns_new_session_and_me_resolves_token(tmp_path):
@@ -158,8 +164,12 @@ def test_login_rejects_wrong_password_without_exposing_hash(tmp_path):
         json={"username": "member1", "password": "wrong-password"},
     )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "invalid username or password"
+    assert_api_error(
+        response,
+        status_code=401,
+        code="unauthorized",
+        detail="invalid username or password",
+    )
     assert "pbkdf2" not in response.text
 
 
@@ -186,8 +196,12 @@ def test_production_register_rejects_admin_self_registration(tmp_path):
         json=register_payload(role="admin", actor_id="admin-1", member_code=None),
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == "self-service registration for role 'admin' is disabled"
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="self-service registration for role 'admin' is disabled",
+    )
 
 
 def test_production_register_still_allows_member_self_registration(tmp_path):
@@ -261,5 +275,9 @@ def test_bootstrap_admin_rejects_second_privileged_bootstrap(tmp_path):
         ),
     )
 
-    assert response.status_code == 409
-    assert "bootstrap is already completed" in response.json()["detail"]
+    payload = assert_api_error(
+        response,
+        status_code=409,
+        code="conflict",
+    )
+    assert "bootstrap is already completed" in payload["detail"]

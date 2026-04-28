@@ -10,6 +10,7 @@ from trms_backend.application.telegram_material_submission import (
     TelegramMaterialSubmissionService,
 )
 from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
+from trms_backend.api.error_responses import ensure_request_id, register_error_response_handlers
 from trms_backend.api.auth import build_auth_router
 from trms_backend.api.confirmations import build_confirmation_router
 from trms_backend.api.email_materials import build_email_material_router
@@ -52,6 +53,7 @@ def create_app(
 ) -> FastAPI:
     config = runtime_config or load_runtime_config(database_url=database_url)
     app = FastAPI(title="TRMS API")
+    register_error_response_handlers(app)
     app.state.runtime_config = config
     app.state.async_job_config = config.async_jobs
     app.state.recognition_llm_capability = resolve_recognition_llm_capability(config)
@@ -109,10 +111,13 @@ def create_app(
 
     @app.middleware("http")
     async def enforce_cli_compatibility(request: Request, call_next):
-        rejection = reject_incompatible_cli_request(request)
+        request_id = ensure_request_id(request)
+        rejection = reject_incompatible_cli_request(request, request_id=request_id)
         if rejection is not None:
             return rejection
-        return await call_next(request)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
 
     @app.get("/health")
     def health():

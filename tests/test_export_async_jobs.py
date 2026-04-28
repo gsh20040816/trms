@@ -15,6 +15,7 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
+from api_error_assertions import assert_api_error
 from test_exports_api import create_export_job, create_invoice_with_splits
 from test_tasks_api import (
     admin_auth_headers,
@@ -165,31 +166,41 @@ def test_export_artifact_download_reports_not_ready_and_rejects_non_admin(tmp_pa
         f"/api/tasks/exports/{export_job['id']}/artifact",
         headers=admin_auth_headers(client),
     )
-    assert pending_download.status_code == 409
-    assert pending_download.json()["detail"] == (
-        "export artifact is not ready; current status is pending"
+    assert_api_error(
+        pending_download,
+        status_code=409,
+        code="conflict",
+        detail="export artifact is not ready; current status is pending",
     )
 
     anonymous_status = client.get(f"/api/tasks/exports/{export_job['id']}")
-    assert anonymous_status.status_code == 401
-    assert anonymous_status.json()["detail"] == "invalid or missing bearer token"
+    assert_api_error(
+        anonymous_status,
+        status_code=401,
+        code="unauthorized",
+        detail="invalid or missing bearer token",
+    )
 
     forbidden_status = client.get(
         f"/api/tasks/exports/{export_job['id']}",
         headers=member_auth_headers(client),
     )
-    assert forbidden_status.status_code == 403
-    assert forbidden_status.json()["detail"] == (
-        "actor is not allowed to manage exports for this task"
+    assert_api_error(
+        forbidden_status,
+        status_code=403,
+        code="forbidden",
+        detail="actor is not allowed to manage exports for this task",
     )
 
     forbidden_download = client.get(
         f"/api/tasks/exports/{export_job['id']}/artifact",
         headers=member_auth_headers(client),
     )
-    assert forbidden_download.status_code == 403
-    assert forbidden_download.json()["detail"] == (
-        "actor is not allowed to manage exports for this task"
+    assert_api_error(
+        forbidden_download,
+        status_code=403,
+        code="forbidden",
+        detail="actor is not allowed to manage exports for this task",
     )
 
 
