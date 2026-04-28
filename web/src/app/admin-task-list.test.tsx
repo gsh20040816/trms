@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -162,17 +162,24 @@ describe("admin task list page", () => {
 
     renderAdminRoute();
 
-    expect(await screen.findByRole("heading", { name: "待处理任务" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
     expect(screen.getByLabelText("管理员任务概览")).toBeInTheDocument();
-    expect(screen.getByText("全国邀请赛")).toBeInTheDocument();
-    expect(screen.getByText("区域赛报销")).toBeInTheDocument();
+    const moduleNav = screen.getByLabelText("管理员模块导航");
+    expect(within(moduleNav).getByText("首页总览").closest("a")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { name: "当前优先推进任务" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入当前优先任务" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-ALPHA/missing-materials",
+    );
+    expect(screen.getAllByText("全国邀请赛").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("区域赛报销").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "补材料" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("基础搜索"), {
       target: { value: "区域赛" },
     });
 
-    expect(await screen.findByText("区域赛报销")).toBeInTheDocument();
+    expect(await screen.findAllByText("区域赛报销")).not.toHaveLength(0);
     expect(screen.queryByText("全国邀请赛")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("基础搜索"), {
@@ -182,7 +189,7 @@ describe("admin task list page", () => {
       target: { value: "reviewing" },
     });
 
-    expect(await screen.findByText("全国邀请赛")).toBeInTheDocument();
+    expect(await screen.findAllByText("全国邀请赛")).not.toHaveLength(0);
     expect(screen.queryByText("区域赛报销")).not.toBeInTheDocument();
   });
 

@@ -263,7 +263,10 @@ describe("AdminReviewOverviewPage", () => {
     renderReviewRoute();
 
     expect(await screen.findByRole("heading", { name: "管理员复核总览" })).toBeInTheDocument();
-    expect(screen.getByText("ICPC 复核任务")).toBeInTheDocument();
+    const moduleNav = screen.getByLabelText("管理员模块导航");
+    expect(within(moduleNav).getByText("材料审核").closest("a")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("当前任务上下文")).toHaveTextContent("ICPC 复核任务");
+    expect(screen.getAllByText("ICPC 复核任务").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "处理更正与提醒" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-REVIEW/corrections",

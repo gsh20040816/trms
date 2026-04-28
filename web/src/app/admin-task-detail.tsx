@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type { ReimbursementTask, TaskStatus } from "../lib/api/types";
 import { formatMemberLabel, formatTaskStatus } from "../lib/ui-text";
+import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
 type TaskDetailState =
@@ -96,13 +98,22 @@ export function AdminTaskDetailPage() {
 
   if (!taskId) {
     return (
-      <div className="page-stack">
+      <AdminWorkspaceShell
+        activeModule="tasks"
+        header={(
+          <PageHeader
+            eyebrow="任务管理"
+            title="任务详情"
+            description="查看任务配置、成员名单和状态流转。"
+          />
+        )}
+      >
         <section className="status-card">
           <p className="eyebrow">任务详情</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
-      </div>
+      </AdminWorkspaceShell>
     );
   }
 
@@ -134,38 +145,28 @@ export function AdminTaskDetailPage() {
   }
 
   return (
-    <div className="page-stack">
-      <section className="status-card admin-task-detail-hero">
-        <p className="eyebrow">任务详情</p>
-        <h2>任务详情与状态操作</h2>
-        <p>
-          这里集中查看任务信息、成员范围、费用类别和当前可执行的下一步操作。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to="/admin">
-            返回任务列表
-          </Link>
-          {taskId ? (
-            <>
-              <Link className="route-link" to={`/admin/tasks/${taskId}/invoices`}>
+    <AdminWorkspaceShell
+      activeModule="tasks"
+      taskId={taskId}
+      task={visibleTask}
+      header={(
+        <PageHeader
+          eyebrow="任务管理"
+          title="任务详情与状态操作"
+          description="这里集中查看任务基础配置、成员范围、费用类别和当前可执行的下一步操作。"
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-primary" to={`/admin/tasks/${taskId}/invoices`}>
                 录入或更正发票
               </Link>
-              <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/missing-materials`}>
+              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/missing-materials`}>
                 查看缺失材料
               </Link>
-              <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/review`}>
-                进入复核总览
-              </Link>
-              <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/exports`}>
-                进入导出管理
-              </Link>
-              <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/splits`}>
-                编辑费用分摊
-              </Link>
-            </>
-          ) : null}
-        </div>
-      </section>
+            </div>
+          )}
+        />
+      )}
+    >
 
       {state.status === "loading" ? (
         <section className="status-card admin-task-detail-panel">
@@ -312,6 +313,6 @@ export function AdminTaskDetailPage() {
           </article>
         </section>
       ) : null}
-    </div>
+    </AdminWorkspaceShell>
   );
 }

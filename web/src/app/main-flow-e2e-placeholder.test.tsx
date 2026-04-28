@@ -561,8 +561,8 @@ describe("frontend main flow e2e placeholder", () => {
     fillRequiredTaskForm();
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
-    expect(await screen.findByRole("heading", { name: "待处理任务" })).toBeInTheDocument();
-    expect(await screen.findByText("E2E 主流程任务")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
+    expect((await screen.findAllByText("E2E 主流程任务")).length).toBeGreaterThan(0);
 
     cleanup();
     setMockSession("admin");
@@ -570,7 +570,7 @@ describe("frontend main flow e2e placeholder", () => {
 
     expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "切换为收集中" }));
-    expect(await screen.findByText("收集中")).toBeInTheDocument();
+    expect((await screen.findAllByText("收集中")).length).toBeGreaterThan(0);
 
     cleanup();
     setMockSession("member");
@@ -638,10 +638,10 @@ describe("frontend main flow e2e placeholder", () => {
     renderRoute("/admin/tasks/TASK-E2E");
 
     expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: "进入导出管理" }));
+    fireEvent.click(within(screen.getByLabelText("当前任务快捷入口")).getByRole("link", { name: "导出打印" }));
 
     expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
     expect(screen.getByText("导出门禁")).toBeInTheDocument();
-    expect(screen.getByText("可导出")).toBeInTheDocument();
+    expect(screen.getAllByText("可导出").length).toBeGreaterThan(0);
   });
 });

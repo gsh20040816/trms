@@ -1,5 +1,96 @@
 # WORKLOG
 
+## 2026-04-29 03:22 - Align admin navigation and task progression with prototype
+
+### 完成内容
+- 建立管理员端共享壳层：
+  - 新增 `web/src/app/admin-workspace-shell.tsx` 与 `web/src/app/admin-task-stage.ts`；
+  - 在管理员首页、任务创建、任务详情、复核总览、缺失材料、分摊编辑、导出管理页面统一接入“固定模块导航 + 当前任务上下文 + 当前任务快捷入口”；
+  - 侧栏固定展示首页总览、任务管理、材料审核、成员提醒、分摊确认、导出打印六个稳定模块，不再主要依赖页面内部一组跳转按钮。
+- 收口管理员首页为任务推进视图：
+  - 管理员首页标题改为“按任务推进处理当前工作”；
+  - 首页优先展示创建中/收集中/审核中/需优先处理/可导出等阶段摘要；
+  - 新增“当前优先推进任务”卡片，直接给出任务阶段、异常数量和建议入口。
+- 同步调整测试与端到端占位流：
+  - 更新管理员相关页面测试，覆盖模块导航高亮、当前任务上下文和关键动作入口；
+  - 更新账号登录测试与主流程占位测试，对齐新的管理员首页标题与导出入口命名。
+
+### 根因
+- `docs/UI原型图对照与交互规范补充.md` 已明确指出：管理端应按“任务推进”而不是“页面入口”组织，且必须具备稳定导航骨架。
+- 现有实现虽然已有任务列表、详情、复核、导出等页面，但管理员仍主要通过各页面内部散落的返回链接和跳转按钮穿梭，当前任务上下文不断丢失。
+- 管理员首页此前只是泛化任务列表，不能先回答“当前任务推进到哪一步、异常有多少、下一步应该做什么”，因此不满足本轮任务要求。
+
+### 关键改动点
+- 新增共享导航与阶段描述：
+  - `web/src/app/admin-workspace-shell.tsx`
+  - `web/src/app/admin-task-stage.ts`
+- 接入共享壳层并重写管理员首页推进摘要：
+  - `web/src/app/admin-task-list.tsx`
+  - `web/src/app/admin-task-create.tsx`
+  - `web/src/app/admin-task-detail.tsx`
+  - `web/src/app/admin-review-overview.tsx`
+  - `web/src/app/task-missing-materials.tsx`
+  - `web/src/app/admin-split-editor.tsx`
+  - `web/src/app/admin-export-tasks.tsx`
+  - `web/src/styles.css`
+- 更新回归测试与主流程占位测试：
+  - `web/src/app/admin-task-list.test.tsx`
+  - `web/src/app/admin-task-create.test.tsx`
+  - `web/src/app/admin-task-detail.test.tsx`
+  - `web/src/app/admin-review-overview.test.tsx`
+  - `web/src/app/admin-export-tasks.test.tsx`
+  - `web/src/app/App.test.tsx`
+  - `web/src/app/main-flow-e2e-placeholder.test.tsx`
+
+### 风险与影响面
+- 本轮主要收口的是管理员首页、任务详情、复核、缺失材料、分摊和导出这些主链路页面的信息架构，未改动后端业务语义。
+- 共享壳层引入后，若后续继续新增管理员页面，应复用同一壳层，否则导航骨架会再次分裂。
+- `vite build` 仍有既有的单 chunk 超过 500 kB 告警；这属于仓库现存构建体积问题，本轮未引入新的构建失败。
+
+### 修改文件
+- `web/src/app/admin-task-stage.ts`
+- `web/src/app/admin-workspace-shell.tsx`
+- `web/src/app/admin-task-list.tsx`
+- `web/src/app/admin-task-create.tsx`
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-review-overview.tsx`
+- `web/src/app/task-missing-materials.tsx`
+- `web/src/app/admin-split-editor.tsx`
+- `web/src/app/admin-export-tasks.tsx`
+- `web/src/styles.css`
+- `web/src/app/admin-task-list.test.tsx`
+- `web/src/app/admin-task-create.test.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/admin-review-overview.test.tsx`
+- `web/src/app/admin-export-tasks.test.tsx`
+- `web/src/app/App.test.tsx`
+- `web/src/app/main-flow-e2e-placeholder.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- --run src/app/admin-task-list.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-review-overview.test.tsx src/app/admin-export-tasks.test.tsx src/app/task-missing-materials.test.tsx src/app/admin-split-editor.test.tsx src/app/admin-task-create.test.tsx`
+    - 7 个测试文件、18 个测试通过
+  - `cd web && npm run lint`
+  - `cd web && npm test`
+    - 21 个测试文件、66 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 350 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮把“稳定导航骨架”优先落实在管理员主处理链路页面上，后续若新增管理员模块，应继续沿用当前壳层和阶段描述文件。
+- 首页“当前优先推进任务”的规则仍是基于现有异常/逾期计分启发式排序；若后续产品要求更细的任务优先级策略，应单独定义评分规则，而不是在页面里继续堆条件分支。
+
 ## 2026-04-29 03:00 - Share task invoice summaries among members
 
 ### 完成内容

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationStatus,
@@ -10,6 +11,7 @@ import type {
   TaskReviewSummaryInvoiceItem,
   TaskReviewSummaryMaterialItem,
 } from "../lib/api/types";
+import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
 type SplitEditorPageState =
@@ -297,13 +299,22 @@ export function AdminSplitEditorPage() {
 
   if (!taskId) {
     return (
-      <div className="page-stack">
+      <AdminWorkspaceShell
+        activeModule="splits"
+        header={(
+          <PageHeader
+            eyebrow="分摊确认"
+            title="费用分摊编辑"
+            description="维护发票分摊对象、金额和确认状态。"
+          />
+        )}
+      >
         <section className="status-card">
           <p className="eyebrow">Task Missing</p>
           <h2>任务标识缺失</h2>
           <p>当前路由未提供任务编号，无法进入费用分摊编辑页。</p>
         </section>
-      </div>
+      </AdminWorkspaceShell>
     );
   }
 
@@ -434,22 +445,28 @@ export function AdminSplitEditorPage() {
   }
 
   return (
-    <div className="page-stack">
-      <section className="status-card admin-task-detail-hero">
-        <p className="eyebrow">费用分摊</p>
-        <h2>费用分摊编辑</h2>
-        <p>
-          在这里为单张发票维护归属成员和分摊金额，并检查总额是否一致。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
-            返回任务详情
-          </Link>
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/invoices`}>
-            返回发票录入
-          </Link>
-        </div>
-      </section>
+    <AdminWorkspaceShell
+      activeModule="splits"
+      taskId={taskId}
+      task={visibleTask}
+      header={(
+        <PageHeader
+          eyebrow="分摊确认"
+          title="费用分摊编辑"
+          description="在这里为单张发票维护归属成员和分摊金额，并检查总额是否一致。"
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-secondary" to={`/admin/tasks/${taskId}`}>
+                返回任务详情
+              </Link>
+              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/invoices`}>
+                返回发票录入
+              </Link>
+            </div>
+          )}
+        />
+      )}
+    >
 
       {pageState.status === "loading" ? (
         <section className="status-card admin-task-detail-panel">
@@ -779,6 +796,6 @@ export function AdminSplitEditorPage() {
           ) : null}
         </section>
       ) : null}
-    </div>
+    </AdminWorkspaceShell>
   );
 }

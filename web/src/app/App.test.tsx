@@ -101,7 +101,7 @@ describe("web app account auth", () => {
     fireEvent.change(screen.getByLabelText("身份编号"), { target: { value: "admin-1" } });
     fireEvent.click(screen.getByRole("button", { name: "注册并登录" }));
 
-    expect(await screen.findByRole("heading", { name: "待处理任务" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
     expect(
       await screen.findByText("当前管理员名下还没有任务"),
     ).toBeInTheDocument();

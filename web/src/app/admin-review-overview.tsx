@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationRecord,
@@ -24,6 +25,7 @@ import {
   formatValidationSeverity,
   formatValidationStatus,
 } from "../lib/ui-text";
+import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
 type ReviewPageState =
@@ -287,13 +289,22 @@ export function AdminReviewOverviewPage() {
 
   if (!taskId) {
     return (
-      <div className="page-stack">
+      <AdminWorkspaceShell
+        activeModule="review"
+        header={(
+          <PageHeader
+            eyebrow="材料审核"
+            title="管理员复核总览"
+            description="集中查看任务材料风险、成员确认和导出准备度。"
+          />
+        )}
+      >
         <section className="status-card">
           <p className="eyebrow">复核总览</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
-      </div>
+      </AdminWorkspaceShell>
     );
   }
 
@@ -313,31 +324,28 @@ export function AdminReviewOverviewPage() {
     : [];
 
   return (
-    <div className="page-stack">
-      <section className="status-card admin-review-hero">
-        <p className="eyebrow">复核总览</p>
-        <h2>管理员复核总览</h2>
-        <p>
-          这里集中查看当前任务的材料风险、待确认费用、成员异议和导出准备情况。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to="/admin">
-            返回任务列表
-          </Link>
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
-            返回任务详情
-          </Link>
-          <Link className="route-link" to={`/admin/tasks/${taskId}/corrections`}>
-            处理更正与提醒
-          </Link>
-          <Link className="route-link" to={`/admin/tasks/${taskId}/invoices`}>
-            录入或更正发票
-          </Link>
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/splits`}>
-            编辑费用分摊
-          </Link>
-        </div>
-      </section>
+    <AdminWorkspaceShell
+      activeModule="review"
+      taskId={taskId}
+      task={visibleTask}
+      header={(
+        <PageHeader
+          eyebrow="材料审核"
+          title="管理员复核总览"
+          description="这里集中查看当前任务的材料风险、待确认费用、成员异议和导出准备情况。"
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-primary" to={`/admin/tasks/${taskId}/corrections`}>
+                处理更正与提醒
+              </Link>
+              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/invoices`}>
+                录入或更正发票
+              </Link>
+            </div>
+          )}
+        />
+      )}
+    >
 
       {state.status === "loading" ? (
         <section className="status-card admin-review-panel">
@@ -767,6 +775,6 @@ export function AdminReviewOverviewPage() {
           </section>
         </>
       ) : null}
-    </div>
+    </AdminWorkspaceShell>
   );
 }

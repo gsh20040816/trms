@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   MissingMaterialItem,
@@ -9,6 +10,7 @@ import type {
   VisibleMissingMaterialList,
 } from "../lib/api/types";
 import { formatExpenseType, formatMaterialType, formatMemberLabel, formatTaskStatus, formatValidationRule } from "../lib/ui-text";
+import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
 type GroupMode = "member" | "invoice" | "expense_type";
@@ -217,13 +219,22 @@ export function AdminMissingMaterialsPage() {
 
   if (!taskId) {
     return (
-      <div className="page-stack">
+      <AdminWorkspaceShell
+        activeModule="review"
+        header={(
+          <PageHeader
+            eyebrow="材料审核"
+            title="缺失材料清单"
+            description="查看当前任务仍需补充的材料。"
+          />
+        )}
+      >
         <section className="status-card">
           <p className="eyebrow">缺失材料</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
-      </div>
+      </AdminWorkspaceShell>
     );
   }
 
@@ -234,22 +245,25 @@ export function AdminMissingMaterialsPage() {
   const summary = visibleList ? buildMissingMaterialSummary(visibleList.items) : null;
 
   return (
-    <div className="page-stack">
-      <section className="status-card admin-review-hero">
-        <p className="eyebrow">缺失材料</p>
-        <h2>缺失材料清单</h2>
-        <p>
-          这里集中查看当前任务里仍需补充的材料，并按成员、发票或费用类型整理查看。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to="/admin">
-            返回任务列表
-          </Link>
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
-            返回任务详情
-          </Link>
-        </div>
-      </section>
+    <AdminWorkspaceShell
+      activeModule="review"
+      taskId={taskId}
+      task={visibleTask}
+      header={(
+        <PageHeader
+          eyebrow="材料审核"
+          title="缺失材料清单"
+          description="这里集中查看当前任务里仍需补充的材料，并按成员、发票或费用类型整理查看。"
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-secondary" to={`/admin/tasks/${taskId}`}>
+                返回任务详情
+              </Link>
+            </div>
+          )}
+        />
+      )}
+    >
 
       {state.status === "loading" ? (
         <section className="status-card admin-review-panel">
@@ -347,7 +361,7 @@ export function AdminMissingMaterialsPage() {
           )}
         </>
       ) : null}
-    </div>
+    </AdminWorkspaceShell>
   );
 }
 

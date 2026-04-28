@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExportArtifactFormat,
@@ -15,6 +16,7 @@ import type {
   TaskExportJobStatus,
 } from "../lib/api/types";
 import { formatExportJobStatus, formatTaskStatus } from "../lib/ui-text";
+import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
 type ExportPageState =
@@ -237,13 +239,22 @@ export function AdminExportTasksPage() {
 
   if (!taskId) {
     return (
-      <div className="page-stack">
+      <AdminWorkspaceShell
+        activeModule="exports"
+        header={(
+          <PageHeader
+            eyebrow="导出打印"
+            title="导出任务页面"
+            description="生成汇总、明细、草稿和打印材料包。"
+          />
+        )}
+      >
         <section className="status-card">
           <p className="eyebrow">导出任务</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
-      </div>
+      </AdminWorkspaceShell>
     );
   }
 
@@ -357,25 +368,28 @@ export function AdminExportTasksPage() {
   }
 
   return (
-    <div className="page-stack">
-      <section className="status-card admin-review-hero">
-        <p className="eyebrow">导出与提交材料</p>
-        <h2>导出任务页面</h2>
-        <p>
-          这里用于生成汇总表、成员明细、缺失材料清单和提交草稿，并查看最近一次导出状态。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
-            返回任务详情
-          </Link>
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/review`}>
-            返回复核总览
-          </Link>
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/corrections`}>
-            返回更正与提醒
-          </Link>
-        </div>
-      </section>
+    <AdminWorkspaceShell
+      activeModule="exports"
+      taskId={taskId}
+      task={pageState.status === "ready" ? pageState.task : null}
+      header={(
+        <PageHeader
+          eyebrow="导出打印"
+          title="导出任务页面"
+          description="这里用于生成汇总表、成员明细、缺失材料清单和提交草稿，并查看最近一次导出状态。"
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/review`}>
+                返回复核总览
+              </Link>
+              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/corrections`}>
+                返回更正与提醒
+              </Link>
+            </div>
+          )}
+        />
+      )}
+    >
 
       {pageState.status === "loading" ? (
         <section className="status-card admin-review-panel">
@@ -624,6 +638,6 @@ export function AdminExportTasksPage() {
           </section>
         </>
       ) : null}
-    </div>
+    </AdminWorkspaceShell>
   );
 }

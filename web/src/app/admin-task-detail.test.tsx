@@ -75,11 +75,14 @@ describe("admin task detail page", () => {
     renderAdminTaskDetailRoute();
 
     expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
-    expect(screen.getByText("全国邀请赛")).toBeInTheDocument();
+    expect(screen.getAllByText("全国邀请赛").length).toBeGreaterThan(0);
     expect(screen.getByText("Project A")).toBeInTheDocument();
     expect(screen.getAllByText("张管理员").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
+    const moduleNav = screen.getByLabelText("管理员模块导航");
+    expect(within(moduleNav).getByText("任务管理").closest("a")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("当前任务上下文")).toHaveTextContent("全国邀请赛");
     expect(screen.getByRole("link", { name: "录入或更正发票" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/invoices",
@@ -88,15 +91,16 @@ describe("admin task detail page", () => {
       "href",
       "/admin/tasks/TASK-ALPHA/missing-materials",
     );
-    expect(screen.getByRole("link", { name: "进入复核总览" })).toHaveAttribute(
+    const quickActions = screen.getByLabelText("当前任务快捷入口");
+    expect(within(quickActions).getByText("材料审核").closest("a")).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/review",
     );
-    expect(screen.getByRole("link", { name: "进入导出管理" })).toHaveAttribute(
+    expect(within(quickActions).getByText("导出打印").closest("a")).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/exports",
     );
-    expect(screen.getByRole("link", { name: "编辑费用分摊" })).toHaveAttribute(
+    expect(within(quickActions).getByText("分摊确认").closest("a")).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/splits",
     );

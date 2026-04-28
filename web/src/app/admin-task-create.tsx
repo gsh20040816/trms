@@ -2,9 +2,11 @@ import { startTransition, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { PageHeader } from "../components/dashboard";
 import { useAuthSession } from "./auth-store";
 import { trmsApi } from "../lib/api/trms";
 import type { ExpenseType, TaskCreateInput } from "../lib/api/types";
+import { AdminWorkspaceShell } from "./admin-workspace-shell";
 
 type TaskCreateFormState = {
   competitionName: string;
@@ -212,19 +214,23 @@ export function AdminTaskCreatePage() {
   }
 
   return (
-    <div className="page-stack">
-      <section className="status-card admin-create-hero">
-        <p className="eyebrow">创建任务</p>
-        <h2>创建报销任务</h2>
-        <p>
-          填写比赛信息、成员名单、费用类别和报销基础信息后，即可创建一个新的报销任务。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to="/admin">
-            返回任务列表
-          </Link>
-        </div>
-      </section>
+    <AdminWorkspaceShell
+      activeModule="tasks"
+      header={(
+        <PageHeader
+          eyebrow="任务管理"
+          title="创建报销任务"
+          description="填写比赛信息、成员名单、费用类别和报销基础信息后，即可创建新的报销任务。"
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-secondary" to="/admin">
+                返回任务列表
+              </Link>
+            </div>
+          )}
+        />
+      )}
+    >
 
       {submitError ? <ApiErrorNotice error={submitError} /> : null}
 
@@ -484,6 +490,6 @@ export function AdminTaskCreatePage() {
           </div>
         </section>
       </form>
-    </div>
+    </AdminWorkspaceShell>
   );
 }

@@ -230,6 +230,8 @@ describe("admin export tasks page", () => {
     renderExportRoute();
 
     expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
+    const moduleNav = screen.getByLabelText("管理员模块导航");
+    expect(within(moduleNav).getByText("导出打印").closest("a")).toHaveAttribute("aria-current", "page");
     expect(await screen.findByText(/failed to read encrypted material PDF/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载导出文件" })).toBeInTheDocument();
 
