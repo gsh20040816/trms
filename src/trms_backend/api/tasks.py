@@ -48,6 +48,10 @@ from trms_backend.domain.task_review_summary import (
     TaskReviewSummaryActorNotAllowedError,
     build_task_review_summary,
 )
+from trms_backend.domain.task_member_status import (
+    TaskMemberStatusActorNotAllowedError,
+    build_task_member_status_report,
+)
 from trms_backend.domain.tasks import (
     TaskCreateInput,
     TaskCompletionValidationError,
@@ -243,6 +247,52 @@ def build_task_router(
                 confirmations_by_split_id=confirmations_by_split_id,
             )
         except ExpenseDetailActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/member-status")
+    def get_task_member_status(
+        task_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        materials = material_repository.list_by_task(task_id)
+        invoices = invoice_repository.list_by_task(task_id)
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        latest_recognitions_by_material_id = {}
+        for material in materials:
+            if material.submitter_id != actor_id:
+                continue
+            latest_recognitions_by_material_id[material.id] = (
+                recognition_task_repository.get_latest_effective_by_material(material.id)
+            )
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        confirmations_by_split_id = {}
+        for invoice in invoices:
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        try:
+            return build_task_member_status_report(
+                task,
+                actor_id=actor_id,
+                materials=materials,
+                invoices=invoices,
+                latest_recognitions_by_material_id=latest_recognitions_by_material_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_split_id=confirmations_by_split_id,
+            )
+        except TaskMemberStatusActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),

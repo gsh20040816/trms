@@ -75,6 +75,67 @@ class MultipartUploadFile:
     content: bytes
 
 
+@dataclass(frozen=True)
+class TaskStatusCounts:
+    material_count: int
+    missing_material_count: int
+    expense_detail_count: int
+    recognition_pending_count: int
+    recognition_succeeded_count: int
+    recognition_failed_count: int
+    recognition_needs_confirmation_count: int
+    validation_passed_count: int
+    validation_failed_count: int
+    validation_pending_count: int
+    validation_not_applicable_count: int
+    confirmed_expense_count: int
+    pending_confirmation_count: int
+    disputed_confirmation_count: int
+    missing_confirmation_count: int
+
+
+@dataclass(frozen=True)
+class MemberMaterialStatus:
+    material_id: str
+    original_filename: str
+    material_type: str
+    material_status: str
+    recognition_status: str | None
+    validation_status: str
+    invoice_id: str | None
+    invoice_number: str | None
+    validation_messages: list[str]
+
+
+@dataclass(frozen=True)
+class MissingMaterialStatus:
+    invoice_id: str
+    invoice_number: str
+    required_material_type: str
+    message: str
+
+
+@dataclass(frozen=True)
+class ExpenseConfirmationStatus:
+    split_id: str
+    invoice_id: str
+    invoice_number: str
+    amount_cents: int
+    confirmation_status: str | None
+    dispute_reason: str | None
+
+
+@dataclass(frozen=True)
+class TaskStatusReport:
+    task_id: str
+    actor_id: str
+    total_expense_amount_cents: int
+    counts: TaskStatusCounts
+    materials: list[MemberMaterialStatus]
+    missing_materials: list[MissingMaterialStatus]
+    expense_details: list[ExpenseConfirmationStatus]
+
+
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL_SUCCESS = 2
@@ -284,6 +345,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     submit_parser.set_defaults(handler=run_submit_command)
 
+    status_parser = subparsers.add_parser(
+        "status",
+        help="show member-specific material, validation, missing-material and confirmation status",
+    )
+    status_parser.add_argument(
+        "--task-id",
+        required=True,
+        help="target reimbursement task id",
+    )
+    status_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit machine-readable JSON output",
+    )
+    status_parser.set_defaults(handler=run_status_command)
+
     return parser
 
 
@@ -466,6 +544,48 @@ def run_submit_command(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def run_status_command(args: argparse.Namespace) -> int:
+    try:
+        session = load_token_session()
+    except TokenStoreError as error:
+        raise CliError(str(error), code="login_required") from error
+
+    base_url = session.base_url.rstrip("/")
+    status_code, payload = fetch_json(
+        build_task_status_url(base_url, task_id=args.task_id, actor_id=session.member_id),
+        headers={"Authorization": f"Bearer {session.access_token}"},
+    )
+    if status_code != 200:
+        raise CliError(
+            f"task member status endpoint returned unexpected status {status_code}",
+            code="task_status_unexpected_status",
+        )
+
+    report = parse_task_status_report(payload)
+    if args.json_output:
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "status",
+                "data": {
+                    "base_url": base_url,
+                    "task_id": report.task_id,
+                    "member_id": report.actor_id,
+                    "total_expense_amount_cents": report.total_expense_amount_cents,
+                    "counts": asdict(report.counts),
+                    "materials": [asdict(item) for item in report.materials],
+                    "missing_materials": [asdict(item) for item in report.missing_materials],
+                    "expense_details": [asdict(item) for item in report.expense_details],
+                },
+            }
+        )
+        return 0
+
+    emit_status_text_result(report)
+    return 0
+
+
 def build_task_list_url(base_url: str, *, member_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     query_string = urlencode({"member_id": member_id})
@@ -482,6 +602,20 @@ def build_material_submit_url(base_url: str, *, task_id: str) -> str:
     if normalized_base_url.endswith("/api"):
         return f"{normalized_base_url}/tasks/{normalized_task_id}/materials"
     return f"{normalized_base_url}/api/tasks/{normalized_task_id}/materials"
+
+
+def build_task_status_url(base_url: str, *, task_id: str, actor_id: str) -> str:
+    normalized_base_url = base_url.rstrip("/")
+    normalized_task_id = task_id.strip()
+    normalized_actor_id = actor_id.strip()
+    if not normalized_task_id:
+        raise CliError("task id is required", code="task_id_required")
+    if not normalized_actor_id:
+        raise CliError("member id is required", code="member_binding_required")
+    query_string = urlencode({"actor_id": normalized_actor_id})
+    if normalized_base_url.endswith("/api"):
+        return f"{normalized_base_url}/tasks/{normalized_task_id}/member-status?{query_string}"
+    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/member-status?{query_string}"
 
 
 def prepare_upload_files(
@@ -772,6 +906,148 @@ def parse_visible_tasks(payload: object) -> list[VisibleTaskSummary]:
     return visible_tasks
 
 
+def parse_task_status_report(payload: object) -> TaskStatusReport:
+    if not isinstance(payload, dict):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+
+    materials = payload.get("materials")
+    missing_materials = payload.get("missing_materials")
+    expense_details = payload.get("expense_details")
+    counts = payload.get("counts")
+    if not isinstance(materials, list) or not isinstance(missing_materials, list):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+    if not isinstance(expense_details, list) or not isinstance(counts, dict):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+
+    return TaskStatusReport(
+        task_id=_require_non_empty_status_field(payload, "task_id"),
+        actor_id=_require_non_empty_status_field(payload, "actor_id"),
+        total_expense_amount_cents=_require_int_status_field(payload, "total_expense_amount_cents"),
+        counts=parse_task_status_counts(counts),
+        materials=[parse_member_material_status(item) for item in materials],
+        missing_materials=[parse_missing_material_status(item) for item in missing_materials],
+        expense_details=[parse_expense_confirmation_status(item) for item in expense_details],
+    )
+
+
+def parse_task_status_counts(payload: dict[str, object]) -> TaskStatusCounts:
+    return TaskStatusCounts(
+        material_count=_require_int_status_field(payload, "material_count"),
+        missing_material_count=_require_int_status_field(payload, "missing_material_count"),
+        expense_detail_count=_require_int_status_field(payload, "expense_detail_count"),
+        recognition_pending_count=_require_int_status_field(payload, "recognition_pending_count"),
+        recognition_succeeded_count=_require_int_status_field(payload, "recognition_succeeded_count"),
+        recognition_failed_count=_require_int_status_field(payload, "recognition_failed_count"),
+        recognition_needs_confirmation_count=_require_int_status_field(
+            payload, "recognition_needs_confirmation_count"
+        ),
+        validation_passed_count=_require_int_status_field(payload, "validation_passed_count"),
+        validation_failed_count=_require_int_status_field(payload, "validation_failed_count"),
+        validation_pending_count=_require_int_status_field(payload, "validation_pending_count"),
+        validation_not_applicable_count=_require_int_status_field(
+            payload, "validation_not_applicable_count"
+        ),
+        confirmed_expense_count=_require_int_status_field(payload, "confirmed_expense_count"),
+        pending_confirmation_count=_require_int_status_field(payload, "pending_confirmation_count"),
+        disputed_confirmation_count=_require_int_status_field(payload, "disputed_confirmation_count"),
+        missing_confirmation_count=_require_int_status_field(payload, "missing_confirmation_count"),
+    )
+
+
+def parse_member_material_status(item: object) -> MemberMaterialStatus:
+    if not isinstance(item, dict):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+    validation_messages = item.get("validation_messages", [])
+    if not isinstance(validation_messages, list) or any(
+        not isinstance(message, str) for message in validation_messages
+    ):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+
+    return MemberMaterialStatus(
+        material_id=_require_non_empty_status_field(item, "material_id"),
+        original_filename=_require_non_empty_status_field(item, "original_filename"),
+        material_type=_require_non_empty_status_field(item, "material_type"),
+        material_status=_require_non_empty_status_field(item, "material_status"),
+        recognition_status=_optional_status_string(item, "recognition_status"),
+        validation_status=_require_non_empty_status_field(item, "validation_status"),
+        invoice_id=_optional_status_string(item, "invoice_id"),
+        invoice_number=_optional_status_string(item, "invoice_number"),
+        validation_messages=validation_messages,
+    )
+
+
+def parse_missing_material_status(item: object) -> MissingMaterialStatus:
+    if not isinstance(item, dict):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+    return MissingMaterialStatus(
+        invoice_id=_require_non_empty_status_field(item, "invoice_id"),
+        invoice_number=_require_non_empty_status_field(item, "invoice_number"),
+        required_material_type=_require_non_empty_status_field(item, "required_material_type"),
+        message=_require_non_empty_status_field(item, "message"),
+    )
+
+
+def parse_expense_confirmation_status(item: object) -> ExpenseConfirmationStatus:
+    if not isinstance(item, dict):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+    invoice = item.get("invoice")
+    if not isinstance(invoice, dict):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+    confirmation = item.get("confirmation")
+    if confirmation is not None and not isinstance(confirmation, dict):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+
+    return ExpenseConfirmationStatus(
+        split_id=_require_non_empty_status_field(item, "split_id"),
+        invoice_id=_require_non_empty_status_field(invoice, "id"),
+        invoice_number=_require_non_empty_status_field(invoice, "invoice_number"),
+        amount_cents=_require_int_status_field(item, "amount_cents"),
+        confirmation_status=(
+            _require_non_empty_status_field(confirmation, "status") if confirmation is not None else None
+        ),
+        dispute_reason=(
+            _optional_status_string(confirmation, "dispute_reason") if confirmation is not None else None
+        ),
+    )
+
+
+def emit_status_text_result(report: TaskStatusReport) -> None:
+    print(f"Task status for task {report.task_id} member {report.actor_id}")
+    print(f"Materials: {report.counts.material_count}")
+    if report.materials:
+        print("material_id\tfilename\ttype\trecognition\tvalidation\tinvoice_number")
+        for item in report.materials:
+            print(
+                f"{item.material_id}\t{item.original_filename}\t{item.material_type}\t"
+                f"{item.recognition_status or 'missing'}\t{item.validation_status}\t"
+                f"{item.invoice_number or ''}"
+            )
+    else:
+        print("No related materials found.")
+
+    print(f"Missing materials: {report.counts.missing_material_count}")
+    if report.missing_materials:
+        print("invoice_number\trequired_material_type\tmessage")
+        for item in report.missing_materials:
+            print(f"{item.invoice_number}\t{item.required_material_type}\t{item.message}")
+    else:
+        print("No missing materials.")
+
+    print(
+        "Expense confirmations: "
+        f"{report.counts.expense_detail_count} (total {report.total_expense_amount_cents} cents)"
+    )
+    if report.expense_details:
+        print("split_id\tinvoice_number\tamount_cents\tconfirmation_status")
+        for item in report.expense_details:
+            print(
+                f"{item.split_id}\t{item.invoice_number}\t{item.amount_cents}\t"
+                f"{item.confirmation_status or 'missing'}"
+            )
+    else:
+        print("No related expense details.")
+
+
 def _require_non_empty_task_field(item: dict[str, object], field_name: str) -> str:
     value = item.get(field_name)
     if not isinstance(value, str) or not value.strip():
@@ -780,6 +1056,36 @@ def _require_non_empty_task_field(item: dict[str, object], field_name: str) -> s
             code="task_list_invalid_response",
         )
     return value.strip()
+
+
+def _require_non_empty_status_field(item: dict[str, object], field_name: str) -> str:
+    value = item.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise CliError(
+            f"TRMS API task status payload is missing a valid {field_name!r} field",
+            code="task_status_invalid_response",
+        )
+    return value.strip()
+
+
+def _optional_status_string(item: dict[str, object], field_name: str) -> str | None:
+    value = item.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+    normalized = value.strip()
+    return normalized or None
+
+
+def _require_int_status_field(item: dict[str, object], field_name: str) -> int:
+    value = item.get(field_name)
+    if not isinstance(value, int):
+        raise CliError(
+            f"TRMS API task status payload is missing a valid {field_name!r} field",
+            code="task_status_invalid_response",
+        )
+    return value
 
 
 def parse_task_deadline(value: str) -> datetime:

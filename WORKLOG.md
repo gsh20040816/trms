@@ -1,5 +1,71 @@
 # WORKLOG
 
+## 2026-04-28 11:27 - Add CLI member status query
+
+### 完成内容
+- 为任务路由新增成员隔离的聚合状态接口 `GET /api/tasks/{task_id}/member-status`：
+  - 仅允许任务成员查询；
+  - 聚合本人提交材料的识别状态、校验汇总状态、缺失材料和费用确认状态；
+  - 不返回同任务其他成员的材料详情。
+- 新增 `src/trms_backend/domain/task_member_status.py`，集中封装成员状态聚合模型与计数逻辑：
+  - 输出材料级状态列表；
+  - 输出缺失材料列表；
+  - 输出本人费用确认明细和确认状态计数。
+- 扩展 `src/trms_cli/cli.py`，新增 `status` 命令：
+  - 读取已登录 session 中的 `member_id`；
+  - 请求新的成员状态聚合接口；
+  - 同时支持文本输出和 `--json` 结构化输出。
+- 新增测试：
+  - `tests/test_task_member_status_api.py` 覆盖成员仅能看到本人相关状态，以及非成员禁止访问；
+  - `tests/test_cli_status.py` 覆盖 CLI 文本输出、JSON 输出和未登录错误。
+- 将 `TASKS.md` 中“增加 CLI 状态查询能力”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/task_member_status.py`
+- `src/trms_cli/cli.py`
+- `tests/test_task_member_status_api.py`
+- `tests/test_cli_status.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 已经具备登录、任务查询和材料上传能力，但成员仍无法通过 CLI 查看自己材料的后续处理状态。
+- 现有后端能力虽然分别提供了缺失材料和费用明细等接口，但缺少一个面向 CLI 的最小聚合视图：
+  - CLI 若直接拼接现有原始任务材料列表，会把同任务其他成员的材料详情暴露到客户端；
+  - CLI 若只调用单个已有接口，又无法一次拿到识别、校验、缺失材料和确认状态四类结果。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_task_member_status_api.py`
+    - 2 个成员状态聚合接口测试通过
+  - `uv run pytest tests/test_cli_status.py`
+    - 3 个 CLI 状态查询测试通过
+  - `uv run pytest tests/test_cli_tasks.py tests/test_cli_submit.py tests/test_cli_status.py tests/test_task_member_status_api.py tests/test_missing_materials_api.py tests/test_expense_details_api.py`
+    - 24 个相关 CLI/任务状态测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 191 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只处理“CLI 状态查询能力”，没有提前实现下一项“CLI 缺失材料查询能力”：
+  - 当前 `status` 命令已经包含缺失材料结果，但仍以综合状态查询的形式提供；
+  - 面向缺失材料的独立命令、独立输出契约和更精简交互仍留给下一轮任务。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设“CLI 状态查询能力”的最小闭环是按任务聚合本人状态，不提前实现需求文档里提到的可选“按材料编号过滤”：
+  - 先保证成员能安全拿到本人材料、缺失项和确认状态；
+  - 更细粒度的材料筛选留待后续独立任务再补。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 缺失材料查询能力”，基于本轮已落地的成员状态聚合边界，抽出更聚焦的缺失材料命令和 JSON 契约。
+
 ## 2026-04-28 11:12 - Add CLI local upload precheck
 
 ### 完成内容
