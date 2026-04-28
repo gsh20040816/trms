@@ -1,5 +1,61 @@
 # WORKLOG
 
+## 2026-04-29 03:56 - Close the member single-task workflow loop in the workbench
+
+### 完成内容
+- 将成员端“上传材料”和“费用确认”主动作收口回单任务发票工作台：
+  - 工作台新增当前任务内联上传区，成员可直接选择材料类型、批量上传文件，并在同页看到逐文件成功/失败结果；
+  - 工作台新增当前任务费用确认区，成员可直接对分到本人名下的费用提交确认或异议，不再必须跳转到专项确认页。
+- 收口工作台内的主流程导航：
+  - 顶部“待处理事项”从跳到独立页面改为跳到当前工作台内的上传区、发票详情区和确认区；
+  - 每张发票卡片的“下一步动作”也改成工作台内锚点，成员优先留在单任务上下文连续处理。
+- 补齐前端回归测试：
+  - 更新既有工作台测试，适配同页锚点和新增的确认区；
+  - 新增测试覆盖“在工作台内上传材料并刷新当前任务视图”和“在工作台内提交费用确认并刷新状态”。
+
+### 根因
+- 之前的成员工作台已经能查看识别字段、材料类型、分摊去向和缺失项，但“上传材料”和“提交确认”仍必须跳到独立页面，主链路最后两步仍然被拆散。
+- `docs/UI原型图对照与交互规范补充.md` 对成员端的要求是“单任务闭环”，即用户在一个任务上下文中连续完成上传、查看、补充和确认，而不是自己判断还要切去哪个子页。
+
+### 关键改动点
+- 成员工作台补齐上传与确认闭环：
+  - `web/src/app/member-invoice-workbench.tsx`
+- 成员工作台回归测试：
+  - `web/src/app/member-invoice-workbench.test.tsx`
+
+### 风险与影响面
+- 原有成员材料上传页和费用确认页仍然保留，作为深链接或专项入口使用；本轮只改变主流程优先级，不删除既有入口。
+- 工作台确认区复用了现有后端确认接口和版本失效语义；如果后续产品希望在工作台内继续补入更细的成员提醒或批量确认能力，应作为独立任务处理。
+- 前端构建仍有既有的单 chunk 超过 500 kB 告警，本轮未新增构建失败。
+
+### 修改文件
+- `web/src/app/member-invoice-workbench.tsx`
+- `web/src/app/member-invoice-workbench.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx`
+    - 1 个测试文件、8 个测试通过
+  - `cd web && npm run lint`
+  - `cd web && npm run build`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 352 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认“成员端主流程闭环”优先级高于“删除所有专项页”，因此保留上传页、材料状态页和费用确认页作为补充入口，但不再让成员依赖它们完成主流程。
+- 工作台内上传区默认只处理当前选中任务；若后续产品要求跨任务拖拽上传或批量切换目标任务，应拆成新的独立任务，而不是继续扩大本轮改动范围。
+
 ## 2026-04-29 03:38 - Build linked material review list/detail workspace
 
 ### 完成内容

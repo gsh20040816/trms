@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
@@ -13,10 +13,12 @@ import {
 } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
+  ConfirmationStatus,
   ConfirmationRecord,
   ExpenseDetailItem,
   ExpenseSplitRecord,
   InvoiceRecord,
+  MaterialBatchUploadResponse,
   MaterialRecord,
   MaterialType,
   RecognitionFieldResult,
@@ -85,6 +87,23 @@ type SplitDraftRow = {
   note: string;
 };
 
+type WorkbenchUploadFormState = {
+  materialType: MaterialType;
+  files: File[];
+};
+
+type WorkbenchUploadValidationErrors = Partial<Record<keyof WorkbenchUploadFormState, string>>;
+
+type WorkbenchConfirmationItem = {
+  detail: ExpenseDetailItem;
+  supportingMaterials: MaterialRecord[];
+};
+
+type ConfirmationFeedback = {
+  splitId: string;
+  status: Extract<ConfirmationStatus, "confirmed" | "disputed">;
+};
+
 const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
   { value: "invoice", label: "发票" },
   { value: "payment_record", label: "支付记录" },
@@ -93,6 +112,9 @@ const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
   { value: "order_screenshot", label: "订单截图" },
   { value: "other_attachment", label: "其他材料" },
 ];
+
+const DEFAULT_UPLOAD_MATERIAL_TYPE: MaterialType = "invoice";
+const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
 
 const FIELD_ORDER = [
   "invoice_number",
@@ -166,6 +188,17 @@ function buildSplitDraftKey(invoiceId: string, suffix: string) {
 
 function pickDefaultSplitMemberId(taskMemberIds: string[], drafts: SplitDraftRow[], fallbackMemberId: string) {
   return taskMemberIds.find((memberId) => drafts.every((draft) => draft.member_id !== memberId)) ?? fallbackMemberId;
+}
+
+function buildWorkbenchTaskAnchor(taskId: string, hash: string) {
+  return `/member/invoices/workbench?taskId=${encodeURIComponent(taskId)}${hash}`;
+}
+
+function buildInitialUploadFormState(): WorkbenchUploadFormState {
+  return {
+    materialType: DEFAULT_UPLOAD_MATERIAL_TYPE,
+    files: [],
+  };
 }
 
 function buildSplitDraftRows(
@@ -304,9 +337,9 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
       id: "recognition",
       title: "先核对识别结果",
       detail: `当前有 ${report.counts.recognition_failed_count + report.counts.recognition_needs_confirmation_count} 份材料仍需人工确认或补录。`,
-      to: `/member/materials/status?taskId=${encodeURIComponent(task.id)}`,
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices"),
       tone: "warning",
-      label: "查看材料状态",
+      label: "定位到对应发票",
     });
   }
 
@@ -315,9 +348,9 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
       id: "missing-materials",
       title: "补齐必传材料",
       detail: `当前有 ${report.counts.missing_material_count} 条缺失材料提示，会阻塞后续复核。`,
-      to: `/member/materials/upload?taskId=${encodeURIComponent(task.id)}`,
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-upload"),
       tone: "danger",
-      label: "去补材料",
+      label: "去上传区补材料",
     });
   }
 
@@ -326,7 +359,7 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
       id: "validations",
       title: "处理异常校验",
       detail: `当前有 ${report.counts.validation_failed_count} 条失败校验、${report.counts.validation_pending_count} 条待确认校验。`,
-      to: `/member/materials/status?taskId=${encodeURIComponent(task.id)}`,
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices"),
       tone: "warning",
       label: "查看异常原因",
     });
@@ -337,9 +370,9 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
       id: "confirmations",
       title: "确认本人费用",
       detail: `当前有 ${report.counts.pending_confirmation_count + report.counts.missing_confirmation_count} 条费用还未完成确认。`,
-      to: `/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`,
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations"),
       tone: "info",
-      label: "去确认费用",
+      label: "去确认区处理",
     });
   }
 
@@ -348,9 +381,9 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
       id: "done",
       title: "当前任务已无明显待处理项",
       detail: "可以继续回看发票记录，或等待管理员进入下一阶段处理。",
-      to: `/member/materials/status?taskId=${encodeURIComponent(task.id)}`,
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices"),
       tone: "info",
-      label: "查看材料记录",
+      label: "回看当前发票",
     });
   }
 
@@ -446,6 +479,15 @@ function buildSummaryStats(task: ReimbursementTask, report: TaskMemberStatusRepo
   ];
 }
 
+function buildConfirmationItems(items: WorkbenchInvoiceItem[]) {
+  return items.flatMap((item) =>
+    item.relatedExpenseDetails.map((detail) => ({
+      detail,
+      supportingMaterials: item.supportingMaterials,
+    })),
+  );
+}
+
 function formatSupportingMaterialSummary(item: TaskSharedInvoiceItem) {
   if (item.supporting_materials.length === 0) {
     return "当前还没有已关联的必要附件摘要。";
@@ -453,6 +495,87 @@ function formatSupportingMaterialSummary(item: TaskSharedInvoiceItem) {
   return item.supporting_materials
     .map((material) => `${formatMaterialType(material.material_type)} ${material.count} 份`)
     .join(" / ");
+}
+
+function validateWorkbenchUploadForm(
+  task: ReimbursementTask | null,
+  formState: WorkbenchUploadFormState,
+) {
+  const errors: WorkbenchUploadValidationErrors = {};
+
+  if (!task || task.status !== "open") {
+    errors.files = "当前任务不在开放提交阶段，成员不能直接补交材料。";
+  }
+  if (!MATERIAL_TYPE_OPTIONS.some((option) => option.value === formState.materialType)) {
+    errors.materialType = "请选择受支持的材料类型。";
+  }
+  if (formState.files.length === 0) {
+    errors.files = "至少选择一个要上传的文件。";
+  }
+
+  return errors;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isUploadFailureList(value: unknown): value is Array<{
+  original_filename: string | null;
+  error_code: string;
+  detail: string;
+}> {
+  return Array.isArray(value) && value.every((item) => {
+    if (!isRecord(item)) {
+      return false;
+    }
+    return (
+      (item.original_filename === null || typeof item.original_filename === "string")
+      && typeof item.error_code === "string"
+      && typeof item.detail === "string"
+    );
+  });
+}
+
+function isMaterialRecord(value: unknown): value is MaterialRecord {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string"
+    && typeof value.original_filename === "string"
+    && typeof value.material_type === "string"
+    && typeof value.channel === "string"
+  );
+}
+
+function extractFailedBatchUploadResponse(error: unknown): MaterialBatchUploadResponse | null {
+  if (!(error instanceof ApiError) || !isRecord(error.payload)) {
+    return null;
+  }
+
+  const payload = error.payload;
+  if (payload.status !== "failed" || !Array.isArray(payload.items) || !isUploadFailureList(payload.failures)) {
+    return null;
+  }
+
+  if (!payload.items.every(isMaterialRecord)) {
+    return null;
+  }
+
+  return {
+    status: "failed",
+    items: payload.items,
+    failures: payload.failures,
+  };
+}
+
+function getCurrentConfirmationStatus(detail: ExpenseDetailItem): ConfirmationStatus {
+  return detail.confirmation?.status ?? "pending";
+}
+
+function isSplitStaleError(error: unknown) {
+  return error instanceof ApiError && error.status === 404 && error.message === "split not found";
 }
 
 export function MemberInvoiceWorkbenchPage() {
@@ -469,7 +592,33 @@ export function MemberInvoiceWorkbenchPage() {
   const [splitDrafts, setSplitDrafts] = useState<Record<string, SplitDraftRow[]>>({});
   const [splitErrors, setSplitErrors] = useState<Record<string, string>>({});
   const [updatingSplitInvoiceId, setUpdatingSplitInvoiceId] = useState<string | null>(null);
+  const [uploadFormState, setUploadFormState] = useState<WorkbenchUploadFormState>(() => buildInitialUploadFormState());
+  const [uploadValidationErrors, setUploadValidationErrors] = useState<WorkbenchUploadValidationErrors>({});
+  const [uploadSubmitError, setUploadSubmitError] = useState<unknown>(null);
+  const [uploadResult, setUploadResult] = useState<MaterialBatchUploadResponse | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadFileInputKey, setUploadFileInputKey] = useState(0);
+  const [confirmationSubmitError, setConfirmationSubmitError] = useState<unknown>(null);
+  const [confirmationFeedback, setConfirmationFeedback] = useState<ConfirmationFeedback | null>(null);
+  const [submittingConfirmationSplitId, setSubmittingConfirmationSplitId] = useState<string | null>(null);
+  const [staleConfirmationSplitId, setStaleConfirmationSplitId] = useState<string | null>(null);
+  const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
+  const [disputeErrors, setDisputeErrors] = useState<Record<string, string>>({});
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
+
+  function resetTaskScopedUiState() {
+    setUploadValidationErrors({});
+    setUploadSubmitError(null);
+    setUploadResult(null);
+    setUploadFormState(buildInitialUploadFormState());
+    setUploadFileInputKey((current) => current + 1);
+    setConfirmationSubmitError(null);
+    setConfirmationFeedback(null);
+    setSubmittingConfirmationSplitId(null);
+    setStaleConfirmationSplitId(null);
+    setDisputeReasons({});
+    setDisputeErrors({});
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -490,6 +639,7 @@ export function MemberInvoiceWorkbenchPage() {
         }
 
         setTaskState({ status: "ready", visibleTasks });
+        resetTaskScopedUiState();
         setSelectedTaskId((currentTaskId) => pickSelectedTaskId(visibleTasks, preferredTaskId, currentTaskId));
       } catch (error) {
         if (cancelled) {
@@ -617,6 +767,10 @@ export function MemberInvoiceWorkbenchPage() {
   const sharedInvoices = workbenchState.status === "ready"
     ? workbenchState.sharedInvoices.filter((item) => item.submitter_id !== actorId)
     : [];
+  const confirmationItems = useMemo(
+    () => (workbenchState.status === "ready" ? buildConfirmationItems(workbenchState.items) : []),
+    [workbenchState],
+  );
   const abnormalCount = useMemo(() => {
     if (workbenchState.status !== "ready") {
       return 0;
@@ -654,6 +808,80 @@ export function MemberInvoiceWorkbenchPage() {
       }));
     } finally {
       setUpdatingMaterialId((current) => (current === materialId ? null : current));
+    }
+  }
+
+  function updateUploadField<Key extends keyof WorkbenchUploadFormState>(
+    key: Key,
+    value: WorkbenchUploadFormState[Key],
+  ) {
+    setUploadFormState((current) => ({
+      ...current,
+      [key]: value,
+    }));
+    setUploadValidationErrors((current) => {
+      if (!(key in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function resetUploadSelectedFiles() {
+    setUploadFormState((current) => ({
+      ...current,
+      files: [],
+    }));
+    setUploadFileInputKey((current) => current + 1);
+  }
+
+  async function handleUploadSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!session) {
+      return;
+    }
+
+    setUploadSubmitError(null);
+    setUploadResult(null);
+
+    const errors = validateWorkbenchUploadForm(selectedTask, uploadFormState);
+    setUploadValidationErrors(errors);
+    if (Object.keys(errors).length > 0 || !selectedTask) {
+      return;
+    }
+
+    const requestBody = new FormData();
+    requestBody.set("submitter_id", session.actorId);
+    requestBody.set("channel", "web");
+    requestBody.set("material_type", uploadFormState.materialType);
+    uploadFormState.files.forEach((file) => {
+      requestBody.append("files", file);
+    });
+
+    setIsUploading(true);
+    try {
+      const response = await trmsApi.submitTaskMaterials(selectedTask.id, requestBody);
+      setUploadResult(response);
+      resetUploadSelectedFiles();
+      if (response.items.length > 0) {
+        setWorkbenchReloadVersion((current) => current + 1);
+      }
+    } catch (error) {
+      const failedBatch = extractFailedBatchUploadResponse(error);
+      if (failedBatch) {
+        setUploadResult(failedBatch);
+        resetUploadSelectedFiles();
+        if (failedBatch.items.length > 0) {
+          setWorkbenchReloadVersion((current) => current + 1);
+        }
+      } else {
+        setUploadSubmitError(error);
+      }
+    } finally {
+      setIsUploading(false);
     }
   }
 
@@ -774,6 +1002,65 @@ export function MemberInvoiceWorkbenchPage() {
     }
   }
 
+  async function handleConfirmationSubmit(
+    item: WorkbenchConfirmationItem,
+    status: Extract<ConfirmationStatus, "confirmed" | "disputed">,
+  ) {
+    if (!session) {
+      return;
+    }
+
+    const disputeReason = disputeReasons[item.detail.split_id]?.trim() ?? "";
+    if (status === "disputed" && !disputeReason) {
+      setDisputeErrors((current) => ({
+        ...current,
+        [item.detail.split_id]: "提交异议时必须填写原因。",
+      }));
+      return;
+    }
+
+    setConfirmationSubmitError(null);
+    setConfirmationFeedback(null);
+    setStaleConfirmationSplitId(null);
+    setDisputeErrors((current) => {
+      if (!(item.detail.split_id in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[item.detail.split_id];
+      return next;
+    });
+    setSubmittingConfirmationSplitId(item.detail.split_id);
+
+    try {
+      await trmsApi.submitSplitConfirmation(item.detail.split_id, {
+        actor_id: session.actorId,
+        member_id: session.actorId,
+        status,
+        dispute_reason: status === "disputed" ? disputeReason : null,
+      });
+      setConfirmationFeedback({
+        splitId: item.detail.split_id,
+        status,
+      });
+      if (status === "disputed") {
+        setDisputeReasons((current) => ({
+          ...current,
+          [item.detail.split_id]: "",
+        }));
+      }
+      setWorkbenchReloadVersion((current) => current + 1);
+    } catch (error) {
+      if (isSplitStaleError(error)) {
+        setStaleConfirmationSplitId(item.detail.split_id);
+        return;
+      }
+      setConfirmationSubmitError(error);
+    } finally {
+      setSubmittingConfirmationSplitId(null);
+    }
+  }
+
   if (!session || session.role !== "member") {
     return null;
   }
@@ -835,6 +1122,7 @@ export function MemberInvoiceWorkbenchPage() {
                 aria-label="目标任务"
                 value={selectedTaskId}
                 onChange={(event) => {
+                  resetTaskScopedUiState();
                   setSelectedTaskId(event.target.value);
                 }}
               >
@@ -889,20 +1177,308 @@ export function MemberInvoiceWorkbenchPage() {
         </SectionCard>
       ) : null}
 
+      {selectedTask ? (
+        <div id="member-workbench-upload">
+          <SectionCard
+            title="上传材料与附件"
+            description="在当前任务下直接补充发票、支付记录、行程单等材料；上传完成后，下面的识别、缺失项和分摊视图会自动刷新。"
+            action={(
+              <StatusBadge tone={selectedTask.status === "open" ? "info" : "neutral"}>
+                {selectedTask.status === "open" ? "当前可补交" : `当前${formatTaskStatus(selectedTask.status)}，不可补交`}
+              </StatusBadge>
+            )}
+          >
+            {selectedTask.status === "open" ? (
+              <form
+                className="page-stack"
+                onSubmit={(event) => {
+                  void handleUploadSubmit(event);
+                }}
+                noValidate
+              >
+                <div className="admin-form-grid">
+                  <label className="field-stack">
+                    <span>材料类型</span>
+                    <select
+                      aria-label="工作台上传材料类型"
+                      value={uploadFormState.materialType}
+                      onChange={(event) => {
+                        updateUploadField("materialType", event.target.value as MaterialType);
+                      }}
+                    >
+                      {MATERIAL_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {uploadValidationErrors.materialType ? (
+                      <span className="field-error">{uploadValidationErrors.materialType}</span>
+                    ) : (
+                      <span className="field-hint">请选择最接近的材料类型，便于识别、缺失项检查和后续复核。</span>
+                    )}
+                  </label>
+
+                  <label className="field-stack">
+                    <span>上传文件</span>
+                    <input
+                      aria-label="工作台上传文件"
+                      key={uploadFileInputKey}
+                      type="file"
+                      multiple
+                      accept={MATERIAL_FILE_ACCEPT}
+                      onChange={(event) => {
+                        updateUploadField("files", Array.from(event.target.files ?? []));
+                      }}
+                    />
+                    {uploadValidationErrors.files ? (
+                      <span className="field-error">{uploadValidationErrors.files}</span>
+                    ) : (
+                      <span className="field-hint">
+                        支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会逐文件返回成功或失败结果。
+                      </span>
+                    )}
+                  </label>
+                </div>
+
+                {uploadFormState.files.length > 0 ? (
+                  <ul className="upload-file-list" aria-label="工作台待上传文件列表">
+                    {uploadFormState.files.map((file) => (
+                      <li key={`${file.name}:${file.size}:${file.lastModified}`}>
+                        <strong>{file.name}</strong>
+                        <span>{file.type || "未知类型"}</span>
+                        <span>{file.size} bytes</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <div className="admin-form-footer">
+                  <p className="field-hint">
+                    上传成功后会保留原始文件并刷新当前任务视图；如存在部分失败，页面会显式列出每个失败文件的真实原因。
+                  </p>
+                  <button className="route-link" type="submit" disabled={isUploading}>
+                    {isUploading ? "正在上传..." : "上传到当前任务"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className="field-hint">
+                当前任务已不在开放提交阶段。若仍需补材料，请根据下面的异常提示联系管理员重新开放任务，或使用专项页面查看历史记录。
+              </p>
+            )}
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {uploadSubmitError ? <ApiErrorNotice error={uploadSubmitError} /> : null}
+
+      {uploadResult ? (
+        <SectionCard
+          title="最近上传结果"
+          description="当前工作台直接展示最近一次上传的逐文件结果，不把部分失败伪装成全部成功。"
+          action={(
+            <StatusBadge tone={uploadResult.status === "failed" ? "warning" : "success"}>
+              {uploadResult.status === "success"
+                ? "全部成功"
+                : uploadResult.status === "partial_success"
+                  ? "部分成功"
+                  : "全部失败"}
+            </StatusBadge>
+          )}
+        >
+          {uploadResult.items.length > 0 ? (
+            <ul className="member-status-message-list" aria-label="工作台上传成功列表">
+              {uploadResult.items.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.original_filename}</strong>
+                  <span>材料编号：{item.id}</span>
+                  <span>材料类型：{formatMaterialType(item.material_type)}</span>
+                  <span>{item.duplicate_of ? `重复文件：${item.duplicate_of}` : "已归档到当前任务"}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="field-hint">本次没有成功归档的新材料。</p>
+          )}
+
+          {uploadResult.failures && uploadResult.failures.length > 0 ? (
+            <ul className="member-status-message-list" aria-label="工作台上传失败列表">
+              {uploadResult.failures.map((failure) => (
+                <li key={`${failure.original_filename ?? "unknown"}:${failure.error_code}`}>
+                  <strong>{failure.original_filename ?? "未命名文件"}</strong>
+                  <span>{failure.error_code}</span>
+                  <span>{failure.detail}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </SectionCard>
+      ) : null}
+
+      {workbenchState.status === "ready" ? (
+        <div id="member-workbench-confirmations">
+          <SectionCard
+            title="确认当前分到本人名下的费用"
+            description="确认动作现在直接留在当前任务工作台中；先看下面的识别和分摊上下文，再在这里提交确认或异议。"
+            action={(
+              <StatusBadge tone={confirmationItems.some((item) => getCurrentConfirmationStatus(item.detail) === "pending") ? "warning" : "success"}>
+                待确认 {confirmationItems.filter((item) => getCurrentConfirmationStatus(item.detail) === "pending").length} 条
+              </StatusBadge>
+            )}
+          >
+            {confirmationSubmitError ? <ApiErrorNotice error={confirmationSubmitError} /> : null}
+
+            {confirmationItems.length === 0 ? (
+              <p className="field-hint">当前任务下还没有分配到你名下、需要你处理的费用确认项。</p>
+            ) : (
+              <section className="member-confirmation-list" aria-label="工作台费用确认列表">
+                {confirmationItems.map((item) => {
+                  const currentStatus = getCurrentConfirmationStatus(item.detail);
+                  const disputeReason = disputeReasons[item.detail.split_id] ?? "";
+                  const disputeError = disputeErrors[item.detail.split_id];
+                  const isSubmitting = submittingConfirmationSplitId === item.detail.split_id;
+                  const isStale = staleConfirmationSplitId === item.detail.split_id;
+                  const hasFeedback = confirmationFeedback?.splitId === item.detail.split_id;
+
+                  return (
+                    <article key={item.detail.split_id} className="status-card member-confirmation-card">
+                      <div className="member-status-section-header">
+                        <div>
+                          <p className="task-card-id">费用明细 {item.detail.split_id}</p>
+                          <h2>{item.detail.invoice.invoice_number}</h2>
+                        </div>
+                        <span className={`status-chip member-status-chip-${currentStatus}`}>
+                          {formatConfirmationStatus(currentStatus)}
+                        </span>
+                      </div>
+
+                      <dl className="task-meta-grid member-status-meta-grid">
+                        <div>
+                          <dt>归属金额</dt>
+                          <dd>{formatCurrencyFromCents(item.detail.amount_cents)}</dd>
+                        </div>
+                        <div>
+                          <dt>发票总额</dt>
+                          <dd>{formatCurrencyFromCents(item.detail.invoice.amount_cents)}</dd>
+                        </div>
+                        <div>
+                          <dt>费用类型</dt>
+                          <dd>{formatExpenseType(item.detail.invoice.expense_type)}</dd>
+                        </div>
+                        <div>
+                          <dt>当前版本</dt>
+                          <dd>v{item.detail.split_version}</dd>
+                        </div>
+                        <div>
+                          <dt>关联附件</dt>
+                          <dd>{item.supportingMaterials.length} 份</dd>
+                        </div>
+                        <div>
+                          <dt>成员备注</dt>
+                          <dd>{item.detail.note ?? "无"}</dd>
+                        </div>
+                      </dl>
+
+                      <label className="field-stack confirmation-reason-field">
+                        <span>异议原因</span>
+                        <textarea
+                          aria-label={`工作台异议原因 ${item.detail.split_id}`}
+                          value={disputeReason}
+                          placeholder="如果金额、归属或附件关联不正确，请写明原因。"
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setDisputeReasons((current) => ({
+                              ...current,
+                              [item.detail.split_id]: nextValue,
+                            }));
+                            setDisputeErrors((current) => {
+                              if (!(item.detail.split_id in current)) {
+                                return current;
+                              }
+                              const next = { ...current };
+                              delete next[item.detail.split_id];
+                              return next;
+                            });
+                          }}
+                        />
+                        {disputeError ? <span className="field-error">{disputeError}</span> : null}
+                      </label>
+
+                      <div className="inline-actions">
+                        <button
+                          className="route-link"
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => {
+                            void handleConfirmationSubmit(item, "confirmed");
+                          }}
+                        >
+                          {isSubmitting ? "提交中..." : "确认这笔费用"}
+                        </button>
+                        <button
+                          className="route-link route-link-secondary"
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => {
+                            void handleConfirmationSubmit(item, "disputed");
+                          }}
+                        >
+                          {isSubmitting ? "提交中..." : "提交异议"}
+                        </button>
+                        <Link
+                          className="route-link route-link-secondary"
+                          to={buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${item.detail.invoice.id}`)}
+                        >
+                          查看对应发票上下文
+                        </Link>
+                        {isStale ? (
+                          <button
+                            className="route-link route-link-secondary"
+                            type="button"
+                            onClick={() => {
+                              setStaleConfirmationSplitId(null);
+                              setWorkbenchReloadVersion((current) => current + 1);
+                            }}
+                          >
+                            重新加载明细
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {hasFeedback ? (
+                        <p className="confirmation-feedback">
+                          {confirmationFeedback.status === "confirmed" ? "已提交确认，工作台已刷新最新确认状态。" : "已提交异议，工作台已刷新最新确认状态。"}
+                        </p>
+                      ) : null}
+                      {isStale ? (
+                        <p className="field-error-block">
+                          当前费用明细版本已失效，通常是管理员刚修改了分摊金额或成员归属；请刷新后再确认。
+                        </p>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+          </SectionCard>
+        </div>
+      ) : null}
+
       {workbenchState.status === "ready" && workbenchState.items.length === 0 ? (
         <EmptyState
           title="当前任务下还没有本人已上传发票"
           description="先上传发票材料，系统识别和费用确认才会在这里形成完整工作台。"
           action={(
-            <Link className="button button-primary" to={`/member/materials/upload?taskId=${encodeURIComponent(workbenchState.task.id)}`}>
-              去上传材料
+            <Link className="button button-primary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
+              去上传区
             </Link>
           )}
         />
       ) : null}
 
       {workbenchState.status === "ready" && workbenchState.items.length > 0 ? (
-        <section className="member-status-list" aria-label="成员发票工作台列表">
+        <section id="member-workbench-invoices" className="member-status-list" aria-label="成员发票工作台列表">
           {workbenchState.items.map((item) => {
             const abnormalReasons = collectAbnormalReasons(item);
             const invoice = item.invoice;
@@ -911,7 +1487,11 @@ export function MemberInvoiceWorkbenchPage() {
               : [];
 
             return (
-              <article key={item.material.material_id} className="task-card member-status-card">
+              <article
+                key={item.material.material_id}
+                id={invoice ? `workbench-invoice-${invoice.id}` : undefined}
+                className="task-card member-status-card"
+              >
                 <div className="member-status-section-header">
                   <div>
                     <p className="task-card-id">
@@ -1206,6 +1786,18 @@ export function MemberInvoiceWorkbenchPage() {
                   ) : invoice ? (
                     <p className="field-hint">当前还没有已保存的分摊记录，保存后会在这里显示最新确认状态。</p>
                   ) : null}
+                  {item.relatedExpenseDetails.length > 0 ? (
+                    <p className="field-hint">
+                      当前发票已有 {item.relatedExpenseDetails.length} 条与你相关的费用明细，可直接在本页的
+                      <Link
+                        className="route-link route-link-secondary"
+                        to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-confirmations")}
+                      >
+                        费用确认区
+                      </Link>
+                      提交确认或异议。
+                    </p>
+                  ) : null}
                 </section>
 
                 <section className="member-status-section">
@@ -1242,17 +1834,17 @@ export function MemberInvoiceWorkbenchPage() {
                 <section className="member-status-section">
                   <div className="member-status-section-header">
                     <h4>下一步动作</h4>
-                    <span className="status-chip">围绕当前任务继续处理</span>
+                    <span className="status-chip">优先留在当前工作台</span>
                   </div>
                   <div className="inline-actions">
-                    <Link className="route-link route-link-secondary" to={`/member/materials/upload?taskId=${encodeURIComponent(workbenchState.task.id)}`}>
-                      上传或补充材料
+                    <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
+                      跳到上传区
                     </Link>
-                    <Link className="route-link route-link-secondary" to={`/member/materials/status?taskId=${encodeURIComponent(workbenchState.task.id)}`}>
-                      查看材料状态
+                    <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-invoices")}>
+                      回到发票详情
                     </Link>
-                    <Link className="route-link route-link-secondary" to={`/member/expenses/confirm?taskId=${encodeURIComponent(workbenchState.task.id)}`}>
-                      确认费用
+                    <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-confirmations")}>
+                      跳到确认区
                     </Link>
                   </div>
                 </section>

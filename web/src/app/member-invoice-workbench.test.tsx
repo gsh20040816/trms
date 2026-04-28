@@ -533,16 +533,18 @@ describe("MemberInvoiceWorkbenchPage", () => {
     renderWorkbenchRoute();
 
     expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("成员发票工作台摘要")).toBeInTheDocument();
-    expect(screen.getByText("￥63.45")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "INV-OPEN-001" })).toBeInTheDocument();
+    const summary = await screen.findByLabelText("成员发票工作台摘要");
+    expect(summary).toBeInTheDocument();
+    expect(within(summary).getByText("￥63.45")).toBeInTheDocument();
+    const workbenchList = await screen.findByLabelText("成员发票工作台列表");
+    expect(within(workbenchList).getByRole("heading", { name: "INV-OPEN-001" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("目标任务"), {
       target: { value: "TASK-REVIEW" },
     });
 
-    expect(await screen.findByRole("heading", { name: "HOTEL-001" })).toBeInTheDocument();
-    expect(screen.getByText("￥200.00")).toBeInTheDocument();
+    expect(within(await screen.findByLabelText("成员发票工作台列表")).getByRole("heading", { name: "HOTEL-001" })).toBeInTheDocument();
+    expect(within(await screen.findByLabelText("成员发票工作台摘要")).getByText("￥200.00")).toBeInTheDocument();
     expect(screen.getByText("状态稳定")).toBeInTheDocument();
   });
 
@@ -804,13 +806,13 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(within(card).getByText("当前值：同济大学")).toBeInTheDocument();
     expect(within(card).getAllByText("状态：已人工更正").length).toBeGreaterThan(0);
     expect(within(card).getByText("确认状态：待确认")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "去补材料" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "去上传区补材料" })).toHaveAttribute(
       "href",
-      "/member/materials/upload?taskId=TASK-OPEN",
+      "/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-upload",
     );
-    expect(screen.getByRole("link", { name: "去确认费用" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "去确认区处理" })).toHaveAttribute(
       "href",
-      "/member/expenses/confirm?taskId=TASK-OPEN",
+      "/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-confirmations",
     );
   });
 
@@ -1197,7 +1199,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByRole("heading", { name: "SHARED-001" })).toBeInTheDocument();
+    const splitWorkbenchList = await screen.findByLabelText("成员发票工作台列表");
+    expect(within(splitWorkbenchList).getByRole("heading", { name: "SHARED-001" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 1 金额"), {
       target: { value: "100.00" },
@@ -1426,7 +1429,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByRole("heading", { name: "FAIL-001" })).toBeInTheDocument();
+    const failureWorkbenchList = await screen.findByLabelText("成员发票工作台列表");
+    expect(within(failureWorkbenchList).getByRole("heading", { name: "FAIL-001" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("INV-FAIL-001 分摊行 1 金额"), {
       target: { value: "100.00" },
@@ -1436,6 +1440,409 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(
       await screen.findByText("split amount total must equal invoice amount"),
     ).toBeInTheDocument();
+  });
+
+  it("uploads materials directly from the workbench and refreshes the current task view", async () => {
+    let uploadCompleted = false;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: uploadCompleted ? 1 : 0,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: uploadCompleted ? 1 : 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: uploadCompleted ? [
+            {
+              material_id: "MAT-UP-001",
+              submitter_id: "2250001",
+              material_type: "payment_record",
+              original_filename: "pay.png",
+              material_status: "assigned",
+              recognition_status: null,
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: null,
+              invoice_number: null,
+              validation_status: "not_applicable",
+              validation_messages: [],
+              created_at: "2026-04-28T14:00:00+08:00",
+            },
+          ] : [],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/materials/MAT-UP-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: null,
+          items: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/materials" && method === "POST") {
+        uploadCompleted = true;
+        return Promise.resolve(jsonResponse({
+          status: "success",
+          items: [
+            {
+              id: "MAT-UP-001",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "payment_record",
+              storage_key: "TASK-OPEN/pay.png",
+              original_filename: "pay.png",
+              content_type: "image/png",
+              size_bytes: 128,
+              sha256: "a".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T14:00:00+08:00",
+            },
+          ],
+          failures: [],
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench upload test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("工作台上传材料类型"), {
+      target: { value: "payment_record" },
+    });
+    fireEvent.change(screen.getByLabelText("工作台上传文件"), {
+      target: {
+        files: [new File(["payment"], "pay.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+
+    expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
+    expect(screen.getByText("材料编号：MAT-UP-001")).toBeInTheDocument();
+    expect(await screen.findByText("支付记录 / MAT-UP-001")).toBeInTheDocument();
+  });
+
+  it("submits confirmations directly from the workbench and refreshes current statuses", async () => {
+    let confirmationStatus: "pending" | "confirmed" = "pending";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 18800,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 1,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 1,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 1,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: confirmationStatus === "confirmed" ? 1 : 0,
+            pending_confirmation_count: confirmationStatus === "pending" ? 1 : 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-CONF-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "hotel.pdf",
+              material_status: "assigned",
+              recognition_status: "succeeded",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: "INV-CONF-001",
+              invoice_number: "HOTEL-188",
+              validation_status: "passed",
+              validation_messages: [],
+              created_at: "2026-04-28T14:10:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [
+            {
+              split_id: "SPLIT-CONF-001",
+              split_version: 1,
+              member_id: "2250001",
+              amount_cents: 18800,
+              note: "hotel shared",
+              created_at: "2026-04-28T14:15:00+08:00",
+              updated_at: "2026-04-28T14:15:00+08:00",
+              invoice: {
+                id: "INV-CONF-001",
+                material_id: "MAT-CONF-001",
+                invoice_number: "HOTEL-188",
+                issue_date: "2026-04-25",
+                transaction_time: "2026-04-25T09:00:00+08:00",
+                buyer_name: "同济大学",
+                seller_name: "锦江酒店",
+                amount_cents: 18800,
+                expense_type: "hotel",
+                created_at: "2026-04-28T14:10:00+08:00",
+                updated_at: "2026-04-28T14:15:00+08:00",
+              },
+              confirmation: {
+                id: "CONF-CONF-001",
+                member_id: "2250001",
+                split_version: 1,
+                status: confirmationStatus,
+                dispute_reason: null,
+                confirmed_at: "2026-04-28T14:16:00+08:00",
+                updated_at: "2026-04-28T14:16:00+08:00",
+              },
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "INV-CONF-001",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-CONF-001",
+              invoice_number: "HOTEL-188",
+              issue_date: "2026-04-25",
+              transaction_time: "2026-04-25T09:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "锦江酒店",
+              amount_cents: 18800,
+              expense_type: "hotel",
+              created_at: "2026-04-28T14:10:00+08:00",
+              updated_at: "2026-04-28T14:15:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-CONF-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: {
+            id: "REC-CONF-001",
+            material_id: "MAT-CONF-001",
+            status: "succeeded",
+            is_final_fact: false,
+            failure: null,
+            raw_response: {},
+            recognized_fields: {
+              invoice_number: {
+                value: "HOTEL-188",
+                source: "ai",
+                confidence: 0.97,
+                status: "recognized",
+                updated_at: "2026-04-28T14:11:00+08:00",
+              },
+            },
+            manual_corrections: [],
+            created_at: "2026-04-28T14:11:00+08:00",
+            updated_at: "2026-04-28T14:11:00+08:00",
+          },
+        }));
+      }
+
+      if (url === "/api/invoices/INV-CONF-001/validations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-CONF-001/supporting-materials") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "MAT-CONF-PAY",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "payment_record",
+              storage_key: "TASK-OPEN/pay.png",
+              original_filename: "pay.png",
+              content_type: "image/png",
+              size_bytes: 128,
+              sha256: "b".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T14:12:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-CONF-001/splits") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "SPLIT-CONF-001",
+              invoice_id: "INV-CONF-001",
+              member_id: "2250001",
+              amount_cents: 18800,
+              note: "hotel shared",
+              version: 1,
+              is_active: true,
+              created_at: "2026-04-28T14:15:00+08:00",
+              updated_at: "2026-04-28T14:15:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-CONF-001/confirmations") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "CONF-CONF-001",
+              split_id: "SPLIT-CONF-001",
+              member_id: "2250001",
+              split_version: 1,
+              split_amount_cents: 18800,
+              split_note: "hotel shared",
+              is_current: true,
+              status: confirmationStatus,
+              dispute_reason: null,
+              confirmed_at: "2026-04-28T14:16:00+08:00",
+              updated_at: "2026-04-28T14:16:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/splits/SPLIT-CONF-001/confirmation" && method === "PUT") {
+        confirmationStatus = "confirmed";
+        return Promise.resolve(jsonResponse({
+          id: "CONF-CONF-001",
+          split_id: "SPLIT-CONF-001",
+          member_id: "2250001",
+          split_version: 1,
+          split_amount_cents: 18800,
+          split_note: "hotel shared",
+          is_current: true,
+          status: "confirmed",
+          dispute_reason: null,
+          confirmed_at: "2026-04-28T14:16:30+08:00",
+          updated_at: "2026-04-28T14:16:30+08:00",
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench confirmation test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认这笔费用" }));
+
+    expect(await screen.findByText("已提交确认，工作台已刷新最新确认状态。")).toBeInTheDocument();
+    expect(await screen.findByText("确认状态：已确认")).toBeInTheDocument();
   });
 
   it("shows shared invoice summaries for other task members without exposing raw attachment details", async () => {
