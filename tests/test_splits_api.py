@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.audit_logs import AuditLogResult
+from trms_backend.infrastructure.database import build_session_factory
+from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepository
 from trms_backend.main import create_app
 
 from test_invoices_api import create_material, valid_invoice_payload
@@ -13,6 +16,13 @@ def create_invoice(client: TestClient) -> str:
     _, material_id = create_material(client)
     response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
     return response.json()["invoice"]["id"]
+
+
+def list_invoice_audit_logs(tmp_path, invoice_id: str):
+    repository = SqlAlchemyAuditLogRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return repository.list_by_object(object_type="invoice", object_id=invoice_id)
 
 
 def test_replace_invoice_splits(tmp_path):
@@ -218,6 +228,86 @@ def test_replace_invoice_splits_resets_changed_member_confirmations_to_pending(t
         ("2250001", 1, "confirmed"),
         ("2250002", 1, "confirmed"),
     }
+
+
+def test_replace_invoice_splits_records_amount_change_audit(tmp_path):
+    client = make_client(tmp_path)
+    invoice_id = create_invoice(client)
+
+    initial_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000},
+                {"member_id": "2250002", "amount_cents": 6345, "note": "team shared"},
+            ],
+        },
+    )
+    assert initial_response.status_code == 200
+
+    changed_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "admin-1",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6100},
+                {"member_id": "2250002", "amount_cents": 6245, "note": "team shared updated"},
+            ],
+        },
+    )
+
+    assert changed_response.status_code == 200
+    audit_logs = list_invoice_audit_logs(tmp_path, invoice_id)
+    assert len(audit_logs) == 2
+    assert audit_logs[1].actor_id == "admin-1"
+    assert audit_logs[1].action == "replace_invoice_splits"
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].request_id.startswith("req_")
+    assert audit_logs[1].detail["previous_split_count"] == 2
+    assert audit_logs[1].detail["current_split_count"] == 2
+    assert audit_logs[1].detail["changed_splits"] == [
+        {
+            "member_id": "2250001",
+            "change_type": "updated",
+            "before": {
+                "split_id": changed_response.json()["items"][0]["id"],
+                "member_id": "2250001",
+                "amount_cents": 6000,
+                "note": None,
+                "version": 1,
+                "is_active": True,
+            },
+            "after": {
+                "split_id": changed_response.json()["items"][0]["id"],
+                "member_id": "2250001",
+                "amount_cents": 6100,
+                "note": None,
+                "version": 2,
+                "is_active": True,
+            },
+        },
+        {
+            "member_id": "2250002",
+            "change_type": "updated",
+            "before": {
+                "split_id": changed_response.json()["items"][1]["id"],
+                "member_id": "2250002",
+                "amount_cents": 6345,
+                "note": "team shared",
+                "version": 1,
+                "is_active": True,
+            },
+            "after": {
+                "split_id": changed_response.json()["items"][1]["id"],
+                "member_id": "2250002",
+                "amount_cents": 6245,
+                "note": "team shared updated",
+                "version": 2,
+                "is_active": True,
+            },
+        },
+    ]
 
 
 def test_replace_invoice_splits_keeps_unchanged_member_confirmation(tmp_path):

@@ -1,14 +1,17 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ValidationError
 
+from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.request_identity import (
     RequestIdentity,
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
+from trms_backend.application.expense_audit import record_invoice_split_replace_audit
+from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository
 
 from trms_backend.domain.materials import MaterialRepository
@@ -42,6 +45,7 @@ def build_split_router(
     material_repository: MaterialRepository,
     invoice_repository: InvoiceRepository,
     split_repository: ExpenseSplitRepository,
+    audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/invoices/{invoice_id}/splits", tags=["splits"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
@@ -49,6 +53,7 @@ def build_split_router(
     @router.put("")
     def replace_splits(
         invoice_id: str,
+        request: Request,
         payload: ExpenseSplitReplaceRequest,
         identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
     ):
@@ -112,7 +117,18 @@ def build_split_router(
                 detail="split amount total must equal invoice amount",
             )
 
-        return {"items": split_repository.replace_for_invoice(invoice_id, replace_payload.items)}
+        previous_splits = split_repository.list_by_invoice(invoice_id)
+        replaced_items = split_repository.replace_for_invoice(invoice_id, replace_payload.items)
+        record_invoice_split_replace_audit(
+            audit_log_repository,
+            actor_id=replace_payload.actor_id,
+            invoice_id=invoice_id,
+            task_id=task.id,
+            previous_splits=previous_splits,
+            current_splits=replaced_items,
+            request_id=ensure_request_id(request),
+        )
+        return {"items": replaced_items}
 
     @router.get("")
     def list_splits(

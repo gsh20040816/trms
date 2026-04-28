@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.audit_logs import AuditLogResult
+from trms_backend.infrastructure.database import build_session_factory
+from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepository
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
@@ -14,6 +17,13 @@ def make_client(tmp_path):
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
         )
     )
+
+
+def list_split_audit_logs(tmp_path, split_id: str):
+    repository = SqlAlchemyAuditLogRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return repository.list_by_object(object_type="expense_split", object_id=split_id)
 
 
 def create_task(client: TestClient) -> str:
@@ -166,6 +176,16 @@ def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(t
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
     assert response.json()["dispute_reason"] == "shared amount should be lower"
+
+    audit_logs = list_split_audit_logs(tmp_path, split_id)
+    assert len(audit_logs) == 2
+    assert audit_logs[1].actor_id == "admin-1"
+    assert audit_logs[1].action == "resolve_split_dispute"
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].request_id.startswith("req_")
+    assert audit_logs[1].detail["status"] == "pending"
+    assert audit_logs[1].detail["previous_status"] == "disputed"
+    assert audit_logs[1].detail["dispute_reason"] == "shared amount should be lower"
 
     expense_detail_response = client.get(
         f"/api/tasks/{task_id}/expense-details",

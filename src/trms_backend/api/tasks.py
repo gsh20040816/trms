@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, model_validator
 
+from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.request_identity import (
     RequestIdentity,
     build_authenticated_request_identity_dependency,
@@ -10,6 +11,7 @@ from trms_backend.api.request_identity import (
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import resolve_task_access_scope
+from trms_backend.application.expense_audit import record_split_confirmation_audit
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
     AutomaticReminderTaskGenerate,
@@ -17,6 +19,7 @@ from trms_backend.domain.automatic_reminders import (
     generate_task_automatic_reminder_tasks,
     list_task_automatic_reminder_tasks,
 )
+from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository, UserRole
 from trms_backend.domain.confirmations import (
     ConfirmationDisputeResolve,
@@ -112,6 +115,7 @@ def build_task_router(
     recognition_task_repository: RecognitionTaskRepository,
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
+    audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
@@ -587,6 +591,7 @@ def build_task_router(
     def resolve_task_expense_dispute(
         task_id: str,
         split_id: str,
+        request: Request,
         payload: ConfirmationDisputeResolve,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
@@ -625,7 +630,7 @@ def build_task_router(
                 detail="only disputed confirmations can be resolved back to pending",
             )
 
-        return confirmation_repository.upsert_for_split(
+        updated_confirmation = confirmation_repository.upsert_for_split(
             split_id,
             ConfirmationSubmit(
                 actor_id=administrator_id,
@@ -634,6 +639,17 @@ def build_task_router(
                 dispute_reason=confirmation.dispute_reason,
             ),
         )
+        record_split_confirmation_audit(
+            audit_log_repository,
+            actor_id=administrator_id,
+            split=split,
+            invoice_id=invoice.id,
+            task_id=task.id,
+            confirmation=updated_confirmation,
+            previous_confirmation=confirmation,
+            request_id=ensure_request_id(request),
+        )
+        return updated_confirmation
 
     @router.put("/{task_id}/members")
     def update_task_members(

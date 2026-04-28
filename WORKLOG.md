@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-28 18:49 - Record split and confirmation audit logs
+
+### 完成内容
+- 为费用分摊与成员确认主链路补齐统一审计：
+  - 新增 `src/trms_backend/application/expense_audit.py`，集中序列化“分摊替换”“成员确认/异议”“管理员处理异议恢复为 pending”三类审计明细；
+  - `src/trms_backend/api/splits.py` 的 `PUT /api/invoices/{invoice_id}/splits` 现在会在成功替换分摊后写入 `replace_invoice_splits` 审计，按成员记录新增/删除/金额或备注变更前后差异；
+  - `src/trms_backend/api/confirmations.py` 的 `PUT /api/splits/{split_id}/confirmation` 现在会分别写入 `confirm_expense_split`、`dispute_expense_split` 成功审计，并为默认禁止的代确认路径写入 `submit_split_confirmation` 拒绝审计；
+  - `src/trms_backend/api/tasks.py` 的 `POST /api/tasks/{task_id}/expense-disputes/{split_id}/resolve` 现在会在管理员将异议恢复为 `pending` 时写入 `resolve_split_dispute` 审计。
+- 补充回归测试：
+  - `tests/test_splits_api.py` 断言分摊金额变更会生成包含 before/after 差异的发票级审计；
+  - `tests/test_confirmations_api.py` 断言成员确认、成员异议与管理员代确认拒绝都会留下对应 split 审计；
+  - `tests/test_expense_disputes_api.py` 断言管理员处理异议恢复 `pending` 会写入成功审计。
+
+### 根因
+- 统一 `audit_logs` 骨架已经落地，材料和识别相关动作也已接入审计，但费用分摊和成员确认这两条财务主链路仍直接修改业务仓储，不留下统一审计记录。
+- 如果继续保持现状，就无法追溯“谁改了分摊金额、谁确认或提出了异议、管理员何时处理了异议”，不满足需求文档与架构文档对敏感金额操作可追溯的要求。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/confirmations.py`
+- `src/trms_backend/api/splits.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/application/expense_audit.py`
+- `src/trms_backend/main.py`
+- `tests/test_confirmations_api.py`
+- `tests/test_expense_disputes_api.py`
+- `tests/test_splits_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_splits_api.py tests/test_confirmations_api.py tests/test_expense_disputes_api.py`
+    - 21 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 306 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：分摊替换属于发票级动作，因此审计对象记录为 `invoice`，并在 `detail.changed_splits` 中保存逐成员差异；成员确认、异议和异议处理仍以 `expense_split` 作为审计对象，便于按个人费用项追溯。
+- 当前保守假设：第一阶段仍不存在“管理员代成员成功确认”的业务路径，因此本轮只为该默认拒绝路径落拒绝审计，而不新增任何代确认成功分支。
+
 ## 2026-04-28 18:21 - Record material deletion mark audit logs
 
 ### 完成内容

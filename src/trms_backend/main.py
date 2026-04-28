@@ -157,6 +157,7 @@ def create_app(
             recognition_task_repository,
             split_repository,
             confirmation_repository,
+            audit_log_repository,
         )
     )
     app.include_router(
@@ -214,6 +215,7 @@ def create_app(
             material_repository,
             invoice_repository,
             split_repository,
+            audit_log_repository,
         )
     )
     app.include_router(
@@ -223,6 +225,7 @@ def create_app(
             invoice_repository,
             split_repository,
             confirmation_repository,
+            audit_log_repository,
         )
     )
     app.include_router(build_telegram_binding_router(telegram_account_binding_repository))
