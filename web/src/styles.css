@@ -672,8 +672,19 @@ select {
   gap: 20px;
 }
 
+.split-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.4fr);
+  gap: 20px;
+}
+
 .invoice-editor-list-panel,
 .invoice-editor-form-panel {
+  max-width: none;
+}
+
+.split-editor-list-panel,
+.split-editor-form-panel {
   max-width: none;
 }
 
@@ -717,6 +728,10 @@ select {
   margin-top: 18px;
 }
 
+.split-editor-empty {
+  margin-top: 18px;
+}
+
 .recognition-field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -743,6 +758,72 @@ select {
 .validation-result-list strong,
 .manual-correction-list strong {
   color: #11253d;
+}
+
+.split-row-list {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.split-row-card {
+  display: grid;
+  gap: 14px;
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.split-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.split-editor-form-grid {
+  margin-top: 0;
+}
+
+.split-editor-note-field {
+  grid-column: 1 / -1;
+}
+
+.split-summary-card {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.split-summary-card div {
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.split-summary-card dt {
+  margin-bottom: 6px;
+  color: #11253d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.split-summary-card dd {
+  margin: 0;
+  color: #35506f;
+}
+
+.split-difference-balanced {
+  color: #0d5a34;
+  font-weight: 700;
+}
+
+.split-difference-unbalanced {
+  color: #b42318;
+  font-weight: 700;
 }
 
 .token-list {
@@ -847,7 +928,9 @@ select {
   .task-meta-grid,
   .task-detail-grid,
   .invoice-editor-layout,
+  .split-editor-layout,
   .recognition-field-grid,
+  .split-summary-card,
   .checkbox-grid {
     grid-template-columns: 1fr;
   }
@@ -867,6 +950,7 @@ select {
   .task-anomaly-header,
   .member-status-section-header,
   .admin-form-footer,
+  .split-row-header,
   .member-row {
     flex-direction: column;
   }

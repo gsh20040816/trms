@@ -84,6 +84,10 @@ describe("admin task detail page", () => {
       "href",
       "/admin/tasks/TASK-ALPHA/invoices",
     );
+    expect(screen.getByRole("link", { name: "编辑费用分摊" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-ALPHA/splits",
+    );
 
     const members = within(screen.getByLabelText("任务成员名单"));
     expect(members.getByText("2250001")).toBeInTheDocument();

@@ -1,5 +1,59 @@
 # WORKLOG
 
+## 2026-04-28 08:56 - Implement admin split editor page
+
+### 完成内容
+- 为管理员补齐费用分摊编辑页面：
+  - 新增 `web/src/app/admin-split-editor.tsx`，在 `/admin/tasks/:taskId/splits` 展示任务内已录入发票列表，并允许对单张发票添加、删除和调整一个或多个分摊成员、金额与备注；
+  - 页面直接复用 `GET /api/tasks/{taskId}`、`GET /api/tasks/{taskId}/review-summary` 和 `PUT /api/invoices/{invoice_id}/splits`，不新增后端接口。
+- 将分摊金额差额与确认状态接入前端：
+  - 页面实时显示发票金额、分摊合计、差额和未完成金额行数量，不在前端自动“修正”为成功；
+  - 保存后重新拉取任务复核摘要，展示最新分摊记录和成员确认状态，显式暴露服务端拒绝原因。
+- 打通管理员入口：
+  - 更新 `web/src/app/routes.tsx` 注册 `/admin/tasks/:taskId/splits`；
+  - 更新 `web/src/app/admin-task-detail.tsx`，从任务详情页增加“编辑费用分摊”入口。
+- 补齐前端测试：
+  - 新增 `web/src/app/admin-split-editor.test.tsx`，覆盖“新增分摊行并保存刷新摘要”“服务端拒绝时错误展示”；
+  - 更新 `web/src/app/admin-task-detail.test.tsx`，覆盖任务详情页到分摊编辑页的入口链接。
+- 将 `TASKS.md` 中“实现费用分摊编辑页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/admin-split-editor.tsx`
+- `web/src/app/admin-split-editor.test.tsx`
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮管理员已经可以录入和更正发票字段，但发票事实落库后仍缺少一个前端入口把金额继续分配到任务成员，导致“发票录入 -> 分摊 -> 成员确认”的主链路在 Web 端仍然断开。
+- 后端实际上已经具备发票分摊替换接口、管理员复核摘要和确认状态聚合能力；当前缺口集中在管理员页面、差额反馈和错误展示，而不是新的后端业务实现。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- admin-split-editor admin-task-detail`
+    - 2 个前端测试文件、5 个测试通过
+  - `cd web && npm run lint`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，11 个前端测试文件、31 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 对尚无既有分摊记录的发票，页面默认把首条分摊行预填为“材料提交人承担整张发票金额”；若提交人缺失或不在任务成员名单中，则回退到任务成员列表中的第一个成员。该保守假设仅用于降低首次录入成本，不改变服务端成员合法性约束。
+- 前端当前只校验“成员已选择、金额为正数”，但不会在差额非零时本地伪装失败结论；是否允许保存，仍以服务端真实规则为准。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现成员费用确认页面”，直接复用本轮已接入的分摊确认状态、最新版本提示和发票摘要信息。
+
 ## 2026-04-28 08:40 - Implement admin invoice entry and correction page
 
 ### 完成内容
