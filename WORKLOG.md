@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-28 10:12 - Establish frontend form and upload component tests
+
+### 完成内容
+- 补齐现有前端表单/上传测试中的服务端拒绝分支：
+  - 在 `web/src/app/member-material-upload.test.tsx` 新增材料上传被后端拒绝时的回归用例，确认页面显示 `ApiErrorNotice`，不把失败伪装成上传成功；
+  - 在 `web/src/app/member-expense-confirmation.test.tsx` 新增成员确认提交被后端拒绝时的回归用例，确认页面显式展示服务端错误，而不是静默吞掉失败。
+- 结合仓库内既有测试，完成本任务定义的四类页面覆盖闭环：
+  - 任务创建表单：`web/src/app/admin-task-create.test.tsx`
+  - 材料上传：`web/src/app/member-material-upload.test.tsx`
+  - 分摊编辑：`web/src/app/admin-split-editor.test.tsx`
+  - 成员确认：`web/src/app/member-expense-confirmation.test.tsx`
+- 将 `TASKS.md` 中“建立前端表单和上传组件测试”标记为已完成。
+
+### 修改文件
+- `web/src/app/member-material-upload.test.tsx`
+- `web/src/app/member-expense-confirmation.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 该任务对应的四类前端页面测试主路径其实已经大体存在，但覆盖不均衡：任务创建和分摊编辑已经锁定了服务端错误展示，材料上传和成员确认仍缺少“后端明确拒绝时必须显式报错”的回归用例。
+- 结果是 `TASKS.md` 的 Done when 虽然接近满足，但“覆盖服务端错误展示”这一条件并没有在四类关键交互上形成完整约束，后续页面改动时仍可能把失败状态退化成静默无响应或误导性成功反馈。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- member-material-upload member-expense-confirmation`
+    - 2 个前端测试文件、7 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 165 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，17 个前端测试文件、49 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮将“建立前端表单和上传组件测试”保守解释为：在不新增业务实现的前提下，补齐任务定义要求的关键测试边界，尤其是服务端错误展示；不额外扩展到新的组件抽象或 E2E 场景。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立前端主流程 E2E 占位”，优先确定使用 Vitest + Memory Router mock API 继续占位，还是引入 Playwright 仅搭建最小骨架。
+
 ## 2026-04-28 10:06 - Establish frontend permission visibility tests
 
 ### 完成内容

@@ -380,4 +380,92 @@ describe("MemberExpenseConfirmationPage", () => {
     expect(await within(detailCard).findByText("当前费用明细版本已失效，通常是管理员刚修改了分摊金额或成员归属；请刷新后再确认。")).toBeInTheDocument();
     expect(within(detailCard).getByRole("button", { name: "重新加载明细" })).toBeInTheDocument();
   });
+
+  it("shows backend errors when confirmation submission fails for other reasons", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "closed",
+            competition_name: "Regional",
+            competition_location: "上海",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T18:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["registration"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/expense-details?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          actor_id: "2250001",
+          scope: "member",
+          total_amount_cents: 10000,
+          items: [
+            {
+              split_id: "SPLIT-004",
+              split_version: 3,
+              member_id: "2250001",
+              amount_cents: 10000,
+              note: null,
+              created_at: "2026-04-28T10:05:00+08:00",
+              updated_at: "2026-04-28T10:05:00+08:00",
+              invoice: {
+                id: "INV-004",
+                material_id: "MAT-INV-004",
+                invoice_number: "REG-002",
+                issue_date: "2026-04-20",
+                transaction_time: "2026-04-20T09:00:00+08:00",
+                buyer_name: "同济大学",
+                seller_name: "会务组",
+                amount_cents: 10000,
+                expense_type: "registration",
+                created_at: "2026-04-28T10:00:00+08:00",
+                updated_at: "2026-04-28T10:05:00+08:00",
+              },
+              confirmation: null,
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-004/supporting-materials") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/splits/SPLIT-004/confirmation" && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse(
+          { detail: "confirmation window has been locked" },
+          { status: 409 },
+        ));
+      }
+
+      throw new Error(`Unhandled fetch URL in member confirmation rejection test: ${url}`);
+    });
+
+    renderMemberExpenseConfirmationRoute();
+
+    const detailList = await screen.findByLabelText("成员费用明细列表");
+    const detailCard = within(detailList).getByRole("heading", { name: "REG-002" }).closest("article");
+    if (!detailCard) {
+      throw new Error("expected one expense detail card");
+    }
+
+    fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
+
+    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
+    expect(screen.getByText("confirmation window has been locked")).toBeInTheDocument();
+  });
 });

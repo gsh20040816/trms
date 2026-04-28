@@ -238,4 +238,57 @@ describe("MemberMaterialUploadPage", () => {
     expect(await screen.findByText("当前没有可上传的开放任务")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "上传材料" })).not.toBeInTheDocument();
   });
+
+  it("shows backend errors when material upload is rejected", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway", "hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/materials" && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(
+          { detail: "material upload window is closed" },
+          { status: 409 },
+        ));
+      }
+
+      throw new Error(`Unhandled fetch URL in member upload rejection test: ${url}`);
+    });
+
+    renderMemberUploadRoute("/member/materials/upload?taskId=TASK-OPEN");
+
+    expect(await screen.findByRole("heading", { name: "成员材料上传" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("上传文件"), {
+      target: {
+        files: [new File(["fake-pdf"], "ticket.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
+
+    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
+    expect(screen.getByText("material upload window is closed")).toBeInTheDocument();
+  });
 });
