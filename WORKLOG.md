@@ -1,5 +1,59 @@
 # WORKLOG
 
+## 2026-04-28 16:56 - Close member-facing API identity and visibility scope
+
+### 完成内容
+- 收口成员侧 bearer 身份上下文与可见范围：
+  - `GET /api/tasks` 在成员 bearer 会话下默认只返回本人可见任务，并在显式 `member_id` 与认证身份不一致时显式拒绝；
+  - `GET /api/tasks/{task_id}/member-status` 改为统一消费请求身份上下文，在 bearer 成员场景下不再要求显式 `actor_id`；
+  - `GET /api/tasks/{task_id}/materials`、`GET /api/tasks/{task_id}/invoices`、`GET /api/materials/{material_id}/recognition-tasks`、`GET /api/invoices/{invoice_id}/validations`、`GET /api/invoices/{invoice_id}/supporting-materials`、`GET /api/invoices/{invoice_id}/splits`、`GET /api/invoices/{invoice_id}/confirmations` 对已认证成员改为只暴露本人相关记录。
+- 新增共享任务访问边界：
+  - 新增 `src/trms_backend/api/request_task_access.py`，统一表达“匿名兼容 / 任务管理员 / 任务成员”三类访问范围；
+  - 相关成员侧查询接口在 bearer 场景下共享该边界，避免继续在各路由内散落判断。
+- 补成员侧 bearer 越权回归测试：
+  - `tests/test_web_bearer_request_identity_api.py` 新增成员可见任务过滤、`submitter_id` / `actor_id` 不一致拒绝、只返回本人材料/发票/确认/分摊/附件摘要等测试。
+
+### 根因
+- 上一轮虽然已经把 Web 关键业务请求迁到 bearer token，但多个成员页面仍依赖“任务内全量列表接口 + 前端本地过滤”：
+  - 成员任务列表先拉全量任务再按 `task.member_ids` 过滤；
+  - 成员材料状态页会直接读取任务下全部材料、全部发票，再在前端裁剪本人数据；
+  - 相关发票校验、识别历史、分摊和确认列表接口也没有真正按已认证成员收口。
+- 这意味着 bearer 身份虽然已进入请求链路，但成员侧查询边界仍停留在调用方自觉过滤阶段，后端没有真正保证“成员只能访问本人相关材料、费用和确认记录”。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/confirmations.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/api/request_task_access.py`
+- `src/trms_backend/api/splits.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/main.py`
+- `tests/test_web_bearer_request_identity_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_web_bearer_request_identity_api.py tests/test_materials_api.py tests/test_invoices_api.py tests/test_confirmations_api.py tests/test_task_member_status_api.py tests/test_missing_materials_api.py tests/test_splits_api.py`
+    - 87 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 286 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设继续成立：第一阶段任务成员语义仍主要绑定 `actor_id`，因此本轮“成员侧身份收口”仍按当前账号 `actor_id` 与任务成员编号对齐，而不提前把全链路重构为独立 `member_code` 主键语义。
+- 当前保守假设：匿名旧契约和 CLI/Telegram/邮件的显式身份字段兼容边界暂时保留；本轮只对 bearer 成员场景补齐真正的后端可见范围约束。
+
 ## 2026-04-28 17:25 - Split basic permission control task
 
 ### 完成内容

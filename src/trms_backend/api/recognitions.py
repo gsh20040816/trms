@@ -1,12 +1,20 @@
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
+from trms_backend.api.request_identity import (
+    RequestIdentity,
+    build_optional_request_identity_dependency,
+)
+from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.recognition_preparation import (
     RecognitionMaterialNotFoundError,
     RecognitionPreparationService,
     RecognitionTaskExecutionConflictError,
     RecognitionTaskExecutionNotFoundError,
 )
+from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import (
@@ -20,6 +28,7 @@ from trms_backend.domain.tasks import TaskRepository
 
 
 def build_recognition_router(
+    auth_repository: AuthRepository,
     task_repository: TaskRepository,
     material_repository: MaterialRepository,
     invoice_repository: InvoiceRepository,
@@ -28,6 +37,7 @@ def build_recognition_router(
     recognition_preparation_service: RecognitionPreparationService,
 ) -> APIRouter:
     router = APIRouter(tags=["recognitions"])
+    optional_request_identity = build_optional_request_identity_dependency(auth_repository)
 
     @router.post(
         "/api/materials/{material_id}/recognition-tasks",
@@ -42,10 +52,28 @@ def build_recognition_router(
         return {"item": task}
 
     @router.get("/api/materials/{material_id}/recognition-tasks")
-    def list_recognition_tasks(material_id: str):
+    def list_recognition_tasks(
+        material_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         material = material_repository.get(material_id)
         if material is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+
+        if material.task_id is not None:
+            task = task_repository.get(material.task_id)
+            if task is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+            scope = resolve_task_access_scope(
+                identity,
+                task,
+                forbidden_detail="actor is not allowed to view recognition tasks for this material",
+            )
+            if scope is TaskAccessScope.MEMBER and material.submitter_id != identity.actor_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="actor is not allowed to view recognition tasks for this material",
+                )
 
         items = recognition_task_repository.list_by_material(material_id)
 

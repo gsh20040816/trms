@@ -8,6 +8,7 @@ from trms_backend.api.request_identity import (
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.material_submission import (
     MaterialSubmissionService,
     MaterialSubmissionTaskNotFoundError,
@@ -26,6 +27,8 @@ from trms_backend.domain.tasks import (
     TaskSubmitterNotMemberError,
     ensure_task_has_member,
 )
+
+
 def build_material_router(
     auth_repository: AuthRepository,
     task_repository: TaskRepository,
@@ -143,10 +146,23 @@ def build_material_router(
         return {"item": claimed_material}
 
     @router.get("/api/tasks/{task_id}/materials")
-    def list_materials(task_id: str):
+    def list_materials(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        return {"items": material_repository.list_by_task(task_id)}
+
+        items = material_repository.list_by_task(task_id)
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view materials for this task",
+        )
+        if scope is TaskAccessScope.MEMBER:
+            actor_id = identity.actor_id or ""
+            items = [item for item in items if item.submitter_id == actor_id]
+        return {"items": items}
 
     return router

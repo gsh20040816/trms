@@ -82,6 +82,43 @@ def test_member_bearer_upload_uses_authenticated_actor_id(tmp_path):
     assert response.json()["items"][0]["submitter_id"] == "2250001"
 
 
+def test_member_bearer_task_queries_filter_visible_tasks_and_reject_mismatched_ids(tmp_path):
+    client = make_client(tmp_path)
+    member_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    visible_task_id = create_task(client)
+    hidden_task_response = client.post(
+        "/api/tasks",
+        json=valid_task_payload() | {"member_ids": ["2250002", "2250003"]},
+    )
+    assert hidden_task_response.status_code == 201
+
+    list_response = client.get(
+        "/api/tasks",
+        headers=auth_headers(member_token),
+    )
+
+    assert list_response.status_code == 200
+    assert [item["id"] for item in list_response.json()] == [visible_task_id]
+
+    mismatch_response = client.get(
+        "/api/tasks",
+        headers=auth_headers(member_token),
+        params={"member_id": "2250002"},
+    )
+
+    assert mismatch_response.status_code == 403
+    assert mismatch_response.json()["detail"] == (
+        "member_id does not match the authenticated request identity: "
+        "expected '2250001', got '2250002'"
+    )
+
+
 def test_admin_bearer_review_summary_and_material_reminders_do_not_require_actor_fields(tmp_path):
     client = make_client(tmp_path)
     admin_token = register_and_get_token(
@@ -190,6 +227,275 @@ def test_bearer_invoice_split_confirmation_and_expense_details_use_authenticated
     assert expense_details_response.status_code == 200
     assert expense_details_response.json()["actor_id"] == "2250001"
     assert len(expense_details_response.json()["items"]) == 1
+
+
+def test_member_bearer_material_queries_only_expose_own_records(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = register_and_get_token(
+        client,
+        username="admin1",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
+    member_one_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    member_two_token = register_and_get_token(
+        client,
+        username="member2",
+        role="member",
+        actor_id="2250002",
+        member_code="2250002",
+    )
+    task_id = create_task(client)
+    open_task(client, task_id)
+
+    member_one_upload = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_one_token),
+        data={"channel": "web", "material_type": "invoice"},
+        files={"files": ("member-one.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert member_one_upload.status_code == 201
+    member_one_material_id = member_one_upload.json()["items"][0]["id"]
+
+    member_two_upload = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_two_token),
+        data={"channel": "web", "material_type": "invoice"},
+        files={"files": ("member-two.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert member_two_upload.status_code == 201
+    member_two_material_id = member_two_upload.json()["items"][0]["id"]
+
+    mismatch_upload = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_one_token),
+        data={
+            "submitter_id": "2250002",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("mismatch.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert mismatch_upload.status_code == 403
+    assert mismatch_upload.json()["detail"] == (
+        "submitter_id does not match the authenticated request identity: "
+        "expected '2250001', got '2250002'"
+    )
+
+    member_one_invoice_response = client.post(
+        f"/api/materials/{member_one_material_id}/invoice",
+        headers=auth_headers(admin_token),
+        json={key: value for key, value in valid_invoice_payload().items() if key != "actor_id"},
+    )
+    assert member_one_invoice_response.status_code == 201
+    member_one_invoice_id = member_one_invoice_response.json()["invoice"]["id"]
+
+    member_two_invoice_response = client.post(
+        f"/api/materials/{member_two_material_id}/invoice",
+        headers=auth_headers(admin_token),
+        json={
+            **{key: value for key, value in valid_invoice_payload().items() if key != "actor_id"},
+            "invoice_number": "INV-002",
+        },
+    )
+    assert member_two_invoice_response.status_code == 201
+    member_two_invoice_id = member_two_invoice_response.json()["invoice"]["id"]
+
+    materials_response = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_one_token),
+    )
+    assert materials_response.status_code == 200
+    assert [item["id"] for item in materials_response.json()["items"]] == [member_one_material_id]
+
+    invoices_response = client.get(
+        f"/api/tasks/{task_id}/invoices",
+        headers=auth_headers(member_one_token),
+    )
+    assert invoices_response.status_code == 200
+    assert [item["id"] for item in invoices_response.json()["items"]] == [member_one_invoice_id]
+
+    member_status_response = client.get(
+        f"/api/tasks/{task_id}/member-status",
+        headers=auth_headers(member_one_token),
+    )
+    assert member_status_response.status_code == 200
+    assert member_status_response.json()["actor_id"] == "2250001"
+    assert [item["material_id"] for item in member_status_response.json()["materials"]] == [
+        member_one_material_id
+    ]
+
+    mismatch_member_status = client.get(
+        f"/api/tasks/{task_id}/member-status",
+        headers=auth_headers(member_one_token),
+        params={"actor_id": "2250002"},
+    )
+    assert mismatch_member_status.status_code == 403
+    assert mismatch_member_status.json()["detail"] == (
+        "actor_id does not match the authenticated request identity: "
+        "expected '2250001', got '2250002'"
+    )
+
+    own_recognition_response = client.get(
+        f"/api/materials/{member_one_material_id}/recognition-tasks",
+        headers=auth_headers(member_one_token),
+    )
+    assert own_recognition_response.status_code == 200
+
+    other_recognition_response = client.get(
+        f"/api/materials/{member_two_material_id}/recognition-tasks",
+        headers=auth_headers(member_one_token),
+    )
+    assert other_recognition_response.status_code == 403
+    assert other_recognition_response.json()["detail"] == (
+        "actor is not allowed to view recognition tasks for this material"
+    )
+
+    other_validation_response = client.get(
+        f"/api/invoices/{member_two_invoice_id}/validations",
+        headers=auth_headers(member_one_token),
+    )
+    assert other_validation_response.status_code == 403
+    assert other_validation_response.json()["detail"] == (
+        "actor is not allowed to view invoice validations for this task"
+    )
+
+
+def test_member_bearer_fee_and_confirmation_queries_only_expose_own_records(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = register_and_get_token(
+        client,
+        username="admin1",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
+    member_one_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    member_two_token = register_and_get_token(
+        client,
+        username="member2",
+        role="member",
+        actor_id="2250002",
+        member_code="2250002",
+    )
+    task_id = create_task(client)
+    open_task(client, task_id)
+
+    invoice_material_response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_one_token),
+        data={"channel": "web", "material_type": "invoice"},
+        files={"files": ("shared.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert invoice_material_response.status_code == 201
+    invoice_material_id = invoice_material_response.json()["items"][0]["id"]
+
+    own_support_response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_one_token),
+        data={"channel": "web", "material_type": "payment_record"},
+        files={"files": ("own-support.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert own_support_response.status_code == 201
+    own_support_material_id = own_support_response.json()["items"][0]["id"]
+
+    other_support_response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_two_token),
+        data={"channel": "web", "material_type": "payment_record"},
+        files={"files": ("other-support.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert other_support_response.status_code == 201
+    other_support_material_id = other_support_response.json()["items"][0]["id"]
+
+    invoice_response = client.post(
+        f"/api/materials/{invoice_material_id}/invoice",
+        headers=auth_headers(admin_token),
+        json={
+            **{key: value for key, value in valid_invoice_payload().items() if key != "actor_id"},
+            "amount_cents": 20000,
+        },
+    )
+    assert invoice_response.status_code == 201
+    invoice_id = invoice_response.json()["invoice"]["id"]
+
+    assert client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{own_support_material_id}"
+    ).status_code == 200
+    assert client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{other_support_material_id}"
+    ).status_code == 200
+
+    split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=auth_headers(admin_token),
+        json={
+            "items": [
+                {"member_id": "2250001", "amount_cents": 12000},
+                {"member_id": "2250002", "amount_cents": 8000},
+            ]
+        },
+    )
+    assert split_response.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in split_response.json()["items"]}
+
+    assert client.put(
+        f"/api/splits/{split_ids['2250001']}/confirmation",
+        headers=auth_headers(member_one_token),
+        json={"status": "confirmed"},
+    ).status_code == 200
+    assert client.put(
+        f"/api/splits/{split_ids['2250002']}/confirmation",
+        headers=auth_headers(member_two_token),
+        json={"status": "confirmed"},
+    ).status_code == 200
+
+    splits_response = client.get(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=auth_headers(member_one_token),
+    )
+    assert splits_response.status_code == 200
+    assert [item["member_id"] for item in splits_response.json()["items"]] == ["2250001"]
+
+    confirmations_response = client.get(
+        f"/api/invoices/{invoice_id}/confirmations",
+        headers=auth_headers(member_one_token),
+    )
+    assert confirmations_response.status_code == 200
+    assert [item["member_id"] for item in confirmations_response.json()["items"]] == ["2250001"]
+
+    supporting_materials_response = client.get(
+        f"/api/invoices/{invoice_id}/supporting-materials",
+        headers=auth_headers(member_one_token),
+    )
+    assert supporting_materials_response.status_code == 200
+    assert [item["id"] for item in supporting_materials_response.json()["items"]] == [
+        own_support_material_id
+    ]
+
+    mismatch_confirmation = client.put(
+        f"/api/splits/{split_ids['2250001']}/confirmation",
+        headers=auth_headers(member_one_token),
+        json={"actor_id": "2250002", "member_id": "2250001", "status": "confirmed"},
+    )
+    assert mismatch_confirmation.status_code == 403
+    assert mismatch_confirmation.json()["detail"] == (
+        "actor_id does not match the authenticated request identity: "
+        "expected '2250001', got '2250002'"
+    )
 
 
 def test_admin_bearer_export_routes_do_not_require_actor_id(tmp_path):

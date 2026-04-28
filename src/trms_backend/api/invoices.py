@@ -10,6 +10,7 @@ from trms_backend.api.request_identity import (
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import (
@@ -196,17 +197,59 @@ def build_invoice_router(
         return {"invoice": invoice, "validations": validations}
 
     @router.get("/api/tasks/{task_id}/invoices")
-    def list_invoices(task_id: str):
+    def list_invoices(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        return {"items": invoice_repository.list_by_task(task_id)}
+
+        items = invoice_repository.list_by_task(task_id)
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view invoices for this task",
+        )
+        if scope is TaskAccessScope.MEMBER:
+            actor_id = identity.actor_id or ""
+            visible_material_ids = {
+                material.id
+                for material in material_repository.list_by_task(task_id)
+                if material.submitter_id == actor_id
+            }
+            items = [item for item in items if item.material_id in visible_material_ids]
+        return {"items": items}
 
     @router.get("/api/invoices/{invoice_id}/validations")
-    def list_invoice_validations(invoice_id: str):
+    def list_invoice_validations(
+        invoice_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view invoice validations for this task",
+        )
+        if scope is TaskAccessScope.MEMBER:
+            material = material_repository.get(invoice.material_id)
+            if material is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="invoice material not found",
+                )
+            if material.submitter_id != identity.actor_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="actor is not allowed to view invoice validations for this task",
+                )
         return {"items": validation_repository.list_by_invoice(invoice_id)}
 
     @router.put("/api/invoices/{invoice_id}/supporting-materials/{material_id}")
@@ -246,15 +289,29 @@ def build_invoice_router(
         return {"item": material}
 
     @router.get("/api/invoices/{invoice_id}/supporting-materials")
-    def list_supporting_materials(invoice_id: str):
+    def list_supporting_materials(
+        invoice_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view supporting materials for this task",
+        )
 
         items = []
         for link in invoice_repository.list_supporting_material_links(invoice_id):
             material = material_repository.get(link.material_id)
             if material is not None:
+                if scope is TaskAccessScope.MEMBER and material.submitter_id != identity.actor_id:
+                    continue
                 items.append(material)
         return {"items": items}
 

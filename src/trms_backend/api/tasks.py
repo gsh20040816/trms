@@ -15,7 +15,7 @@ from trms_backend.domain.automatic_reminders import (
     generate_task_automatic_reminder_tasks,
     list_task_automatic_reminder_tasks,
 )
-from trms_backend.domain.auth import AuthRepository
+from trms_backend.domain.auth import AuthRepository, UserRole
 from trms_backend.domain.confirmations import (
     ConfirmationDisputeResolve,
     ConfirmationRepository,
@@ -126,7 +126,17 @@ def build_task_router(
         return repository.create(task_create)
 
     @router.get("")
-    def list_tasks(member_id: Annotated[str | None, Query(min_length=1)] = None):
+    def list_tasks(
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        member_id: Annotated[str | None, Query(min_length=1)] = None,
+    ):
+        if identity.is_authenticated and identity.role is UserRole.MEMBER:
+            resolved_member_id = resolve_required_actor_request_field(
+                identity,
+                member_id,
+                field_name="member_id",
+            )
+            return repository.list_for_member(resolved_member_id)
         if member_id is None:
             return repository.list()
         return repository.list_for_member(member_id)
@@ -306,7 +316,8 @@ def build_task_router(
     @router.get("/{task_id}/member-status")
     def get_task_member_status(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
@@ -332,10 +343,15 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         try:
             return build_task_member_status_report(
                 task,
-                actor_id=actor_id,
+                actor_id=resolved_actor_id,
                 materials=materials,
                 invoices=invoices,
                 latest_recognitions_by_material_id=latest_recognitions_by_material_id,

@@ -8,6 +8,7 @@ from trms_backend.api.request_identity import (
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.domain.auth import AuthRepository
 
 from trms_backend.domain.materials import MaterialRepository
@@ -114,10 +115,26 @@ def build_split_router(
         return {"items": split_repository.replace_for_invoice(invoice_id, replace_payload.items)}
 
     @router.get("")
-    def list_splits(invoice_id: str):
+    def list_splits(
+        invoice_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
-        return {"items": split_repository.list_by_invoice(invoice_id)}
+
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        items = split_repository.list_by_invoice(invoice_id)
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view expense splits for this task",
+        )
+        if scope is TaskAccessScope.MEMBER:
+            actor_id = identity.actor_id or ""
+            items = [item for item in items if item.member_id == actor_id]
+        return {"items": items}
 
     return router

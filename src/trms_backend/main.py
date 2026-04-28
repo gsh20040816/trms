@@ -169,6 +169,7 @@ def create_app(
     app.include_router(build_telegram_material_router(telegram_material_submission_service))
     app.include_router(
         build_recognition_router(
+            auth_repository,
             task_repository,
             material_repository,
             invoice_repository,
@@ -199,6 +200,7 @@ def create_app(
     app.include_router(
         build_confirmation_router(
             auth_repository,
+            task_repository,
             invoice_repository,
             split_repository,
             confirmation_repository,

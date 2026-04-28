@@ -8,6 +8,7 @@ from trms_backend.api.request_identity import (
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.domain.auth import AuthRepository
 
 from trms_backend.domain.confirmations import (
@@ -17,6 +18,7 @@ from trms_backend.domain.confirmations import (
 )
 from trms_backend.domain.invoices import InvoiceRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
+from trms_backend.domain.tasks import TaskRepository
 
 
 class MemberConfirmationSubmitRequest(BaseModel):
@@ -38,6 +40,7 @@ class MemberConfirmationSubmitRequest(BaseModel):
 
 def build_confirmation_router(
     auth_repository: AuthRepository,
+    task_repository: TaskRepository,
     invoice_repository: InvoiceRepository,
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
@@ -91,10 +94,26 @@ def build_confirmation_router(
         return confirmation_repository.upsert_for_split(split_id, submit_payload)
 
     @router.get("/api/invoices/{invoice_id}/confirmations")
-    def list_confirmations(invoice_id: str):
+    def list_confirmations(
+        invoice_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
-        return {"items": confirmation_repository.list_by_invoice(invoice_id)}
+
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        items = confirmation_repository.list_by_invoice(invoice_id)
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view confirmations for this task",
+        )
+        if scope is TaskAccessScope.MEMBER:
+            actor_id = identity.actor_id or ""
+            items = [item for item in items if item.member_id == actor_id]
+        return {"items": items}
 
     return router
