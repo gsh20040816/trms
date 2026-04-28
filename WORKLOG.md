@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-29 04:39 - Add export job integration coverage
+
+### 完成内容
+- 在既有 `tests/test_export_async_jobs.py` 基础上补强导出异步处理器集成断言，直接覆盖当前任务要求的导出任务创建、真实状态变化和失败原因持久化。
+- 已补齐以下集成场景：
+  - 导出任务创建后先以 `pending` 状态落库，且初始无产物、无失败原因；
+  - 异步处理器真实执行后，导出任务会从 `pending` 进入终态，并在成功路径上生成可下载产物；
+  - 合并 PDF 遇到损坏 PDF 时，失败原因会显式带出具体 `material_id`，不会只给模糊错误；
+  - 失败终态会写入 `fail_task_export_job` 审计日志，并保留失败原因，不伪装成成功。
+
+### 根因
+- 现有仓库虽然已经有 `tests/test_exports_api.py` 和 `tests/test_export_async_jobs.py`，但“损坏 PDF 后异步导出任务失败时是否把具体材料编号和失败审计一起落库”这一点还没有被明确锁住。
+- 当前首个未完成任务要求的是“导出任务集成测试”，重点不在单个导出函数本身，而在“创建任务 -> 异步处理 -> 成功/失败终态 -> 原因可追溯”这条主链路，因此本轮补的是异步处理器级别的集成断言。
+
+### 关键改动点
+- 增强导出异步集成测试：
+  - `tests/test_export_async_jobs.py`
+- 更新任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮未修改任何生产业务逻辑，只增强测试；如果后续导出任务状态流转、失败原因拼装或审计记录回归，这组测试会先暴露问题。
+- 当前损坏 PDF 断言仍按“错误消息必须包含 `material_id` 和 `is unreadable:` 前缀”校验，没有把底层 PDF 库的完整报错文本写死，避免因为第三方库错误细节轻微变化导致无意义脆弱测试。
+- 本轮仍不扩展到真实财务可提交材料正确性验证，符合当前任务“只补导出任务集成测试，不要求真实财务可用材料”的边界。
+
+### 修改文件
+- `tests/test_export_async_jobs.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_export_async_jobs.py`
+    - 5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 393 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认“导出任务状态变化”以真实异步处理器驱动的 `pending -> succeeded/failed` 主链路为准；已有 `tests/test_exports_api.py` 中的状态接口覆盖继续负责补足管理接口层的手工状态查看与参数持久化断言。
+
 ## 2026-04-29 04:37 - Add material upload integration coverage
 
 ### 完成内容

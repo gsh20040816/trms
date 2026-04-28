@@ -131,6 +131,9 @@ def test_export_async_processor_persists_artifact_and_exposes_download(tmp_path)
         task_id,
         format="csv",
     )
+    assert export_job["status"] == "pending"
+    assert export_job["artifact"] is None
+    assert export_job["failure_reason"] is None
     processor = build_processor(tmp_path, runtime_config)
 
     processed_count = processor.run_once()
@@ -375,7 +378,7 @@ def test_export_async_processor_reports_specific_merged_pdf_failure_reason(tmp_p
     client = make_client(tmp_path, runtime_config=runtime_config)
     task_id = create_task(client)
     update_task_row(tmp_path, task_id, status="open")
-    upload_supporting_material(
+    material_id = upload_supporting_material(
         client,
         task_id,
         submitter_id="2250001",
@@ -401,6 +404,25 @@ def test_export_async_processor_reports_specific_merged_pdf_failure_reason(tmp_p
         headers=admin_auth_headers(client),
     )
     assert status_response.status_code == 200
-    assert status_response.json()["status"] == "failed"
-    assert status_response.json()["failure_reason"].startswith("merged pdf source material ")
-    assert "is unreadable:" in status_response.json()["failure_reason"]
+    status_body = status_response.json()
+    assert status_body["status"] == "failed"
+    assert status_body["artifact"] is None
+    assert status_body["started_at"] is not None
+    assert status_body["finished_at"] is not None
+    assert status_body["failure_reason"].startswith("merged pdf source material ")
+    assert material_id in status_body["failure_reason"]
+    assert "is unreadable:" in status_body["failure_reason"]
+
+    audit_logs = list_export_job_audit_logs(tmp_path, export_job_id=export_job["id"])
+
+    assert len(audit_logs) == 2
+    assert audit_logs[0].action == "create_task_export_job"
+    assert audit_logs[0].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].actor_id == "system:export-worker"
+    assert audit_logs[1].action == "fail_task_export_job"
+    assert audit_logs[1].result is AuditLogResult.FAILED
+    assert audit_logs[1].request_id is None
+    assert audit_logs[1].detail["previous_status"] == "running"
+    assert audit_logs[1].detail["status"] == "failed"
+    assert audit_logs[1].detail["artifact"] is None
+    assert audit_logs[1].detail["failure_reason"] == status_body["failure_reason"]
