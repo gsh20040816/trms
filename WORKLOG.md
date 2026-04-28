@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-04-28 23:58 - Record review findings and new product-level task changes
+
+### 完成内容
+- 基于需求分析文档 V0.2、架构设计文档 V0.1 与当前代码实现，补充了新的高优先级任务到 `TASKS.md`：
+  - 收口任务创建与匿名任务查询权限；
+  - 禁止成员侧接口通过匿名自报 `actor_id` 越权读取；
+  - 收口 Telegram 绑定与提交身份边界；
+  - 收口格式化邮件提交成员身份解析边界；
+  - 接入扫描 PDF / 图片 OCR 识别链路；
+  - 实现真实合并打印 PDF 导出；
+  - 重构成员发票工作台并补齐自助元数据管理。
+- 记录新的产品变更要求：
+  - 用户要求“同一比赛任务内的成员之间应可互相查看当前已上传发票”；
+  - 该要求已写入 `TASKS.md`，作为独立未完成任务跟踪。
+
+### 根因
+- 当前任务队列虽然已经覆盖大量第一阶段功能骨架，但没有把这次文档对照 review 发现的高风险偏差系统性排进队列，后续代理容易继续沿着现有骨架修补，而不是优先处理真正偏离需求的主链路问题。
+- 同时，用户对成员间发票可见性的最新要求与旧需求文档存在直接冲突；如果不显式记录为需求变更，后续实现会在权限测试、前端展示和审计边界上持续反复。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 320 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、60 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前先按用户最新要求，将“同场比赛成员共享发票视图”视为新的产品方向写入任务队列；
+- 但该要求尚未自动扩展为“所有成员可下载所有原始附件或支付截图全文”，后续实现时仍需单独界定敏感文件访问边界。
+
 ## 2026-04-28 23:40 - Tighten auth-gated entry visibility and member self-service recognition actions
 
 ### 完成内容
