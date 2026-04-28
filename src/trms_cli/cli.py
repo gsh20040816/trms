@@ -209,8 +209,12 @@ EXIT_FAILURE = 1
 EXIT_PARTIAL_SUCCESS = 2
 LOCAL_BATCH_PRECHECK_ERROR_CODES = frozenset(
     {
+        "local_directory_empty",
+        "local_directory_unreadable",
         "local_empty_file",
         "local_file_too_large",
+        "local_path_unreadable",
+        "local_symlink_not_supported",
         "local_unsupported_content_type",
     }
 )
@@ -1050,12 +1054,26 @@ def prepare_upload_files(
     upload_files: list[MultipartUploadFile] = []
     local_failures: list[MaterialUploadFailure] = []
     for file_path in file_paths:
+        path = Path(file_path).expanduser()
+        if path.is_symlink() and path.is_dir():
+            local_failures.append(
+                MaterialUploadFailure(
+                    original_filename=path.name or None,
+                    error_code="local_symlink_not_supported",
+                    detail=f"symbolic links are not supported during recursive upload: {path}",
+                )
+            )
+            continue
+        if path.is_dir():
+            directory_upload_files, directory_failures = load_upload_files_from_directory(path)
+            upload_files.extend(directory_upload_files)
+            local_failures.extend(directory_failures)
+            continue
         try:
             upload_files.append(load_upload_file(file_path))
         except CliError as error:
             if error.code not in LOCAL_BATCH_PRECHECK_ERROR_CODES:
                 raise
-            path = Path(file_path).expanduser()
             local_failures.append(
                 MaterialUploadFailure(
                     original_filename=path.name or None,
@@ -1063,6 +1081,82 @@ def prepare_upload_files(
                     detail=str(error),
                 )
             )
+    return upload_files, local_failures
+
+
+def load_upload_files_from_directory(
+    directory_path: Path,
+) -> tuple[list[MultipartUploadFile], list[MaterialUploadFailure]]:
+    upload_files: list[MultipartUploadFile] = []
+    local_failures: list[MaterialUploadFailure] = []
+    saw_candidate = False
+
+    def walk(path: Path) -> None:
+        nonlocal saw_candidate
+        try:
+            entries = sorted(path.iterdir(), key=lambda item: item.name)
+        except OSError as error:
+            local_failures.append(
+                MaterialUploadFailure(
+                    original_filename=path.name or None,
+                    error_code="local_directory_unreadable",
+                    detail=f"unable to read directory during recursive upload: {path}",
+                )
+            )
+            return
+
+        for entry in entries:
+            saw_candidate = True
+            if entry.is_symlink():
+                local_failures.append(
+                    MaterialUploadFailure(
+                        original_filename=entry.name or None,
+                        error_code="local_symlink_not_supported",
+                        detail=(
+                            "symbolic links are not supported during recursive upload: "
+                            f"{entry}"
+                        ),
+                    )
+                )
+                continue
+            if entry.is_dir():
+                walk(entry)
+                continue
+            if not entry.is_file():
+                local_failures.append(
+                    MaterialUploadFailure(
+                        original_filename=entry.name or None,
+                        error_code="local_path_unreadable",
+                        detail=(
+                            "path discovered during recursive upload is not a regular file: "
+                            f"{entry}"
+                        ),
+                    )
+                )
+                continue
+            try:
+                upload_files.append(load_upload_file(str(entry)))
+            except CliError as error:
+                if error.code not in LOCAL_BATCH_PRECHECK_ERROR_CODES:
+                    raise
+                local_failures.append(
+                    MaterialUploadFailure(
+                        original_filename=entry.name or None,
+                        error_code=error.code,
+                        detail=str(error),
+                    )
+                )
+
+    walk(directory_path)
+    if not saw_candidate and not upload_files and not local_failures:
+        local_failures.append(
+            MaterialUploadFailure(
+                original_filename=directory_path.name or None,
+                error_code="local_directory_empty",
+                detail=f"directory does not contain any uploadable files: {directory_path}",
+            )
+        )
+
     return upload_files, local_failures
 
 

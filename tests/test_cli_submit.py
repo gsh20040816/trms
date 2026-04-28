@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from trms_backend.domain.materials import MAX_MATERIAL_UPLOAD_SIZE_BYTES
 from trms_cli.cli import CLI_JSON_SCHEMA_VERSION, build_cli_request_headers, main
@@ -485,3 +486,200 @@ def test_submit_command_reports_failed_batch_result_as_json(monkeypatch, tmp_pat
             ],
         },
     }
+
+
+def test_submit_command_recursively_expands_directory_without_following_symlinks(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    config_dir = tmp_path / "config"
+    upload_dir = tmp_path / "materials"
+    nested_dir = upload_dir / "a-nested"
+    nested_dir.mkdir(parents=True)
+    (upload_dir / "b-invoice.pdf").write_bytes(b"%PDF-1.4 root invoice")
+    (upload_dir / "z-payment.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    (nested_dir / "a-ticket.pdf").write_bytes(b"%PDF-1.4 nested invoice")
+    (nested_dir / "notes.txt").write_text("plain-text", encoding="utf-8")
+    symlink_path = upload_dir / "linked-materials"
+    try:
+        symlink_path.symlink_to(nested_dir, target_is_directory=True)
+    except OSError:
+        pytest.skip("current filesystem does not support directory symlinks")
+
+    monkeypatch.setenv("TRMS_CLI_CONFIG_DIR", str(config_dir))
+    save_token_session(
+        base_url="http://127.0.0.1:8000",
+        member_id="2250333",
+        access_token="stored-access-token",
+        refresh_token="stored-refresh-token",
+    )
+    seen = {}
+
+    def fake_post_multipart_json(url: str, *, headers=None, fields=None, files=None):
+        seen["url"] = url
+        seen["headers"] = headers
+        seen["fields"] = fields
+        seen["files"] = files
+        return 201, {
+            "status": "success",
+            "items": [
+                {
+                    "id": "material-301",
+                    "task_id": "task-303",
+                    "submitter_id": "2250333",
+                    "material_type": "invoice",
+                    "original_filename": "a-ticket.pdf",
+                    "status": "assigned",
+                },
+                {
+                    "id": "material-302",
+                    "task_id": "task-303",
+                    "submitter_id": "2250333",
+                    "material_type": "invoice",
+                    "original_filename": "b-invoice.pdf",
+                    "status": "assigned",
+                },
+                {
+                    "id": "material-303",
+                    "task_id": "task-303",
+                    "submitter_id": "2250333",
+                    "material_type": "invoice",
+                    "original_filename": "z-payment.png",
+                    "status": "assigned",
+                },
+            ],
+        }
+
+    monkeypatch.setattr("trms_cli.cli.post_multipart_json", fake_post_multipart_json)
+
+    exit_code = main(
+        [
+            "submit",
+            "--task-id",
+            "task-303",
+            "--material-type",
+            "invoice",
+            "--json",
+            str(upload_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.err == ""
+    assert seen["url"] == "http://127.0.0.1:8000/api/tasks/task-303/materials"
+    assert seen["headers"] == build_cli_request_headers(access_token="stored-access-token")
+    assert seen["fields"] == {
+        "submitter_id": "2250333",
+        "channel": "cli",
+        "material_type": "invoice",
+    }
+    assert [item.filename for item in seen["files"]] == [
+        "a-ticket.pdf",
+        "b-invoice.pdf",
+        "z-payment.png",
+    ]
+    assert json.loads(captured.out) == {
+        "schema_version": CLI_JSON_SCHEMA_VERSION,
+        "ok": False,
+        "command": "submit",
+        "data": {
+            "base_url": "http://127.0.0.1:8000",
+            "task_id": "task-303",
+            "member_id": "2250333",
+            "status": "partial_success",
+            "success_count": 3,
+            "failure_count": 2,
+            "items": [
+                {
+                    "id": "material-301",
+                    "task_id": "task-303",
+                    "submitter_id": "2250333",
+                    "material_type": "invoice",
+                    "original_filename": "a-ticket.pdf",
+                    "status": "assigned",
+                    "recognition_status": "pending",
+                },
+                {
+                    "id": "material-302",
+                    "task_id": "task-303",
+                    "submitter_id": "2250333",
+                    "material_type": "invoice",
+                    "original_filename": "b-invoice.pdf",
+                    "status": "assigned",
+                    "recognition_status": "pending",
+                },
+                {
+                    "id": "material-303",
+                    "task_id": "task-303",
+                    "submitter_id": "2250333",
+                    "material_type": "invoice",
+                    "original_filename": "z-payment.png",
+                    "status": "assigned",
+                    "recognition_status": "pending",
+                },
+            ],
+            "failures": [
+                {
+                    "original_filename": "notes.txt",
+                    "error_code": "local_unsupported_content_type",
+                    "detail": (
+                        "local file has unsupported content type: "
+                        f"{nested_dir / 'notes.txt'} (text/plain); supported content types: "
+                        "application/pdf, application/zip, image/jpeg, image/png, image/webp"
+                    ),
+                },
+                {
+                    "original_filename": "linked-materials",
+                    "error_code": "local_symlink_not_supported",
+                    "detail": (
+                        "symbolic links are not supported during recursive upload: "
+                        f"{symlink_path}"
+                    ),
+                },
+            ],
+        },
+    }
+
+
+def test_submit_command_reports_empty_directory_as_local_failure(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    config_dir = tmp_path / "config"
+    upload_dir = tmp_path / "empty-materials"
+    upload_dir.mkdir()
+    monkeypatch.setenv("TRMS_CLI_CONFIG_DIR", str(config_dir))
+    save_token_session(
+        base_url="http://127.0.0.1:8000",
+        member_id="2250444",
+        access_token="stored-access-token",
+        refresh_token="stored-refresh-token",
+    )
+
+    def fake_post_multipart_json(url: str, *, headers=None, fields=None, files=None):
+        raise AssertionError("empty directory should not trigger upload")
+
+    monkeypatch.setattr("trms_cli.cli.post_multipart_json", fake_post_multipart_json)
+
+    exit_code = main(
+        [
+            "submit",
+            "--task-id",
+            "task-404",
+            "--material-type",
+            "invoice",
+            str(upload_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == ""
+    assert captured.out == (
+        "Submit result: failed (0 uploaded, 1 failed)\n"
+        "FAIL\tempty-materials\tlocal_directory_empty\t"
+        f"directory does not contain any uploadable files: {upload_dir}\n"
+    )
