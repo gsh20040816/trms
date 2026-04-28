@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import trms_backend.runtime_config as runtime_config_module
 from trms_backend.main import create_app
 from trms_backend.runtime_config import RuntimeConfigError, load_runtime_config
 
@@ -26,6 +27,54 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.auth.allow_admin_self_register is True
     assert config.auth.bootstrap_admin_token is None
     assert config.llm_provider is None
+
+
+def test_load_runtime_config_reads_root_dotenv_file(monkeypatch, tmp_path):
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text(
+        "\n".join(
+            [
+                "TRMS_API_HOST=0.0.0.0",
+                "TRMS_API_PORT=8100",
+                "TRMS_CORS_ALLOWED_ORIGINS=http://127.0.0.1:4173",
+                "TRMS_PUBLIC_API_BASE_URL=http://127.0.0.1:8100/api",
+                'TRMS_LLM_API_KEY="sk-dotenv-secret"',
+                "TRMS_LLM_MODEL='gpt-4.1-mini'",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_config_module, "DEFAULT_DOTENV_PATH", dotenv_path)
+    monkeypatch.delenv("TRMS_API_HOST", raising=False)
+    monkeypatch.delenv("TRMS_API_PORT", raising=False)
+    monkeypatch.delenv("TRMS_CORS_ALLOWED_ORIGINS", raising=False)
+    monkeypatch.delenv("TRMS_PUBLIC_API_BASE_URL", raising=False)
+    monkeypatch.delenv("TRMS_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("TRMS_LLM_MODEL", raising=False)
+
+    config = load_runtime_config()
+
+    assert config.api_host == "0.0.0.0"
+    assert config.api_port == 8100
+    assert config.cors_allowed_origins == ("http://127.0.0.1:4173",)
+    assert config.public_api_base_url == "http://127.0.0.1:8100/api"
+    assert config.llm_provider is not None
+    assert config.llm_provider.api_key.get_secret_value() == "sk-dotenv-secret"
+    assert config.llm_provider.model == "gpt-4.1-mini"
+
+
+def test_process_environment_overrides_root_dotenv(monkeypatch, tmp_path):
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("TRMS_API_PORT=8100\n", encoding="utf-8")
+
+    monkeypatch.setattr(runtime_config_module, "DEFAULT_DOTENV_PATH", dotenv_path)
+    monkeypatch.setenv("TRMS_API_PORT", "8200")
+
+    config = load_runtime_config()
+
+    assert config.api_port == 8200
 
 
 def test_load_runtime_config_requires_explicit_production_settings():

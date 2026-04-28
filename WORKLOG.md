@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-28 21:10 - Unify root .env configuration entry
+
+### 完成内容
+- 收口后端配置入口：
+  - 修改 `src/trms_backend/runtime_config.py`，当调用方未显式传入 `env` 时，默认先读取仓库根目录 `.env`，再用当前进程环境变量覆盖；
+  - 支持最小 `.env` 语法：空行、注释、`export KEY=...`、单/双引号值；
+  - 保持现有显式参数和 shell 环境变量优先级，不把 `.env` 变成无法覆盖的硬编码来源。
+- 收口前端配置入口：
+  - 修改 `web/vite.config.ts`，把 Vite 的 `envDir` 指向仓库根目录；
+  - `npm run dev` / `npm run build` 现在会和后端、Compose 一样，从根目录 `.env` 读取 `TRMS_WEB_*` 与 `VITE_*` 变量，而不是只看 `web/.env`。
+- 补齐统一配置模板和文档：
+  - 更新根目录 `.env.example`，补入 `TRMS_WEB_HOST`、`TRMS_WEB_PORT`；
+  - 更新 `README.md` 和 `docs/生产部署清单与Docker Compose基线.md`，明确根目录 `.env` 是统一配置文件，且显式环境变量优先。
+- 补充测试：
+  - `tests/test_runtime_config.py` 新增 `.env` 读取与“进程环境变量覆盖 `.env`”的回归测试。
+
+### 根因
+- 仓库虽然已经有根目录 `.env.example`，但配置入口并未真正统一：
+  - Docker Compose 文档使用根目录 `.env`；
+  - 后端 `uv run python -m trms_backend` / `worker` 只读取进程环境变量，不会主动加载 `.env`；
+  - Vite 默认按 `web/` 目录找 `.env`，导致前端开发配置和仓库根目录模板脱节。
+- 这会让“复制 `.env.example` 到 `.env`”只在部分场景生效，用户必须记住不同入口各自去哪读配置，和当前仓库已经提供的统一模板相冲突。
+
+### 修改文件
+- `.env.example`
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+- `docs/生产部署清单与Docker Compose基线.md`
+- `src/trms_backend/runtime_config.py`
+- `tests/test_runtime_config.py`
+- `web/vite.config.ts`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_runtime_config.py`
+    - 17 个测试通过
+  - `env UV_CACHE_DIR=/home/gsh/.cache/uv ./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 316 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：根目录 `.env.example` 继续作为仓库内唯一配置模板，具体部署环境仍可在复制为 `.env` 后按场景改成开发或生产值，而不是再拆出第二套前端或后端专用模板。
+
 ## 2026-04-28 20:36 - Refine web dashboards and user-facing copy
 
 ### 完成内容

@@ -7,6 +7,21 @@
 生产部署基线已补齐到 `deploy/` 目录，包含 `Docker Compose`、后端/前端镜像构建文件、反向代理配置和 `.env.example`。具体启动顺序、迁移命令、健康检查、日志位置和首个管理员初始化步骤见 [docs/生产部署清单与Docker Compose基线.md](docs/生产部署清单与Docker%20Compose基线.md)。
 数据库、对象存储、原始材料的备份与恢复策略建议见 [docs/备份与恢复策略说明.md](docs/%E5%A4%87%E4%BB%BD%E4%B8%8E%E6%81%A2%E5%A4%8D%E7%AD%96%E7%95%A5%E8%AF%B4%E6%98%8E.md)；当前仓库仅完成策略说明，恢复演练仍是后续独立任务。
 
+## 统一配置文件
+
+仓库统一使用根目录 `.env` 作为运行配置文件，模板为根目录 `.env.example`：
+
+```bash
+cp .env.example .env
+```
+
+配置生效边界如下：
+
+- `uv run python -m trms_backend`、`uv run python -m trms_backend worker` 会默认读取根目录 `.env`；
+- `cd web && npm run dev`、`npm run build` 会从仓库根目录而不是 `web/` 子目录读取 `.env` 中的 `TRMS_WEB_*` 与 `VITE_*` 变量；
+- `docker compose --env-file .env -f deploy/docker-compose.yml ...` 使用同一份根目录 `.env`；
+- 若 shell 中显式传入同名环境变量，则显式环境变量优先于 `.env`。
+
 ## 本地验证
 
 ```bash
@@ -160,8 +175,10 @@ npm run dev
 Vite 开发服务的监听 host/port 可通过环境变量配置，只影响 `npm run dev`，不会写入生产构建产物：
 
 ```bash
-TRMS_WEB_HOST=0.0.0.0 TRMS_WEB_PORT=4173 npm run dev
+npm run dev
 ```
+
+以上配置默认从仓库根目录 `.env` 读取；若只想临时覆盖当前进程，也可以继续用 shell 环境变量，例如 `TRMS_WEB_HOST=0.0.0.0 TRMS_WEB_PORT=4173 npm run dev`。
 
 前端 API 地址边界如下：
 
@@ -174,10 +191,15 @@ TRMS_WEB_HOST=0.0.0.0 TRMS_WEB_PORT=4173 npm run dev
 本地联调时可通过设置 `VITE_API_BASE_URL` 指向后端服务，例如：
 
 ```bash
-TRMS_WEB_HOST=127.0.0.1 \
-TRMS_WEB_PORT=5173 \
-VITE_API_BASE_URL=http://127.0.0.1:8100/api \
 npm run dev
+```
+
+推荐直接把以下值写入根目录 `.env`：
+
+```dotenv
+TRMS_WEB_HOST=127.0.0.1
+TRMS_WEB_PORT=5173
+VITE_API_BASE_URL=http://127.0.0.1:8100/api
 ```
 
 3. 生产反向代理

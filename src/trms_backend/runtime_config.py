@@ -34,6 +34,7 @@ DEFAULT_ALLOW_ADMIN_SELF_REGISTER_BY_ENV: dict[RuntimeEnvironment, bool] = {
     "production": False,
 }
 VALID_ENVIRONMENTS = frozenset({"development", "test", "production"})
+DEFAULT_DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
 
 class RuntimeConfigError(ValueError):
@@ -347,7 +348,7 @@ def load_runtime_config(
     llm_timeout_seconds: str | float | int | None = None,
     llm_max_retries: str | int | None = None,
 ) -> RuntimeConfig:
-    environment_variables = os.environ if env is None else env
+    environment_variables = _load_environment_variables(env)
     raw_environment = environment if environment is not None else environment_variables.get("TRMS_ENV")
     normalized_environment = (raw_environment or "development").strip().lower()
     if normalized_environment not in VALID_ENVIRONMENTS:
@@ -588,6 +589,57 @@ def _resolve_value(explicit_value: object | None, environment_value: object | No
     if explicit_value is not None:
         return explicit_value
     return environment_value
+
+
+def _load_environment_variables(env: Mapping[str, str] | None) -> Mapping[str, str]:
+    if env is not None:
+        return env
+
+    dotenv_values = _read_dotenv_file(DEFAULT_DOTENV_PATH)
+    if not dotenv_values:
+        return os.environ
+
+    merged_environment = dict(dotenv_values)
+    merged_environment.update(os.environ)
+    return merged_environment
+
+
+def _read_dotenv_file(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("export "):
+            line = line.removeprefix("export ").lstrip()
+
+        key, separator, value = line.partition("=")
+        if separator != "=":
+            continue
+
+        normalized_key = key.strip()
+        if not normalized_key:
+            continue
+
+        normalized_value = value.strip()
+        if normalized_value and normalized_value[0] not in {'"', "'"}:
+            comment_index = normalized_value.find(" #")
+            if comment_index != -1:
+                normalized_value = normalized_value[:comment_index].rstrip()
+
+        values[normalized_key] = _strip_optional_quotes(normalized_value)
+
+    return values
+
+
+def _strip_optional_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
 
 
 def _has_meaningful_value(value: object | None) -> bool:

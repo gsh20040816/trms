@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import react from "@vitejs/plugin-react";
 import { loadEnv } from "vite";
 import { defineConfig } from "vitest/config";
@@ -21,11 +23,13 @@ function parseDevServerPort(rawPort: string | undefined) {
 }
 
 export default defineConfig(({ mode }) => {
-  const environmentVariables = loadEnv(mode, process.cwd(), "");
+  const envDir = fileURLToPath(new URL("..", import.meta.url));
+  const environmentVariables = loadEnv(mode, envDir, "");
   const configuredHost = environmentVariables.TRMS_WEB_HOST?.trim();
   const configuredPort = parseDevServerPort(environmentVariables.TRMS_WEB_PORT);
 
   return {
+    envDir,
     plugins: [react()],
     server: {
       host: configuredHost && configuredHost.length > 0 ? configuredHost : undefined,
