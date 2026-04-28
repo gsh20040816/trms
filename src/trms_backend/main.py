@@ -53,6 +53,7 @@ def create_app(
     config = runtime_config or load_runtime_config(database_url=database_url)
     app = FastAPI(title="TRMS API")
     app.state.runtime_config = config
+    app.state.async_job_config = config.async_jobs
     app.state.recognition_llm_capability = resolve_recognition_llm_capability(config)
     if recognition_llm_client is None and config.llm_provider is not None:
         recognition_llm_client = OpenAiCompatibleRecognitionClient(config.llm_provider)

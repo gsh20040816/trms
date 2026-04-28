@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 
 RuntimeEnvironment = Literal["development", "test", "production"]
+AsyncJobMode = Literal["in_process", "worker"]
 
 DEFAULT_DATABASE_URL = "sqlite:///./trms.db"
 DEFAULT_MATERIAL_STORAGE_DIR = "./data/materials"
@@ -21,6 +22,12 @@ DEFAULT_CORS_ALLOWED_ORIGINS = (
 DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_MAX_RETRIES = 2
+DEFAULT_ASYNC_JOB_MODE_BY_ENV: dict[RuntimeEnvironment, AsyncJobMode] = {
+    "development": "in_process",
+    "test": "in_process",
+    "production": "worker",
+}
+DEFAULT_ASYNC_JOB_POLL_INTERVAL_SECONDS = 5.0
 VALID_ENVIRONMENTS = frozenset({"development", "test", "production"})
 
 
@@ -70,6 +77,19 @@ class LLMProviderConfig(BaseModel):
         }
 
 
+class AsyncJobConfig(BaseModel):
+    mode: AsyncJobMode
+    worker_poll_interval_seconds: float = Field(gt=0, le=300)
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"in_process", "worker"}:
+            raise ValueError("async_jobs.mode must be one of: in_process, worker")
+        return normalized
+
+
 class RuntimeConfig(BaseModel):
     environment: RuntimeEnvironment
     database_url: str
@@ -78,6 +98,7 @@ class RuntimeConfig(BaseModel):
     public_api_base_url: str
     api_host: str
     api_port: int = Field(ge=1, le=65535)
+    async_jobs: AsyncJobConfig
     llm_provider: LLMProviderConfig | None = None
 
     @field_validator("database_url")
@@ -151,6 +172,8 @@ def load_runtime_config(
     public_api_base_url: str | None = None,
     api_host: str | None = None,
     api_port: str | int | None = None,
+    async_job_mode: str | None = None,
+    async_job_poll_interval_seconds: str | float | int | None = None,
     llm_api_key: str | None = None,
     llm_base_url: str | None = None,
     llm_model: str | None = None,
@@ -230,6 +253,24 @@ def load_runtime_config(
         llm_max_retries,
         environment_variables.get("TRMS_LLM_MAX_RETRIES"),
     )
+    raw_async_job_mode = _resolve_value(
+        async_job_mode,
+        environment_variables.get("TRMS_ASYNC_JOB_MODE"),
+    )
+    if raw_async_job_mode is None:
+        raw_async_job_mode = DEFAULT_ASYNC_JOB_MODE_BY_ENV[normalized_environment]
+    raw_async_job_poll_interval_seconds = _resolve_value(
+        async_job_poll_interval_seconds,
+        environment_variables.get("TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS"),
+    )
+    if raw_async_job_poll_interval_seconds is None:
+        raw_async_job_poll_interval_seconds = DEFAULT_ASYNC_JOB_POLL_INTERVAL_SECONDS
+
+    if normalized_environment == "production" and str(raw_async_job_mode).strip() == "in_process":
+        issues.append(
+            "TRMS_ASYNC_JOB_MODE=in_process is not allowed when TRMS_ENV=production; "
+            "configure worker mode instead"
+        )
 
     llm_provider_payload: dict[str, object] | None = None
     if any(
@@ -281,6 +322,10 @@ def load_runtime_config(
                 "public_api_base_url": raw_public_api_base_url,
                 "api_host": raw_api_host,
                 "api_port": raw_api_port,
+                "async_jobs": {
+                    "mode": raw_async_job_mode,
+                    "worker_poll_interval_seconds": raw_async_job_poll_interval_seconds,
+                },
                 "llm_provider": llm_provider_payload,
             }
         )

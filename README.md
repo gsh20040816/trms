@@ -27,6 +27,8 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_PUBLIC_API_BASE_URL`
 - `TRMS_API_HOST`
 - `TRMS_API_PORT`
+- `TRMS_ASYNC_JOB_MODE`
+- `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS`
 - `TRMS_LLM_API_KEY`
 - `TRMS_LLM_BASE_URL`
 - `TRMS_LLM_MODEL`
@@ -71,7 +73,16 @@ OpenAI 兼容 LLM Provider 配置边界：
 - 一旦开始配置 `TRMS_LLM_*`，`TRMS_LLM_API_KEY` 和 `TRMS_LLM_MODEL` 必填；缺失时服务会在启动阶段直接报错。
 - `TRMS_LLM_BASE_URL` 默认为 `https://api.openai.com/v1`，可替换为任何 OpenAI 兼容接口地址；尾部 `/` 会被规范化去掉。
 - `TRMS_LLM_TIMEOUT_SECONDS` 默认 `30`，`TRMS_LLM_MAX_RETRIES` 默认 `2`。
-- 当前仓库尚未接入真实 PDF/LLM 识别执行器；未配置 LLM Provider 时，后续识别执行链应将任务显式视为 `disabled`，而不是伪造识别成功。
+- 当前仓库已接入“文本 PDF 提取 -> OpenAI 兼容 LLM 结构化识别”的最小同步执行链；扫描 PDF / 图片 OCR 和完整异步 worker 消费链仍待后续任务补齐。
+- 未配置 LLM Provider 时，识别执行链会将任务显式视为 `disabled`，而不是伪造识别成功。
+
+异步任务运行模式边界：
+
+- `TRMS_ASYNC_JOB_MODE` 支持 `in_process` 和 `worker` 两种模式。
+- 开发和测试环境默认使用 `in_process`，便于当前同步接口和本地排障。
+- `TRMS_ENV=production` 时默认切换为 `worker`，并拒绝 `TRMS_ASYNC_JOB_MODE=in_process`，避免把耗时任务长期留在请求线程。
+- `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS` 默认 `5`，用于 worker 空闲轮询间隔。
+- 当前 worker 入口已经建立，但识别任务和导出任务的真正异步消费逻辑仍待后续任务接入；本轮只固化共享运行模式和命令入口。
 
 示例：
 
@@ -82,6 +93,18 @@ TRMS_LLM_MODEL=gpt-4.1-mini \
 TRMS_LLM_TIMEOUT_SECONDS=20 \
 TRMS_LLM_MAX_RETRIES=1 \
 uv run python -m trms_backend --reload
+```
+
+启动异步 worker 入口：
+
+```bash
+TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker
+```
+
+本地仅做入口自检时可运行一次轮询后退出：
+
+```bash
+TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker --once
 ```
 
 ## Web 前端

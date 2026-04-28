@@ -20,6 +20,8 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.public_api_base_url == "http://127.0.0.1:8000/api"
     assert config.api_host == "127.0.0.1"
     assert config.api_port == 8000
+    assert config.async_jobs.mode == "in_process"
+    assert config.async_jobs.worker_poll_interval_seconds == 5
     assert config.llm_provider is None
 
 
@@ -41,6 +43,50 @@ def test_load_runtime_config_rejects_illegal_port():
         load_runtime_config(env={"TRMS_API_PORT": "70000"})
 
     assert "api_port" in str(exc_info.value)
+
+
+def test_load_runtime_config_defaults_to_worker_mode_in_production():
+    config = load_runtime_config(
+        env={
+            "TRMS_ENV": "production",
+            "DATABASE_URL": "sqlite:///./prod.db",
+            "MATERIAL_STORAGE_DIR": "./prod-materials",
+            "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
+            "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
+            "TRMS_API_HOST": "0.0.0.0",
+            "TRMS_API_PORT": "8000",
+        }
+    )
+
+    assert config.environment == "production"
+    assert config.async_jobs.mode == "worker"
+
+
+def test_load_runtime_config_rejects_in_process_mode_in_production():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(
+            env={
+                "TRMS_ENV": "production",
+                "DATABASE_URL": "sqlite:///./prod.db",
+                "MATERIAL_STORAGE_DIR": "./prod-materials",
+                "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
+                "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
+                "TRMS_API_HOST": "0.0.0.0",
+                "TRMS_API_PORT": "8000",
+                "TRMS_ASYNC_JOB_MODE": "in_process",
+            }
+        )
+
+    assert "TRMS_ASYNC_JOB_MODE=in_process is not allowed when TRMS_ENV=production" in str(
+        exc_info.value
+    )
+
+
+def test_load_runtime_config_rejects_invalid_async_job_mode():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(env={"TRMS_ASYNC_JOB_MODE": "sidecar"})
+
+    assert "async_jobs.mode" in str(exc_info.value)
 
 
 def test_load_runtime_config_reads_llm_provider_and_normalizes_base_url():

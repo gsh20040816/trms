@@ -1,5 +1,69 @@
 # WORKLOG
 
+## 2026-04-28 14:56 - Establish shared async job runtime mode and worker entrypoint
+
+### 完成内容
+- 更新 `src/trms_backend/runtime_config.py`：
+  - 新增共享异步任务配置 `async_jobs`；
+  - 收口 `TRMS_ASYNC_JOB_MODE` 和 `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS`；
+  - 开发/测试环境默认使用 `in_process`，生产环境默认使用 `worker`；
+  - 当 `TRMS_ENV=production` 且显式配置 `TRMS_ASYNC_JOB_MODE=in_process` 时，启动阶段直接报错，拒绝把耗时任务留在请求线程。
+- 新增 `src/trms_backend/application/async_jobs.py`：
+  - 建立最小 worker 骨架 `AsyncJobWorker`；
+  - 用统一模式校验和 processor 注册机制承接后续识别/导出异步消费链；
+  - 当前只提供共享运行边界和命令入口，不提前实现识别或导出任务消费逻辑。
+- 更新 `src/trms_backend/__main__.py`：
+  - 保留既有 `uv run python -m trms_backend --reload` API 启动方式；
+  - 新增 `uv run python -m trms_backend worker` 与 `worker --once` 入口，供后续识别/导出任务共用。
+- 更新 `src/trms_backend/main.py`：
+  - 将 `async_job_config` 挂到 `app.state`，为后续 API/worker 共享读取点预留稳定边界。
+- 更新 `README.md`：
+  - 补充异步任务运行模式、worker 启动命令和生产环境限制说明；
+  - 修正此前仍写“尚未接入真实 PDF/LLM 识别执行器”的过时描述。
+- 新增/更新测试：
+  - `tests/test_runtime_config.py` 覆盖异步模式默认值、生产环境默认 worker、非法模式和生产环境拒绝 `in_process`；
+  - `tests/test_async_jobs.py` 覆盖 worker 聚合执行、非法模式拒绝，以及 `python -m trms_backend` 的 API / worker 启动入口兼容性。
+- 更新 `TASKS.md`，将“建立异步任务共享运行模式与执行入口”标记为已完成。
+
+### 根因
+- 当前仓库虽然已有识别任务模型、导出任务模型和若干同步执行入口，但还没有统一表达“这些耗时任务到底在请求线程里跑，还是交给外部 worker 跑”的运行时边界。
+- 如果继续直接实现后续异步识别/导出而不先收口运行模式，会把以下问题扩散到多个模块：
+  - 配置散落在识别、导出和启动脚本中；
+  - 生产环境无法稳定拒绝同步执行；
+  - 后续 worker 入口只能临时拼接，缺少共享执行骨架。
+
+### 修改文件
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/__main__.py`
+- `src/trms_backend/application/async_jobs.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/runtime_config.py`
+- `tests/test_async_jobs.py`
+- `tests/test_runtime_config.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_runtime_config.py tests/test_async_jobs.py`
+    - 14 个测试通过
+  - `python3 -m compileall src tests`
+    - 编译检查通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 253 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出相关测试路径中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量引用；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮只建立共享运行模式、配置和 worker 命令入口，不在这里提前把识别任务或导出任务真正改造成异步消费链；这些属于 `TASKS.md` 中紧随其后的两个独立任务。
+- 当前保守保留手动 `/execute` 和同步导出能力，作为开发/排障入口继续存在；是否完全切走请求内执行，应由后续“识别异步执行”和“导出异步执行”任务分别处理。
+
 ## 2026-04-28 14:39 - Redesign web shell and role workbench information architecture
 
 ### 完成内容
