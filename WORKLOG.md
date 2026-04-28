@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-29 05:10 - Execute pre-release main-flow E2E drill
+
+### 完成内容
+- 将 `tests/test_main_flow_e2e.py` 从“状态门禁骨架”扩展为仓库内可重复执行的主流程演练：
+  - 管理员创建任务并发布；
+  - 成员上传真实文本 PDF 发票材料；
+  - 使用 fake LLM 配合 `RecognitionAsyncJobProcessor` 执行真实识别 worker；
+  - 管理员录入发票并校验抬头、税号和重复发票边界；
+  - 成员提交分摊并确认个人费用；
+  - 管理员推进任务进入 `reviewing` 和 `ready_to_export`；
+  - 创建 `reimbursement_summary` 导出任务，并通过 `ExportAsyncJobProcessor` 真实生成持久化 CSV 产物，再经下载接口校验内容。
+- 将 `TASKS.md` 中“执行上线前主流程 E2E 演练并记录风险”标记为已完成。
+
+### 根因
+- 现有 `tests/test_main_flow_e2e.py` 虽然已经覆盖了任务创建、上传、录票、分摊、确认和导出门禁放行，但识别阶段依赖管理员手动改 `recognition_task` 状态，且流程停在 `exports/capabilities`，没有真正演练异步识别 worker、异步导出 worker 和导出产物下载。
+- 当前任务要求的是“上线前主流程 E2E 演练并记录风险”，如果继续停留在骨架层，就会把“导出真的能跑完”和“fake LLM 配置下的识别链路真的能走通”留在未验证状态。
+
+### 关键改动点
+- 扩展主流程 E2E 演练测试：
+  - `tests/test_main_flow_e2e.py`
+- 更新任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮未修改任何生产业务逻辑，只增强主流程演练测试与任务记录；若后续识别 worker、导出 worker、任务状态流转、确认门禁或导出下载回归，这条测试会优先暴露问题。
+- 本轮把“上线前主流程 E2E 演练”保守定义为“仓库内真实 API + 真实异步处理器 + fake LLM + 本地文件存储”的最小可重复闭环，不把外部渠道和真实外部服务伪装成已验证。
+
+### 修改文件
+- `tests/test_main_flow_e2e.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_main_flow_e2e.py`
+    - 1 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 418 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮按任务定义允许的边界，使用 fake LLM 作为上线前主流程演练中的识别提供方替身；目标是验证“系统主链路与异步执行机制”而不是宣称真实外部 Provider 已联通。
+- 本轮优先覆盖文本 PDF 发票主路径，不额外把扫描 PDF、图片识别或多材料合并导出塞进同一条主流程演练，避免把任务范围无边界扩大。
+
+### 未覆盖风险
+- Telegram Bot、格式化邮件入站和真实渠道身份绑定流程没有包含在本轮演练内；当前只证明统一主链路可被这些渠道复用，不代表外部渠道已经联通。
+- 真实 OpenAI 兼容 LLM Provider、真实扫描 PDF / 图片识别输入、真实 OCR / VLM 失败恢复没有在本轮验证；fake LLM 只能证明内部编排正确，不能替代外部联调。
+- 本轮使用本地文件存储与进程内测试客户端，没有覆盖 S3/MinIO 权限策略、独立 worker 进程、容器网络或跨进程队列配置错误。
+- Browser Use / 财务系统自动录入仍然明确属于第一阶段范围外能力，本轮未演练，也不应被表述为已具备。
+
 ## 2026-04-29 05:03 - Add pre-release security regression coverage
 
 ### 完成内容
