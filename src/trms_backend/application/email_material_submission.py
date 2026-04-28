@@ -51,6 +51,7 @@ class EmailMaterialSubmissionService:
         body: str,
         resolved_member_id: str | None,
         files: list[SubmittedMaterialFile],
+        request_id: str | None = None,
     ) -> EmailMaterialSubmissionResult:
         parsed_email = parse_formatted_email_submission(
             sender_email=sender_email,
@@ -61,6 +62,7 @@ class EmailMaterialSubmissionService:
 
         if normalized_resolved_member_id is None:
             batch_result = self._material_submission_service.submit_pending_assignment(
+                actor_id=f"email:{parsed_email.sender_email}",
                 channel=SubmissionChannel.EMAIL,
                 material_type=parsed_email.material_type,
                 files=files,
@@ -70,18 +72,22 @@ class EmailMaterialSubmissionService:
                     metadata_submitter_id=parsed_email.metadata_submitter_id,
                     resolved_member_id=None,
                 ),
+                request_id=request_id,
             )
         else:
             try:
                 batch_result = self._material_submission_service.submit_to_task(
                     task_id=parsed_email.task_id,
                     submitter_id=normalized_resolved_member_id,
+                    actor_id=normalized_resolved_member_id,
                     channel=SubmissionChannel.EMAIL,
                     material_type=parsed_email.material_type,
                     files=files,
+                    request_id=request_id,
                 )
             except MaterialSubmissionTaskNotFoundError:
                 batch_result = self._material_submission_service.submit_pending_assignment(
+                    actor_id=normalized_resolved_member_id,
                     channel=SubmissionChannel.EMAIL,
                     material_type=parsed_email.material_type,
                     files=files,
@@ -91,6 +97,7 @@ class EmailMaterialSubmissionService:
                         metadata_submitter_id=parsed_email.metadata_submitter_id,
                         resolved_member_id=normalized_resolved_member_id,
                     ),
+                    request_id=request_id,
                 )
 
         return EmailMaterialSubmissionResult(

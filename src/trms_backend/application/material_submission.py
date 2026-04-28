@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from uuid import uuid4
 
+from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialFileStorage,
@@ -81,20 +83,24 @@ class MaterialSubmissionService:
         material_repository: MaterialRepository,
         material_file_storage: MaterialFileStorage,
         recognition_task_repository: RecognitionTaskRepository,
+        audit_log_repository: AuditLogRepository,
     ) -> None:
         self._task_repository = task_repository
         self._material_repository = material_repository
         self._material_file_storage = material_file_storage
         self._recognition_task_repository = recognition_task_repository
+        self._audit_log_repository = audit_log_repository
 
     def submit_to_task(
         self,
         *,
         task_id: str,
         submitter_id: str,
+        actor_id: str,
         channel: SubmissionChannel,
         material_type: MaterialType,
         files: list[SubmittedMaterialFile],
+        request_id: str | None = None,
     ) -> MaterialSubmissionBatchResult:
         task = self._task_repository.get(task_id)
         if task is None:
@@ -103,7 +109,7 @@ class MaterialSubmissionService:
             raise MaterialSubmissionTaskNotOpenError(task_id)
 
         ensure_task_accepts_member_submission(task, submitter_id=submitter_id)
-        return self._create_material_batch(
+        result = self._create_material_batch(
             status=MaterialStatus.ASSIGNED,
             storage_task_id=task_id,
             submitter_id=submitter_id,
@@ -114,17 +120,31 @@ class MaterialSubmissionService:
             material_type=material_type,
             files=files,
         )
+        self._record_submission_audit_logs(
+            actor_id=actor_id,
+            channel=channel,
+            material_type=material_type,
+            result=result,
+            task_id=task_id,
+            submitter_id=submitter_id,
+            task_id_hint=None,
+            submitter_id_hint=None,
+            request_id=request_id,
+        )
+        return result
 
     def submit_pending_assignment(
         self,
         *,
+        actor_id: str,
         channel: SubmissionChannel,
         material_type: MaterialType,
         files: list[SubmittedMaterialFile],
         task_id_hint: str | None,
         submitter_id_hint: str | None,
+        request_id: str | None = None,
     ) -> MaterialSubmissionBatchResult:
-        return self._create_material_batch(
+        result = self._create_material_batch(
             status=MaterialStatus.PENDING_ASSIGNMENT,
             storage_task_id=PENDING_ASSIGNMENT_STORAGE_NAMESPACE,
             submitter_id=None,
@@ -135,6 +155,18 @@ class MaterialSubmissionService:
             material_type=material_type,
             files=files,
         )
+        self._record_submission_audit_logs(
+            actor_id=actor_id,
+            channel=channel,
+            material_type=material_type,
+            result=result,
+            task_id=None,
+            submitter_id=None,
+            task_id_hint=task_id_hint,
+            submitter_id_hint=submitter_id_hint,
+            request_id=request_id,
+        )
+        return result
 
     def _create_material_batch(
         self,
@@ -206,3 +238,98 @@ class MaterialSubmissionService:
         record = self._material_repository.create(data)
         self._recognition_task_repository.create(RecognitionTaskCreate(material_id=record.id))
         return record
+
+    def _record_submission_audit_logs(
+        self,
+        *,
+        actor_id: str,
+        channel: SubmissionChannel,
+        material_type: MaterialType,
+        result: MaterialSubmissionBatchResult,
+        task_id: str | None,
+        submitter_id: str | None,
+        task_id_hint: str | None,
+        submitter_id_hint: str | None,
+        request_id: str | None,
+    ) -> None:
+        normalized_actor_id = _normalize_audit_actor_id(
+            actor_id,
+            fallback=f"channel:{channel.value}",
+        )
+        for record in result.records:
+            self._audit_log_repository.create(
+                AuditLogCreate(
+                    actor_id=normalized_actor_id,
+                    object_type="material",
+                    object_id=record.id,
+                    action="submit_material",
+                    result=AuditLogResult.SUCCEEDED,
+                    summary=(
+                        f"submit material {record.id} via {record.channel.value} "
+                        f"as {record.status.value}"
+                    ),
+                    detail={
+                        "status": record.status,
+                        "channel": record.channel,
+                        "material_type": record.material_type,
+                        "task_id": record.task_id,
+                        "submitter_id": record.submitter_id,
+                        "task_id_hint": record.task_id_hint,
+                        "submitter_id_hint": record.submitter_id_hint,
+                        "original_filename": record.original_filename,
+                        "duplicate_of": record.duplicate_of,
+                    },
+                    task_id=record.task_id or record.task_id_hint,
+                    request_id=request_id,
+                )
+            )
+
+        submission_scope = task_id or task_id_hint or "pending-assignment"
+        for index, failure in enumerate(result.failures, start=1):
+            self._audit_log_repository.create(
+                AuditLogCreate(
+                    actor_id=normalized_actor_id,
+                    object_type="material_submission",
+                    object_id=_build_material_submission_failure_object_id(
+                        request_id=request_id,
+                        submission_scope=submission_scope,
+                        index=index,
+                    ),
+                    action="submit_material",
+                    result=AuditLogResult.REJECTED,
+                    summary=(
+                        f"reject material submission via {channel.value} "
+                        f"for {submission_scope}"
+                    ),
+                    detail={
+                        "channel": channel,
+                        "material_type": material_type,
+                        "task_id": task_id,
+                        "submitter_id": submitter_id,
+                        "task_id_hint": task_id_hint,
+                        "submitter_id_hint": submitter_id_hint,
+                        "original_filename": failure.original_filename,
+                        "failure_code": failure.error_code,
+                        "failure_detail": failure.detail,
+                    },
+                    task_id=task_id or task_id_hint,
+                    request_id=request_id,
+                )
+            )
+
+
+def _normalize_audit_actor_id(actor_id: str | None, *, fallback: str) -> str:
+    normalized = (actor_id or "").strip()
+    if normalized:
+        return normalized[:128]
+    return fallback[:128]
+
+
+def _build_material_submission_failure_object_id(
+    *,
+    request_id: str | None,
+    submission_scope: str,
+    index: int,
+) -> str:
+    prefix = request_id or f"submission-{uuid4().hex}"
+    return f"{prefix}:{submission_scope}:{index}"[:128]

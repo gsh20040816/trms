@@ -1,5 +1,62 @@
 # WORKLOG
 
+## 2026-04-28 18:05 - Record material submission and claim audit logs
+
+### 完成内容
+- 为材料提交主链路接入统一审计：
+  - `MaterialSubmissionService` 现在会在材料成功落库后，为每个材料写入 `submit_material` 审计日志；
+  - 当批量上传出现校验失败时，会额外写入 `material_submission` 类型的拒绝审计，记录失败文件名、失败码和失败原因，但不记录文件内容。
+- 为待归属材料认领接入统一审计：
+  - `POST /api/materials/{material_id}/claim` 在成功认领时写入 `claim_pending_assignment` 审计；
+  - 对材料不存在、状态不对、任务不存在、管理员越权、成员不属于任务等失败路径，也会写入失败或拒绝审计，保留失败原因。
+- 将请求级 `request_id` 透传到 Web、邮件、Telegram 三类材料提交入口，保证审计记录可和现有统一错误响应/request id 机制关联。
+- 补充最小测试覆盖：
+  - `tests/test_materials_api.py` 断言直接材料提交会落成功审计；
+  - `tests/test_materials_api.py` 断言待归属认领会落成功审计；
+  - `tests/test_material_submission_service.py` 跟随构造参数更新，继续覆盖服务层主路径。
+
+### 根因
+- 上一轮虽然已经建立了统一 `audit_logs` 模型和脱敏骨架，但材料域最核心的两个动作仍未真正接入写入点：
+  - 材料提交；
+  - 待归属材料认领。
+- 如果继续只保留骨架而不先打通这两条最常用路径，审计能力会停留在“有表无数据”，既无法追溯是谁上传了哪份材料，也无法追溯管理员何时把待归属材料认领进具体任务。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/email_materials.py`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/api/telegram_materials.py`
+- `src/trms_backend/application/email_material_submission.py`
+- `src/trms_backend/application/material_submission.py`
+- `src/trms_backend/application/telegram_material_submission.py`
+- `src/trms_backend/main.py`
+- `tests/test_material_submission_service.py`
+- `tests/test_materials_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_material_submission_service.py tests/test_materials_api.py`
+    - 24 个测试通过
+  - `uv run pytest tests/test_email_materials_api.py tests/test_telegram_materials_api.py`
+    - 9 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 299 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：外部渠道的审计操作者优先记录为已解析出的成员 `member_id`；若尚未解析成功，则回退为 `email:<sender>`、`telegram_user_id:<id>` 或 `pending-assignment:<channel>` 这类最小可追溯标识，而不是阻塞提交流程去强行补齐统一外部账号主数据。
+- 当前保守假设：上传失败时由于材料记录尚未创建，失败审计以 `material_submission` 作为对象类型记录请求级失败，而不是伪造一个不存在的材料 `material_id`。
+
 ## 2026-04-28 18:05 - Split oversized material audit task
 
 ### 完成内容

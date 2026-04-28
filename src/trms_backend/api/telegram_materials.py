@@ -1,7 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 
+from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.material_submission_http import build_batch_response, read_uploaded_files
 from trms_backend.application.material_submission import (
     MaterialSubmissionTaskNotFoundError,
@@ -19,6 +20,7 @@ def build_telegram_material_router(
 
     @router.post("/api/telegram/materials", status_code=status.HTTP_201_CREATED)
     async def submit_telegram_materials(
+        request: Request,
         telegram_user_id: Annotated[int, Form(gt=0)],
         material_type: Annotated[MaterialType, Form()],
         files: Annotated[list[UploadFile], File(min_length=1)],
@@ -33,6 +35,7 @@ def build_telegram_material_router(
                 task_id=task_id,
                 material_type=material_type,
                 files=uploaded_files,
+                request_id=ensure_request_id(request),
             )
         except MaterialSubmissionTaskNotFoundError:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")

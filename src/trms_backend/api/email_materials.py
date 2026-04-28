@@ -1,9 +1,10 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.material_submission_http import read_uploaded_files
 from trms_backend.application.email_material_submission import (
     EmailMaterialSubmissionFormatError,
@@ -20,6 +21,7 @@ def build_email_material_router(
 
     @router.post("/api/email/materials", status_code=status.HTTP_201_CREATED)
     async def submit_email_materials(
+        request: Request,
         sender_email: Annotated[str, Form(min_length=1)],
         subject: Annotated[str, Form(min_length=1)],
         body: Annotated[str, Form()],
@@ -40,6 +42,7 @@ def build_email_material_router(
                 body=body,
                 resolved_member_id=resolved_member_id,
                 files=uploaded_files,
+                request_id=ensure_request_id(request),
             )
         except EmailMaterialSubmissionFormatError as error:
             return _build_email_format_error_response(

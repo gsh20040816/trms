@@ -2,6 +2,9 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.audit_logs import AuditLogResult
+from trms_backend.infrastructure.database import build_session_factory
+from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepository
 from trms_backend.domain.materials import MAX_MATERIAL_UPLOAD_SIZE_BYTES
 from trms_backend.domain.tasks import (
     ReimbursementTask,
@@ -32,6 +35,13 @@ def create_open_task(client: TestClient) -> str:
         headers=admin_auth_headers(client),
     )
     return created["id"]
+
+
+def list_material_audit_logs(tmp_path, material_id: str):
+    repository = SqlAlchemyAuditLogRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return repository.list_by_object(object_type="material", object_id=material_id)
 
 
 def assert_single_pending_recognition_task(client: TestClient, material_id: str) -> None:
@@ -78,6 +88,25 @@ def test_submit_material_to_open_task(tmp_path):
     assert material["size_bytes"] == len(b"fake-pdf-content")
     assert material["duplicate_of"] is None
     assert_single_pending_recognition_task(client, material["id"])
+
+    audit_logs = list_material_audit_logs(tmp_path, material["id"])
+    assert len(audit_logs) == 1
+    assert audit_logs[0].actor_id == "2250001"
+    assert audit_logs[0].action == "submit_material"
+    assert audit_logs[0].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[0].task_id == task_id
+    assert audit_logs[0].request_id.startswith("req_")
+    assert audit_logs[0].detail == {
+        "status": "assigned",
+        "channel": "web",
+        "material_type": "invoice",
+        "task_id": task_id,
+        "submitter_id": "2250001",
+        "task_id_hint": None,
+        "submitter_id_hint": None,
+        "original_filename": "ticket.pdf",
+        "duplicate_of": None,
+    }
 
 
 def test_submit_pending_assignment_material_without_resolved_identity(tmp_path):
@@ -169,6 +198,26 @@ def test_administrator_can_claim_pending_assignment_material(tmp_path):
     listed = client.get(f"/api/tasks/{task_id}/materials")
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()["items"]] == [material_id]
+
+    audit_logs = list_material_audit_logs(tmp_path, material_id)
+    assert len(audit_logs) == 2
+    assert [item.action for item in audit_logs] == [
+        "submit_material",
+        "claim_pending_assignment",
+    ]
+    assert audit_logs[1].actor_id == "admin-1"
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].task_id == task_id
+    assert audit_logs[1].request_id.startswith("req_")
+    assert audit_logs[1].detail == {
+        "task_id": task_id,
+        "submitter_id": "2250001",
+        "claimed_status": "assigned",
+        "task_id_hint": task_id,
+        "submitter_id_hint": "2250001",
+        "channel": "email",
+        "material_type": "invoice",
+    }
 
 
 def test_claim_pending_assignment_material_rejects_non_administrator(tmp_path):

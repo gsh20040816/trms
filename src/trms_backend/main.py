@@ -27,6 +27,7 @@ from trms_backend.domain.materials import MaterialFileStorage
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
     SqlAlchemyAutomaticReminderTaskRepository,
+    SqlAlchemyAuditLogRepository,
     SqlAlchemyAuthRepository,
     SqlAlchemyConfirmationRepository,
     SqlAlchemyExportJobRepository,
@@ -88,11 +89,13 @@ def create_app(
     telegram_account_binding_repository = SqlAlchemyTelegramAccountBindingRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
+    audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
     material_submission_service = MaterialSubmissionService(
         task_repository,
         material_repository,
         material_file_storage,
         recognition_task_repository,
+        audit_log_repository,
     )
     recognition_preparation_service = RecognitionPreparationService(
         material_repository,
@@ -168,6 +171,7 @@ def create_app(
             task_repository,
             material_repository,
             material_submission_service,
+            audit_log_repository,
         )
     )
     app.include_router(build_email_material_router(email_material_submission_service))

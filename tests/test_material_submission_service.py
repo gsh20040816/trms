@@ -4,6 +4,7 @@ from trms_backend.application.material_submission import (
     MaterialSubmissionService,
     SubmittedMaterialFile,
 )
+from trms_backend.domain.audit_logs import InMemoryAuditLogRepository
 from trms_backend.domain.materials import (
     InMemoryMaterialRepository,
     MaterialStatus,
@@ -50,11 +51,13 @@ def test_material_submission_service_reuses_same_assigned_flow_for_all_channels(
     task_id = create_open_task(task_repository)
     material_repository = InMemoryMaterialRepository()
     recognition_task_repository = RecordingRecognitionTaskRepository()
+    audit_log_repository = InMemoryAuditLogRepository()
     service = MaterialSubmissionService(
         task_repository,
         material_repository,
         LocalMaterialFileStorage(tmp_path / "material-storage"),
         recognition_task_repository,
+        audit_log_repository,
     )
 
     for channel in (
@@ -66,6 +69,7 @@ def test_material_submission_service_reuses_same_assigned_flow_for_all_channels(
         result = service.submit_to_task(
             task_id=task_id,
             submitter_id="2250001",
+            actor_id="2250001",
             channel=channel,
             material_type=MaterialType.INVOICE,
             files=[
@@ -93,14 +97,17 @@ def test_material_submission_service_creates_pending_assignment_without_channel_
     task_repository = InMemoryTaskRepository()
     material_repository = InMemoryMaterialRepository()
     recognition_task_repository = RecordingRecognitionTaskRepository()
+    audit_log_repository = InMemoryAuditLogRepository()
     service = MaterialSubmissionService(
         task_repository,
         material_repository,
         LocalMaterialFileStorage(tmp_path / "material-storage"),
         recognition_task_repository,
+        audit_log_repository,
     )
 
     result = service.submit_pending_assignment(
+        actor_id="email:member@example.com",
         channel=SubmissionChannel.EMAIL,
         material_type=MaterialType.PAYMENT_RECORD,
         files=[
