@@ -225,6 +225,10 @@ export const trmsApi = {
     );
   },
 
+  downloadMaterialContent(materialId: string) {
+    return apiClient.download(`/materials/${encodeSegment(materialId)}/content`);
+  },
+
   listMaterialRecognitionTasks(materialId: string) {
     return apiClient.request<RecognitionTaskList>(
       `/materials/${encodeSegment(materialId)}/recognition-tasks`,

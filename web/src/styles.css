@@ -1935,6 +1935,13 @@ body {
   grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.3fr);
 }
 
+.admin-review-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.35fr);
+  gap: 16px;
+  align-items: start;
+}
+
 .task-meta-grid,
 .task-detail-grid,
 .admin-review-summary-grid {
@@ -2128,6 +2135,56 @@ select:focus {
   box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.14);
 }
 
+.admin-review-list-panel,
+.admin-review-detail-panel {
+  height: 100%;
+}
+
+.admin-review-detail-grid,
+.admin-review-detail-field-grid {
+  margin-top: 14px;
+}
+
+.recognition-field-card h4 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.recognition-field-value {
+  margin: 8px 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.admin-review-preview-shell {
+  margin-top: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.admin-review-preview-frame {
+  width: 100%;
+  min-height: 520px;
+  border: 0;
+  background: #ffffff;
+}
+
+.admin-review-preview-image {
+  display: block;
+  width: 100%;
+  max-height: 640px;
+  object-fit: contain;
+  background: #ffffff;
+}
+
+.admin-review-action-row {
+  margin-top: 18px;
+}
+
 .export-preview-content {
   max-height: 420px;
   overflow: auto;
@@ -2171,6 +2228,7 @@ select:focus {
   .task-detail-layout,
   .invoice-editor-layout,
   .split-editor-layout,
+  .admin-review-workspace,
   .task-meta-grid,
   .task-detail-grid,
   .admin-review-summary-grid,

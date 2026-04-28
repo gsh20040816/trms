@@ -182,6 +182,69 @@ def test_pending_assignment_material_stays_hidden_from_task_material_list(tmp_pa
     assert listed.json()["items"] == []
 
 
+def test_administrator_can_preview_assigned_material_content(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    created = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    material = created.json()["items"][0]
+
+    response = client.get(
+        f"/api/materials/{material['id']}/content",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"fake-pdf-content"
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.headers["content-disposition"] == 'inline; filename="ticket.pdf"'
+
+
+def test_member_cannot_preview_other_members_material_content(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    created = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    material_id = created.json()["items"][0]["id"]
+
+    other_member_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member2",
+            role="member",
+            actor_id="2250002",
+            member_code="2250002",
+        )
+    )
+    response = client.get(
+        f"/api/materials/{material_id}/content",
+        headers=other_member_headers,
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="actor is not allowed to view this material content",
+    )
+
+
 def test_administrator_can_claim_pending_assignment_material(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from trms_backend.api.error_responses import ensure_request_id
@@ -552,6 +552,44 @@ def build_material_router(
             actor_id = identity.actor_id or ""
             items = [item for item in items if item.submitter_id == actor_id]
         return {"items": items}
+
+    @router.get("/api/materials/{material_id}/content")
+    def get_material_content(
+        material_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        material = material_repository.get(material_id)
+        if material is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        if material.status is not MaterialStatus.ASSIGNED or material.task_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="material is not available for preview",
+            )
+
+        task = task_repository.get(material.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view this material content",
+        )
+        if scope is TaskAccessScope.MEMBER and material.submitter_id != identity.actor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to view this material content",
+            )
+
+        content = material_submission_service.read_material_content(storage_key=material.storage_key)
+        media_type = material.content_type or "application/octet-stream"
+        filename = material.original_filename.replace('"', "")
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
 
     return router
 

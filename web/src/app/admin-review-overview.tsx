@@ -8,17 +8,20 @@ import type {
   ConfirmationRecord,
   ExpenseSplitRecord,
   RecognitionTaskRecord,
-  RecognitionTaskStatus,
   ReimbursementTask,
   TaskReviewSummary,
+  TaskReviewSummaryInvoiceItem,
+  TaskReviewSummaryMaterialItem,
   ValidationResult,
 } from "../lib/api/types";
 import {
   describeRecognitionFailure,
   formatConfirmationStatus,
   formatExpenseType,
+  formatFieldLabel,
   formatMaterialType,
   formatMemberLabel,
+  formatRecognitionStatus,
   formatSubmissionChannel,
   formatTaskStatus,
   formatValidationRule,
@@ -38,6 +41,13 @@ type ReviewPageState =
       overdueSummary: ReviewOverdueSummary;
     };
 
+type ReviewPreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "unsupported"; contentType: string | null }
+  | { status: "error"; error: unknown }
+  | { status: "ready"; url: string; contentType: string };
+
 type ReviewOverdueSummary = {
   is_overdue: boolean;
   total_overdue_members: number;
@@ -50,16 +60,11 @@ type ReviewAnomalyItem = {
   tone: "failed" | "pending";
 };
 
-const RECOGNITION_STATUS_LABELS: Record<RecognitionTaskStatus, string> = {
-  pending: "识别中",
-  succeeded: "识别成功",
-  failed: "识别失败",
-  needs_confirmation: "待人工确认",
+type ReviewMaterialDetailItem = {
+  materialItem: TaskReviewSummaryMaterialItem;
+  primaryInvoice: TaskReviewSummaryInvoiceItem | null;
+  relatedInvoices: TaskReviewSummaryInvoiceItem[];
 };
-
-function formatRecognitionStatus(status: RecognitionTaskStatus) {
-  return RECOGNITION_STATUS_LABELS[status];
-}
 
 function formatCurrencyFromCents(cents: number) {
   return `￥${(cents / 100).toFixed(2)}`;
@@ -135,25 +140,6 @@ function buildReviewAnomalies(
   return items;
 }
 
-function buildInvoiceReviewCards(summary: TaskReviewSummary) {
-  const materialItemsById = new Map(
-    summary.materials.map((item) => [item.material.id, item] as const),
-  );
-
-  return [...summary.invoices]
-    .map((invoiceItem) => ({
-      invoiceItem,
-      invoiceMaterial: materialItemsById.get(invoiceItem.invoice.material_id) ?? null,
-    }))
-    .sort((left, right) => right.invoiceItem.invoice.updated_at.localeCompare(left.invoiceItem.invoice.updated_at));
-}
-
-function buildMaterialReviewItems(summary: TaskReviewSummary) {
-  return [...summary.materials].sort((left, right) =>
-    right.material.created_at.localeCompare(left.material.created_at),
-  );
-}
-
 function buildOutstandingMemberIds(summary: TaskReviewSummary) {
   const memberIds = new Set<string>();
 
@@ -191,6 +177,40 @@ function buildDisputedConfirmationItems(summary: TaskReviewSummary) {
   return items.sort((left, right) => right.confirmation.updated_at.localeCompare(left.confirmation.updated_at));
 }
 
+function buildReviewDetailItems(summary: TaskReviewSummary) {
+  const invoiceItemsById = new Map(summary.invoices.map((item) => [item.invoice.id, item] as const));
+
+  return [...summary.materials]
+    .sort((left, right) => right.material.created_at.localeCompare(left.material.created_at))
+    .map((materialItem) => {
+      const relatedInvoiceIds = [
+        ...(materialItem.invoice_id ? [materialItem.invoice_id] : []),
+        ...materialItem.supporting_invoice_ids,
+      ];
+      const relatedInvoices = relatedInvoiceIds
+        .map((invoiceId) => invoiceItemsById.get(invoiceId) ?? null)
+        .filter((item): item is TaskReviewSummaryInvoiceItem => item !== null);
+
+      return {
+        materialItem,
+        primaryInvoice: materialItem.invoice_id ? (invoiceItemsById.get(materialItem.invoice_id) ?? null) : null,
+        relatedInvoices,
+      } satisfies ReviewMaterialDetailItem;
+    });
+}
+
+function pickSelectedMaterialId(
+  items: ReviewMaterialDetailItem[],
+  currentMaterialId: string,
+) {
+  const visibleMaterialIds = new Set(items.map((item) => item.materialItem.material.id));
+  if (currentMaterialId && visibleMaterialIds.has(currentMaterialId)) {
+    return currentMaterialId;
+  }
+  const firstInvoiceMaterial = items.find((item) => item.materialItem.material.material_type === "invoice");
+  return firstInvoiceMaterial?.materialItem.material.id ?? items[0]?.materialItem.material.id ?? "";
+}
+
 function buildRecognitionBadgeClass(recognition: RecognitionTaskRecord | null) {
   if (recognition === null) {
     return "member-status-chip-pending";
@@ -224,10 +244,26 @@ function buildConfirmationBadgeClass(confirmation: ConfirmationRecord | null) {
   return "member-status-chip-passed";
 }
 
+function isPreviewableContentType(contentType: string | null) {
+  return contentType === "application/pdf" || Boolean(contentType?.startsWith("image/"));
+}
+
+function describeRecognitionFieldValue(value: unknown) {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value === null || value === undefined) {
+    return "未识别";
+  }
+  return "复杂结构";
+}
+
 export function AdminReviewOverviewPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
   const [state, setState] = useState<ReviewPageState>({ status: "loading" });
+  const [selectedMaterialId, setSelectedMaterialId] = useState("");
+  const [previewState, setPreviewState] = useState<ReviewPreviewState>({ status: "idle" });
 
   useEffect(() => {
     let cancelled = false;
@@ -250,6 +286,8 @@ export function AdminReviewOverviewPage() {
           return;
         }
 
+        const detailItems = buildReviewDetailItems(reviewSummary);
+        setSelectedMaterialId((current) => pickSelectedMaterialId(detailItems, current));
         setState({
           status: "ready",
           task,
@@ -274,14 +312,72 @@ export function AdminReviewOverviewPage() {
     };
   }, [session, taskId]);
 
-  const invoiceReviewCards = useMemo(
-    () => (state.status === "ready" ? buildInvoiceReviewCards(state.reviewSummary) : []),
+  const detailItems = useMemo(
+    () => (state.status === "ready" ? buildReviewDetailItems(state.reviewSummary) : []),
     [state],
   );
-  const materialReviewItems = useMemo(
-    () => (state.status === "ready" ? buildMaterialReviewItems(state.reviewSummary) : []),
-    [state],
-  );
+
+  const task = state.status === "ready" ? state.task : null;
+  const isForeignTask = task ? task.administrator_id !== session?.actorId : false;
+  const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
+  const visibleSummary = state.status === "ready" && !isForeignTask ? state.reviewSummary : null;
+  const visibleOverdueSummary = state.status === "ready" && !isForeignTask ? state.overdueSummary : null;
+  const selectedDetailItem = visibleSummary
+    ? detailItems.find((item) => item.materialItem.material.id === selectedMaterialId) ?? null
+    : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    async function loadPreview() {
+      const material = selectedDetailItem?.materialItem.material ?? null;
+      if (!material) {
+        setPreviewState({ status: "idle" });
+        return;
+      }
+      if (!isPreviewableContentType(material.content_type)) {
+        setPreviewState({
+          status: "unsupported",
+          contentType: material.content_type,
+        });
+        return;
+      }
+
+      setPreviewState({ status: "loading" });
+
+      try {
+        const previewFile = await trmsApi.downloadMaterialContent(material.id);
+        if (cancelled) {
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(previewFile.blob);
+        setPreviewState({
+          status: "ready",
+          url: objectUrl,
+          contentType: previewFile.contentType ?? material.content_type ?? "application/octet-stream",
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setPreviewState({
+          status: "error",
+          error,
+        });
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [selectedDetailItem]);
 
   if (!session || session.role !== "admin") {
     return null;
@@ -308,11 +404,6 @@ export function AdminReviewOverviewPage() {
     );
   }
 
-  const task = state.status === "ready" ? state.task : null;
-  const isForeignTask = task ? task.administrator_id !== session.actorId : false;
-  const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
-  const visibleSummary = state.status === "ready" && !isForeignTask ? state.reviewSummary : null;
-  const visibleOverdueSummary = state.status === "ready" && !isForeignTask ? state.overdueSummary : null;
   const anomalyItems = visibleSummary && visibleOverdueSummary
     ? buildReviewAnomalies(visibleSummary, visibleOverdueSummary)
     : [];
@@ -321,6 +412,16 @@ export function AdminReviewOverviewPage() {
     : [];
   const disputedItems = visibleSummary
     ? buildDisputedConfirmationItems(visibleSummary)
+    : [];
+  const selectedMaterial = selectedDetailItem?.materialItem.material ?? null;
+  const selectedRecognition = selectedDetailItem?.materialItem.latest_recognition ?? null;
+  const selectedInvoice = selectedDetailItem?.primaryInvoice ?? null;
+  const relatedInvoices = selectedDetailItem?.relatedInvoices ?? [];
+  const selectedValidations = selectedInvoice?.validations.filter(
+    (validation) => validation.status !== "passed" && validation.status !== "not_applicable",
+  ) ?? [];
+  const recognitionEntries = selectedRecognition
+    ? Object.entries(selectedRecognition.recognized_fields)
     : [];
 
   return (
@@ -332,21 +433,20 @@ export function AdminReviewOverviewPage() {
         <PageHeader
           eyebrow="材料审核"
           title="管理员复核总览"
-          description="这里集中查看当前任务的材料风险、待确认费用、成员异议和导出准备情况。"
+          description="在同一任务上下文里筛选当前材料、查看原件与识别结果，并决定下一步更正或分摊处理动作。"
           actions={(
             <div className="page-actions">
               <Link className="button button-primary" to={`/admin/tasks/${taskId}/corrections`}>
                 处理更正与提醒
               </Link>
               <Link className="button button-secondary" to={`/admin/tasks/${taskId}/invoices`}>
-                录入或更正发票
+                打开发票录入页
               </Link>
             </div>
           )}
         />
       )}
     >
-
       {state.status === "loading" ? (
         <section className="status-card admin-review-panel">
           <p className="eyebrow">Loading</p>
@@ -536,175 +636,273 @@ export function AdminReviewOverviewPage() {
             )}
           </section>
 
-          <section className="status-card admin-review-panel">
-            <div className="admin-form-header">
-              <div>
-                <p className="eyebrow">Materials</p>
-                <h2>材料与识别状态</h2>
+          <section className="admin-review-workspace">
+            <article className="status-card admin-task-detail-panel admin-review-list-panel">
+              <div className="admin-form-header">
+                <div>
+                  <p className="eyebrow">Materials</p>
+                  <h2>材料审核列表</h2>
+                </div>
+                <span className="status-chip">{detailItems.length} 份材料</span>
               </div>
-              <span className="status-chip">{materialReviewItems.length} 份材料</span>
-            </div>
-            {materialReviewItems.length > 0 ? (
-              <ul className="admin-review-record-list" aria-label="任务材料列表">
-                {materialReviewItems.map((item) => {
-                  const recognition = item.latest_recognition;
-                  const linkedInvoiceId = item.invoice_id;
-                  const supportingInvoiceIds = item.supporting_invoice_ids;
+              <p className="field-hint">
+                先从左侧选中当前要处理的材料，再在右侧同页查看原件、识别字段、校验异常和分摊去向。
+              </p>
+              {detailItems.length > 0 ? (
+                <ul className="invoice-material-list" aria-label="材料审核列表">
+                  {detailItems.map((item) => {
+                    const material = item.materialItem.material;
+                    const recognition = item.materialItem.latest_recognition;
+                    const failedValidationCount = item.primaryInvoice?.validations.filter(
+                      (validation) => validation.status === "failed",
+                    ).length ?? 0;
+                    const pendingValidationCount = item.primaryInvoice?.validations.filter(
+                      (validation) => validation.status === "pending",
+                    ).length ?? 0;
+                    const isSelected = material.id === selectedMaterialId;
+                    return (
+                      <li key={material.id}>
+                        <button
+                          type="button"
+                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
+                          aria-pressed={isSelected}
+                          onClick={() => {
+                            setSelectedMaterialId(material.id);
+                          }}
+                        >
+                          <div className="task-card-header">
+                            <div>
+                              <p className="task-card-id">材料编号 {material.id}</p>
+                              <h3>{material.original_filename}</h3>
+                            </div>
+                            <span className={`status-chip ${buildRecognitionBadgeClass(recognition)}`}>
+                              {recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}
+                            </span>
+                          </div>
+                          <div className="admin-review-inline-metadata">
+                            <span className="token-chip">{formatMaterialType(material.material_type)}</span>
+                            <span className="token-chip">{formatSubmissionChannel(material.channel)}</span>
+                            <span className="token-chip">{formatMemberLabel(material.submitter_id)}</span>
+                          </div>
+                          <dl className="task-meta-grid invoice-editor-summary-grid">
+                            <div>
+                              <dt>主发票</dt>
+                              <dd>{item.materialItem.invoice_id ?? "未录入"}</dd>
+                            </div>
+                            <div>
+                              <dt>关联发票</dt>
+                              <dd>{item.relatedInvoices.length}</dd>
+                            </div>
+                            <div>
+                              <dt>校验异常</dt>
+                              <dd>失败 {failedValidationCount} 条，待确认 {pendingValidationCount} 条</dd>
+                            </div>
+                            <div>
+                              <dt>上传时间</dt>
+                              <dd>{formatDateTime(material.created_at)}</dd>
+                            </div>
+                          </dl>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="field-hint">当前任务还没有已归档材料。</p>
+              )}
+            </article>
 
-                  return (
-                    <li key={item.material.id} className="admin-review-record-card">
-                      <div className="task-card-header">
-                        <div>
-                          <p className="task-card-id">材料编号 {item.material.id}</p>
-                          <h3>{item.material.original_filename}</h3>
-                        </div>
-                        <span className={`status-chip ${buildRecognitionBadgeClass(recognition)}`}>
-                          {recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}
-                        </span>
-                      </div>
-                      <div className="admin-review-inline-metadata">
-                        <span className="token-chip">{formatMaterialType(item.material.material_type)}</span>
-                        <span className="token-chip">{formatSubmissionChannel(item.material.channel)}</span>
-                        <span className="token-chip">{formatMemberLabel(item.material.submitter_id)}</span>
-                      </div>
-                      <div className="task-meta-grid admin-review-meta-grid">
-                        <div>
-                          <dt>主发票</dt>
-                          <dd>{linkedInvoiceId ?? "未录入发票"}</dd>
-                        </div>
-                        <div>
-                          <dt>辅助归属到</dt>
-                          <dd>{supportingInvoiceIds.length > 0 ? supportingInvoiceIds.join("、") : "无"}</dd>
-                        </div>
-                        <div>
-                          <dt>上传时间</dt>
-                          <dd>{formatDateTime(item.material.created_at)}</dd>
-                        </div>
-                        <div>
-                          <dt>识别原始状态</dt>
-                          <dd>{recognition?.status ?? "无记录"}</dd>
-                        </div>
-                      </div>
-                      <div className="admin-review-subsection">
-                        <h4>识别摘要</h4>
-                        {recognition ? (
-                          <ul className="admin-review-list">
-                            <li>
-                              <strong>最近识别状态</strong>
-                              <span>{formatRecognitionStatus(recognition.status)}</span>
-                            </li>
-                            {recognition.failure ? (
-                              <li>
-                                <strong>识别提示</strong>
-                                <span>{describeRecognitionFailure(recognition.failure)}</span>
-                              </li>
-                            ) : null}
-                            <li>
-                              <strong>低置信度字段数</strong>
-                              <span>
-                                {
-                                  Object.values(recognition.recognized_fields).filter(
-                                    (field) => field.status === "needs_confirmation",
-                                  ).length
-                                }
-                              </span>
-                            </li>
-                          </ul>
+            <article className="status-card admin-form-card admin-review-detail-panel" aria-label="当前材料详情">
+              {selectedMaterial ? (
+                <>
+                  <div className="admin-form-header">
+                    <div>
+                      <p className="eyebrow">Selected Material</p>
+                      <h2>当前材料详情</h2>
+                    </div>
+                    <span className={`status-chip ${buildRecognitionBadgeClass(selectedRecognition)}`}>
+                      {selectedRecognition ? formatRecognitionStatus(selectedRecognition.status) : "未触发识别"}
+                    </span>
+                  </div>
+
+                  <div className="task-card-header">
+                    <div>
+                      <p className="task-card-id">材料编号 {selectedMaterial.id}</p>
+                      <h3>{selectedMaterial.original_filename}</h3>
+                    </div>
+                    <span className="status-chip">
+                      {selectedInvoice ? `当前发票 ${selectedInvoice.invoice.invoice_number}` : "尚未形成主发票"}
+                    </span>
+                  </div>
+
+                  <div className="admin-review-inline-metadata">
+                    <span className="token-chip">{formatMaterialType(selectedMaterial.material_type)}</span>
+                    <span className="token-chip">{formatSubmissionChannel(selectedMaterial.channel)}</span>
+                    <span className="token-chip">{formatMemberLabel(selectedMaterial.submitter_id)}</span>
+                    {selectedInvoice ? (
+                      <span className="token-chip">{formatExpenseType(selectedInvoice.invoice.expense_type)}</span>
+                    ) : null}
+                  </div>
+
+                  <div className="task-meta-grid admin-review-meta-grid admin-review-detail-grid">
+                    <div>
+                      <dt>上传时间</dt>
+                      <dd>{formatDateTime(selectedMaterial.created_at)}</dd>
+                    </div>
+                    <div>
+                      <dt>内容类型</dt>
+                      <dd>{selectedMaterial.content_type ?? "未知"}</dd>
+                    </div>
+                    <div>
+                      <dt>主发票</dt>
+                      <dd>{selectedDetailItem?.materialItem.invoice_id ?? "未录入"}</dd>
+                    </div>
+                    <div>
+                      <dt>辅助归属到</dt>
+                      <dd>
+                        {selectedDetailItem?.materialItem.supporting_invoice_ids.length
+                          ? selectedDetailItem.materialItem.supporting_invoice_ids.join("、")
+                          : "无"}
+                      </dd>
+                    </div>
+                  </div>
+
+                  <section className="admin-review-subsection">
+                    <h4>原始票据预览</h4>
+                    {previewState.status === "loading" ? (
+                      <p className="field-hint">正在拉取原始材料内容，请稍候。</p>
+                    ) : null}
+                    {previewState.status === "unsupported" ? (
+                      <p className="field-hint">
+                        当前材料类型为 {previewState.contentType ?? "未知"}，暂不支持内联预览，请通过材料列表继续判断是否需要更正归属或附件类型。
+                      </p>
+                    ) : null}
+                    {previewState.status === "error" ? <ApiErrorNotice error={previewState.error} /> : null}
+                    {previewState.status === "ready" ? (
+                      <div className="admin-review-preview-shell">
+                        {previewState.contentType.startsWith("image/") ? (
+                          <img
+                            className="admin-review-preview-image"
+                            src={previewState.url}
+                            alt={`${selectedMaterial.original_filename} 预览`}
+                          />
                         ) : (
-                          <p className="field-hint">当前材料尚无识别任务结果。</p>
+                          <object
+                            className="admin-review-preview-frame"
+                            data={previewState.url}
+                            type={previewState.contentType}
+                            aria-label="原始票据 PDF 预览"
+                          >
+                            <p className="field-hint">当前环境无法直接显示 PDF 预览，但材料内容已成功加载。</p>
+                          </object>
                         )}
                       </div>
-                      {item.material.material_type === "invoice" ? (
-                        <div className="inline-actions">
-                          <Link
-                            className="route-link route-link-secondary"
-                            to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.material.id)}`}
-                          >
-                            更正识别字段
-                          </Link>
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="field-hint">当前任务还没有已归档材料。</p>
-            )}
-          </section>
+                    ) : null}
+                  </section>
 
-          <section className="status-card admin-review-panel">
-            <div className="admin-form-header">
-              <div>
-                <p className="eyebrow">Invoices</p>
-                <h2>发票、校验与分摊确认</h2>
-              </div>
-              <span className="status-chip">{invoiceReviewCards.length} 张发票</span>
-            </div>
-            {invoiceReviewCards.length > 0 ? (
-              <ul className="admin-review-record-list" aria-label="发票复核列表">
-                {invoiceReviewCards.map(({ invoiceItem, invoiceMaterial }) => {
-                  const abnormalValidations = invoiceItem.validations.filter(
-                    (validation) => validation.status !== "passed" && validation.status !== "not_applicable",
-                  );
+                  <section className="admin-review-subsection">
+                    <h4>识别字段与来源</h4>
+                    {selectedRecognition ? (
+                      <>
+                        <ul className="admin-review-list">
+                          <li>
+                            <strong>最近识别状态</strong>
+                            <span>{formatRecognitionStatus(selectedRecognition.status)}</span>
+                          </li>
+                          {selectedRecognition.failure ? (
+                            <li>
+                              <strong>识别提示</strong>
+                              <span>{describeRecognitionFailure(selectedRecognition.failure)}</span>
+                            </li>
+                          ) : null}
+                          <li>
+                            <strong>低置信度字段数</strong>
+                            <span>
+                              {
+                                recognitionEntries.filter(([, field]) => field.status === "needs_confirmation").length
+                              }
+                            </span>
+                          </li>
+                        </ul>
+                        {recognitionEntries.length > 0 ? (
+                          <div className="recognition-field-grid">
+                            {recognitionEntries.map(([fieldName, field]) => (
+                              <article key={fieldName} className="recognition-field-card">
+                                <h4>{formatFieldLabel(fieldName)}</h4>
+                                <p className="recognition-field-value">{describeRecognitionFieldValue(field.value)}</p>
+                                <dl className="task-meta-grid admin-review-detail-field-grid">
+                                  <div>
+                                    <dt>来源</dt>
+                                    <dd>{field.source}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>置信度</dt>
+                                    <dd>{Math.round(field.confidence * 100)}%</dd>
+                                  </div>
+                                  <div>
+                                    <dt>状态</dt>
+                                    <dd>{field.status === "needs_confirmation" ? "待人工确认" : "可直接采用"}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>更新时间</dt>
+                                    <dd>{field.updated_at ? formatDateTime(field.updated_at) : "暂无"}</dd>
+                                  </div>
+                                </dl>
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="field-hint">当前识别结果还没有可展示的结构化字段。</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="field-hint">当前材料尚无识别任务结果。</p>
+                    )}
+                  </section>
 
-                  return (
-                    <li key={invoiceItem.invoice.id} className="admin-review-record-card">
-                      <div className="task-card-header">
-                        <div>
-                          <p className="task-card-id">发票编号 {invoiceItem.invoice.id}</p>
-                          <h3>{invoiceItem.invoice.invoice_number}</h3>
+                  <section className="admin-review-subsection">
+                    <h4>当前票据与校验异常</h4>
+                    {selectedInvoice ? (
+                      <>
+                        <div className="task-meta-grid admin-review-meta-grid admin-review-detail-grid">
+                          <div>
+                            <dt>发票号码</dt>
+                            <dd>{selectedInvoice.invoice.invoice_number}</dd>
+                          </div>
+                          <div>
+                            <dt>金额</dt>
+                            <dd>{formatCurrencyFromCents(selectedInvoice.invoice.amount_cents)}</dd>
+                          </div>
+                          <div>
+                            <dt>抬头 / 税号</dt>
+                            <dd>{selectedInvoice.invoice.buyer_name} / {selectedInvoice.invoice.tax_number}</dd>
+                          </div>
+                          <div>
+                            <dt>交易时间</dt>
+                            <dd>
+                              {selectedInvoice.invoice.transaction_time
+                                ? formatDateTime(selectedInvoice.invoice.transaction_time)
+                                : selectedInvoice.invoice.issue_date ?? "未录入"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>支持附件数</dt>
+                            <dd>{selectedInvoice.supporting_material_ids.length}</dd>
+                          </div>
+                          <div>
+                            <dt>异常校验数</dt>
+                            <dd>{selectedValidations.length}</dd>
+                          </div>
                         </div>
-                        <span className="status-chip">
-                          {formatCurrencyFromCents(invoiceItem.invoice.amount_cents)}
-                        </span>
-                      </div>
-                      <div className="admin-review-inline-metadata">
-                        <span className="token-chip">
-                          {formatExpenseType(invoiceItem.invoice.expense_type)}
-                        </span>
-                        <span className="token-chip">{formatMemberLabel(invoiceMaterial?.material.submitter_id)}</span>
-                        <span className="token-chip">
-                          附件 {invoiceItem.supporting_material_ids.length} 份
-                        </span>
-                      </div>
-                      <div className="task-meta-grid admin-review-meta-grid">
-                        <div>
-                          <dt>交易时间</dt>
-                          <dd>
-                            {invoiceItem.invoice.transaction_time
-                              ? formatDateTime(invoiceItem.invoice.transaction_time)
-                              : invoiceItem.invoice.issue_date ?? "未录入"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>抬头 / 税号</dt>
-                          <dd>
-                            {invoiceItem.invoice.buyer_name} / {invoiceItem.invoice.tax_number}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>发票材料</dt>
-                          <dd>{invoiceItem.invoice.material_id}</dd>
-                        </div>
-                        <div>
-                          <dt>分摊条目</dt>
-                          <dd>{invoiceItem.splits.length}</dd>
-                        </div>
-                      </div>
-                      <div className="admin-review-subsection">
-                        <h4>校验结果</h4>
-                        {invoiceItem.validations.length > 0 ? (
-                          <ul className="admin-review-list">
-                            {abnormalValidations.length > 0
-                              ? abnormalValidations.map((validation) => (
+                        {selectedInvoice.validations.length > 0 ? (
+                          <ul className="admin-review-list" aria-label="当前材料校验列表">
+                            {selectedValidations.length > 0
+                              ? selectedValidations.map((validation) => (
                                   <li key={validation.id}>
                                     <strong>
                                       {formatValidationSeverity(validation.severity)} / {formatValidationRule(validation.rule_code)}
                                     </strong>
-                                    <span
-                                      className={`status-chip ${buildValidationBadgeClass(validation)}`}
-                                    >
+                                    <span className={`status-chip ${buildValidationBadgeClass(validation)}`}>
                                       {formatValidationStatus(validation.status)}
                                     </span>
                                     <span>{validation.message}</span>
@@ -720,58 +918,109 @@ export function AdminReviewOverviewPage() {
                         ) : (
                           <p className="field-hint">当前发票还没有校验结果。</p>
                         )}
-                      </div>
-                      <div className="admin-review-subsection">
-                        <h4>分摊与成员确认</h4>
-                        {invoiceItem.splits.length > 0 ? (
-                          <ul className="admin-review-list">
-                            {invoiceItem.splits.map(({ split, confirmation }) => (
-                              <li key={split.id}>
-                                <strong>
-                                  {formatMemberLabel(split.member_id)} / {formatCurrencyFromCents(split.amount_cents)}
-                                </strong>
-                                <span
-                                  className={`status-chip ${buildConfirmationBadgeClass(confirmation)}`}
-                                >
-                                  {confirmation ? formatConfirmationStatus(confirmation.status) : "未提交确认"}
-                                </span>
-                                <span>版本 {split.version}</span>
-                                {split.note ? <span>备注：{split.note}</span> : null}
-                                {confirmation?.dispute_reason ? (
-                                  <span>异议原因：{confirmation.dispute_reason}</span>
-                                ) : null}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="field-hint">当前发票还没有分摊记录。</p>
-                        )}
-                      </div>
-                      <div className="inline-actions">
+                      </>
+                    ) : selectedMaterial.material_type === "invoice" ? (
+                      <p className="field-hint">
+                        这份发票材料还没有人工确认后的发票记录。先检查左侧预览和识别字段，再进入发票录入页补录或更正金额、抬头和税号。
+                      </p>
+                    ) : relatedInvoices.length > 0 ? (
+                      <ul className="admin-review-list" aria-label="关联发票摘要列表">
+                        {relatedInvoices.map((invoiceItem) => (
+                          <li key={invoiceItem.invoice.id}>
+                            <strong>
+                              {invoiceItem.invoice.invoice_number} / {formatCurrencyFromCents(invoiceItem.invoice.amount_cents)}
+                            </strong>
+                            <span>发票编号：{invoiceItem.invoice.id}</span>
+                            <span>当前异常校验：{invoiceItem.validations.filter((item) => item.status === "failed" || item.status === "pending").length} 条</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="field-hint">
+                        当前材料还没有关联到任何发票记录。若它应作为支付记录、比赛通知或行程单参与校验，请先确认归属关系。
+                      </p>
+                    )}
+                  </section>
+
+                  <section className="admin-review-subsection">
+                    <h4>分摊去向与成员确认</h4>
+                    {selectedInvoice ? (
+                      selectedInvoice.splits.length > 0 ? (
+                        <ul className="admin-review-list" aria-label="当前材料分摊列表">
+                          {selectedInvoice.splits.map(({ split, confirmation }) => (
+                            <li key={split.id}>
+                              <strong>
+                                {formatMemberLabel(split.member_id)} / {formatCurrencyFromCents(split.amount_cents)}
+                              </strong>
+                              <span className={`status-chip ${buildConfirmationBadgeClass(confirmation)}`}>
+                                {confirmation ? formatConfirmationStatus(confirmation.status) : "未提交确认"}
+                              </span>
+                              <span>版本 {split.version}</span>
+                              {split.note ? <span>备注：{split.note}</span> : null}
+                              {confirmation?.dispute_reason ? <span>异议原因：{confirmation.dispute_reason}</span> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="field-hint">当前发票还没有分摊记录。</p>
+                      )
+                    ) : (
+                      <p className="field-hint">当前材料没有直接可编辑的分摊记录；若它属于某张发票，请从对应发票的详情动作进入分摊调整。</p>
+                    )}
+                  </section>
+
+                  <div className="inline-actions admin-review-action-row">
+                    {selectedInvoice ? (
+                      <>
                         <Link
                           className="route-link"
-                          to={
-                            `/admin/tasks/${taskId}/invoices?materialId=${
-                              encodeURIComponent(invoiceItem.invoice.material_id)
-                            }`
-                          }
+                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedInvoice.invoice.material_id)}`}
                         >
                           更正金额与字段
                         </Link>
                         <Link
                           className="route-link route-link-secondary"
-                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(invoiceItem.invoice.id)}`}
+                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(selectedInvoice.invoice.id)}`}
                         >
                           调整分摊
                         </Link>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="field-hint">当前任务还没有发票可供复核。</p>
-            )}
+                      </>
+                    ) : selectedMaterial.material_type === "invoice" ? (
+                      <Link
+                        className="route-link"
+                        to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedMaterial.id)}`}
+                      >
+                        补录当前发票
+                      </Link>
+                    ) : relatedInvoices[0] ? (
+                      <>
+                        <Link
+                          className="route-link"
+                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(relatedInvoices[0].invoice.material_id)}`}
+                        >
+                          查看关联发票
+                        </Link>
+                        <Link
+                          className="route-link route-link-secondary"
+                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(relatedInvoices[0].invoice.id)}`}
+                        >
+                          调整关联分摊
+                        </Link>
+                      </>
+                    ) : null}
+                    <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/corrections`}>
+                      处理更正与提醒
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="eyebrow">Selected Material</p>
+                  <h2>当前没有可查看的材料</h2>
+                  <p className="field-hint">当前任务还没有已归档材料，暂时无法进入列表-详情联动复核。</p>
+                </>
+              )}
+            </article>
           </section>
         </>
       ) : null}

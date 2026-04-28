@@ -1,5 +1,81 @@
 # WORKLOG
 
+## 2026-04-29 03:38 - Build linked material review list/detail workspace
+
+### 完成内容
+- 将管理员复核主界面收口为“材料列表 + 当前材料详情”联动结构：
+  - 复核页左侧统一列出当前任务已归档材料，按材料类型、渠道、提交人、关联发票和异常数量帮助管理员快速筛选；
+  - 右侧固定展示当前选中材料的详情，不再把“材料状态摘要”和“发票复核摘要”拆成两个互相割裂的长列表。
+- 在当前材料详情中集中展示复核所需上下文：
+  - 新增原始材料内容预览，支持已归档 PDF 和图片材料的内联预览；
+  - 同页展示识别字段、来源、置信度、校验异常、关联发票摘要、当前分摊去向和成员确认状态；
+  - 当前材料若已形成主发票，可直接进入“更正金额与字段”或“调整分摊”；若是辅助材料，则直接跳到其关联发票。
+- 补齐材料预览接口和测试：
+  - 后端新增 `GET /api/materials/{material_id}/content`，要求已登录且满足任务可见性约束；
+  - 管理员可预览任务内材料，成员仍不能预览无关成员材料；
+  - 前端测试覆盖初始发票详情和切换到辅助材料后的联动展示，后端测试覆盖管理员预览成功和无关成员被拒绝。
+
+### 根因
+- `docs/UI原型图对照与交互规范补充.md` 已明确指出：审核类页面应采用“列表 + 详情面板”的审查模式，而当前实现仍把材料列表、发票列表、校验异常和分摊确认拆成多个并列区块。
+- 现有管理员要处理一张发票时，往往先在复核总览里看摘要，再跳去发票录入页看识别字段，再跳去分摊页看归属与确认状态；问题不在后端能力缺失，而在复核页没有承接这些上下文。
+- 仓库此前也没有材料原件读取接口，导致前端即使想做联动详情，也只能显示文件名和元数据，无法满足“原始票据预览”的任务要求。
+
+### 关键改动点
+- 后端材料预览接口：
+  - `src/trms_backend/api/materials.py`
+  - `src/trms_backend/application/material_submission.py`
+- 前端 API 与复核页联动视图：
+  - `web/src/lib/api/trms.ts`
+  - `web/src/app/admin-review-overview.tsx`
+  - `web/src/styles.css`
+- 回归测试：
+  - `tests/test_materials_api.py`
+  - `web/src/app/admin-review-overview.test.tsx`
+- 任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮新增的材料内容接口只开放给已归档材料，且继续受任务级权限约束；待归属材料仍只在待归属列表中展示摘要，不在本轮开放原件预览。
+- 复核页当前把“查看和决策上下文”集中到同页，但字段补录和分摊编辑仍复用既有独立页面；这轮的目标是消除为看上下文而频繁跳页，不是把所有编辑表单再次复制进复核页。
+- 原始材料预览目前只对 PDF 和图片做内联展示；若后续引入更多可上传类型，需要单独评估是否允许浏览器内联预览，而不是默认放开。
+
+### 修改文件
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/application/material_submission.py`
+- `tests/test_materials_api.py`
+- `web/src/lib/api/trms.ts`
+- `web/src/app/admin-review-overview.tsx`
+- `web/src/app/admin-review-overview.test.tsx`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py -k 'preview_assigned_material_content or preview_other_members_material_content'`
+    - 2 个测试通过
+  - `uv run pytest tests/test_materials_api.py tests/test_task_review_summary_api.py`
+    - 33 个测试通过
+  - `cd web && npm test -- --run src/app/admin-review-overview.test.tsx`
+    - 2 个测试通过
+  - `cd web && npm run lint`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 352 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认“复核主界面需要同页完成的是查看、判断和进入正确处理动作”，因此没有把发票录入表单和分摊编辑表单整块复制到复核页，而是保留既有独立编辑页作为处理入口。
+- 辅助材料在当前详情里优先展示其关联发票摘要和跳转动作；若后续产品要求辅助材料也必须直接展示关联发票的完整分摊表单，应作为下一轮独立任务处理，而不是继续在本轮扩散修改。
+
 ## 2026-04-29 03:22 - Align admin navigation and task progression with prototype
 
 ### 完成内容

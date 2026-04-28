@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,27 +25,60 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+function binaryResponse(body: BodyInit, init: ResponseInit = {}) {
+  return new Response(body, {
+    status: init.status ?? 200,
+    headers: init.headers,
+  });
+}
+
 function renderReviewRoute(entry = "/admin/tasks/TASK-REVIEW/review") {
   const router = createMemoryRouter(routes, {
     initialEntries: [entry],
   });
 
-  act(() => {
-    render(<RouterProvider router={router} />);
-  });
+  render(<RouterProvider router={router} />);
 }
 
 describe("AdminReviewOverviewPage", () => {
+  const originalCreateObjectURL = URL.createObjectURL?.bind(URL);
+  const originalRevokeObjectURL = URL.revokeObjectURL?.bind(URL);
+
   beforeEach(() => {
     clearMockSession();
+
+    let blobSequence = 0;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => {
+        blobSequence += 1;
+        return `blob:review-preview-${blobSequence}`;
+      }),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     clearMockSession();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: originalCreateObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: originalRevokeObjectURL,
+    });
   });
 
-  it("renders highlighted review risks, pending-assignment materials and invoice review details", async () => {
+  it("renders review risks and links the material list to the current detail panel", async () => {
     setMockSession("admin");
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
@@ -77,7 +110,7 @@ describe("AdminReviewOverviewPage", () => {
           task_id: "TASK-REVIEW",
           administrator_id: "admin-1",
           counts: {
-            material_count: 1,
+            material_count: 2,
             pending_assignment_material_count: 1,
             invoice_count: 1,
             validation_count: 2,
@@ -127,6 +160,13 @@ describe("AdminReviewOverviewPage", () => {
                     status: "needs_confirmation",
                     updated_at: "2026-04-28T09:05:00+08:00",
                   },
+                  tax_number: {
+                    value: "91310000TEST00001",
+                    source: "pdf_text",
+                    confidence: 0.96,
+                    status: "recognized",
+                    updated_at: "2026-04-28T09:05:00+08:00",
+                  },
                 },
                 manual_corrections: [],
                 created_at: "2026-04-28T09:01:00+08:00",
@@ -134,6 +174,30 @@ describe("AdminReviewOverviewPage", () => {
               },
               invoice_id: "INV-001",
               supporting_invoice_ids: [],
+            },
+            {
+              material: {
+                id: "MAT-PAY-001",
+                status: "assigned",
+                task_id: "TASK-REVIEW",
+                submitter_id: "2250002",
+                task_id_hint: null,
+                submitter_id_hint: null,
+                channel: "email",
+                material_type: "payment_record",
+                storage_key: "TASK-REVIEW/payment.png",
+                original_filename: "payment.png",
+                content_type: "image/png",
+                size_bytes: 2048,
+                sha256: "c".repeat(64),
+                duplicate_of: null,
+                claimed_by: null,
+                claimed_at: null,
+                created_at: "2026-04-28T09:30:00+08:00",
+              },
+              latest_recognition: null,
+              invoice_id: null,
+              supporting_invoice_ids: ["INV-001"],
             },
           ],
           pending_assignment_materials: [
@@ -189,7 +253,7 @@ describe("AdminReviewOverviewPage", () => {
                 },
                 {
                   id: "VAL-002",
-                  rule_code: "payment_record_required",
+                  rule_code: "invoice_tax_number_match",
                   target_type: "invoice",
                   target_id: "INV-001",
                   severity: "warning",
@@ -257,6 +321,24 @@ describe("AdminReviewOverviewPage", () => {
         }));
       }
 
+      if (url === "/api/materials/MAT-INV-001/content") {
+        return Promise.resolve(binaryResponse("pdf-binary", {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'inline; filename="invoice.pdf"',
+          },
+        }));
+      }
+
+      if (url === "/api/materials/MAT-PAY-001/content") {
+        return Promise.resolve(binaryResponse("png-binary", {
+          headers: {
+            "Content-Type": "image/png",
+            "Content-Disposition": 'inline; filename="payment.png"',
+          },
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in admin review overview test: ${url}`);
     });
 
@@ -266,11 +348,6 @@ describe("AdminReviewOverviewPage", () => {
     const moduleNav = screen.getByLabelText("管理员模块导航");
     expect(within(moduleNav).getByText("材料审核").closest("a")).toHaveAttribute("aria-current", "page");
     expect(screen.getByLabelText("当前任务上下文")).toHaveTextContent("ICPC 复核任务");
-    expect(screen.getAllByText("ICPC 复核任务").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "处理更正与提醒" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/corrections",
-    );
 
     const riskSummary = within(screen.getByLabelText("复核风险摘要"));
     expect(riskSummary.getByText("需要立即处理")).toBeInTheDocument();
@@ -283,31 +360,39 @@ describe("AdminReviewOverviewPage", () => {
     expect(pendingList.getByText("pending-pay.pdf")).toBeInTheDocument();
     expect(pendingList.getByText("2250003")).toBeInTheDocument();
 
-    const materialList = within(screen.getByLabelText("任务材料列表"));
+    const materialList = within(screen.getByLabelText("材料审核列表"));
     expect(materialList.getByText("invoice.pdf")).toBeInTheDocument();
-    expect(materialList.getAllByText("待人工确认")).toHaveLength(2);
-    expect(materialList.getByRole("link", { name: "更正识别字段" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
-    );
+    expect(materialList.getByText("payment.png")).toBeInTheDocument();
 
-    const invoiceList = within(screen.getByLabelText("发票复核列表"));
-    expect(invoiceList.getByText("INV-001")).toBeInTheDocument();
-    expect(invoiceList.getByText("发票抬头与任务抬头不一致")).toBeInTheDocument();
-    expect(invoiceList.getByText("异议原因：报名费分摊比例需要调整")).toBeInTheDocument();
-    expect(invoiceList.getByRole("link", { name: "更正金额与字段" })).toHaveAttribute(
+    const detailPanel = within(screen.getByLabelText("当前材料详情"));
+    expect(await detailPanel.findByText("invoice.pdf")).toBeInTheDocument();
+    expect(detailPanel.getByText("发票抬头与任务抬头不一致")).toBeInTheDocument();
+    expect(detailPanel.getByText("异议原因：报名费分摊比例需要调整")).toBeInTheDocument();
+    expect(detailPanel.getByRole("link", { name: "更正金额与字段" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
     );
-    expect(invoiceList.getByRole("link", { name: "调整分摊" })).toHaveAttribute(
+    expect(detailPanel.getByRole("link", { name: "调整分摊" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
     );
+    expect(await detailPanel.findByLabelText("原始票据 PDF 预览")).toHaveAttribute(
+      "data",
+      "blob:review-preview-1",
+    );
 
-    const outstandingMembers = within(screen.getByLabelText("未完成确认成员"));
-    expect(outstandingMembers.getByText("成员 2250002")).toBeInTheDocument();
-    const overdueMembers = within(screen.getByLabelText("逾期未确认成员"));
-    expect(overdueMembers.getByText("2250002")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(materialList.getByRole("button", { name: /payment\.png/i }));
+      await Promise.resolve();
+    });
+
+    expect(await detailPanel.findByText("payment.png")).toBeInTheDocument();
+    expect(await detailPanel.findByAltText("payment.png 预览")).toHaveAttribute("src", "blob:review-preview-2");
+    expect(detailPanel.getByText("当前材料没有直接可编辑的分摊记录；若它属于某张发票，请从对应发票的详情动作进入分摊调整。")).toBeInTheDocument();
+    expect(detailPanel.getByRole("link", { name: "查看关联发票" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
+    );
   });
 
   it("blocks member access through the existing protected admin route", async () => {

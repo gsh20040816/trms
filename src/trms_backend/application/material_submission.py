@@ -98,6 +98,9 @@ class MaterialSubmissionService:
         self._audit_log_repository = audit_log_repository
         self._metrics_collector = metrics_collector or NoOpMetricsCollector()
 
+    def read_material_content(self, *, storage_key: str) -> bytes:
+        return self._material_file_storage.read(storage_key=storage_key)
+
     def submit_to_task(
         self,
         *,
