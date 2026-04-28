@@ -1,9 +1,10 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.invoice_validation_refresh import refresh_invoice_validations
 from trms_backend.api.request_identity import (
     RequestIdentity,
@@ -11,6 +12,8 @@ from trms_backend.api.request_identity import (
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
+from trms_backend.application.recognition_audit import record_manual_recognition_corrections_audit
+from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import (
@@ -79,6 +82,7 @@ def build_invoice_router(
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
+    audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(tags=["invoices"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
@@ -100,6 +104,7 @@ def build_invoice_router(
     @router.post("/api/materials/{material_id}/invoice", status_code=status.HTTP_201_CREATED)
     def create_invoice(
         material_id: str,
+        request: Request,
         payload: ManualInvoiceEntryRequest,
         identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
     ):
@@ -155,6 +160,13 @@ def build_invoice_router(
         latest_effective_recognition = recognition_task_repository.get_latest_effective_by_material(
             material_id
         )
+        existing_recognition_tasks = recognition_task_repository.list_by_material(material_id)
+        latest_target_task = existing_recognition_tasks[-1] if existing_recognition_tasks else None
+        previous_correction_ids = (
+            {item.id for item in latest_target_task.manual_corrections}
+            if latest_target_task is not None
+            else set()
+        )
         invoice = invoice_repository.upsert_for_material(
             material.task_id,
             material_id,
@@ -164,7 +176,7 @@ def build_invoice_router(
         supporting_material_recognitions = load_supporting_material_recognitions(
             supporting_materials
         )
-        recognition_task_repository.apply_manual_corrections(
+        updated_recognition_task = recognition_task_repository.apply_manual_corrections(
             material_id=material_id,
             actor_id=manual_entry.actor_id,
             corrected_fields=invoice_data.model_dump(mode="json"),
@@ -178,6 +190,19 @@ def build_invoice_router(
                 "amount_cents",
                 "expense_type",
             },
+        )
+        new_corrections = [
+            item
+            for item in updated_recognition_task.manual_corrections
+            if item.id not in previous_correction_ids
+        ]
+        record_manual_recognition_corrections_audit(
+            audit_log_repository,
+            actor_id=manual_entry.actor_id,
+            recognition_task=updated_recognition_task,
+            task_id=material.task_id,
+            request_id=ensure_request_id(request),
+            corrections=new_corrections,
         )
         validations = validation_repository.replace_for_invoice(
             invoice.id,

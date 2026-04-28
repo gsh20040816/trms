@@ -107,6 +107,7 @@ def create_app(
         material_repository,
         material_file_storage,
         recognition_task_repository,
+        audit_log_repository,
         app.state.recognition_llm_capability,
         recognition_llm_client,
     )
@@ -192,6 +193,7 @@ def create_app(
             validation_repository,
             recognition_task_repository,
             recognition_preparation_service,
+            audit_log_repository,
         )
     )
     app.include_router(
@@ -202,6 +204,7 @@ def create_app(
             invoice_repository,
             validation_repository,
             recognition_task_repository,
+            audit_log_repository,
         )
     )
     app.include_router(

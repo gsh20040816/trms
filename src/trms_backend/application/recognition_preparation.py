@@ -11,10 +11,15 @@ from trms_backend.application.recognition_llm import (
     RecognitionLlmClient,
     RecognitionLlmExecutionError,
 )
+from trms_backend.application.recognition_audit import (
+    SYSTEM_RECOGNITION_ACTOR_ID,
+    record_recognition_result_audit,
+)
 from trms_backend.application.recognition_runtime import (
     RecognitionLlmCapability,
     RecognitionLlmCapabilityStatus,
 )
+from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.materials import MaterialFileStorage, MaterialRecord, MaterialRepository
 from trms_backend.domain.recognitions import (
     RecognitionFailureDetail,
@@ -64,16 +69,24 @@ class RecognitionPreparationService:
         material_repository: MaterialRepository,
         material_file_storage: MaterialFileStorage,
         recognition_task_repository: RecognitionTaskRepository,
+        audit_log_repository: AuditLogRepository,
         llm_capability: RecognitionLlmCapability,
         recognition_llm_client: RecognitionLlmClient | None = None,
     ) -> None:
         self._material_repository = material_repository
         self._material_file_storage = material_file_storage
         self._recognition_task_repository = recognition_task_repository
+        self._audit_log_repository = audit_log_repository
         self._llm_capability = llm_capability
         self._recognition_llm_client = recognition_llm_client
 
-    def execute(self, recognition_task_id: str) -> RecognitionTaskRecord:
+    def execute(
+        self,
+        recognition_task_id: str,
+        *,
+        actor_id: str = SYSTEM_RECOGNITION_ACTOR_ID,
+        request_id: str | None = None,
+    ) -> RecognitionTaskRecord:
         task = self._recognition_task_repository.get(recognition_task_id)
         if task is None:
             raise RecognitionTaskExecutionNotFoundError(recognition_task_id)
@@ -102,6 +115,9 @@ class RecognitionPreparationService:
                     stage=RecognitionFailureStage.PDF,
                     reason="stored_file_missing",
                 ),
+                material=material,
+                actor_id=actor_id,
+                request_id=request_id,
             )
 
         try:
@@ -111,6 +127,9 @@ class RecognitionPreparationService:
                 recognition_task_id=recognition_task_id,
                 raw_response=base_payload,
                 failure=error.failure,
+                material=material,
+                actor_id=actor_id,
+                request_id=request_id,
             )
 
         base_payload["preparation"]["recognition_input"] = document_input.model_dump(mode="json")
@@ -119,6 +138,9 @@ class RecognitionPreparationService:
                 recognition_task_id=recognition_task_id,
                 raw_response=base_payload,
                 failure=self._llm_capability.failure,
+                material=material,
+                actor_id=actor_id,
+                request_id=request_id,
             )
         if self._recognition_llm_client is None:
             return self._fail_task(
@@ -128,6 +150,9 @@ class RecognitionPreparationService:
                     stage=RecognitionFailureStage.AI,
                     reason="structured_recognition_not_configured",
                 ),
+                material=material,
+                actor_id=actor_id,
+                request_id=request_id,
             )
 
         try:
@@ -142,6 +167,9 @@ class RecognitionPreparationService:
                 recognition_task_id=recognition_task_id,
                 raw_response=raw_response,
                 failure=error.failure,
+                material=material,
+                actor_id=actor_id,
+                request_id=request_id,
             )
 
         raw_response = dict(base_payload)
@@ -155,6 +183,9 @@ class RecognitionPreparationService:
                 if extraction.has_pending_confirmation()
                 else RecognitionTaskStatus.SUCCEEDED
             ),
+            material=material,
+            actor_id=actor_id,
+            request_id=request_id,
         )
 
     def _fail_task(
@@ -163,6 +194,9 @@ class RecognitionPreparationService:
         recognition_task_id: str,
         raw_response: dict[str, object],
         failure: RecognitionFailureDetail,
+        material: MaterialRecord,
+        actor_id: str,
+        request_id: str | None,
     ) -> RecognitionTaskRecord:
         updated = self._recognition_task_repository.update_status(
             recognition_task_id,
@@ -173,6 +207,13 @@ class RecognitionPreparationService:
         )
         if updated is None:
             self._raise_missing_or_conflict(recognition_task_id)
+        record_recognition_result_audit(
+            self._audit_log_repository,
+            actor_id=actor_id,
+            recognition_task=updated,
+            task_id=material.task_id,
+            request_id=request_id,
+        )
         return updated
 
     def _complete_task(
@@ -182,6 +223,9 @@ class RecognitionPreparationService:
         raw_response: dict[str, object],
         recognized_fields: dict[str, RecognitionFieldResult],
         target_status: RecognitionTaskStatus,
+        material: MaterialRecord,
+        actor_id: str,
+        request_id: str | None,
     ) -> RecognitionTaskRecord:
         updated = self._recognition_task_repository.update_status(
             recognition_task_id,
@@ -194,6 +238,13 @@ class RecognitionPreparationService:
         )
         if updated is None:
             self._raise_missing_or_conflict(recognition_task_id)
+        record_recognition_result_audit(
+            self._audit_log_repository,
+            actor_id=actor_id,
+            recognition_task=updated,
+            task_id=material.task_id,
+            request_id=request_id,
+        )
         return updated
 
     def _raise_missing_or_conflict(self, recognition_task_id: str) -> None:

@@ -6451,3 +6451,56 @@
 
 ### 后续建议
 - 下一轮先收敛共享运行模式和 worker 命令入口，避免识别与导出各自发散出不同的异步执行配置。
+
+## 2026-04-28 18:35 - Record recognition result and manual correction audit logs
+
+### 完成内容
+- 为识别结果与人工更正新增统一审计写入：
+  - 新增 `src/trms_backend/application/recognition_audit.py`，集中生成识别结果审计和人工更正差异审计；
+  - `RecognitionPreparationService` 在真实识别执行完成或失败后写入 `record_recognition_result` 审计，覆盖 API 手动执行和 worker 异步执行两条链路；
+  - `PATCH /api/recognition-tasks/{id}/status` 在直接写入识别结果或失败原因时补写识别结果审计；
+  - `POST /api/materials/{material_id}/invoice` 在人工录入/更正发票字段后写入 `apply_manual_recognition_corrections` 审计，并记录字段级前后差异摘要。
+- 审计明细只记录字段名、来源、状态、置信度、失败原因和人工更正前后摘要，不写入 `raw_response`、原始文件内容或完整文档文本。
+- 补充测试覆盖：
+  - `tests/test_recognition_tasks_api.py` 断言手动写入识别结果后存在识别审计；
+  - `tests/test_recognition_async_jobs.py` 断言 worker 异步识别失败时存在系统审计且不暴露 `raw_response`；
+  - `tests/test_invoices_api.py` 断言人工更正会写入差异审计，并能追踪前后字段变化。
+- 将 `TASKS.md` 中“记录识别和人工更正审计”标记为已完成。
+
+### 根因
+- 上一轮已经建立了统一 `audit_logs` 骨架，并接入了材料提交、认领和删除标记，但识别链路仍缺少正式审计写入点。
+- 这会导致两类关键事实无法追溯：
+  - 识别任务何时生成了什么结果、由谁触发或由哪个系统执行器写入；
+  - 管理员/成员人工覆盖识别字段时，哪些字段从什么值改成了什么值。
+- 如果继续只依赖 `recognition_tasks.manual_corrections` 内部历史，而不把结果和差异接到统一审计仓储，就无法和其他审计记录共享查询边界、请求 ID 和结果语义，也不满足当前任务对“更正摘要可追溯”的要求。
+
+### 修改文件
+- `src/trms_backend/application/recognition_audit.py`
+- `src/trms_backend/application/recognition_preparation.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/__main__.py`
+- `tests/test_recognition_tasks_api.py`
+- `tests/test_recognition_async_jobs.py`
+- `tests/test_invoices_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_tasks_api.py tests/test_recognition_async_jobs.py tests/test_invoices_api.py`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 305 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- worker 异步识别路径当前保守记录为系统操作者 `system:recognition-worker`，用于区分人工触发和后台执行。
+- 只有真正写入识别结果或失败原因的状态更新才记为“识别结果审计”；不携带 `result`/`failure` 的纯状态切换不单独记这类审计，避免把无结果的管理动作伪装成识别产出。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“记录分摊和确认审计”，继续沿用统一 `audit_logs` 仓储和结果语义，不要在分摊/确认 API 内另起一套日志格式。

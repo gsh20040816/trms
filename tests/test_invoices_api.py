@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.audit_logs import AuditLogResult
 from trms_backend.domain.invoice_validation import (
     AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
@@ -10,6 +11,8 @@ from trms_backend.domain.invoice_validation import (
     PAYMENT_RECORD_AMOUNT_MATCH_MODE,
     PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
 )
+from trms_backend.infrastructure.database import build_session_factory
+from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepository
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
@@ -117,6 +120,16 @@ def set_recognition_result(
     )
     assert response.status_code == 200
     return recognition_task_id
+
+
+def list_recognition_task_audit_logs(tmp_path, recognition_task_id: str):
+    repository = SqlAlchemyAuditLogRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return repository.list_by_object(
+        object_type="recognition_task",
+        object_id=recognition_task_id,
+    )
 
 
 def set_recognition_amount_cents(
@@ -1770,6 +1783,39 @@ def test_manual_invoice_correction_updates_recognition_fields_and_keeps_diff_his
     assert buyer_name_corrections[1]["after"]["value"] == "错误抬头"
     assert tax_number_corrections[0]["before"]["value"] == "WRONG-TAX-NUMBER"
     assert tax_number_corrections[0]["after"]["value"] == "12100000425006117D"
+
+    audit_logs = list_recognition_task_audit_logs(tmp_path, recognition_task_id)
+
+    assert [item.action for item in audit_logs] == [
+        "record_recognition_result",
+        "apply_manual_recognition_corrections",
+        "apply_manual_recognition_corrections",
+    ]
+    assert audit_logs[1].actor_id == "2250001"
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].detail["material_id"] == material_id
+    assert audit_logs[1].detail["correction_count"] == 8
+    assert audit_logs[1].detail["changed_fields"][0]["field_name"] == "invoice_number"
+    assert audit_logs[1].detail["changed_fields"][0]["before"]["value"] == "INV-AI-001"
+    assert audit_logs[1].detail["changed_fields"][0]["before"]["source"] == "ai"
+    assert audit_logs[1].detail["changed_fields"][0]["after"]["value"] == "INV-001"
+    assert audit_logs[2].actor_id == "2250001"
+    assert audit_logs[2].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[2].detail["correction_count"] == 1
+    changed_field = audit_logs[2].detail["changed_fields"][0]
+    assert changed_field["field_name"] == "buyer_name"
+    assert changed_field["before"]["value"] == "同济大学"
+    assert changed_field["before"]["source"] == "manual"
+    assert changed_field["before"]["status"] == "recognized"
+    assert changed_field["before"]["confidence"] == 1.0
+    assert changed_field["before"]["updated_at"] is not None
+    assert changed_field["after"]["value"] == "错误抬头"
+    assert changed_field["after"]["source"] == "manual"
+    assert changed_field["after"]["status"] == "recognized"
+    assert changed_field["after"]["confidence"] == 1.0
+    assert changed_field["after"]["updated_at"] is not None
+    assert changed_field["revalidation_status"] == "triggered"
+    assert changed_field["corrected_at"] is not None
 
 
 def test_manual_invoice_correction_on_retry_keeps_older_recognition_history_unchanged(tmp_path):

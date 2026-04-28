@@ -14,6 +14,7 @@ from trms_backend.application.recognition_preparation import RecognitionPreparat
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
+    SqlAlchemyAuditLogRepository,
     SqlAlchemyConfirmationRepository,
     SqlAlchemyExportJobRepository,
     SqlAlchemyExpenseSplitRepository,
@@ -65,6 +66,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
     export_job_repository = SqlAlchemyExportJobRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
+    audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
     material_file_storage = build_material_file_storage(config)
     recognition_llm_client = (
         OpenAiCompatibleRecognitionClient(config.llm_provider)
@@ -75,6 +77,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
         material_repository,
         material_file_storage,
         recognition_task_repository,
+        audit_log_repository,
         resolve_recognition_llm_capability(config),
         recognition_llm_client,
     )

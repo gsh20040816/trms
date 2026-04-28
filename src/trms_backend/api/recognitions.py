@@ -1,7 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
 from trms_backend.api.request_identity import (
     RequestIdentity,
@@ -9,12 +10,14 @@ from trms_backend.api.request_identity import (
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
+from trms_backend.application.recognition_audit import record_recognition_result_audit
 from trms_backend.application.recognition_preparation import (
     RecognitionMaterialNotFoundError,
     RecognitionPreparationService,
     RecognitionTaskExecutionConflictError,
     RecognitionTaskExecutionNotFoundError,
 )
+from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import UserRole
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
@@ -37,6 +40,7 @@ def build_recognition_router(
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
     recognition_preparation_service: RecognitionPreparationService,
+    audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(tags=["recognitions"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
@@ -127,6 +131,7 @@ def build_recognition_router(
     @router.patch("/api/recognition-tasks/{recognition_task_id}/status")
     def update_recognition_task_status(
         recognition_task_id: str,
+        request: Request,
         payload: RecognitionTaskStatusUpdate,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
@@ -165,11 +170,21 @@ def build_recognition_router(
             validation_repository=validation_repository,
             recognition_task_repository=recognition_task_repository,
         )
+        if payload.result is not None or payload.failure is not None:
+            material = material_repository.get(updated.material_id)
+            record_recognition_result_audit(
+                audit_log_repository,
+                actor_id=identity.actor_id,
+                recognition_task=updated,
+                task_id=material.task_id if material is not None else None,
+                request_id=ensure_request_id(request),
+            )
         return {"item": updated}
 
     @router.post("/api/recognition-tasks/{recognition_task_id}/execute")
     def execute_recognition_task(
         recognition_task_id: str,
+        request: Request,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         task = recognition_task_repository.get(recognition_task_id)
@@ -184,7 +199,11 @@ def build_recognition_router(
             forbidden_detail="actor is not allowed to manage recognition tasks for this material",
         )
         try:
-            updated = recognition_preparation_service.execute(recognition_task_id)
+            updated = recognition_preparation_service.execute(
+                recognition_task_id,
+                actor_id=identity.actor_id,
+                request_id=ensure_request_id(request),
+            )
         except RecognitionTaskExecutionNotFoundError as error:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

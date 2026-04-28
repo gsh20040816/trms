@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
 
+from trms_backend.domain.audit_logs import AuditLogResult
+from trms_backend.infrastructure.database import build_session_factory
+from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepository
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
@@ -67,6 +70,16 @@ def member_auth_headers(client: TestClient) -> dict[str, str]:
             actor_id="2250001",
             member_code="2250001",
         )
+    )
+
+
+def list_recognition_task_audit_logs(tmp_path, recognition_task_id: str):
+    repository = SqlAlchemyAuditLogRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return repository.list_by_object(
+        object_type="recognition_task",
+        object_id=recognition_task_id,
     )
 
 
@@ -314,6 +327,37 @@ def test_low_confidence_fields_require_needs_confirmation_and_are_persisted(tmp_
     assert listed_body["raw_response"] == recognition_result["raw_response"]
     assert listed_body["recognized_fields"]["buyer_name"]["confidence"] == 0.42
     assert listed_body["recognized_fields"]["buyer_name"]["status"] == "needs_confirmation"
+
+    audit_logs = list_recognition_task_audit_logs(tmp_path, recognition_task_id)
+
+    assert len(audit_logs) == 1
+    assert audit_logs[0].actor_id == "admin-1"
+    assert audit_logs[0].action == "record_recognition_result"
+    assert audit_logs[0].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[0].task_id == task_id
+    assert audit_logs[0].request_id.startswith("req_")
+    assert audit_logs[0].detail == {
+        "material_id": material_id,
+        "recognition_status": "needs_confirmation",
+        "recognized_field_count": 2,
+        "recognized_fields": [
+            {
+                "field_name": "invoice_number",
+                "source": "ai",
+                "status": "recognized",
+                "confidence": 0.98,
+            },
+            {
+                "field_name": "buyer_name",
+                "source": "ocr",
+                "status": "needs_confirmation",
+                "confidence": 0.42,
+            },
+        ],
+        "pending_confirmation_fields": ["buyer_name"],
+        "failure_stage": None,
+        "failure_reason": None,
+    }
 
 
 def test_recognition_task_listing_returns_latest_effective_result_and_full_history(tmp_path):

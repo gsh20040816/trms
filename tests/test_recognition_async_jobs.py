@@ -7,8 +7,10 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
+from trms_backend.domain.audit_logs import AuditLogResult
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
+    SqlAlchemyAuditLogRepository,
     SqlAlchemyInvoiceRepository,
     SqlAlchemyMaterialRepository,
     SqlAlchemyRecognitionTaskRepository,
@@ -101,12 +103,14 @@ def build_processor(tmp_path, runtime_config) -> RecognitionAsyncJobProcessor:
     task_repository = SqlAlchemyTaskRepository(session_factory)
     invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
     validation_repository = SqlAlchemyValidationRepository(session_factory)
+    audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
     material_file_storage = LocalMaterialFileStorage(tmp_path / "material-storage")
     recognition_preparation_service = RecognitionPreparationService(
         material_repository,
         material_file_storage,
         recognition_task_repository,
+        audit_log_repository,
         resolve_recognition_llm_capability(runtime_config),
     )
     return RecognitionAsyncJobProcessor(
@@ -140,3 +144,23 @@ def test_recognition_async_processor_consumes_pending_task_and_preserves_idempot
         "stage": "ai",
         "reason": "llm_provider_not_configured",
     }
+
+    audit_repository = SqlAlchemyAuditLogRepository(
+        build_session_factory(runtime_config.database_url)
+    )
+    audit_logs = audit_repository.list_by_object(
+        object_type="recognition_task",
+        object_id=task["id"],
+    )
+
+    assert len(audit_logs) == 1
+    assert audit_logs[0].actor_id == "system:recognition-worker"
+    assert audit_logs[0].action == "record_recognition_result"
+    assert audit_logs[0].result is AuditLogResult.FAILED
+    assert audit_logs[0].task_id == task_id
+    assert audit_logs[0].request_id is None
+    assert audit_logs[0].detail["material_id"] == material_id
+    assert audit_logs[0].detail["recognition_status"] == "failed"
+    assert audit_logs[0].detail["failure_stage"] == "ai"
+    assert audit_logs[0].detail["failure_reason"] == "llm_provider_not_configured"
+    assert "raw_response" not in audit_logs[0].detail
