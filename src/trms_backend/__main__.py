@@ -7,15 +7,16 @@ from collections.abc import Sequence
 import uvicorn
 
 from trms_backend.application.async_jobs import AsyncJobWorker
-from trms_backend.application.recognition_async_jobs import (
-    NoOpAsyncJobProcessor,
-    RecognitionAsyncJobProcessor,
-)
+from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
+from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
+    SqlAlchemyConfirmationRepository,
+    SqlAlchemyExportJobRepository,
+    SqlAlchemyExpenseSplitRepository,
     SqlAlchemyInvoiceRepository,
     SqlAlchemyMaterialRepository,
     SqlAlchemyRecognitionTaskRepository,
@@ -58,6 +59,9 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
     invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
+    export_job_repository = SqlAlchemyExportJobRepository(session_factory)
+    split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
+    confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     material_file_storage = LocalMaterialFileStorage(config.material_storage_dir)
     recognition_llm_client = (
         OpenAiCompatibleRecognitionClient(config.llm_provider)
@@ -82,7 +86,16 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
                 recognition_task_repository=recognition_task_repository,
                 recognition_preparation_service=recognition_preparation_service,
             ),
-            NoOpAsyncJobProcessor("export"),
+            ExportAsyncJobProcessor(
+                task_repository=task_repository,
+                export_job_repository=export_job_repository,
+                invoice_repository=invoice_repository,
+                material_repository=material_repository,
+                material_file_storage=material_file_storage,
+                validation_repository=validation_repository,
+                split_repository=split_repository,
+                confirmation_repository=confirmation_repository,
+            ),
         ),
     )
 

@@ -1,5 +1,77 @@
 # WORKLOG
 
+## 2026-04-28 15:40 - Implement async export worker consumption and artifact status query
+
+### 完成内容
+- 新增 `src/trms_backend/application/export_async_jobs.py`：
+  - 建立 `ExportAsyncJobProcessor`，由 worker 轮询并消费待执行的导出任务；
+  - 对已实现的 CSV / JSON 导出生成真实产物并落盘；
+  - 对未实现的 merged PDF 导出显式标记失败，不伪装成功。
+- 更新 `src/trms_backend/domain/exports.py` 与 `src/trms_backend/infrastructure/repositories.py`：
+  - 为导出任务补齐 `artifact`、`retry_count` 与内部 `artifact_storage_key` 边界；
+  - 新增 `list_pending(limit=...)` 和 `update_status(..., expected_current_status=...)`，让 worker 可以原子抢占 pending 任务；
+  - 复用现有 `export_jobs.parameters` JSON 列持久化产物元数据，避免本轮引入新的 schema 迁移。
+- 更新 `src/trms_backend/__main__.py`：
+  - worker 启动时不再挂 `export` 占位处理器；
+  - 会装配真实导出处理器，与识别任务共用同一个异步 worker 入口。
+- 更新 `src/trms_backend/api/exports.py`：
+  - 创建、列表和状态更新响应现在会返回 `retry_count` 与产物元数据；
+  - 新增 `GET /api/tasks/exports/{export_job_id}` 状态查询接口；
+  - 新增 `GET /api/tasks/exports/{export_job_id}/artifact` 下载接口；
+  - 产物未就绪时返回明确 409，非任务管理员访问状态或下载时返回 403。
+- 更新 `README.md`、`docs/第一阶段验收映射.md`、`TASKS.md`：
+  - 修正“导出 worker 仍是 placeholder”的过时描述；
+  - 将“实现导出任务异步执行与产物状态查询”标记为已完成；
+  - 同步第一阶段导出能力边界为“异步消费 + 持久化产物 + 管理员下载已完成，merged PDF / XLSX 仍未完成”。
+- 新增/更新测试：
+  - `tests/test_export_async_jobs.py` 覆盖导出 worker 消费、成功产物下载、未就绪状态和未实现格式失败；
+  - `tests/test_async_jobs.py` 覆盖同一导出任务重复投递时只会被真正处理一次；
+  - `tests/test_exports_api.py` 覆盖 `retry_count` 与新产物字段；
+  - `web/src/app/admin-export-tasks.test.tsx` 同步新的导出能力说明文案。
+
+### 根因
+- 上一轮虽然已经有导出任务模型、状态机和管理员导出页面，但 `export` processor 仍是空实现。
+- 这会导致三个问题：
+  - `TRMS_ASYNC_JOB_MODE=worker` 下导出任务不会被实际消费，异步边界只有模型没有行为；
+  - 导出任务只能停留在 `pending/running/failed/succeeded` 占位状态，没有真实产物元数据和下载入口；
+  - 同一导出任务如果被重复投递，原实现缺少最小抢占和幂等边界，无法证明不会重复生成业务结果。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `README.md`
+- `docs/第一阶段验收映射.md`
+- `src/trms_backend/__main__.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/application/export_async_jobs.py`
+- `src/trms_backend/domain/exports.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_async_jobs.py`
+- `tests/test_export_async_jobs.py`
+- `tests/test_exports_api.py`
+- `web/src/app/admin-export-tasks.test.tsx`
+
+### 验证结果
+- 已通过：
+  - `python3 -m compileall src tests`
+    - 编译检查通过
+  - `uv run pytest tests/test_async_jobs.py tests/test_export_async_jobs.py tests/test_exports_api.py`
+    - 29 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 260 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出相关测试里旧的 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮保守复用现有 `MaterialFileStorage` 在 `task_id/_exports/` 前缀下保存导出产物，而不是额外引入新的导出存储抽象；后续“生产化对象存储和导出文件访问”任务再统一收口存储适配层。
+- 当前只为已实现的 CSV / JSON 导出生成真实异步产物；merged PDF 与 XLSX 仍按明确失败边界暴露，不在本轮伪装为可用。
+
 ## 2026-04-28 15:27 - Implement async recognition worker consumption and retry observability
 
 ### 完成内容

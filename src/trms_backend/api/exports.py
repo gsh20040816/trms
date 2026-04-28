@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
@@ -13,8 +13,10 @@ from trms_backend.domain.exports import (
     TaskExportJobNotReadyError,
     TaskExportJobRepository,
     TaskExportJobRequest,
+    TaskExportJobStatus,
     TaskExportJobStatusTransitionError,
     TaskExportJobStatusUpdate,
+    build_task_export_retry_counts,
     build_task_export_version_snapshot,
     build_finance_draft_export,
     build_invoice_details_export,
@@ -31,6 +33,7 @@ from trms_backend.domain.exports import (
     render_reimbursement_summary_csv,
     update_task_export_job_status,
     with_task_export_job_latest_flag,
+    with_task_export_job_retry_count,
 )
 from trms_backend.domain.invoices import InvoiceRepository
 from trms_backend.domain.materials import MaterialFileStorage, MaterialRepository
@@ -71,6 +74,16 @@ def build_export_router(
             validations_by_invoice_id=validations_by_invoice_id,
             splits_by_invoice_id=splits_by_invoice_id,
             confirmations_by_split_id=confirmations_by_split_id,
+        )
+
+    def with_export_job_status_view(task, export_job):
+        snapshot = build_current_export_snapshot(task)
+        retry_counts = build_task_export_retry_counts(
+            export_job_repository.list_by_task(task.id)
+        )
+        return with_task_export_job_retry_count(
+            with_task_export_job_latest_flag(export_job, snapshot=snapshot),
+            retry_count=retry_counts.get(export_job.id, 0),
         )
 
     @router.get("/{task_id}/exports/capabilities")
@@ -417,7 +430,7 @@ def build_export_router(
                 snapshot=snapshot,
                 repository=export_job_repository,
             )
-            return with_task_export_job_latest_flag(export_job, snapshot=snapshot)
+            return with_export_job_status_view(task, export_job)
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -442,7 +455,6 @@ def build_export_router(
         task = task_repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        snapshot = build_current_export_snapshot(task)
 
         try:
             export_jobs = list_task_export_jobs(
@@ -450,15 +462,100 @@ def build_export_router(
                 actor_id=actor_id,
                 repository=export_job_repository,
             )
-            return [
-                with_task_export_job_latest_flag(export_job, snapshot=snapshot)
-                for export_job in export_jobs
-            ]
+            return [with_export_job_status_view(task, export_job) for export_job in export_jobs]
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),
             ) from error
+
+    @router.get("/exports/{export_job_id}")
+    def get_export_job(
+        export_job_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        export_job = export_job_repository.get(export_job_id)
+        if export_job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="export job not found",
+            )
+
+        task = task_repository.get(export_job.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        try:
+            list_task_export_jobs(
+                task,
+                actor_id=actor_id,
+                repository=export_job_repository,
+            )
+        except TaskExportActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+        return with_export_job_status_view(task, export_job)
+
+    @router.get("/exports/{export_job_id}/artifact")
+    def download_export_job_artifact(
+        export_job_id: str,
+        actor_id: Annotated[str, Query(min_length=1)],
+    ):
+        export_job = export_job_repository.get(export_job_id)
+        if export_job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="export job not found",
+            )
+
+        task = task_repository.get(export_job.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        try:
+            list_task_export_jobs(
+                task,
+                actor_id=actor_id,
+                repository=export_job_repository,
+            )
+        except TaskExportActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+        if export_job.artifact is None or export_job.artifact_storage_key is None:
+            if export_job.status is TaskExportJobStatus.FAILED:
+                failure_reason = export_job.failure_reason or "unknown failure"
+                detail = (
+                    "export artifact is unavailable because the job failed: "
+                    f"{failure_reason}"
+                )
+            else:
+                detail = f"export artifact is not ready; current status is {export_job.status.value}"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=detail,
+            )
+
+        try:
+            content = material_file_storage.read(storage_key=export_job.artifact_storage_key)
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="export artifact file is missing from storage",
+            ) from error
+
+        return Response(
+            content=content,
+            media_type=export_job.artifact.content_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{export_job.artifact.filename}"',
+            },
+        )
 
     @router.patch("/exports/{export_job_id}/status")
     def update_export_job_status(export_job_id: str, payload: TaskExportJobStatusUpdate):
@@ -472,8 +569,6 @@ def build_export_router(
         task = task_repository.get(export_job.task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        snapshot = build_current_export_snapshot(task)
-
         try:
             updated = update_task_export_job_status(
                 task,
@@ -481,7 +576,7 @@ def build_export_router(
                 payload=payload,
                 repository=export_job_repository,
             )
-            return with_task_export_job_latest_flag(updated, snapshot=snapshot)
+            return with_export_job_status_view(task, updated)
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

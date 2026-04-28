@@ -30,7 +30,9 @@ from trms_backend.domain.confirmations import (
 )
 from trms_backend.domain.exports import (
     ExportArtifactFormat,
+    ExportArtifactRecord,
     ExportArtifactKind,
+    StoredExportArtifactRecord,
     TaskExportJobCreate,
     TaskExportJobRecord,
     TaskExportJobRepository,
@@ -1123,16 +1125,33 @@ class SqlAlchemyExportJobRepository(TaskExportJobRepository):
             ).all()
             return [_export_job_from_row(row) for row in rows]
 
+    def list_pending(self, *, limit: int = 10) -> list[TaskExportJobRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(ExportJobRow)
+                .where(ExportJobRow.status == TaskExportJobStatus.PENDING.value)
+                .order_by(ExportJobRow.created_at)
+                .limit(limit)
+            ).all()
+            return [_export_job_from_row(row) for row in rows]
+
     def update_status(
         self,
         export_job_id: str,
         *,
         target_status: TaskExportJobStatus,
         failure_reason: str | None = None,
+        artifact: StoredExportArtifactRecord | None = None,
+        expected_current_status: TaskExportJobStatus | None = None,
     ) -> TaskExportJobRecord | None:
         with session_scope(self._session_factory) as session:
             row = session.get(ExportJobRow, export_job_id)
             if row is None:
+                return None
+            if (
+                expected_current_status is not None
+                and row.status != expected_current_status.value
+            ):
                 return None
 
             now = datetime.now(timezone.utc)
@@ -1142,6 +1161,12 @@ class SqlAlchemyExportJobRepository(TaskExportJobRepository):
                 row.started_at = now
             if target_status in {TaskExportJobStatus.SUCCEEDED, TaskExportJobStatus.FAILED}:
                 row.finished_at = now
+            parameters = dict(row.parameters or {})
+            if artifact is not None:
+                parameters["_artifact"] = artifact.model_dump(mode="json")
+            elif target_status is not TaskExportJobStatus.SUCCEEDED:
+                parameters.pop("_artifact", None)
+            row.parameters = parameters
             row.failure_reason = failure_reason if target_status is TaskExportJobStatus.FAILED else None
             session.add(row)
         return _export_job_from_row(row)
@@ -1398,6 +1423,33 @@ def _export_job_from_row(row: ExportJobRow) -> TaskExportJobRecord:
     parameters = dict(row.parameters or {})
     raw_task_status = parameters.pop("_task_status_at_request", None)
     task_data_version = parameters.pop("_task_data_version", None)
+    raw_artifact = parameters.pop("_artifact", None)
+    artifact = None
+    artifact_storage_key = None
+    if isinstance(raw_artifact, dict):
+        storage_key = raw_artifact.get("storage_key")
+        filename = raw_artifact.get("filename")
+        sha256 = raw_artifact.get("sha256")
+        if (
+            isinstance(storage_key, str)
+            and isinstance(filename, str)
+            and isinstance(sha256, str)
+        ):
+            artifact_storage_key = storage_key
+            artifact = ExportArtifactRecord(
+                filename=filename,
+                content_type=(
+                    raw_artifact.get("content_type")
+                    if isinstance(raw_artifact.get("content_type"), str)
+                    else None
+                ),
+                size_bytes=(
+                    raw_artifact.get("size_bytes")
+                    if isinstance(raw_artifact.get("size_bytes"), int)
+                    else 0
+                ),
+                sha256=sha256,
+            )
     return TaskExportJobRecord(
         id=row.id,
         task_id=row.task_id,
@@ -1410,6 +1462,8 @@ def _export_job_from_row(row: ExportJobRow) -> TaskExportJobRecord:
             TaskStatus(raw_task_status) if isinstance(raw_task_status, str) else None
         ),
         task_data_version=task_data_version if isinstance(task_data_version, str) else None,
+        artifact=artifact,
+        artifact_storage_key=artifact_storage_key,
         failure_reason=row.failure_reason,
         created_at=_ensure_utc_datetime(row.created_at),
         updated_at=_ensure_utc_datetime(row.updated_at),

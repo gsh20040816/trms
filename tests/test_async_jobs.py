@@ -1,10 +1,17 @@
 from datetime import datetime, timezone
 
 import trms_backend.__main__ as backend_main
+from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
 import trms_backend.application.recognition_async_jobs as recognition_async_jobs
 from trms_backend.application.async_jobs import AsyncJobWorker, AsyncJobWorkerModeError
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_preparation import RecognitionTaskExecutionConflictError
+from trms_backend.domain.exports import (
+    StoredExportArtifactRecord,
+    TaskExportJobRecord,
+    TaskExportJobStatus,
+    TaskExportVersionSnapshot,
+)
 from trms_backend.domain.recognitions import RecognitionTaskRecord, RecognitionTaskStatus
 from trms_backend.runtime_config import load_runtime_config
 
@@ -143,3 +150,87 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
     assert processed_count == 1
     assert preparation_service.calls == ["recognition-1", "recognition-1"]
     assert refresh_calls == ["material-1"]
+
+
+def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch):
+    now = datetime.now(timezone.utc)
+    job = TaskExportJobRecord(
+        id="export-1",
+        task_id="task-1",
+        requested_by="admin-1",
+        kind="reimbursement_summary",
+        format="csv",
+        status=TaskExportJobStatus.PENDING,
+        parameters={},
+        task_data_version="a" * 64,
+        created_at=now,
+        updated_at=now,
+    )
+    job_statuses = {job.id: TaskExportJobStatus.PENDING}
+    built_artifacts: list[StoredExportArtifactRecord] = []
+
+    class FakeExportJobRepository:
+        def list_pending(self, *, limit: int):
+            assert limit == 10
+            return [job, job]
+
+        def update_status(
+            self,
+            export_job_id: str,
+            *,
+            target_status: TaskExportJobStatus,
+            failure_reason: str | None = None,
+            artifact: StoredExportArtifactRecord | None = None,
+            expected_current_status: TaskExportJobStatus | None = None,
+        ):
+            current = job_statuses.get(export_job_id)
+            if current is None:
+                return None
+            if expected_current_status is not None and current is not expected_current_status:
+                return None
+            job_statuses[export_job_id] = target_status
+            if artifact is not None:
+                built_artifacts.append(artifact)
+            return job.model_copy(
+                update={
+                    "status": target_status,
+                    "failure_reason": failure_reason,
+                    "artifact": artifact,
+                }
+            )
+
+    processor = ExportAsyncJobProcessor(
+        task_repository=type("TaskRepo", (), {"get": lambda self, task_id: object()})(),
+        export_job_repository=FakeExportJobRepository(),
+        invoice_repository=object(),
+        material_repository=object(),
+        material_file_storage=object(),
+        validation_repository=object(),
+        split_repository=object(),
+        confirmation_repository=object(),
+    )
+    monkeypatch.setattr(
+        processor,
+        "_build_current_export_snapshot",
+        lambda task: TaskExportVersionSnapshot(
+            task_status="ready_to_export",
+            task_data_version="a" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        processor,
+        "_build_export_artifact",
+        lambda task, export_job: StoredExportArtifactRecord(
+            storage_key="task-1/_exports/file.csv",
+            filename="file.csv",
+            content_type="text/csv",
+            size_bytes=12,
+            sha256="b" * 64,
+        ),
+    )
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+    assert job_statuses == {"export-1": TaskExportJobStatus.SUCCEEDED}
+    assert len(built_artifacts) == 1

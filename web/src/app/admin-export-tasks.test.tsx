@@ -65,8 +65,8 @@ function buildCapabilities(taskId: string, exportAllowed: boolean) {
     blocking_reasons: exportAllowed
       ? []
       : ["task must be ready_to_export or completed before real exports can be generated"],
-    execution_mode: "async_placeholder",
-    note: "reimbursement summary/member details/invoice details/missing materials CSV export and finance draft JSON export are available; merged PDF planning/validation is available as a placeholder, and export jobs plus persisted artifacts remain placeholders",
+    execution_mode: "async_worker",
+    note: "reimbursement summary/member details/invoice details/missing materials CSV export and finance draft JSON export are available through async export jobs with persisted artifacts; merged PDF planning/validation remains a placeholder",
     supported_exports: [
       {
         kind: "reimbursement_summary",

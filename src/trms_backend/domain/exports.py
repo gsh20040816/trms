@@ -48,13 +48,13 @@ class TaskExportBoundary(BaseModel):
     current_task_status: TaskStatus
     export_allowed: bool
     blocking_reasons: list[str]
-    execution_mode: str = Field(default="async_placeholder")
+    execution_mode: str = Field(default="async_worker")
     supported_exports: list[TaskExportCapability]
     note: str = Field(
         default=(
             "reimbursement summary/member details/invoice details/missing materials CSV export and "
-            "finance draft JSON export are available; merged PDF planning/validation is available "
-            "as a placeholder, and export jobs plus persisted artifacts remain placeholders"
+            "finance draft JSON export are available through async export jobs with persisted "
+            "artifacts; merged PDF planning/validation remains a placeholder"
         )
     )
 
@@ -94,6 +94,17 @@ class TaskExportJobCreate(BaseModel):
         return self
 
 
+class ExportArtifactRecord(BaseModel):
+    filename: str = Field(min_length=1)
+    content_type: str | None = None
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class StoredExportArtifactRecord(ExportArtifactRecord):
+    storage_key: str = Field(min_length=1)
+
+
 class TaskExportJobRecord(BaseModel):
     id: str
     task_id: str
@@ -105,6 +116,9 @@ class TaskExportJobRecord(BaseModel):
     task_status_at_request: TaskStatus | None = None
     task_data_version: str | None = Field(default=None, min_length=64, max_length=64)
     is_latest_for_task: bool | None = None
+    retry_count: int | None = Field(default=None, ge=0)
+    artifact: ExportArtifactRecord | None = None
+    artifact_storage_key: str | None = Field(default=None, exclude=True)
     failure_reason: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -369,12 +383,17 @@ class TaskExportJobRepository(Protocol):
     def list_by_task(self, task_id: str) -> list[TaskExportJobRecord]:
         raise NotImplementedError
 
+    def list_pending(self, *, limit: int = 10) -> list[TaskExportJobRecord]:
+        raise NotImplementedError
+
     def update_status(
         self,
         export_job_id: str,
         *,
         target_status: TaskExportJobStatus,
         failure_reason: str | None = None,
+        artifact: StoredExportArtifactRecord | None = None,
+        expected_current_status: TaskExportJobStatus | None = None,
     ) -> TaskExportJobRecord | None:
         raise NotImplementedError
 
@@ -1095,6 +1114,36 @@ def with_task_export_job_latest_flag(
             "is_latest_for_task": export_job.task_data_version == snapshot.task_data_version,
         }
     )
+
+
+def build_task_export_retry_counts(
+    export_jobs: list[TaskExportJobRecord],
+) -> dict[str, int]:
+    retry_counts: dict[str, int] = {}
+    attempts_by_signature: dict[str, int] = {}
+    for export_job in sorted(export_jobs, key=lambda item: (item.created_at, item.id)):
+        signature = json.dumps(
+            {
+                "kind": export_job.kind.value,
+                "format": export_job.format.value,
+                "parameters": export_job.parameters,
+                "task_data_version": export_job.task_data_version,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        retry_counts[export_job.id] = attempts_by_signature.get(signature, 0)
+        attempts_by_signature[signature] = retry_counts[export_job.id] + 1
+    return retry_counts
+
+
+def with_task_export_job_retry_count(
+    export_job: TaskExportJobRecord,
+    *,
+    retry_count: int,
+) -> TaskExportJobRecord:
+    return export_job.model_copy(update={"retry_count": retry_count})
 
 
 def ensure_task_export_job_can_transition(
