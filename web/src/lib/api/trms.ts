@@ -215,7 +215,7 @@ export const trmsApi = {
   },
 
   listTaskExportJobs(taskId: string, actorId: string) {
-    return apiClient.request<ApiListResponse<TaskExportJobRecord>>(
+    return apiClient.request<TaskExportJobRecord[]>(
       `/tasks/${encodeSegment(taskId)}/exports${buildQuery({ actor_id: actorId })}`,
     );
   },

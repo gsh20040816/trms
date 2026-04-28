@@ -817,6 +817,44 @@ select {
   background: rgba(244, 239, 228, 0.56);
 }
 
+.export-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.export-capability-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.export-capability-card {
+  max-width: none;
+}
+
+.export-action-row {
+  align-items: center;
+}
+
+.export-preview-panel {
+  max-width: none;
+}
+
+.export-preview-content {
+  overflow-x: auto;
+  margin: 18px 0 0;
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(17, 37, 61, 0.92);
+  color: #f4efe4;
+  font-family: "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.export-job-grid {
+  margin-top: 0;
+}
+
 .admin-review-list li {
   display: grid;
   gap: 6px;
@@ -1034,6 +1072,8 @@ select {
   .invoice-editor-layout,
   .split-editor-layout,
   .admin-review-summary-grid,
+  .export-summary-grid,
+  .export-capability-grid,
   .recognition-field-grid,
   .split-summary-card,
   .checkbox-grid {

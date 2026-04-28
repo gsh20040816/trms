@@ -1,5 +1,61 @@
 # WORKLOG
 
+## 2026-04-28 10:00 - Implement export management page
+
+### 完成内容
+- 新增管理员导出任务页面：
+  - 新增 `web/src/app/admin-export-tasks.tsx`，在 `/admin/tasks/:taskId/exports` 聚合展示任务导出门禁、支持的导出类型、既有导出任务历史和即时输出预览入口；
+  - 页面可创建 6 类导出任务：报销汇总表、成员明细表、发票明细表、缺失材料清单、财务填报草稿和 PDF 合并材料包；
+  - 当任务尚未进入 `ready_to_export` 或 `completed` 时，直接展示后端返回的阻塞原因，并禁用导出创建与即时预览按钮，不在前端伪装成功。
+- 补齐导出入口与前端契约：
+  - 更新 `web/src/app/routes.tsx` 注册 `/admin/tasks/:taskId/exports`；
+  - 更新 `web/src/app/admin-task-detail.tsx`，从任务详情页增加“进入导出管理”入口；
+  - 修正 `web/src/lib/api/trms.ts` 中导出任务列表客户端类型，避免把后端数组响应误当成 `items` 包装结构。
+- 补齐前端测试与样式：
+  - 新增 `web/src/app/admin-export-tasks.test.tsx`，覆盖“创建导出任务并查看失败历史/即时输出”“导出前置条件未满足时直接阻止操作并展示原因”；
+  - 更新 `web/src/app/admin-task-detail.test.tsx`，覆盖任务详情页到导出管理页的入口；
+  - 更新 `web/src/styles.css`，补齐导出卡片、即时输出预览和导出任务历史的布局样式。
+- 将 `TASKS.md` 中“实现导出任务页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/admin-export-tasks.tsx`
+- `web/src/app/admin-export-tasks.test.tsx`
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 仓库后端此前已经具备导出边界、导出任务模型和多类即时导出接口，但管理员前端仍缺少“从复核完成到发起导出”的页面闭环。
+- 结果是管理员只能通过接口或测试触发导出能力，无法在 Web 端看到导出门禁、失败原因、导出任务状态以及“当前只到占位/即时输出”的边界，第一阶段主流程停在复核后没有页面承接。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- admin-export-tasks admin-task-detail`
+    - 2 个前端测试文件、5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 165 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，16 个前端测试文件、42 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 开发过程中 `./scripts/verify.sh` 首次失败于前端 lint 与 TypeScript 构建，原因分别是新测试中的 `act` 回调写法不满足 ESLint 规则，以及导出页事件处理函数里 `taskId` 的空值收窄不足。本轮已做最小修复后重新执行全量验证，最终通过。
+- pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- “下载入口占位”当前通过页面内的即时 CSV/JSON 预览和 PDF 合并计划预览来承接，明确提示它们不是持久化产物下载链接；后续若接入对象存储或落盘文件，应替换为真实下载地址而不是继续复用占位文案。
+- 创建导出任务时默认按最终目标格式建模：表格类和财务草稿统一记为 `xlsx`，PDF 合并材料包记为 `pdf`；即时预览则继续复用当前已实现的 CSV/JSON/计划接口，不提前扩展新的后端协议。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立前端权限可见性测试”，优先覆盖成员页不渲染管理员操作，以及管理员页不泄露无关敏感配置这两条当前最接近主流程的前端边界。
+
 ## 2026-04-28 09:46 - Implement admin corrections and reminders page
 
 ### 完成内容
