@@ -134,7 +134,7 @@ def test_create_manual_recognition_task_adds_retry_attempt_for_material(tmp_path
     assert items[1]["manual_corrections"] == []
 
 
-def test_recognition_management_routes_require_admin_bearer(tmp_path):
+def test_recognition_management_routes_require_bearer_and_limit_member_updates(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
     material_id = upload_material(client, task_id)
@@ -144,14 +144,11 @@ def test_recognition_management_routes_require_admin_bearer(tmp_path):
     assert anonymous_create.status_code == 401
     assert anonymous_create.json()["detail"] == "invalid or missing bearer token"
 
-    forbidden_create = client.post(
+    member_create = client.post(
         f"/api/materials/{material_id}/recognition-tasks",
         headers=member_auth_headers(client),
     )
-    assert forbidden_create.status_code == 403
-    assert forbidden_create.json()["detail"] == (
-        "actor is not allowed to manage recognition tasks for this material"
-    )
+    assert member_create.status_code == 201
 
     anonymous_update = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
@@ -168,6 +165,31 @@ def test_recognition_management_routes_require_admin_bearer(tmp_path):
     assert forbidden_update.status_code == 403
     assert forbidden_update.json()["detail"] == (
         "actor is not allowed to manage recognition tasks for this material"
+    )
+
+
+def test_member_cannot_retry_other_members_material_recognition(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    material_id = upload_material(client, task_id)
+    outsider_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member2",
+            role="member",
+            actor_id="2250002",
+            member_code="2250002",
+        )
+    )
+
+    response = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=outsider_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "actor is not allowed to retry recognition tasks for this material"
     )
 
 

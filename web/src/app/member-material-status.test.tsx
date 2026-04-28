@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
@@ -287,6 +287,11 @@ describe("MemberMaterialStatusPage", () => {
       "发票金额达到阈值，缺少支付记录",
     );
     expect(within(invoiceCard).getByLabelText("MAT-SELF-INV 缺失材料提示列表")).toHaveTextContent("支付记录");
+    expect(within(invoiceCard).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
+    fireEvent.click(within(invoiceCard).getByRole("button", { name: "人工填写发票信息" }));
+    expect(
+      within(invoiceCard).getByRole("form", { name: "MAT-SELF-INV 发票人工填写表单" }),
+    ).toBeInTheDocument();
 
     const attachmentCard = within(statusCards[1] ?? document.body).getByText("pay.png").closest("article");
     if (!attachmentCard) {
@@ -294,6 +299,7 @@ describe("MemberMaterialStatusPage", () => {
     }
     expect(within(attachmentCard).getByText("识别排队中")).toBeInTheDocument();
     expect(within(attachmentCard).getByText("当前材料暂无独立发票校验")).toBeInTheDocument();
+    expect(within(attachmentCard).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
 
     expect(screen.getByLabelText("材料状态摘要")).toHaveTextContent("本人材料 2 份");
     expect(fetchSpy).toHaveBeenCalledTimes(6);

@@ -83,6 +83,41 @@ def build_recognition_router(
                 detail=forbidden_detail,
             )
 
+    def ensure_recognition_task_retry_access(
+        *,
+        identity: RequestIdentity,
+        material_id: str,
+        forbidden_detail: str,
+    ) -> None:
+        material = material_repository.get(material_id)
+        if material is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+
+        if material.task_id is None:
+            if identity.role not in {UserRole.ADMIN, UserRole.SYSTEM_ADMIN}:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=forbidden_detail,
+                )
+            return
+
+        task = task_repository.get(material.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail=forbidden_detail,
+        )
+        if scope is TaskAccessScope.ADMINISTRATOR:
+            return
+        if scope is TaskAccessScope.MEMBER and material.submitter_id == identity.actor_id:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=forbidden_detail,
+        )
+
     @router.post(
         "/api/materials/{material_id}/recognition-tasks",
         status_code=status.HTTP_201_CREATED,
@@ -91,10 +126,10 @@ def build_recognition_router(
         material_id: str,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
-        ensure_recognition_task_manager_access(
+        ensure_recognition_task_retry_access(
             identity=identity,
             material_id=material_id,
-            forbidden_detail="actor is not allowed to manage recognition tasks for this material",
+            forbidden_detail="actor is not allowed to retry recognition tasks for this material",
         )
         task = recognition_task_repository.create(RecognitionTaskCreate(material_id=material_id))
         metrics.record_recognition_task_status(status=task.status)
@@ -202,10 +237,10 @@ def build_recognition_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="recognition task not found",
             )
-        ensure_recognition_task_manager_access(
+        ensure_recognition_task_retry_access(
             identity=identity,
             material_id=task.material_id,
-            forbidden_detail="actor is not allowed to manage recognition tasks for this material",
+            forbidden_detail="actor is not allowed to retry recognition tasks for this material",
         )
         try:
             updated = recognition_preparation_service.execute(

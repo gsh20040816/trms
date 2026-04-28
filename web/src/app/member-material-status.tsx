@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type {
+  ExpenseType,
   InvoiceRecord,
   MaterialRecord,
   MaterialType,
@@ -40,6 +41,19 @@ type MissingMaterialTip = {
   ruleCode: string;
 };
 
+type ManualInvoiceFormState = {
+  invoiceNumber: string;
+  issueDate: string;
+  transactionTime: string;
+  buyerName: string;
+  taxNumber: string;
+  sellerName: string;
+  amountYuan: string;
+  expenseType: ExpenseType;
+};
+
+type ManualInvoiceFormErrors = Partial<Record<keyof ManualInvoiceFormState, string>>;
+
 type MemberMaterialStatusItem = {
   material: MaterialRecord;
   recognition: RecognitionTaskRecord | null;
@@ -68,12 +82,32 @@ const RECOGNITION_FIELD_LABELS: Record<string, string> = {
   seat_class: "座位等级",
 };
 
+const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
+  registration: "参赛费",
+  railway: "火车票",
+  airfare: "航空费",
+  local_transport: "市内交通",
+  hotel: "住宿费",
+  other: "其他",
+};
+
 const MISSING_MATERIAL_RULE_TO_TYPE: Partial<Record<string, MaterialType>> = {
   invoice_payment_record_required: "payment_record",
   invoice_competition_notice_required: "competition_notice",
   invoice_airfare_itinerary_required: "itinerary",
   invoice_local_transport_rideshare_trip_required: "itinerary",
 };
+
+function isExpenseType(value: string): value is ExpenseType {
+  return (
+    value === "registration"
+    || value === "railway"
+    || value === "airfare"
+    || value === "local_transport"
+    || value === "hotel"
+    || value === "other"
+  );
+}
 
 function pickSelectedTaskId(
   tasks: ReimbursementTask[],
@@ -97,6 +131,64 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatExpenseType(value: ExpenseType) {
+  return EXPENSE_TYPE_LABELS[value];
+}
+
+function formatAmountInputFromCents(cents: number | null) {
+  if (cents === null) {
+    return "";
+  }
+  return (cents / 100).toFixed(2);
+}
+
+function parseAmountYuanToCents(value: string) {
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return null;
+  }
+  const amount = Number(normalizedValue);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  return Math.round(amount * 100);
+}
+
+function formatDateTimeLocalInput(value: string | null) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toApiDateTime(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const localDate = new Date(trimmed);
+  const year = localDate.getFullYear();
+  const month = String(localDate.getMonth() + 1).padStart(2, "0");
+  const day = String(localDate.getDate()).padStart(2, "0");
+  const hours = String(localDate.getHours()).padStart(2, "0");
+  const minutes = String(localDate.getMinutes()).padStart(2, "0");
+  const offsetMinutes = -localDate.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absoluteOffsetMinutes = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, "0");
+  const offsetRemainderMinutes = String(absoluteOffsetMinutes % 60).padStart(2, "0");
+  return (
+    `${year}-${month}-${day}T${hours}:${minutes}:00`
+    + `${sign}${offsetHours}:${offsetRemainderMinutes}`
+  );
+}
+
 function formatRecognitionFieldName(fieldName: string) {
   return RECOGNITION_FIELD_LABELS[fieldName] ?? fieldName;
 }
@@ -107,6 +199,86 @@ function getCurrentRecognitionTask(recognitionList: RecognitionTaskList): Recogn
     return latestEffective;
   }
   return recognitionList.items[recognitionList.items.length - 1] ?? null;
+}
+
+function getRecognitionFieldTextValue(
+  recognition: RecognitionTaskRecord | null,
+  fieldName: string,
+) {
+  const field = recognition?.recognized_fields[fieldName];
+  if (!field) {
+    return "";
+  }
+  if (typeof field.value === "string") {
+    return field.value;
+  }
+  if (typeof field.value === "number" || typeof field.value === "boolean") {
+    return String(field.value);
+  }
+  return "";
+}
+
+function getRecognitionAmountInput(recognition: RecognitionTaskRecord | null) {
+  const field = recognition?.recognized_fields.amount_cents;
+  if (!field || typeof field.value !== "number") {
+    return "";
+  }
+  return formatAmountInputFromCents(field.value);
+}
+
+function getRecognitionExpenseType(
+  recognition: RecognitionTaskRecord | null,
+  allowedExpenseTypes: ExpenseType[],
+) {
+  const rawValue = getRecognitionFieldTextValue(recognition, "expense_type");
+  if (isExpenseType(rawValue) && allowedExpenseTypes.includes(rawValue)) {
+    return rawValue;
+  }
+  return allowedExpenseTypes[0] ?? "other";
+}
+
+function buildManualInvoiceFormState(
+  item: MemberMaterialStatusItem,
+  allowedExpenseTypes: ExpenseType[],
+): ManualInvoiceFormState {
+  return {
+    invoiceNumber: item.invoice?.invoice_number ?? getRecognitionFieldTextValue(item.recognition, "invoice_number"),
+    issueDate: item.invoice?.issue_date ?? getRecognitionFieldTextValue(item.recognition, "issue_date"),
+    transactionTime: item.invoice?.transaction_time
+      ? formatDateTimeLocalInput(item.invoice.transaction_time)
+      : formatDateTimeLocalInput(getRecognitionFieldTextValue(item.recognition, "transaction_time")),
+    buyerName: item.invoice?.buyer_name ?? getRecognitionFieldTextValue(item.recognition, "buyer_name"),
+    taxNumber: item.invoice?.tax_number ?? getRecognitionFieldTextValue(item.recognition, "tax_number"),
+    sellerName: item.invoice?.seller_name ?? getRecognitionFieldTextValue(item.recognition, "seller_name"),
+    amountYuan: item.invoice
+      ? formatAmountInputFromCents(item.invoice.amount_cents)
+      : getRecognitionAmountInput(item.recognition),
+    expenseType: item.invoice?.expense_type
+      ?? getRecognitionExpenseType(item.recognition, allowedExpenseTypes),
+  };
+}
+
+function validateManualInvoiceForm(
+  formState: ManualInvoiceFormState,
+  allowedExpenseTypes: ExpenseType[],
+): ManualInvoiceFormErrors {
+  const errors: ManualInvoiceFormErrors = {};
+  if (!formState.invoiceNumber.trim()) {
+    errors.invoiceNumber = "发票号码不能为空。";
+  }
+  if (!formState.buyerName.trim()) {
+    errors.buyerName = "发票抬头不能为空。";
+  }
+  if (!formState.taxNumber.trim()) {
+    errors.taxNumber = "税号不能为空。";
+  }
+  if (!allowedExpenseTypes.includes(formState.expenseType)) {
+    errors.expenseType = "请选择当前任务允许的费用类型。";
+  }
+  if (parseAmountYuanToCents(formState.amountYuan) === null) {
+    errors.amountYuan = "请输入大于 0 的金额，单位为元。";
+  }
+  return errors;
 }
 
 function deriveMissingMaterialTips(validations: ValidationResult[]): MissingMaterialTip[] {
@@ -155,7 +327,7 @@ function summarizeRecognition(recognition: RecognitionTaskRecord | null) {
       title: RECOGNITION_STATUS_LABELS[recognition.status],
       details: pendingFieldNames.length > 0
         ? [`待确认字段：${pendingFieldNames.join("、")}`]
-        : ["识别结果包含待确认项，请管理员或成员人工复核。"],
+        : ["识别结果包含待确认项，请直接补充或更正关键信息。"],
     };
   }
 
@@ -238,6 +410,18 @@ export function MemberMaterialStatusPage() {
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [materialState, setMaterialState] = useState<SelectedTaskMaterialState>({ status: "idle" });
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [activeEditorMaterialId, setActiveEditorMaterialId] = useState<string | null>(null);
+  const [editorFormState, setEditorFormState] = useState<ManualInvoiceFormState | null>(null);
+  const [editorErrors, setEditorErrors] = useState<ManualInvoiceFormErrors>({});
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [actionFeedback, setActionFeedback] = useState<{
+    materialId: string;
+    kind: "recognition_retry" | "invoice_saved";
+    message: string;
+  } | null>(null);
+  const [retryingMaterialId, setRetryingMaterialId] = useState<string | null>(null);
+  const [savingMaterialId, setSavingMaterialId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -365,11 +549,12 @@ export function MemberMaterialStatusPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedTaskId, session, taskState]);
+  }, [refreshNonce, selectedTaskId, session, taskState]);
 
   if (!session || session.role !== "member") {
     return null;
   }
+  const memberSession = session;
 
   const visibleTasks = taskState.status === "ready" ? taskState.visibleTasks : [];
   const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
@@ -385,6 +570,124 @@ export function MemberMaterialStatusPage() {
     (count, item) => count + item.validations.filter((validation) => validation.status === "failed").length,
     0,
   );
+  const allowedExpenseTypes: ExpenseType[] = (() => {
+    const taskExpenseTypes = selectedTask
+      ? selectedTask.fee_categories.filter(isExpenseType)
+      : [];
+    return taskExpenseTypes.length > 0 ? taskExpenseTypes : ["other"];
+  })();
+
+  function openManualEditor(item: MemberMaterialStatusItem) {
+    setActiveEditorMaterialId(item.material.id);
+    setEditorFormState(buildManualInvoiceFormState(item, allowedExpenseTypes));
+    setEditorErrors({});
+    setActionError(null);
+    setActionFeedback(null);
+  }
+
+  function closeManualEditor() {
+    setActiveEditorMaterialId(null);
+    setEditorFormState(null);
+    setEditorErrors({});
+  }
+
+  function resetLocalActionState() {
+    closeManualEditor();
+    setActionError(null);
+    setActionFeedback(null);
+  }
+
+  function updateEditorField<Key extends keyof ManualInvoiceFormState>(
+    key: Key,
+    value: ManualInvoiceFormState[Key],
+  ) {
+    setEditorFormState((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: value,
+      };
+    });
+    setEditorErrors((current) => {
+      if (!(key in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  async function handleRetryRecognition(item: MemberMaterialStatusItem) {
+    setActionError(null);
+    setActionFeedback(null);
+    setRetryingMaterialId(item.material.id);
+    try {
+      const created = await trmsApi.createRecognitionTask(item.material.id);
+      await trmsApi.executeRecognitionTask(created.item.id);
+      setActionFeedback({
+        materialId: item.material.id,
+        kind: "recognition_retry",
+        message: "已重新发起识别并刷新当前材料状态。",
+      });
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setRetryingMaterialId(null);
+    }
+  }
+
+  async function handleManualInvoiceSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+    item: MemberMaterialStatusItem,
+  ) {
+    event.preventDefault();
+    if (!editorFormState) {
+      return;
+    }
+
+    const nextErrors = validateManualInvoiceForm(editorFormState, allowedExpenseTypes);
+    setEditorErrors(nextErrors);
+    setActionError(null);
+    setActionFeedback(null);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    const amountCents = parseAmountYuanToCents(editorFormState.amountYuan);
+    if (amountCents === null) {
+      return;
+    }
+
+    setSavingMaterialId(item.material.id);
+    try {
+      const response = await trmsApi.createOrUpdateInvoice(item.material.id, {
+        actor_id: memberSession.actorId,
+        invoice_number: editorFormState.invoiceNumber.trim(),
+        issue_date: editorFormState.issueDate.trim() || null,
+        transaction_time: toApiDateTime(editorFormState.transactionTime),
+        buyer_name: editorFormState.buyerName.trim(),
+        tax_number: editorFormState.taxNumber.trim(),
+        seller_name: editorFormState.sellerName.trim() || null,
+        amount_cents: amountCents,
+        expense_type: editorFormState.expenseType,
+      });
+      setActionFeedback({
+        materialId: item.material.id,
+        kind: "invoice_saved",
+        message: `已保存发票 ${response.invoice.invoice_number}，并重新刷新校验结果。`,
+      });
+      closeManualEditor();
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setSavingMaterialId(null);
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -448,6 +751,7 @@ export function MemberMaterialStatusPage() {
                 aria-label="目标任务"
                 value={selectedTaskId}
                 onChange={(event) => {
+                  resetLocalActionState();
                   setSelectedTaskId(event.target.value);
                 }}
               >
@@ -492,6 +796,7 @@ export function MemberMaterialStatusPage() {
       ) : null}
 
       {selectedTask && materialState.status === "error" ? <ApiErrorNotice error={materialState.error} /> : null}
+      {actionError ? <ApiErrorNotice error={actionError} /> : null}
 
       {selectedTask && materialState.status === "ready" && materialState.items.length === 0 ? (
         <section className="status-card">
@@ -552,6 +857,28 @@ export function MemberMaterialStatusPage() {
                       <li key={detail}>{detail}</li>
                     ))}
                   </ul>
+                  <div className="inline-actions">
+                    <button
+                      className="route-link route-link-secondary"
+                      type="button"
+                      disabled={retryingMaterialId === item.material.id}
+                      onClick={() => {
+                        void handleRetryRecognition(item);
+                      }}
+                    >
+                      {retryingMaterialId === item.material.id
+                        ? "重新识别中..."
+                        : item.recognition
+                          ? "运行重新识别"
+                          : "开始识别"}
+                    </button>
+                    {actionFeedback?.materialId === item.material.id
+                      && actionFeedback.kind === "recognition_retry" ? (
+                        <span className="status-chip member-status-chip-succeeded">
+                          {actionFeedback.message}
+                        </span>
+                      ) : null}
+                  </div>
                 </section>
 
                 <section className="member-status-section">
@@ -577,6 +904,155 @@ export function MemberMaterialStatusPage() {
                     </ul>
                   ) : null}
                 </section>
+
+                {item.material.material_type === "invoice" ? (
+                  <section className="member-status-section">
+                    <div className="member-status-section-header">
+                      <h4>人工填写信息</h4>
+                      <span className="status-chip">
+                        {item.invoice ? "可直接更正已录入发票" : "识别不准时可自行补录"}
+                      </span>
+                    </div>
+                    <p className="task-healthy-note">
+                      录入后会刷新当前发票的校验结果；这一步由材料提交人自己完成，不再要求管理员代填。
+                    </p>
+                    <div className="inline-actions">
+                      <button
+                        className="route-link"
+                        type="button"
+                        onClick={() => {
+                          if (activeEditorMaterialId === item.material.id) {
+                            closeManualEditor();
+                            return;
+                          }
+                          openManualEditor(item);
+                        }}
+                      >
+                        {activeEditorMaterialId === item.material.id ? "收起人工填写" : "人工填写发票信息"}
+                      </button>
+                      {actionFeedback?.materialId === item.material.id
+                        && actionFeedback.kind === "invoice_saved" ? (
+                          <span className="status-chip member-status-chip-succeeded">
+                            {actionFeedback.message}
+                          </span>
+                        ) : null}
+                    </div>
+                    {activeEditorMaterialId === item.material.id && editorFormState ? (
+                      <form
+                        className="form-grid"
+                        aria-label={`${item.material.id} 发票人工填写表单`}
+                        onSubmit={(event) => {
+                          void handleManualInvoiceSubmit(event, item);
+                        }}
+                      >
+                        <label className="field-stack">
+                          <span>发票号码</span>
+                          <input
+                            value={editorFormState.invoiceNumber}
+                            onChange={(event) => {
+                              updateEditorField("invoiceNumber", event.target.value);
+                            }}
+                          />
+                          {editorErrors.invoiceNumber ? <span className="field-error">{editorErrors.invoiceNumber}</span> : null}
+                        </label>
+                        <label className="field-stack">
+                          <span>开票日期</span>
+                          <input
+                            type="date"
+                            value={editorFormState.issueDate}
+                            onChange={(event) => {
+                              updateEditorField("issueDate", event.target.value);
+                            }}
+                          />
+                        </label>
+                        <label className="field-stack">
+                          <span>交易时间</span>
+                          <input
+                            type="datetime-local"
+                            value={editorFormState.transactionTime}
+                            onChange={(event) => {
+                              updateEditorField("transactionTime", event.target.value);
+                            }}
+                          />
+                        </label>
+                        <label className="field-stack">
+                          <span>发票抬头</span>
+                          <input
+                            value={editorFormState.buyerName}
+                            onChange={(event) => {
+                              updateEditorField("buyerName", event.target.value);
+                            }}
+                          />
+                          {editorErrors.buyerName ? <span className="field-error">{editorErrors.buyerName}</span> : null}
+                        </label>
+                        <label className="field-stack">
+                          <span>税号</span>
+                          <input
+                            value={editorFormState.taxNumber}
+                            onChange={(event) => {
+                              updateEditorField("taxNumber", event.target.value);
+                            }}
+                          />
+                          {editorErrors.taxNumber ? <span className="field-error">{editorErrors.taxNumber}</span> : null}
+                        </label>
+                        <label className="field-stack">
+                          <span>销售方名称</span>
+                          <input
+                            value={editorFormState.sellerName}
+                            onChange={(event) => {
+                              updateEditorField("sellerName", event.target.value);
+                            }}
+                          />
+                        </label>
+                        <label className="field-stack">
+                          <span>金额（元）</span>
+                          <input
+                            inputMode="decimal"
+                            value={editorFormState.amountYuan}
+                            onChange={(event) => {
+                              updateEditorField("amountYuan", event.target.value);
+                            }}
+                          />
+                          {editorErrors.amountYuan ? <span className="field-error">{editorErrors.amountYuan}</span> : null}
+                        </label>
+                        <label className="field-stack">
+                          <span>费用类型</span>
+                          <select
+                            value={editorFormState.expenseType}
+                            onChange={(event) => {
+                              updateEditorField("expenseType", event.target.value as ExpenseType);
+                            }}
+                          >
+                            {allowedExpenseTypes.map((expenseType) => (
+                              <option key={expenseType} value={expenseType}>
+                                {formatExpenseType(expenseType)}
+                              </option>
+                            ))}
+                          </select>
+                          {editorErrors.expenseType ? <span className="field-error">{editorErrors.expenseType}</span> : null}
+                        </label>
+                        <div className="form-actions">
+                          <button
+                            className="route-link"
+                            disabled={savingMaterialId === item.material.id}
+                            type="submit"
+                          >
+                            {savingMaterialId === item.material.id ? "保存中..." : "保存发票信息"}
+                          </button>
+                          <button
+                            className="route-link route-link-secondary"
+                            type="button"
+                            onClick={() => {
+                              closeManualEditor();
+                            }}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
+                  </section>
+                ) : null}
 
                 <section className="member-status-section">
                   <div className="member-status-section-header">

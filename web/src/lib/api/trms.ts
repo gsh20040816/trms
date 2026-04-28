@@ -216,6 +216,24 @@ export const trmsApi = {
     );
   },
 
+  createRecognitionTask(materialId: string) {
+    return apiClient.request<ApiItemResponse<RecognitionTaskList["items"][number]>>(
+      `/materials/${encodeSegment(materialId)}/recognition-tasks`,
+      {
+        method: "POST",
+      },
+    );
+  },
+
+  executeRecognitionTask(recognitionTaskId: string) {
+    return apiClient.request<ApiItemResponse<RecognitionTaskList["items"][number]>>(
+      `/recognition-tasks/${encodeSegment(recognitionTaskId)}/execute`,
+      {
+        method: "POST",
+      },
+    );
+  },
+
   submitTaskMaterials(taskId: string, formData: FormData) {
     return apiClient.request<MaterialBatchUploadResponse>(
       `/tasks/${encodeSegment(taskId)}/materials`,

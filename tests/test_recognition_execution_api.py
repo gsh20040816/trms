@@ -230,7 +230,7 @@ def test_execute_recognition_task_extracts_pdf_text_into_preparation_payload(tmp
     }
 
 
-def test_execute_recognition_task_requires_admin_bearer(tmp_path):
+def test_execute_recognition_task_requires_bearer_and_allows_submitter_retry(tmp_path):
     client = make_client(tmp_path)
     sample_path = tmp_path / "text-invoice.pdf"
     sample_path.write_bytes(build_text_pdf_bytes())
@@ -248,13 +248,44 @@ def test_execute_recognition_task_requires_admin_bearer(tmp_path):
     assert anonymous_response.status_code == 401
     assert anonymous_response.json()["detail"] == "invalid or missing bearer token"
 
-    forbidden_response = client.post(
+    allowed_response = client.post(
         f"/api/recognition-tasks/{recognition_task_id}/execute",
         headers=member_auth_headers(client),
     )
-    assert forbidden_response.status_code == 403
-    assert forbidden_response.json()["detail"] == (
-        "actor is not allowed to manage recognition tasks for this material"
+    assert allowed_response.status_code == 200
+
+
+def test_member_cannot_execute_other_members_recognition_task(tmp_path):
+    client = make_client(tmp_path)
+    sample_path = tmp_path / "text-invoice.pdf"
+    sample_path.write_bytes(build_text_pdf_bytes())
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename=sample_path.name,
+        content=sample_path.read_bytes(),
+        content_type="application/pdf",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+    outsider_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member2",
+            role="member",
+            actor_id="2250002",
+            member_code="2250002",
+        )
+    )
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=outsider_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "actor is not allowed to retry recognition tasks for this material"
     )
 
 

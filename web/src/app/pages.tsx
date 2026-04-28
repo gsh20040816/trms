@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 
-import { buildLoginPath, clearMockSession, logoutCurrentSession, useAuthSession } from "./auth-store";
+import { clearMockSession, logoutCurrentSession, useAuthSession } from "./auth-store";
 import { roleRoutes, type UserRole } from "./role-routes";
 import { PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge } from "../components/dashboard";
 import { formatRole, formatWorkspace } from "../lib/ui-text";
@@ -44,9 +44,15 @@ function getActiveOverview(role: UserRole) {
   return ROLE_OVERVIEWS.find((item) => item.role === role) ?? null;
 }
 
+function getVisibleRoleRoutes(roleNames: UserRole[]) {
+  const roleNameSet = new Set(roleNames);
+  return roleRoutes.filter((roleRoute) => roleNameSet.has(roleRoute.role));
+}
+
 export function RootLayout() {
   const location = useLocation();
   const session = useAuthSession();
+  const visibleRoleRoutes = session ? getVisibleRoleRoutes(session.availableRoles) : [];
 
   return (
     <div className="app-shell">
@@ -59,11 +65,11 @@ export function RootLayout() {
             <Link className={`topbar-link${location.pathname === "/" ? " topbar-link-active" : ""}`} to="/">
               总览
             </Link>
-            {roleRoutes.map((roleRoute) => (
+            {visibleRoleRoutes.map((roleRoute) => (
               <Link
                 key={roleRoute.path}
                 className={`topbar-link${isRouteActive(location.pathname, roleRoute.path) ? " topbar-link-active" : ""}`}
-                to={session ? roleRoute.path : buildLoginPath(roleRoute.path)}
+                to={roleRoute.path}
               >
                 {roleRoute.title}
               </Link>
@@ -109,6 +115,41 @@ export function RootLayout() {
 export function HomePage() {
   const session = useAuthSession();
   const currentOverview = session ? getActiveOverview(session.role) : null;
+  const visibleRoleRoutes = session ? getVisibleRoleRoutes(session.availableRoles) : [];
+
+  if (!session) {
+    return (
+      <RoleWorkspace
+        header={(
+          <PageHeader
+            eyebrow="账号入口"
+            title="登录后进入对应工作台"
+            description="未登录状态下不展示成员、管理员或系统管理功能板块。请先登录，再进入与你当前职责匹配的页面。"
+            meta="当前未登录"
+            actions={(
+              <div className="page-actions">
+                <Link className="button button-primary" to="/login">
+                  前往登录 / 注册
+                </Link>
+              </div>
+            )}
+          />
+        )}
+        summary={(
+          <section className="stat-grid" aria-label="登录说明">
+            <StatCard label="成员账号" value="材料与确认" description="提交发票、查看识别状态、确认个人费用。" />
+            <StatCard label="管理员账号" value="任务复核" description="只在登录后进入任务管理、复核与导出页面。" />
+            <StatCard label="系统管理员" value="系统配置" description="系统配置和诊断入口不对未登录用户展示。" />
+          </section>
+        )}
+      >
+        <SectionCard
+          title="账号与页面边界"
+          description="登录页和业务页已分离。未登录用户不会看到具体功能板块，避免在入口阶段混入无关操作。"
+        />
+      </RoleWorkspace>
+    );
+  }
 
   return (
     <RoleWorkspace
@@ -116,22 +157,22 @@ export function HomePage() {
         <PageHeader
           eyebrow="报销任务总览"
           title="Tongji ACM 报销管理系统"
-          description="选择你的工作台后，页面会直接展示待处理事项、任务状态和下一步操作。普通业务界面不再显示技术实现信息。"
-          meta={session ? `当前身份：${formatWorkspace(session.role)}` : "当前未登录"}
+          description="登录后只展示当前账号可进入的工作台，不再把其他角色的业务板块混在首页。"
+          meta={`当前身份：${formatWorkspace(session.role)}`}
           actions={(
             <div className="page-actions">
-              <Link className="button button-primary" to={session ? roleRoutes.find((item) => item.role === session.role)?.path ?? "/login" : "/login"}>
-                {session ? "进入我的工作台" : "登录并进入工作台"}
+              <Link className="button button-primary" to={roleRoutes.find((item) => item.role === session.role)?.path ?? "/login"}>
+                进入我的工作台
               </Link>
             </div>
           )}
         />
       )}
       summary={(
-        <section className="stat-grid" aria-label="系统概览">
-          <StatCard label="成员入口" value="材料与确认" description="面向成员的任务、材料、费用确认入口。" />
-          <StatCard label="管理员入口" value="任务优先" description="以任务处理、复核、导出为核心的后台工作区。" />
-          <StatCard label="系统管理" value="配置与巡检" description="技术诊断信息只保留在系统管理场景。" />
+        <section className="stat-grid" aria-label="当前账号概览">
+          <StatCard label="当前工作台" value={currentOverview?.title ?? formatWorkspace(session.role)} description={currentOverview?.summary ?? "当前账号已绑定可访问的工作台。"} />
+          <StatCard label="可见板块" value={visibleRoleRoutes.length} description="只统计当前账号确实可以进入的工作台入口。" />
+          <StatCard label="页面边界" value="已收口" description="无关角色入口、系统配置与诊断信息不会出现在当前首页。" />
         </section>
       )}
     >
@@ -149,8 +190,8 @@ export function HomePage() {
         </SectionCard>
       ) : null}
 
-      <section className="feature-grid" aria-label="角色入口">
-        {roleRoutes.map((roleRoute) => {
+      <section className="feature-grid" aria-label="当前账号可见入口">
+        {visibleRoleRoutes.map((roleRoute) => {
           const overview = getActiveOverview(roleRoute.role);
           return (
             <SectionCard
@@ -158,8 +199,8 @@ export function HomePage() {
               title={overview?.title ?? roleRoute.title}
               description={overview?.summary ?? roleRoute.summary}
               action={(
-                <Link className="button button-secondary" to={session ? roleRoute.path : buildLoginPath(roleRoute.path)}>
-                  {session && session.role === roleRoute.role ? "进入工作台" : "查看入口"}
+                <Link className="button button-secondary" to={roleRoute.path}>
+                  进入工作台
                 </Link>
               )}
             >

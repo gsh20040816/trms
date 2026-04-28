@@ -31,12 +31,11 @@ describe("web app account auth", () => {
 
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole("heading", { name: "Tongji ACM 报销管理系统" })).toBeInTheDocument();
-    expect(screen.getByText("报销成员")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "查看入口" })).toHaveLength(3);
-    expect(screen.getByRole("heading", { name: "管理员" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "登录后进入对应工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "前往登录 / 注册" })).toBeInTheDocument();
     expect(screen.getByText("材料与确认")).toBeInTheDocument();
-    expect(screen.getByText("任务优先")).toBeInTheDocument();
+    expect(screen.queryByText("报销成员")).not.toBeInTheDocument();
+    expect(screen.queryByText("管理员")).not.toBeInTheDocument();
   });
 
   it("redirects unauthenticated users to the account login page", () => {
@@ -178,5 +177,22 @@ describe("web app account auth", () => {
 
     expect(screen.getByRole("heading", { name: "系统管理 暂不可访问" })).toBeInTheDocument();
     expect(screen.getByText("当前身份为 成员 / 王队员（MEM-001）。")).toBeInTheDocument();
+  });
+
+  it("shows only the current member workspace on the logged-in home page", () => {
+    setMockSession("member");
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole("heading", { name: "Tongji ACM 报销管理系统" })).toBeInTheDocument();
+    expect(screen.getByText("登录后只展示当前账号可进入的工作台，不再把其他角色的业务板块混在首页。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入我的工作台" })).toBeInTheDocument();
+    expect(screen.getAllByText("报销成员").length).toBeGreaterThan(0);
+    expect(screen.queryByText("管理员")).not.toBeInTheDocument();
+    expect(screen.queryByText("系统管理员")).not.toBeInTheDocument();
   });
 });

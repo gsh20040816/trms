@@ -12,6 +12,7 @@ const memoryStorage = new Map<string, string>();
 
 export type AuthSession = {
   role: UserRole;
+  availableRoles: UserRole[];
   actorId: string;
   displayName: string;
   memberCode: string | null;
@@ -32,10 +33,24 @@ function getRoleRouteOrThrow(role: UserRole) {
   return roleRoute;
 }
 
+function normalizeAvailableRoles(
+  roles: UserRole[] | undefined,
+  fallbackRole: UserRole,
+) {
+  const normalizedRoles = (roles ?? []).filter((role, index, items) => (
+    isUserRole(role) && items.indexOf(role) === index
+  ));
+  if (normalizedRoles.length > 0) {
+    return normalizedRoles;
+  }
+  return [fallbackRole];
+}
+
 function createSession(role: UserRole): AuthSession {
   const roleRoute = getRoleRouteOrThrow(role);
   return {
     role,
+    availableRoles: [role],
     actorId: roleRoute.mockActorId,
     displayName: roleRoute.mockDisplayName,
     memberCode: roleRoute.mockMemberCode,
@@ -98,8 +113,10 @@ function persistRole(role: UserRole | null) {
 }
 
 function createSessionFromAuthResponse(response: AuthSessionResponse): AuthSession {
+  const availableRoles = normalizeAvailableRoles(response.user.roles, response.user.role);
   return {
     role: response.user.role,
+    availableRoles,
     actorId: response.user.actor_id,
     displayName: response.user.display_name,
     memberCode: response.user.member_code,
@@ -126,6 +143,12 @@ function readStoredSession(): AuthSession | null {
     ) {
       return {
         role: parsed.role,
+        availableRoles: normalizeAvailableRoles(
+          Array.isArray(parsed.availableRoles)
+            ? parsed.availableRoles.filter(isUserRole)
+            : undefined,
+          parsed.role,
+        ),
         actorId: parsed.actorId,
         displayName: parsed.displayName,
         memberCode: typeof parsed.memberCode === "string" ? parsed.memberCode : null,

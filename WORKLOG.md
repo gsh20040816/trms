@@ -1,5 +1,67 @@
 # WORKLOG
 
+## 2026-04-28 23:40 - Tighten auth-gated entry visibility and member self-service recognition actions
+
+### 完成内容
+- 收口未登录与已登录用户的前端入口可见性：
+  - `web/src/app/pages.tsx` 的首页不再向未登录用户展示成员、管理员或系统管理功能板块，只保留登录/注册引导；
+  - 顶部导航在登录后只显示当前账号可进入的工作台入口，不再把其他角色板块混在同一账号首页和导航里；
+  - `web/src/app/auth-store.ts` 增加前端会话的 `availableRoles` 兼容字段，为后续多角色账号切换保留最小前端数据边界。
+- 开放成员侧发票识别自助处理：
+  - `src/trms_backend/api/recognitions.py` 允许材料提交人对本人材料发起重识别与执行识别；
+  - 仍保留“识别结果状态更新只能由管理员路径完成”的边界，没有把成员权限放宽成任意写入识别结果。
+- 扩展成员材料状态页：
+  - `web/src/app/member-material-status.tsx` 现在可展示“运行重新识别”按钮；
+  - 发票材料支持成员本人在状态页直接人工填写或更正发票号码、金额、抬头、税号、交易时间和费用类型；
+  - 保存后会刷新当前材料对应的校验结果，重识别后会刷新识别状态。
+- 补齐回归测试：
+  - 后端测试覆盖成员本人可重识别、其他成员不可重识别、成员仍不可直接改写识别状态；
+  - 前端测试覆盖未登录首页不再暴露角色板块，以及成员材料状态页出现自助重识别与人工填写入口。
+
+### 根因
+- 当前 UI 体验差的根因不是单纯样式问题，而是信息架构和职责边界错位：
+  - 未登录首页和导航直接暴露多个角色入口，导致用户在进入系统前就看到不属于自己的板块；
+  - 登录后的首页仍混合展示其他角色信息，没有按“当前账号能做什么”收口；
+  - 成员材料状态页只能看结果，不能完成“重识别 / 人工补录”这类本该由材料提交人自己完成的动作；
+  - 后端又把识别重试权限收紧在管理员，进一步放大了这个职责错位。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/recognitions.py`
+- `tests/test_recognition_execution_api.py`
+- `tests/test_recognition_tasks_api.py`
+- `web/src/app/App.test.tsx`
+- `web/src/app/auth-store.ts`
+- `web/src/app/member-material-status.test.tsx`
+- `web/src/app/member-material-status.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_tasks_api.py tests/test_recognition_execution_api.py tests/test_web_bearer_request_identity_api.py`
+    - 29 个测试通过
+  - `cd web && npm test -- src/app/App.test.tsx src/app/member-material-status.test.tsx`
+    - 2 个测试文件、10 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 320 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、60 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：本轮先把“入口按登录态/角色收口”和“成员自助识别处理”作为一个最小闭环完成；
+- 用户提出的“单账号多角色”需要后端用户模型、token 身份上下文和鉴权测试同步改造，已经补入 `TASKS.md` 作为后续独立任务，本轮只把前端会话层预留为可兼容多角色列表，不把完整数据模型重构混入本次提交。
+
 ## 2026-04-28 23:15 - Add DeepSeek recognition response compatibility
 
 ### 完成内容

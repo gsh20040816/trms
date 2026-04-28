@@ -64,6 +64,7 @@ export type AuthenticatedUser = {
   id: string;
   username: string;
   role: UserRole;
+  roles?: UserRole[];
   actor_id: string;
   display_name: string;
   member_code: string | null;
