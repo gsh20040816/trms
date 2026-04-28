@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.material_submission import MaterialSubmissionService
+from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
 from trms_backend.application.telegram_material_submission import (
     TelegramMaterialSubmissionService,
@@ -83,6 +84,12 @@ def create_app(
         material_file_storage,
         recognition_task_repository,
     )
+    recognition_preparation_service = RecognitionPreparationService(
+        material_repository,
+        material_file_storage,
+        recognition_task_repository,
+        app.state.recognition_llm_capability,
+    )
     email_material_submission_service = EmailMaterialSubmissionService(
         material_submission_service,
     )
@@ -145,6 +152,7 @@ def create_app(
             invoice_repository,
             validation_repository,
             recognition_task_repository,
+            recognition_preparation_service,
         )
     )
     app.include_router(

@@ -1,6 +1,12 @@
 from fastapi import APIRouter, HTTPException, status
 
 from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
+from trms_backend.application.recognition_preparation import (
+    RecognitionMaterialNotFoundError,
+    RecognitionPreparationService,
+    RecognitionTaskExecutionConflictError,
+    RecognitionTaskExecutionNotFoundError,
+)
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import (
@@ -19,6 +25,7 @@ def build_recognition_router(
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
+    recognition_preparation_service: RecognitionPreparationService,
 ) -> APIRouter:
     router = APIRouter(tags=["recognitions"])
 
@@ -74,6 +81,36 @@ def build_recognition_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="recognition task not found",
             )
+        refresh_validations_for_material(
+            updated.material_id,
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            validation_repository=validation_repository,
+            recognition_task_repository=recognition_task_repository,
+        )
+        return {"item": updated}
+
+    @router.post("/api/recognition-tasks/{recognition_task_id}/execute")
+    def execute_recognition_task(recognition_task_id: str):
+        try:
+            updated = recognition_preparation_service.execute(recognition_task_id)
+        except RecognitionTaskExecutionNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+        except RecognitionMaterialNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+        except RecognitionTaskExecutionConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+
         refresh_validations_for_material(
             updated.material_id,
             task_repository=task_repository,

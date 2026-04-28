@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-28 13:44 - Implement real PDF text extraction and recognition input preparation
+
+### 完成内容
+- 新增 `src/trms_backend/application/recognition_preparation.py`，建立最小识别预处理执行链：
+  - 读取已上传材料文件；
+  - 对文本 PDF 使用 `pypdf` 提取可复制文本并构建识别输入；
+  - 对普通图片和 image-only/scanned PDF 在未接入真实 OCR 时显式返回 `ocr_not_configured`；
+  - 对损坏、加密、空白或不可解析 PDF 分别返回稳定失败原因；
+  - 在 `raw_response.preparation` 中记录材料编号、原始文件名、内容类型和已构建的识别输入，避免失败时丢失上下文。
+- 更新 `src/trms_backend/api/recognitions.py` 与 `src/trms_backend/main.py`：
+  - 新增 `POST /api/recognition-tasks/{recognition_task_id}/execute` 最小执行入口；
+  - 只允许从 `pending` 状态执行；
+  - 成功完成预处理后，如当前未配置 LLM Provider，则显式以 `llm_provider_not_configured` 失败结束，不伪造识别成功。
+- 新增 `tests/test_recognition_execution_api.py`，覆盖：
+  - 文本 PDF 提取成功并写入识别输入；
+  - 普通图片与 image-only PDF 的 `ocr_not_configured` 路径；
+  - 损坏 PDF、空白 PDF、加密 PDF 的稳定失败路径。
+- 更新 `TASKS.md`，将“实现真实 PDF 文本提取和识别输入构建”标记为已完成。
+
+### 根因
+- 仓库此前只有识别任务占位模型和手工状态更新接口；上传材料后虽然会创建 `recognition_task`，但并没有任何真实执行链去读取文件、提取 PDF 文本或把失败原因落库。
+- 如果直接进入下一步 LLM 接入而不先补上这一层，后续识别链仍然只能依赖手工 PATCH 状态或让 LLM“猜文件内容”，既不满足任务定义，也会把 PDF/扫描件解析失败与 LLM 失败混在一起。
+
+### 修改文件
+- `src/trms_backend/application/recognition_preparation.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/main.py`
+- `tests/test_recognition_execution_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_execution_api.py tests/test_recognition_tasks_api.py tests/test_recognition_runtime.py`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 239 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来自导出相关测试路径对旧 HTTP 422 常量的引用；本轮未改动该区域，也未把它们包装成失败。
+
+### 假设
+- 当前“真实 PDF 文本提取”范围仅覆盖可直接复制文本的 PDF；OCR 与结构化 LLM 识别仍分别留给后续任务。
+- image-only PDF 通过页内图片对象判定为“需要 OCR”；普通图片材料在本轮不尝试做文件内容级图像解码，因为当前任务目标是显式暴露 `ocr_not_configured`，不是实现 OCR。
+- 当 LLM Provider 已配置但结构化识别尚未接入时，本轮保守返回 `structured_recognition_not_implemented`；当前默认验证路径因未配置 LLM Provider，实际失败原因仍是 `llm_provider_not_configured`。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“接入 OpenAI 兼容 LLM 结构化识别最小闭环”，直接复用本轮写入的 `recognition_input`，把当前 `failed` 的 AI 阶段占位改成真实结构化识别调用与结果校验。
+
 ## 2026-04-28 13:33 - Add OpenAI-compatible LLM provider runtime configuration
 
 ### 完成内容
