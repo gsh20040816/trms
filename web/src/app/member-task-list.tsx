@@ -153,6 +153,12 @@ export function MemberTaskListPage() {
                 </div>
               </dl>
               <div className="inline-actions">
+                <Link
+                  className="route-link route-link-secondary"
+                  to={`/member/materials/status?taskId=${encodeURIComponent(task.id)}`}
+                >
+                  查看材料状态
+                </Link>
                 {task.status === "open" ? (
                   <Link
                     className="route-link"

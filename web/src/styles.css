@@ -583,6 +583,89 @@ select {
   margin-top: 14px;
 }
 
+.member-status-list {
+  display: grid;
+  gap: 20px;
+}
+
+.member-status-card {
+  max-width: none;
+}
+
+.member-status-meta-grid {
+  margin-top: 18px;
+}
+
+.member-status-section {
+  margin-top: 18px;
+  border-radius: 18px;
+  padding: 18px;
+  background: rgba(244, 239, 228, 0.7);
+}
+
+.member-status-section h4 {
+  margin: 0;
+  color: #11253d;
+}
+
+.member-status-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.member-status-chip-passed,
+.member-status-chip-succeeded {
+  background: rgba(20, 130, 76, 0.14);
+  color: #0d5a34;
+}
+
+.member-status-chip-failed {
+  background: rgba(180, 35, 24, 0.14);
+  color: #8d241a;
+}
+
+.member-status-chip-pending,
+.member-status-chip-needs_confirmation,
+.member-status-chip-not_ready {
+  background: rgba(168, 90, 17, 0.16);
+  color: #7a3c07;
+}
+
+.member-status-detail-list,
+.member-status-message-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.member-status-detail-list {
+  padding-left: 18px;
+  color: #35506f;
+}
+
+.member-status-message-list {
+  padding: 0;
+  list-style: none;
+}
+
+.member-status-message-list li {
+  display: grid;
+  gap: 4px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.member-status-message-list strong {
+  color: #11253d;
+}
+
+.member-status-message-list span {
+  color: #35506f;
+}
+
 .token-list {
   display: flex;
   flex-wrap: wrap;
@@ -701,6 +784,7 @@ select {
   .admin-form-header,
   .task-card-header,
   .task-anomaly-header,
+  .member-status-section-header,
   .admin-form-footer,
   .member-row {
     flex-direction: column;

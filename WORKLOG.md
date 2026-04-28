@@ -1,5 +1,60 @@
 # WORKLOG
 
+## 2026-04-28 08:25 - Implement member material status page
+
+### 完成内容
+- 为成员入口补齐 Web 材料状态页面：
+  - 新增 `web/src/app/member-material-status.tsx`，在 `/member/materials/status` 按任务查看当前成员本人提交材料的识别状态、校验状态和缺失材料提示；
+  - 页面继续复用现有 `GET /api/tasks`、`GET /api/tasks/{task_id}/materials`、`GET /api/tasks/{task_id}/invoices`、`GET /api/materials/{material_id}/recognition-tasks` 和 `GET /api/invoices/{invoice_id}/validations`，不新增后端接口。
+- 将成员任务列表、上传页与状态页连通：
+  - 更新 `web/src/app/member-task-list.tsx`，为成员可见任务增加“查看材料状态”入口；
+  - 更新 `web/src/app/member-material-upload.tsx` 与 `web/src/app/routes.tsx`，支持从上传页跳转到当前任务状态页，并注册 `/member/materials/status` 路由。
+- 补齐成员状态页前端测试：
+  - 新增 `web/src/app/member-material-status.test.tsx`，覆盖“只显示当前成员材料，不暴露同任务其他成员材料”“展示识别状态、校验异常和缺失材料提示”“无本人材料时空状态”“聚合失败时错误展示”；
+  - 更新 `web/src/app/member-task-list.test.tsx`，覆盖任务卡片到状态页的导航入口。
+- 将 `TASKS.md` 中“实现成员材料状态页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/member-material-status.tsx`
+- `web/src/app/member-material-status.test.tsx`
+- `web/src/app/member-material-upload.tsx`
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮成员入口已经具备任务列表和材料上传，但成员仍无法在前端看到“自己已交材料目前识别到哪一步、是否有校验异常、还缺什么附件”，导致成员 Web 主流程在上传后仍然断开。
+- 后端已经提供材料列表、识别任务、发票列表和校验结果等读接口；当前缺口只在前端聚合和只看本人材料的展示边界，不需要扩散到新的后端业务实现。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- member-material-status member-task-list member-material-upload App`
+    - 7 个前端测试文件、22 个测试通过
+  - `cd web && npm run lint`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，9 个前端测试文件、26 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于后端已有 `HTTP_422_UNPROCESSABLE_ENTITY` 常量使用，不是本轮新增问题。
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但测试与构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 成员状态页当前只聚合当前成员本人提交的材料；同任务其他成员材料即使存在于后端列表中，也不会在前端展示。
+- 缺失材料提示当前保守地基于已有发票校验结果推导；对尚未录入为发票的材料，页面明确显示“暂无独立发票校验”，不伪造不存在的校验状态。
+- 当前页只做只读状态查看，不提前实现成员费用确认、管理员提醒或人工更正入口；这些内容留给后续对应任务。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现发票人工录入和更正页面”，直接复用本轮已经接入的材料状态视图、识别任务结果和发票校验反馈。
+
 ## 2026-04-28 08:08 - Implement member web material upload page
 
 ### 完成内容

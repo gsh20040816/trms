@@ -14,6 +14,7 @@ import type {
   MaterialRecord,
   MergedPdfExportPlan,
   OverdueConfirmationList,
+  RecognitionTaskList,
   ReimbursementTask,
   TaskCreateInput,
   TaskExportBoundary,
@@ -89,6 +90,12 @@ export const trmsApi = {
   listTaskMaterials(taskId: string) {
     return apiClient.request<ApiListResponse<MaterialRecord>>(
       `/tasks/${encodeSegment(taskId)}/materials`,
+    );
+  },
+
+  listMaterialRecognitionTasks(materialId: string) {
+    return apiClient.request<RecognitionTaskList>(
+      `/materials/${encodeSegment(materialId)}/recognition-tasks`,
     );
   },
 

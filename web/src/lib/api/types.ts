@@ -55,6 +55,9 @@ export type ExportArtifactFormat = "xlsx" | "csv" | "json" | "pdf";
 
 export type TaskExportJobStatus = "pending" | "running" | "succeeded" | "failed";
 export type RecognitionTaskStatus = "pending" | "succeeded" | "failed" | "needs_confirmation";
+export type RecognitionFieldSource = "ocr" | "pdf_text" | "ai" | "manual";
+export type RecognitionFieldStatus = "recognized" | "needs_confirmation";
+export type RecognitionFailureStage = "ocr" | "pdf" | "ai";
 
 export type ReimbursementTask = {
   id: string;
@@ -128,6 +131,36 @@ export type MaterialBatchUploadResponse = {
   status: "success" | "partial_success" | "failed";
   items: MaterialRecord[];
   failures?: MaterialUploadFailure[];
+};
+
+export type RecognitionFieldResult = {
+  value: unknown;
+  source: RecognitionFieldSource;
+  confidence: number;
+  status: RecognitionFieldStatus;
+  updated_at: ApiDateTime | null;
+};
+
+export type RecognitionFailureDetail = {
+  stage: RecognitionFailureStage;
+  reason: string;
+};
+
+export type RecognitionTaskRecord = {
+  id: string;
+  material_id: string;
+  status: RecognitionTaskStatus;
+  is_final_fact: false;
+  failure: RecognitionFailureDetail | null;
+  raw_response: unknown;
+  recognized_fields: Record<string, RecognitionFieldResult>;
+  created_at: ApiDateTime;
+  updated_at: ApiDateTime;
+};
+
+export type RecognitionTaskList = {
+  latest_effective: RecognitionTaskRecord | null;
+  items: RecognitionTaskRecord[];
 };
 
 export type InvoiceRecord = {

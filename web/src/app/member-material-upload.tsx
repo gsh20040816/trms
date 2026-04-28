@@ -309,6 +309,14 @@ export function MemberMaterialUploadPage() {
           <Link className="route-link route-link-secondary" to="/member">
             返回成员任务列表
           </Link>
+          {selectedTask ? (
+            <Link
+              className="route-link"
+              to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
+            >
+              查看当前任务材料状态
+            </Link>
+          ) : null}
           <span className="status-chip">当前可见任务 {visibleTaskCount} 个</span>
         </div>
       </section>
