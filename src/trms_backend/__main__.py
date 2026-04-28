@@ -8,6 +8,7 @@ import uvicorn
 
 from trms_backend.application.async_jobs import AsyncJobWorker
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
+from trms_backend.application.metrics import InMemoryMetricsCollector
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
@@ -68,6 +69,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
     material_file_storage = build_material_file_storage(config)
+    metrics_collector = InMemoryMetricsCollector()
     recognition_llm_client = (
         OpenAiCompatibleRecognitionClient(config.llm_provider)
         if config.llm_provider is not None
@@ -80,6 +82,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
         audit_log_repository,
         resolve_recognition_llm_capability(config),
         recognition_llm_client,
+        metrics_collector,
     )
     return AsyncJobWorker(
         config.async_jobs,
@@ -91,6 +94,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
                 validation_repository=validation_repository,
                 recognition_task_repository=recognition_task_repository,
                 recognition_preparation_service=recognition_preparation_service,
+                metrics_collector=metrics_collector,
             ),
             ExportAsyncJobProcessor(
                 task_repository=task_repository,
@@ -102,6 +106,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
                 split_repository=split_repository,
                 confirmation_repository=confirmation_repository,
                 audit_log_repository=audit_log_repository,
+                metrics_collector=metrics_collector,
             ),
         ),
     )

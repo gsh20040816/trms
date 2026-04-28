@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import trms_backend.__main__ as backend_main
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
+from trms_backend.application.metrics import InMemoryMetricsCollector
 import trms_backend.application.recognition_async_jobs as recognition_async_jobs
 from trms_backend.application.async_jobs import AsyncJobWorker, AsyncJobWorkerModeError
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
@@ -137,6 +138,7 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
             return task.model_copy(update={"status": RecognitionTaskStatus.SUCCEEDED})
 
     preparation_service = FakeRecognitionPreparationService()
+    metrics_collector = InMemoryMetricsCollector()
     processor = RecognitionAsyncJobProcessor(
         task_repository=object(),
         material_repository=object(),
@@ -144,6 +146,7 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
         validation_repository=object(),
         recognition_task_repository=FakeRecognitionTaskRepository(),
         recognition_preparation_service=preparation_service,
+        metrics_collector=metrics_collector,
     )
 
     processed_count = processor.run_once()
@@ -151,6 +154,10 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
     assert processed_count == 1
     assert preparation_service.calls == ["recognition-1", "recognition-1"]
     assert refresh_calls == ["material-1"]
+    assert metrics_collector.snapshot()["validation_results"] == {
+        "failed_rule_counts": {},
+        "pending_rule_counts": {},
+    }
 
 
 def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch):
@@ -200,6 +207,7 @@ def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch
                 }
             )
 
+    metrics_collector = InMemoryMetricsCollector()
     processor = ExportAsyncJobProcessor(
         task_repository=type("TaskRepo", (), {"get": lambda self, task_id: object()})(),
         export_job_repository=FakeExportJobRepository(),
@@ -210,6 +218,7 @@ def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch
         split_repository=object(),
         confirmation_repository=object(),
         audit_log_repository=InMemoryAuditLogRepository(),
+        metrics_collector=metrics_collector,
     )
     monkeypatch.setattr(
         processor,
@@ -236,3 +245,7 @@ def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch
     assert processed_count == 1
     assert job_statuses == {"export-1": TaskExportJobStatus.SUCCEEDED}
     assert len(built_artifacts) == 1
+    assert metrics_collector.snapshot()["export_jobs"]["by_status"] == {
+        "running": 1,
+        "succeeded": 1,
+    }

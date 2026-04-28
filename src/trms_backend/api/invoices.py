@@ -12,6 +12,7 @@ from trms_backend.api.request_identity import (
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.recognition_audit import record_manual_recognition_corrections_audit
 from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository
@@ -83,9 +84,11 @@ def build_invoice_router(
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
     audit_log_repository: AuditLogRepository,
+    metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["invoices"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
+    metrics = metrics_collector or NoOpMetricsCollector()
 
     def load_supporting_materials(invoice_id: str) -> list:
         supporting_materials = []
@@ -219,6 +222,7 @@ def build_invoice_router(
                 supporting_material_recognitions=supporting_material_recognitions,
             ),
         )
+        metrics.record_validation_results(results=validations)
         return {"invoice": invoice, "validations": validations}
 
     @router.get("/api/tasks/{task_id}/invoices")
@@ -310,6 +314,7 @@ def build_invoice_router(
             invoice_repository=invoice_repository,
             validation_repository=validation_repository,
             recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics,
         )
         return {"item": material}
 
@@ -358,6 +363,7 @@ def build_invoice_router(
             invoice_repository=invoice_repository,
             validation_repository=validation_repository,
             recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics,
         )
         return {"status": "deleted"}
 

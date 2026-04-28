@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.material_deletion import MaterialDeletionService
+from trms_backend.application.metrics import InMemoryMetricsCollector, MetricsCollector
 from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
@@ -57,6 +58,7 @@ def create_app(
     material_file_storage: MaterialFileStorage | None = None,
     runtime_config: RuntimeConfig | None = None,
     recognition_llm_client: OpenAiCompatibleRecognitionClient | None = None,
+    metrics_collector: MetricsCollector | None = None,
 ) -> FastAPI:
     config = runtime_config or load_runtime_config(database_url=database_url)
     install_request_id_log_record_factory()
@@ -65,6 +67,7 @@ def create_app(
     app.state.runtime_config = config
     app.state.async_job_config = config.async_jobs
     app.state.recognition_llm_capability = resolve_recognition_llm_capability(config)
+    app.state.metrics_collector = metrics_collector or InMemoryMetricsCollector()
     if recognition_llm_client is None and config.llm_provider is not None:
         recognition_llm_client = OpenAiCompatibleRecognitionClient(config.llm_provider)
     app.add_middleware(
@@ -103,6 +106,7 @@ def create_app(
         material_file_storage,
         recognition_task_repository,
         audit_log_repository,
+        app.state.metrics_collector,
     )
     material_deletion_service = MaterialDeletionService(
         task_repository,
@@ -116,6 +120,7 @@ def create_app(
         audit_log_repository,
         app.state.recognition_llm_capability,
         recognition_llm_client,
+        app.state.metrics_collector,
     )
     email_material_submission_service = EmailMaterialSubmissionService(
         material_submission_service,
@@ -182,6 +187,7 @@ def create_app(
             split_repository,
             confirmation_repository,
             audit_log_repository,
+            app.state.metrics_collector,
         )
     )
     app.include_router(
@@ -206,6 +212,7 @@ def create_app(
             recognition_task_repository,
             recognition_preparation_service,
             audit_log_repository,
+            app.state.metrics_collector,
         )
     )
     app.include_router(
@@ -217,6 +224,7 @@ def create_app(
             validation_repository,
             recognition_task_repository,
             audit_log_repository,
+            app.state.metrics_collector,
         )
     )
     app.include_router(

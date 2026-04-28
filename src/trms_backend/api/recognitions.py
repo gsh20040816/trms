@@ -10,6 +10,7 @@ from trms_backend.api.request_identity import (
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.recognition_audit import record_recognition_result_audit
 from trms_backend.application.recognition_preparation import (
     RecognitionMaterialNotFoundError,
@@ -41,12 +42,14 @@ def build_recognition_router(
     recognition_task_repository: RecognitionTaskRepository,
     recognition_preparation_service: RecognitionPreparationService,
     audit_log_repository: AuditLogRepository,
+    metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["recognitions"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
     authenticated_request_identity = build_authenticated_request_identity_dependency(
         auth_repository
     )
+    metrics = metrics_collector or NoOpMetricsCollector()
 
     def ensure_recognition_task_manager_access(
         *,
@@ -94,6 +97,7 @@ def build_recognition_router(
             forbidden_detail="actor is not allowed to manage recognition tasks for this material",
         )
         task = recognition_task_repository.create(RecognitionTaskCreate(material_id=material_id))
+        metrics.record_recognition_task_status(status=task.status)
         return {"item": task}
 
     @router.get("/api/materials/{material_id}/recognition-tasks")
@@ -169,6 +173,11 @@ def build_recognition_router(
             invoice_repository=invoice_repository,
             validation_repository=validation_repository,
             recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics,
+        )
+        metrics.record_recognition_task_status(
+            status=updated.status,
+            failure_stage=updated.failure.stage if updated.failure is not None else None,
         )
         if payload.result is not None or payload.failure is not None:
             material = material_repository.get(updated.material_id)
@@ -227,6 +236,7 @@ def build_recognition_router(
             invoice_repository=invoice_repository,
             validation_repository=validation_repository,
             recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics,
         )
         return {"item": updated}
 

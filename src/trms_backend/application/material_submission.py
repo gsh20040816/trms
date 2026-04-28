@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import uuid4
 
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.materials import (
     MaterialCreate,
@@ -19,7 +20,11 @@ from trms_backend.domain.materials import (
     SubmissionChannel,
     validate_material_upload,
 )
-from trms_backend.domain.recognitions import RecognitionTaskCreate, RecognitionTaskRepository
+from trms_backend.domain.recognitions import (
+    RecognitionTaskCreate,
+    RecognitionTaskRepository,
+    RecognitionTaskStatus,
+)
 from trms_backend.domain.tasks import (
     TaskRepository,
     TaskStatus,
@@ -84,12 +89,14 @@ class MaterialSubmissionService:
         material_file_storage: MaterialFileStorage,
         recognition_task_repository: RecognitionTaskRepository,
         audit_log_repository: AuditLogRepository,
+        metrics_collector: MetricsCollector | None = None,
     ) -> None:
         self._task_repository = task_repository
         self._material_repository = material_repository
         self._material_file_storage = material_file_storage
         self._recognition_task_repository = recognition_task_repository
         self._audit_log_repository = audit_log_repository
+        self._metrics_collector = metrics_collector or NoOpMetricsCollector()
 
     def submit_to_task(
         self,
@@ -208,6 +215,18 @@ class MaterialSubmissionService:
                     )
                 )
             )
+            self._metrics_collector.record_material_upload_result(
+                channel=channel,
+                material_type=material_type,
+                succeeded=True,
+            )
+        for failure in failures:
+            self._metrics_collector.record_material_upload_result(
+                channel=channel,
+                material_type=material_type,
+                succeeded=False,
+                failure_code=failure.error_code,
+            )
         return MaterialSubmissionBatchResult(records=records, failures=failures)
 
     def _validate_uploaded_files(
@@ -237,6 +256,7 @@ class MaterialSubmissionService:
     def _create_material_with_recognition_placeholder(self, data: MaterialCreate) -> MaterialRecord:
         record = self._material_repository.create(data)
         self._recognition_task_repository.create(RecognitionTaskCreate(material_id=record.id))
+        self._metrics_collector.record_recognition_task_status(status=RecognitionTaskStatus.PENDING)
         return record
 
     def _record_submission_audit_logs(

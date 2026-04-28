@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 
+from trms_backend.application.metrics import InMemoryMetricsCollector
 from trms_backend.application.material_submission import (
     MaterialSubmissionService,
     SubmittedMaterialFile,
@@ -52,12 +53,14 @@ def test_material_submission_service_reuses_same_assigned_flow_for_all_channels(
     material_repository = InMemoryMaterialRepository()
     recognition_task_repository = RecordingRecognitionTaskRepository()
     audit_log_repository = InMemoryAuditLogRepository()
+    metrics_collector = InMemoryMetricsCollector()
     service = MaterialSubmissionService(
         task_repository,
         material_repository,
         LocalMaterialFileStorage(tmp_path / "material-storage"),
         recognition_task_repository,
         audit_log_repository,
+        metrics_collector,
     )
 
     for channel in (
@@ -89,6 +92,16 @@ def test_material_submission_service_reuses_same_assigned_flow_for_all_channels(
         assert result.records[0].channel is channel
 
     assert len(recognition_task_repository.created_material_ids) == 4
+    snapshot = metrics_collector.snapshot()
+    assert snapshot["uploads"]["succeeded"] == 4
+    assert snapshot["uploads"]["failed"] == 0
+    assert snapshot["uploads"]["success_by_channel"] == {
+        "web": 1,
+        "cli": 1,
+        "telegram": 1,
+        "email": 1,
+    }
+    assert snapshot["recognition_tasks"]["by_status"] == {"pending": 4}
 
 
 def test_material_submission_service_creates_pending_assignment_without_channel_specific_rules(
@@ -98,12 +111,14 @@ def test_material_submission_service_creates_pending_assignment_without_channel_
     material_repository = InMemoryMaterialRepository()
     recognition_task_repository = RecordingRecognitionTaskRepository()
     audit_log_repository = InMemoryAuditLogRepository()
+    metrics_collector = InMemoryMetricsCollector()
     service = MaterialSubmissionService(
         task_repository,
         material_repository,
         LocalMaterialFileStorage(tmp_path / "material-storage"),
         recognition_task_repository,
         audit_log_repository,
+        metrics_collector,
     )
 
     result = service.submit_pending_assignment(
@@ -132,3 +147,52 @@ def test_material_submission_service_creates_pending_assignment_without_channel_
     assert material.channel is SubmissionChannel.EMAIL
     assert material.material_type is MaterialType.PAYMENT_RECORD
     assert recognition_task_repository.created_material_ids == [material.id]
+    snapshot = metrics_collector.snapshot()
+    assert snapshot["uploads"]["succeeded"] == 1
+    assert snapshot["recognition_tasks"]["by_status"] == {"pending": 1}
+
+
+def test_material_submission_service_records_upload_failures_in_metrics(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    task_id = create_open_task(task_repository)
+    material_repository = InMemoryMaterialRepository()
+    recognition_task_repository = RecordingRecognitionTaskRepository()
+    audit_log_repository = InMemoryAuditLogRepository()
+    metrics_collector = InMemoryMetricsCollector()
+    service = MaterialSubmissionService(
+        task_repository,
+        material_repository,
+        LocalMaterialFileStorage(tmp_path / "material-storage"),
+        recognition_task_repository,
+        audit_log_repository,
+        metrics_collector,
+    )
+
+    result = service.submit_to_task(
+        task_id=task_id,
+        submitter_id="2250001",
+        actor_id="2250001",
+        channel=SubmissionChannel.WEB,
+        material_type=MaterialType.INVOICE,
+        files=[
+            SubmittedMaterialFile(
+                original_filename="ok.pdf",
+                content_type="application/pdf",
+                content=b"valid",
+            ),
+            SubmittedMaterialFile(
+                original_filename="empty.pdf",
+                content_type="application/pdf",
+                content=b"",
+            ),
+        ],
+    )
+
+    assert len(result.records) == 1
+    assert len(result.failures) == 1
+    snapshot = metrics_collector.snapshot()
+    assert snapshot["uploads"]["total"] == 2
+    assert snapshot["uploads"]["succeeded"] == 1
+    assert snapshot["uploads"]["failed"] == 1
+    assert snapshot["uploads"]["failure_by_code"] == {"empty_file": 1}
+    assert snapshot["recognition_tasks"]["by_status"] == {"pending": 1}

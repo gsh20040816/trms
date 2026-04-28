@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from trms_backend.application.async_jobs import AsyncJobProcessor
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.export_audit import (
     SYSTEM_EXPORT_ACTOR_ID,
     record_export_job_terminal_status_audit,
@@ -50,6 +51,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
         confirmation_repository: ConfirmationRepository,
         audit_log_repository: AuditLogRepository,
         batch_size: int = 10,
+        metrics_collector: MetricsCollector | None = None,
     ) -> None:
         self._task_repository = task_repository
         self._export_job_repository = export_job_repository
@@ -61,6 +63,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
         self._confirmation_repository = confirmation_repository
         self._audit_log_repository = audit_log_repository
         self._batch_size = batch_size
+        self._metrics_collector = metrics_collector or NoOpMetricsCollector()
 
     def run_once(self) -> int:
         processed_count = 0
@@ -72,6 +75,11 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
             )
             if claimed is None:
                 continue
+            self._metrics_collector.record_export_job_status(
+                kind=claimed.kind,
+                format=claimed.format,
+                status=claimed.status,
+            )
 
             task = self._task_repository.get(claimed.task_id)
             if task is None:
@@ -101,6 +109,11 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                 expected_current_status=TaskExportJobStatus.RUNNING,
             )
             if updated is not None:
+                self._metrics_collector.record_export_job_status(
+                    kind=updated.kind,
+                    format=updated.format,
+                    status=updated.status,
+                )
                 record_export_job_terminal_status_audit(
                     self._audit_log_repository,
                     actor_id=SYSTEM_EXPORT_ACTOR_ID,
@@ -119,6 +132,11 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
             expected_current_status=TaskExportJobStatus.RUNNING,
         )
         if updated is not None:
+            self._metrics_collector.record_export_job_status(
+                kind=updated.kind,
+                format=updated.format,
+                status=updated.status,
+            )
             record_export_job_terminal_status_audit(
                 self._audit_log_repository,
                 actor_id=SYSTEM_EXPORT_ACTOR_ID,

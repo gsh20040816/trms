@@ -1,3 +1,4 @@
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import (
     InvoiceRepository,
@@ -42,6 +43,7 @@ def refresh_invoice_validations(
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
+    metrics_collector: MetricsCollector | None = None,
 ) -> list[ValidationResult] | None:
     invoice = invoice_repository.get(invoice_id)
     if invoice is None:
@@ -62,7 +64,7 @@ def refresh_invoice_validations(
         supporting_materials,
         recognition_task_repository=recognition_task_repository,
     )
-    return validation_repository.replace_for_invoice(
+    stored_results = validation_repository.replace_for_invoice(
         invoice.id,
         validate_invoice(
             invoice,
@@ -77,6 +79,8 @@ def refresh_invoice_validations(
             supporting_material_recognitions=supporting_material_recognitions,
         ),
     )
+    (metrics_collector or NoOpMetricsCollector()).record_validation_results(results=stored_results)
+    return stored_results
 
 
 def refresh_validations_for_material(
@@ -87,6 +91,7 @@ def refresh_validations_for_material(
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
+    metrics_collector: MetricsCollector | None = None,
 ) -> dict[str, list[ValidationResult]]:
     affected_invoice_ids: list[str] = []
     primary_invoice = invoice_repository.get_by_material(material_id)
@@ -105,6 +110,7 @@ def refresh_validations_for_material(
             invoice_repository=invoice_repository,
             validation_repository=validation_repository,
             recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics_collector,
         )
         if results is not None:
             refreshed[invoice_id] = results

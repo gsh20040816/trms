@@ -6,6 +6,7 @@ from pathlib import Path
 from pypdf import PdfReader
 from pypdf.errors import FileNotDecryptedError, PdfReadError, PdfStreamError
 
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.recognition_llm import (
     RecognitionDocumentInput,
     RecognitionLlmClient,
@@ -72,6 +73,7 @@ class RecognitionPreparationService:
         audit_log_repository: AuditLogRepository,
         llm_capability: RecognitionLlmCapability,
         recognition_llm_client: RecognitionLlmClient | None = None,
+        metrics_collector: MetricsCollector | None = None,
     ) -> None:
         self._material_repository = material_repository
         self._material_file_storage = material_file_storage
@@ -79,6 +81,7 @@ class RecognitionPreparationService:
         self._audit_log_repository = audit_log_repository
         self._llm_capability = llm_capability
         self._recognition_llm_client = recognition_llm_client
+        self._metrics_collector = metrics_collector or NoOpMetricsCollector()
 
     def execute(
         self,
@@ -214,6 +217,10 @@ class RecognitionPreparationService:
             task_id=material.task_id,
             request_id=request_id,
         )
+        self._metrics_collector.record_recognition_task_status(
+            status=updated.status,
+            failure_stage=updated.failure.stage if updated.failure is not None else None,
+        )
         return updated
 
     def _complete_task(
@@ -245,6 +252,7 @@ class RecognitionPreparationService:
             task_id=material.task_id,
             request_id=request_id,
         )
+        self._metrics_collector.record_recognition_task_status(status=updated.status)
         return updated
 
     def _raise_missing_or_conflict(self, recognition_task_id: str) -> None:

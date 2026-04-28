@@ -1,5 +1,67 @@
 # WORKLOG
 
+## 2026-04-28 19:24 - Add baseline metrics boundaries
+
+### 完成内容
+- 为后端增加零依赖指标收集边界：
+  - 新增 `src/trms_backend/application/metrics.py`，定义 `MetricsCollector` 协议、`NoOpMetricsCollector` 和 `InMemoryMetricsCollector`；
+  - 当前快照聚合四类基础指标：上传成功/失败与成功率、识别任务状态、校验失败/待确认规则分布、导出任务状态；
+  - `create_app()` 与 worker 入口统一注入同一类指标收集器，并把实例挂到 `app.state.metrics_collector`，为后续 `/metrics` 接口或外部适配器保留扩展点。
+- 将指标接入四条稳定业务边界：
+  - `MaterialSubmissionService` 记录逐文件上传成功/失败，并在识别占位任务创建时记录 `pending`；
+  - `RecognitionPreparationService`、识别任务管理 API 和异步识别处理器记录识别状态变更，并在校验刷新时透传指标收集器；
+  - `refresh_invoice_validations()` 与发票人工录入路径记录校验失败类型和待确认类型分布；
+  - 导出任务创建、worker `running/succeeded/failed` 状态变化和手动状态更新统一记录导出状态指标。
+- 补充测试：
+  - `tests/test_material_submission_service.py` 覆盖上传成功、上传失败与识别占位指标；
+  - `tests/test_async_jobs.py` 覆盖导出状态指标接线；
+  - 新增 `tests/test_metrics.py`，通过应用实例验证上传、校验和导出指标快照。
+
+### 根因
+- 当前仓库已经有日志、审计和 request id 边界，但仍缺少最基础的指标抽象，导致上传、识别、校验和导出这些关键链路只能靠数据库和日志事后排查。
+- 如果直接在业务代码里散落第三方监控 SDK，不但会把当前第一阶段单体实现绑死在具体监控产品上，还会把“事件采集”和“指标导出”两类职责混在一起，增加后续替换成本。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/__main__.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/api/invoice_validation_refresh.py`
+- `src/trms_backend/api/invoices.py`
+- `src/trms_backend/api/recognitions.py`
+- `src/trms_backend/application/export_async_jobs.py`
+- `src/trms_backend/application/material_submission.py`
+- `src/trms_backend/application/metrics.py`
+- `src/trms_backend/application/recognition_async_jobs.py`
+- `src/trms_backend/application/recognition_preparation.py`
+- `src/trms_backend/main.py`
+- `tests/test_async_jobs.py`
+- `tests/test_material_submission_service.py`
+- `tests/test_metrics.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_material_submission_service.py tests/test_async_jobs.py tests/test_metrics.py`
+    - 10 个测试通过
+  - `uv run pytest tests/test_recognition_async_jobs.py tests/test_export_async_jobs.py tests/test_invoices_api.py tests/test_recognition_tasks_api.py`
+    - 49 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 314 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：第一阶段指标先统计“事件计数”而不是实时数据库快照，因此重复重试会累计到对应状态计数中；如果后续需要稳定 gauge，应在独立导出层基于仓储查询实现，而不是把聚合逻辑塞回业务服务。
+- 当前保守假设：内存指标收集器仅用于建立统一调用边界和本地可验证快照，不承担跨进程汇总职责；后续若接入 Prometheus/OpenTelemetry，应优先实现新的 `MetricsCollector` 适配器，而不是改动现有业务调用点。
+
 ## 2026-04-28 19:00 - Add sensitive log redaction rules
 
 ### 完成内容

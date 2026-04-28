@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
 from trms_backend.application.async_jobs import AsyncJobProcessor
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.recognition_preparation import (
     RecognitionMaterialNotFoundError,
     RecognitionPreparationService,
@@ -27,6 +28,7 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
         recognition_task_repository: RecognitionTaskRepository,
         recognition_preparation_service: RecognitionPreparationService,
         batch_size: int = 10,
+        metrics_collector: MetricsCollector | None = None,
     ) -> None:
         self._task_repository = task_repository
         self._material_repository = material_repository
@@ -35,6 +37,7 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
         self._recognition_task_repository = recognition_task_repository
         self._recognition_preparation_service = recognition_preparation_service
         self._batch_size = batch_size
+        self._metrics_collector = metrics_collector or NoOpMetricsCollector()
 
     def run_once(self) -> int:
         processed_count = 0
@@ -55,6 +58,7 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
                 invoice_repository=self._invoice_repository,
                 validation_repository=self._validation_repository,
                 recognition_task_repository=self._recognition_task_repository,
+                metrics_collector=self._metrics_collector,
             )
             processed_count += 1
         return processed_count

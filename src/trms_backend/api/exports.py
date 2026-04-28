@@ -11,6 +11,7 @@ from trms_backend.api.request_identity import (
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.export_audit import (
     record_export_job_created_audit,
     record_export_job_download_audit,
@@ -101,12 +102,14 @@ def build_export_router(
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
     audit_log_repository: AuditLogRepository,
+    metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["exports"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
     authenticated_request_identity = build_authenticated_request_identity_dependency(
         auth_repository
     )
+    metrics = metrics_collector or NoOpMetricsCollector()
 
     def build_current_export_snapshot(task):
         invoices = invoice_repository.list_by_task(task.id)
@@ -542,6 +545,11 @@ def build_export_router(
                 export_job=export_job,
                 request_id=ensure_request_id(request),
             )
+            metrics.record_export_job_status(
+                kind=export_job.kind,
+                format=export_job.format,
+                status=export_job.status,
+            )
             return with_export_job_status_view(task, export_job)
         except ValidationError as error:
             raise HTTPException(
@@ -735,6 +743,11 @@ def build_export_router(
                 export_job=updated,
                 previous_status=previous_status,
                 request_id=ensure_request_id(request),
+            )
+            metrics.record_export_job_status(
+                kind=updated.kind,
+                format=updated.format,
+                status=updated.status,
             )
             return with_export_job_status_view(task, updated)
         except ValidationError as error:
