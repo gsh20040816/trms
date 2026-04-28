@@ -28,6 +28,7 @@ import type {
   TaskExportBoundary,
   TaskExportJobRecord,
   TaskExportJobRequest,
+  TaskMemberStatusReport,
   TaskMembersUpdate,
   TaskReviewSummary,
   TaskStatusUpdate,
@@ -155,6 +156,12 @@ export const trmsApi = {
   listTaskExpenseDetails(taskId: string, actorId: string) {
     return apiClient.request<ExpenseDetailList>(
       `/tasks/${encodeSegment(taskId)}/expense-details${buildActorScopedQuery(actorId)}`,
+    );
+  },
+
+  getTaskMemberStatus(taskId: string, actorId: string) {
+    return apiClient.request<TaskMemberStatusReport>(
+      `/tasks/${encodeSegment(taskId)}/member-status${buildActorScopedQuery(actorId)}`,
     );
   },
 

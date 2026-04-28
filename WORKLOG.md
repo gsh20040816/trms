@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-04-29 01:59 - Build member invoice workbench single-task summary view
+
+### 完成内容
+- 新增成员发票工作台页面 `web/src/app/member-invoice-workbench.tsx`，以单任务为上下文聚合展示：
+  - 本人发票识别字段与当前人工值对比；
+  - 材料类型、关联附件、缺失材料项；
+  - 当前分摊去向与确认状态；
+  - 任务级待处理事项、异常原因和下一步动作。
+- 前端接入后端既有 `GET /api/tasks/{task_id}/member-status` 聚合接口，并补齐 `web/src/lib/api/types.ts`、`web/src/lib/api/trms.ts` 的类型和调用封装。
+- 为满足“按本人上传发票查看当前分摊方案和确认状态”的读路径，收窄式放宽成员只读边界：
+  - 发票提交人现在可查看自己上传发票的完整分摊列表和确认列表；
+  - 非提交人的普通成员仍只能看到与自己相关的分摊和确认，不扩展到同任务全部成员可见。
+- 新增前端测试 `web/src/app/member-invoice-workbench.test.tsx`，覆盖：
+  - 任务切换时工作台摘要刷新；
+  - 单任务摘要展示；
+  - 关键异常提示、人工更正对比和下一步动作入口。
+
+### 根因
+- 现有成员端能力分散在 `member-material-status` 和 `member-expense-confirmation` 两个页面，用户需要自己在“材料状态”和“费用确认”之间重建上下文，不满足当前任务要求的单任务汇总视图。
+- 前端此前未接入后端已有的 `member-status` 聚合接口，导致摘要计数、缺失材料和确认统计只能在多个页面重复拼接。
+- 成员侧只读分摊/确认接口此前默认按“我是分摊成员”过滤；这会让发票提交人在“本人上传发票”场景下拿不到完整分摊去向与确认状态，无法形成真正的发票工作台视图。
+
+### 修改文件
+- `src/trms_backend/api/confirmations.py`
+- `src/trms_backend/api/splits.py`
+- `src/trms_backend/main.py`
+- `tests/test_web_bearer_request_identity_api.py`
+- `web/src/app/member-invoice-workbench.tsx`
+- `web/src/app/member-invoice-workbench.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_web_bearer_request_identity_api.py`
+    - 9 个测试通过
+  - `cd web && npm test -- --run member-invoice-workbench.test.tsx`
+    - 2 个测试通过
+  - `cd web && npm run lint`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 340 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮只收口“本人上传发票”的单任务工作台视图，不把成员任务列表主入口改到该页面；入口优先级和主流程重排仍留给后续“收口成员发票工作台入口与下一步动作”任务处理。
+- 本轮只把发票提交人的分摊/确认只读可见范围扩到其本人上传的发票，不等同于完成“同任务成员共享发票可见性策略”任务；同任务其他成员的基础元数据可见边界仍待后续单独收口。
+
 ## 2026-04-29 02:10 - Split oversized member invoice workspace task
 
 ### 完成内容

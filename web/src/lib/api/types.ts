@@ -455,6 +455,50 @@ export type ExpenseDetailList = {
   items: ExpenseDetailItem[];
 };
 
+export type TaskMemberMaterialStatusItem = {
+  material_id: string;
+  submitter_id: string;
+  material_type: MaterialType;
+  original_filename: string;
+  material_status: MaterialStatus;
+  recognition_status: RecognitionTaskStatus | null;
+  recognition_failure_stage: RecognitionFailureStage | null;
+  recognition_failure_reason: string | null;
+  invoice_id: string | null;
+  invoice_number: string | null;
+  validation_status: ValidationStatus;
+  validation_messages: string[];
+  created_at: ApiDateTime;
+};
+
+export type TaskMemberStatusCounts = {
+  material_count: number;
+  missing_material_count: number;
+  expense_detail_count: number;
+  recognition_pending_count: number;
+  recognition_succeeded_count: number;
+  recognition_failed_count: number;
+  recognition_needs_confirmation_count: number;
+  validation_passed_count: number;
+  validation_failed_count: number;
+  validation_pending_count: number;
+  validation_not_applicable_count: number;
+  confirmed_expense_count: number;
+  pending_confirmation_count: number;
+  disputed_confirmation_count: number;
+  missing_confirmation_count: number;
+};
+
+export type TaskMemberStatusReport = {
+  task_id: string;
+  actor_id: string;
+  total_expense_amount_cents: number;
+  counts: TaskMemberStatusCounts;
+  materials: TaskMemberMaterialStatusItem[];
+  missing_materials: MissingMaterialItem[];
+  expense_details: ExpenseDetailItem[];
+};
+
 export type OverdueConfirmationList = {
   task_id: string;
   administrator_id: string;

@@ -10,6 +10,7 @@ import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
 import { AdminTaskListPage } from "./admin-task-list";
 import { MemberExpenseConfirmationPage } from "./member-expense-confirmation";
+import { MemberInvoiceWorkbenchPage } from "./member-invoice-workbench";
 import { MemberMaterialStatusPage } from "./member-material-status";
 import { MemberMaterialUploadPage } from "./member-material-upload";
 import { MemberTaskListPage } from "./member-task-list";
@@ -57,6 +58,10 @@ export const routes: RouteObject[] = [
           {
             path: "materials/status",
             element: <MemberMaterialStatusPage />,
+          },
+          {
+            path: "invoices/workbench",
+            element: <MemberInvoiceWorkbenchPage />,
           },
           {
             path: "materials/missing",

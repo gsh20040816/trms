@@ -660,14 +660,38 @@ def test_member_bearer_fee_and_confirmation_queries_only_expose_own_records(tmp_
         headers=auth_headers(member_one_token),
     )
     assert splits_response.status_code == 200
-    assert [item["member_id"] for item in splits_response.json()["items"]] == ["2250001"]
+    assert [item["member_id"] for item in splits_response.json()["items"]] == [
+        "2250001",
+        "2250002",
+    ]
 
     confirmations_response = client.get(
         f"/api/invoices/{invoice_id}/confirmations",
         headers=auth_headers(member_one_token),
     )
     assert confirmations_response.status_code == 200
-    assert [item["member_id"] for item in confirmations_response.json()["items"]] == ["2250001"]
+    assert [item["member_id"] for item in confirmations_response.json()["items"]] == [
+        "2250001",
+        "2250002",
+    ]
+
+    member_two_splits_response = client.get(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=auth_headers(member_two_token),
+    )
+    assert member_two_splits_response.status_code == 200
+    assert [item["member_id"] for item in member_two_splits_response.json()["items"]] == [
+        "2250002"
+    ]
+
+    member_two_confirmations_response = client.get(
+        f"/api/invoices/{invoice_id}/confirmations",
+        headers=auth_headers(member_two_token),
+    )
+    assert member_two_confirmations_response.status_code == 200
+    assert [item["member_id"] for item in member_two_confirmations_response.json()["items"]] == [
+        "2250002"
+    ]
 
     supporting_materials_response = client.get(
         f"/api/invoices/{invoice_id}/supporting-materials",

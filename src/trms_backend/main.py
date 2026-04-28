@@ -259,6 +259,7 @@ def create_app(
         build_confirmation_router(
             auth_repository,
             task_repository,
+            material_repository,
             invoice_repository,
             split_repository,
             confirmation_repository,

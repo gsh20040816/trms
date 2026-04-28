@@ -150,7 +150,14 @@ def build_split_router(
         )
         if scope is TaskAccessScope.MEMBER:
             actor_id = identity.actor_id or ""
-            items = [item for item in items if item.member_id == actor_id]
+            material = material_repository.get(invoice.material_id)
+            if material is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="invoice material not found",
+                )
+            if material.submitter_id != actor_id:
+                items = [item for item in items if item.member_id == actor_id]
         return {"items": items}
 
     return router
