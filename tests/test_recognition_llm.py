@@ -118,6 +118,87 @@ def test_openai_compatible_recognition_client_parses_json_schema_response():
     assert result.raw_response["attempts"] == 1
 
 
+def test_deepseek_compatible_recognition_client_uses_json_object_response_format():
+    captured_request = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request["payload"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "invoice_number": {
+                                            "value": "INV-001",
+                                            "confidence": 0.91,
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    provider_config = build_provider_config().model_copy(
+        update={"base_url": "https://api.deepseek.com"}
+    )
+    client = OpenAiCompatibleRecognitionClient(
+        provider_config,
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://api.deepseek.com",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert captured_request["payload"]["response_format"] == {"type": "json_object"}
+    assert result.recognized_fields["invoice_number"].value == "INV-001"
+
+
+def test_deepseek_compatible_recognition_client_accepts_direct_field_object():
+    provider_config = build_provider_config().model_copy(
+        update={"base_url": "https://api.deepseek.com"}
+    )
+    client = OpenAiCompatibleRecognitionClient(
+        provider_config,
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": json.dumps(
+                                        {
+                                            "invoice_number": {
+                                                "value": "INV-002",
+                                                "confidence": 0.88,
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        ]
+                    },
+                )
+            ),
+            base_url="https://api.deepseek.com",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert result.recognized_fields["invoice_number"].value == "INV-002"
+
+
 def test_openai_compatible_recognition_client_rejects_non_json_content():
     client = OpenAiCompatibleRecognitionClient(
         build_provider_config(),

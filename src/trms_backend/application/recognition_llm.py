@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -121,6 +122,7 @@ class OpenAiCompatibleRecognitionClient:
         document_input: RecognitionDocumentInput,
     ) -> RecognitionLlmExtractionResult:
         request_payload = _build_chat_completions_payload(
+            provider_base_url=self._provider_config.base_url,
             model=self._provider_config.model,
             material=material,
             document_input=document_input,
@@ -177,8 +179,9 @@ class OpenAiCompatibleRecognitionClient:
                 },
             ) from error
 
+        normalized_parsed_content = _normalize_llm_response_payload(parsed_content)
         try:
-            validated = RecognitionLlmResponse.model_validate(parsed_content)
+            validated = RecognitionLlmResponse.model_validate(normalized_parsed_content)
         except ValidationError as error:
             raise RecognitionLlmExecutionError(
                 failure=RecognitionFailureDetail(
@@ -188,7 +191,7 @@ class OpenAiCompatibleRecognitionClient:
                 raw_response={
                     "request": _safe_request_summary(request_payload),
                     "response": response_payload,
-                    "parsed_content": parsed_content,
+                    "parsed_content": normalized_parsed_content,
                     "validation_errors": error.errors(include_url=False),
                     "attempts": attempt_count,
                 },
@@ -252,6 +255,7 @@ class OpenAiCompatibleRecognitionClient:
 
 def _build_chat_completions_payload(
     *,
+    provider_base_url: str,
     model: str,
     material: MaterialRecord,
     document_input: RecognitionDocumentInput,
@@ -272,20 +276,18 @@ def _build_chat_completions_payload(
     }
     return {
         "model": model,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "trms_structured_recognition",
-                "strict": True,
-                "schema": RecognitionLlmResponse.model_json_schema(),
-            },
-        },
+        "response_format": _build_response_format(provider_base_url),
         "messages": [
             {
                 "role": "system",
                 "content": (
                     "You extract structured reimbursement metadata from OCR/PDF text. "
-                    "Return only JSON that matches the provided schema."
+                    "Return only JSON. "
+                    "The top-level object must contain an 'output' field. "
+                    "Inside 'output', only use these known field names when the document supports them: "
+                    "invoice_number, amount_cents, buyer_name, tax_number, transaction_time, "
+                    "location, expense_type, material_type, trip_route, transport_mode, cabin_class. "
+                    "Each populated field must be an object with 'value' and 'confidence'."
                 ),
             },
             {
@@ -370,3 +372,35 @@ def _safe_request_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "response_format": payload.get("response_format"),
         "message_count": len(payload.get("messages", [])),
     }
+
+
+def _build_response_format(provider_base_url: str) -> dict[str, Any]:
+    if _uses_deepseek_json_object(provider_base_url):
+        return {"type": "json_object"}
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "trms_structured_recognition",
+            "strict": True,
+            "schema": RecognitionLlmResponse.model_json_schema(),
+        },
+    }
+
+
+def _uses_deepseek_json_object(provider_base_url: str) -> bool:
+    hostname = urlparse(provider_base_url).hostname or ""
+    normalized_hostname = hostname.strip().lower()
+    return normalized_hostname == "api.deepseek.com" or normalized_hostname.endswith(".deepseek.com")
+
+
+def _normalize_llm_response_payload(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    if "output" in payload:
+        return payload
+
+    known_output_fields = set(RecognitionStructuredOutput.model_fields.keys())
+    if payload and set(payload.keys()).issubset(known_output_fields):
+        return {"output": payload}
+    return payload

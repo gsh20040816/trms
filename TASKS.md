@@ -780,6 +780,12 @@
     - `uv run python -m trms_backend` 与 `uv run python -m trms_cli` 不再因 `src/` 布局缺少打包配置而报 `No module named ...`
     - 至少完成一次相关导入或帮助命令验证
 
+- [x] 兼容 DeepSeek 结构化识别响应格式
+  - Done when:
+    - DeepSeek Provider 不再发送当前不支持的 `response_format.type=json_schema`
+    - 对 DeepSeek 返回的 `json_object` 响应可兼容顶层 `output` 包装和直接字段对象两种形态
+    - 有单元测试覆盖 OpenAI 分支和 DeepSeek 分支
+
 - [x] 拆分上线前安全与恢复演练任务
   - Done when:
     - 原任务已拆分到权限收口、安全回归、备份恢复演练和主流程演练等更小任务
