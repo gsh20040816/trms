@@ -7,7 +7,6 @@ from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.request_identity import (
     RequestIdentity,
     build_authenticated_request_identity_dependency,
-    build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import resolve_task_access_scope
@@ -118,7 +117,6 @@ def build_task_router(
     audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
-    optional_request_identity = build_optional_request_identity_dependency(auth_repository)
     authenticated_request_identity = build_authenticated_request_identity_dependency(
         auth_repository
     )
@@ -345,7 +343,7 @@ def build_task_router(
     @router.get("/{task_id}/expense-details")
     def list_task_expense_details(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
@@ -383,12 +381,18 @@ def build_task_router(
     @router.get("/{task_id}/member-status")
     def get_task_member_status(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
 
         materials = material_repository.list_by_task(task_id)
         invoices = invoice_repository.list_by_task(task_id)
@@ -397,7 +401,7 @@ def build_task_router(
         }
         latest_recognitions_by_material_id = {}
         for material in materials:
-            if material.submitter_id != actor_id:
+            if material.submitter_id != resolved_actor_id:
                 continue
             latest_recognitions_by_material_id[material.id] = (
                 recognition_task_repository.get_latest_effective_by_material(material.id)
@@ -410,11 +414,6 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
-        resolved_actor_id = resolve_required_actor_request_field(
-            identity,
-            actor_id,
-            field_name="actor_id",
-        )
         try:
             return build_task_member_status_report(
                 task,
@@ -435,7 +434,7 @@ def build_task_router(
     @router.get("/{task_id}/missing-materials")
     def list_task_missing_materials(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)

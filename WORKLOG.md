@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-29 00:50 - Require bearer identity for member-side status/detail reads
+
+### 完成内容
+- 收口成员侧状态读取接口：
+  - `GET /api/tasks/{task_id}/expense-details`
+  - `GET /api/tasks/{task_id}/member-status`
+  - `GET /api/tasks/{task_id}/missing-materials`
+  以上接口现在都必须携带 bearer token，不再允许匿名请求仅靠 `actor_id` 读取成员数据。
+- 修正 bearer 场景下的成员状态聚合：
+  - `member-status` 路由现在先解析请求身份，再按解析后的成员身份筛选识别结果；
+  - 修复了 bearer 请求未显式带 `actor_id` 时，识别状态可能被错误过滤为空的问题。
+- 收口 CLI 对这三类成员读取接口的调用方式：
+  - `status`、`missing-materials`、`confirm-expense` 读取费用明细时，不再在 URL 上主动拼接 `actor_id`；
+  - 仍保留响应里的 `actor_id` 供现有 CLI 文本/JSON 输出复用。
+- 补齐回归测试：
+  - 后端测试覆盖匿名自报成员编号被拒绝、bearer 登录后冒充他人被拒绝、成员本人读取成功、无关成员读取被拒绝；
+  - CLI 测试同步切到“成员 bearer 读取不再拼接 `actor_id` 查询参数”的新前提；
+  - `tests/test_expense_disputes_api.py` 中一处旧的匿名读取 `expense-details` 假设已同步改为成员 bearer 读取。
+
+### 根因
+- `src/trms_backend/api/tasks.py` 中这三条成员侧 GET 路由此前仍使用可选身份依赖，匿名请求只要自报 `actor_id` 就能进入成员数据构建逻辑；
+- `/member-status` 还在真正解析 bearer 身份前，直接使用原始查询参数筛选识别结果，导致接口既有越权风险，也有 bearer 无显式 `actor_id` 时的上下文错读问题；
+- CLI 仍沿用旧协议把成员编号直接拼到查询字符串里，与“成员侧读取应以 bearer 身份为准”的收口方向不一致。
+
+### 修改文件
+- `src/trms_backend/api/tasks.py`
+- `src/trms_cli/cli.py`
+- `tests/test_missing_materials_api.py`
+- `tests/test_expense_details_api.py`
+- `tests/test_task_member_status_api.py`
+- `tests/test_expense_disputes_api.py`
+- `tests/test_cli_status.py`
+- `tests/test_cli_missing_materials.py`
+- `tests/test_cli_confirm_expense.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_missing_materials_api.py tests/test_expense_details_api.py tests/test_task_member_status_api.py tests/test_web_bearer_request_identity_api.py`
+    - 24 个测试通过
+  - `uv run pytest tests/test_cli_status.py tests/test_cli_missing_materials.py tests/test_cli_confirm_expense.py`
+    - 11 个测试通过
+  - `uv run pytest tests/test_expense_disputes_api.py`
+    - 3 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 328 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮按保守边界处理成员侧读取：Bearer 已登录时，以认证身份为唯一真实读取上下文；显式 `actor_id` 只作为兼容字段保留，并在与 bearer 身份不一致时显式拒绝。
+
 ## 2026-04-29 00:37 - Tighten task creation and task query auth boundaries
 
 ### 完成内容

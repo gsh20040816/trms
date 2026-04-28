@@ -4,7 +4,12 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 from test_invoices_api import valid_invoice_payload
-from test_tasks_api import admin_auth_headers, create_task as create_admin_task
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    create_task as create_admin_task,
+    register_and_get_token,
+)
 
 
 def make_client(tmp_path):
@@ -12,6 +17,18 @@ def make_client(tmp_path):
         create_app(
             f"sqlite:///{tmp_path}/test.db",
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
+        )
+    )
+
+
+def member_auth_headers(client: TestClient, *, username: str, actor_id: str) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username=username,
+            role="member",
+            actor_id=actor_id,
+            member_code=actor_id,
         )
     )
 
@@ -85,7 +102,7 @@ def test_member_can_list_only_own_expense_details(tmp_path):
 
     response = client.get(
         f"/api/tasks/{task_id}/expense-details",
-        params={"actor_id": "2250002"},
+        headers=member_auth_headers(client, username="member2", actor_id="2250002"),
     )
 
     assert response.status_code == 200
@@ -108,7 +125,7 @@ def test_task_member_without_related_splits_gets_empty_expense_details(tmp_path)
 
     response = client.get(
         f"/api/tasks/{task_id}/expense-details",
-        params={"actor_id": "2250003"},
+        headers=member_auth_headers(client, username="member3", actor_id="2250003"),
     )
 
     assert response.status_code == 200
@@ -126,7 +143,7 @@ def test_task_administrator_can_list_all_expense_details(tmp_path):
 
     response = client.get(
         f"/api/tasks/{task_id}/expense-details",
-        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -142,13 +159,43 @@ def test_task_administrator_can_list_all_expense_details(tmp_path):
     assert items_by_split_id[split_ids["2250002"]]["confirmation"]["status"] == "confirmed"
 
 
+def test_anonymous_request_cannot_self_report_expense_details_actor_id(tmp_path):
+    client = make_client(tmp_path)
+    task_id, _, _ = create_split_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/expense-details",
+        params={"actor_id": "2250002"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid or missing bearer token"
+
+
+def test_member_bearer_cannot_impersonate_other_member_for_expense_details(tmp_path):
+    client = make_client(tmp_path)
+    task_id, _, _ = create_split_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/expense-details",
+        params={"actor_id": "2250002"},
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "actor_id does not match the authenticated request identity: "
+        "expected '2250001', got '2250002'"
+    )
+
+
 def test_non_member_cannot_list_task_expense_details(tmp_path):
     client = make_client(tmp_path)
     task_id, _, _ = create_split_fixture(client)
 
     response = client.get(
         f"/api/tasks/{task_id}/expense-details",
-        params={"actor_id": "outsider-1"},
+        headers=member_auth_headers(client, username="outsider", actor_id="outsider-1"),
     )
 
     assert response.status_code == 403

@@ -48,7 +48,7 @@ def test_confirm_expense_command_lists_current_member_expense_details(monkeypatc
     )
 
     def fake_fetch_json(url: str, *, headers=None):
-        assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details?actor_id=2250001"
+        assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details"
         assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_expense_detail_payload()
 
@@ -80,7 +80,7 @@ def test_confirm_expense_command_submits_confirmed_status_and_reports_json(
     )
 
     def fake_fetch_json(url: str, *, headers=None):
-        assert url == "http://example.com/api/tasks/task-123/expense-details?actor_id=2250001"
+        assert url == "http://example.com/api/tasks/task-123/expense-details"
         assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_expense_detail_payload()
 
@@ -160,7 +160,7 @@ def test_confirm_expense_command_submits_dispute_reason(monkeypatch, tmp_path, c
     )
 
     def fake_fetch_json(url: str, *, headers=None):
-        assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details?actor_id=2250001"
+        assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details"
         assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, sample_expense_detail_payload()
 
@@ -228,7 +228,7 @@ def test_confirm_expense_command_rejects_stale_split_version(monkeypatch, tmp_pa
     payload["items"][0]["split_version"] = 2
 
     def fake_fetch_json(url: str, *, headers=None):
-        assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details?actor_id=2250001"
+        assert url == "http://127.0.0.1:8000/api/tasks/task-123/expense-details"
         assert headers == build_cli_request_headers(access_token="stored-access-token")
         return 200, payload
 

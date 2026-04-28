@@ -747,7 +747,7 @@ def run_status_command(args: argparse.Namespace) -> int:
 
     base_url = session.base_url.rstrip("/")
     status_code, payload = fetch_json(
-        build_task_status_url(base_url, task_id=args.task_id, actor_id=session.member_id),
+        build_task_status_url(base_url, task_id=args.task_id),
         headers=build_cli_request_headers(access_token=session.access_token),
     )
     if status_code != 200:
@@ -789,7 +789,7 @@ def run_missing_materials_command(args: argparse.Namespace) -> int:
 
     base_url = session.base_url.rstrip("/")
     status_code, payload = fetch_json(
-        build_task_missing_materials_url(base_url, task_id=args.task_id, actor_id=session.member_id),
+        build_task_missing_materials_url(base_url, task_id=args.task_id),
         headers=build_cli_request_headers(access_token=session.access_token),
     )
     if status_code != 200:
@@ -876,7 +876,6 @@ def run_confirm_expense_command(args: argparse.Namespace) -> int:
     report = fetch_expense_detail_confirmation_report(
         base_url=base_url,
         task_id=args.task_id,
-        actor_id=session.member_id,
         access_token=session.access_token,
     )
     if action == "list":
@@ -968,46 +967,34 @@ def build_material_submit_url(base_url: str, *, task_id: str) -> str:
     return f"{normalized_base_url}/api/tasks/{normalized_task_id}/materials"
 
 
-def build_task_status_url(base_url: str, *, task_id: str, actor_id: str) -> str:
+def build_task_status_url(base_url: str, *, task_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     normalized_task_id = task_id.strip()
-    normalized_actor_id = actor_id.strip()
     if not normalized_task_id:
         raise CliError("task id is required", code="task_id_required")
-    if not normalized_actor_id:
-        raise CliError("member id is required", code="member_binding_required")
-    query_string = urlencode({"actor_id": normalized_actor_id})
     if normalized_base_url.endswith("/api"):
-        return f"{normalized_base_url}/tasks/{normalized_task_id}/member-status?{query_string}"
-    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/member-status?{query_string}"
+        return f"{normalized_base_url}/tasks/{normalized_task_id}/member-status"
+    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/member-status"
 
 
-def build_task_missing_materials_url(base_url: str, *, task_id: str, actor_id: str) -> str:
+def build_task_missing_materials_url(base_url: str, *, task_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     normalized_task_id = task_id.strip()
-    normalized_actor_id = actor_id.strip()
     if not normalized_task_id:
         raise CliError("task id is required", code="task_id_required")
-    if not normalized_actor_id:
-        raise CliError("member id is required", code="member_binding_required")
-    query_string = urlencode({"actor_id": normalized_actor_id})
     if normalized_base_url.endswith("/api"):
-        return f"{normalized_base_url}/tasks/{normalized_task_id}/missing-materials?{query_string}"
-    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/missing-materials?{query_string}"
+        return f"{normalized_base_url}/tasks/{normalized_task_id}/missing-materials"
+    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/missing-materials"
 
 
-def build_task_expense_details_url(base_url: str, *, task_id: str, actor_id: str) -> str:
+def build_task_expense_details_url(base_url: str, *, task_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     normalized_task_id = task_id.strip()
-    normalized_actor_id = actor_id.strip()
     if not normalized_task_id:
         raise CliError("task id is required", code="task_id_required")
-    if not normalized_actor_id:
-        raise CliError("member id is required", code="member_binding_required")
-    query_string = urlencode({"actor_id": normalized_actor_id})
     if normalized_base_url.endswith("/api"):
-        return f"{normalized_base_url}/tasks/{normalized_task_id}/expense-details?{query_string}"
-    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/expense-details?{query_string}"
+        return f"{normalized_base_url}/tasks/{normalized_task_id}/expense-details"
+    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/expense-details"
 
 
 def build_invoice_splits_url(base_url: str, *, invoice_id: str) -> str:
@@ -1869,11 +1856,10 @@ def fetch_expense_detail_confirmation_report(
     *,
     base_url: str,
     task_id: str,
-    actor_id: str,
     access_token: str,
 ) -> ExpenseDetailConfirmationReport:
     status_code, payload = fetch_json(
-        build_task_expense_details_url(base_url, task_id=task_id, actor_id=actor_id),
+        build_task_expense_details_url(base_url, task_id=task_id),
         headers=build_cli_request_headers(access_token=access_token),
     )
     if status_code != 200:

@@ -170,6 +170,13 @@ def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(t
     client = make_client(tmp_path)
     task_id, _, split_id = create_disputed_split_fixture(client)
     move_task_to_reviewing(client, task_id)
+    member_token = register_and_get_token(
+        client,
+        username="member2",
+        role="member",
+        actor_id="2250002",
+        member_code="2250002",
+    )
 
     response = client.post(
         f"/api/tasks/{task_id}/expense-disputes/{split_id}/resolve",
@@ -193,7 +200,7 @@ def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(t
 
     expense_detail_response = client.get(
         f"/api/tasks/{task_id}/expense-details",
-        params={"actor_id": "2250002"},
+        headers=auth_headers(member_token),
     )
     assert expense_detail_response.status_code == 200
     assert expense_detail_response.json()["items"][0]["confirmation"]["status"] == "pending"

@@ -3,7 +3,13 @@ from fastapi.testclient import TestClient
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import admin_auth_headers, create_task, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    create_task,
+    register_and_get_token,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path):
@@ -11,6 +17,18 @@ def make_client(tmp_path):
         create_app(
             f"sqlite:///{tmp_path}/test.db",
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
+        )
+    )
+
+
+def member_auth_headers(client: TestClient, *, username: str, actor_id: str) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username=username,
+            role="member",
+            actor_id=actor_id,
+            member_code=actor_id,
         )
     )
 
@@ -144,7 +162,7 @@ def test_member_status_returns_only_actor_related_materials_and_confirmations(tm
 
     response = client.get(
         f"/api/tasks/{task_id}/member-status",
-        params={"actor_id": "2250001"},
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
     )
 
     assert response.status_code == 200
@@ -180,13 +198,43 @@ def test_member_status_returns_only_actor_related_materials_and_confirmations(tm
     assert expense_detail["confirmation"] is None
 
 
+def test_anonymous_request_cannot_self_report_member_status_actor_id(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_member_status_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/member-status",
+        params={"actor_id": "2250001"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid or missing bearer token"
+
+
+def test_member_bearer_cannot_impersonate_other_member_for_member_status(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_member_status_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/member-status",
+        params={"actor_id": "2250002"},
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "actor_id does not match the authenticated request identity: "
+        "expected '2250001', got '2250002'"
+    )
+
+
 def test_non_member_cannot_view_task_member_status(tmp_path):
     client = make_client(tmp_path)
     task_id = create_member_status_fixture(client)
 
     response = client.get(
         f"/api/tasks/{task_id}/member-status",
-        params={"actor_id": "2250999"},
+        headers=member_auth_headers(client, username="outsider", actor_id="2250999"),
     )
 
     assert response.status_code == 403
