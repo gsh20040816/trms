@@ -1063,7 +1063,7 @@
     - 覆盖损坏 PDF 报告材料编号
     - 不要求生成真实财务可用材料
 
-- [ ] 增加 CLI 参数解析测试
+- [x] 增加 CLI 参数解析测试
   - Done when:
     - 覆盖 login、list-tasks、submit、status、missing、split、confirm 命令
     - 覆盖 `--json` 输出

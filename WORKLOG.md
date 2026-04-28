@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-29 04:45 - Add CLI argument parsing coverage
+
+### 完成内容
+- 新增 `tests/test_cli_argument_parsing.py`，集中覆盖 CLI 参数层回归，不再只依赖各命令执行路径的零散断言。
+- 已补齐以下参数解析场景：
+  - `login`、`tasks`、`submit`、`status`、`missing-materials`、`split`、`confirm-expense` 的成功解析路径；
+  - `submit`、`status`、`missing-materials`、`split` 等命令的必填参数缺失时，`argparse` 会直接拒绝；
+  - `confirm-expense` 在“仅查询”与“提交确认”两种模式下的参数组合校验，包括缺少 `split_version`、缺少 `status`、`disputed` 缺少异议原因，以及 `confirmed` 错带异议原因等失败路径。
+- 既有 CLI 测试继续覆盖本轮任务要求的另外两部分：
+  - `tests/test_cli_login.py`、`tests/test_cli_tasks.py`、`tests/test_cli_status.py`、`tests/test_cli_missing_materials.py`、`tests/test_cli_split.py`、`tests/test_cli_confirm_expense.py` 已覆盖各命令 `--json` 输出；
+  - `tests/test_cli_submit.py` 已覆盖本地文件不存在、不支持类型、超出大小限制等本地预检查失败路径。
+
+### 根因
+- 现有 CLI 测试主要围绕命令执行结果、HTTP 载荷和错误输出展开，但缺少一组直接锁定 `argparse` 约束和 `confirm-expense` 参数组合语义的测试。
+- 这导致一旦命令名称、必填参数或“查询/提交双模式”边界被改坏，回归可能要到更晚的执行路径才暴露，定位成本偏高。
+
+### 关键改动点
+- 新增 CLI 参数解析测试：
+  - `tests/test_cli_argument_parsing.py`
+- 更新任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮未修改任何生产代码，只增强 CLI 测试；如果后续有人调整命令参数、删除 `--json` 开关或放松 `confirm-expense` 的参数校验，这组测试会先暴露问题。
+- 新增测试把 `TASKS.md` 中旧称呼 `list-tasks` 按当前实现映射为 `tasks` 命令处理；这是基于仓库现状的保守解释，未引入别名或兼容层。
+
+### 修改文件
+- `tests/test_cli_argument_parsing.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_argument_parsing.py tests/test_cli_login.py tests/test_cli_tasks.py tests/test_cli_submit.py tests/test_cli_status.py tests/test_cli_missing_materials.py tests/test_cli_split.py tests/test_cli_confirm_expense.py`
+    - 49 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 412 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认 `TASKS.md` 中的 `list-tasks` 指代当前仓库已实现的 `tasks` CLI 子命令，而不是一个尚未存在的独立别名。
+
 ## 2026-04-29 04:39 - Add export job integration coverage
 
 ### 完成内容
