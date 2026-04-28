@@ -271,6 +271,10 @@ describe("MemberMaterialStatusPage", () => {
 
     expect(await screen.findByRole("heading", { name: "成员材料状态" })).toBeInTheDocument();
     expect(await screen.findByLabelText("目标任务")).toHaveValue("TASK-OPEN");
+    expect(screen.getByRole("link", { name: "返回当前任务工作台" })).toHaveAttribute(
+      "href",
+      "/member/invoices/workbench?taskId=TASK-OPEN",
+    );
 
     const statusList = await screen.findByLabelText("成员材料状态列表");
     const statusCards = within(statusList).getAllByRole("article");

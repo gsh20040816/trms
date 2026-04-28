@@ -178,6 +178,10 @@ describe("MemberMaterialUploadPage", () => {
 
     expect(await screen.findByRole("heading", { name: "成员材料上传" })).toBeInTheDocument();
     expect(await screen.findByLabelText("目标任务")).toHaveValue("TASK-OPEN");
+    expect(screen.getByRole("link", { name: "返回当前任务工作台" })).toHaveAttribute(
+      "href",
+      "/member/invoices/workbench?taskId=TASK-OPEN",
+    );
     expect(screen.queryByText("Hidden Contest")).not.toBeInTheDocument();
 
     const fileInput = screen.getByLabelText("上传文件");

@@ -88,16 +88,20 @@ describe("MemberTaskListPage", () => {
 
     expect(await screen.findByRole("heading", { name: "我的报销任务" })).toBeInTheDocument();
     expect(screen.getByLabelText("成员任务概览")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入发票工作台" })).toHaveAttribute(
+      "href",
+      "/member/invoices/workbench",
+    );
     const taskList = screen.getByRole("table", { name: "成员任务列表" });
     expect(within(taskList).getByText("ICPC Xi'an Regional")).toBeInTheDocument();
     expect(within(taskList).getByText("收集中")).toBeInTheDocument();
+    expect(within(taskList).getByRole("link", { name: "进入工作台" })).toHaveAttribute(
+      "href",
+      "/member/invoices/workbench?taskId=TASK-OPEN",
+    );
     expect(within(taskList).getByRole("link", { name: "提交材料" })).toHaveAttribute(
       "href",
       "/member/materials/upload?taskId=TASK-OPEN",
-    );
-    expect(within(taskList).getByRole("link", { name: "查看状态" })).toHaveAttribute(
-      "href",
-      "/member/materials/status?taskId=TASK-OPEN",
     );
     expect(screen.queryByText("CCPC Final")).not.toBeInTheDocument();
   });

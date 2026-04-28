@@ -335,9 +335,15 @@ export function MemberExpenseConfirmationPage() {
         <p className="eyebrow">费用确认</p>
         <h2>成员费用确认</h2>
         <p>
-          在这里核对分到自己名下的费用，确认无误后提交，或者说明异议原因。
+          当前页是单任务发票工作台下的专项确认入口，用于核对并确认分到自己名下的费用。
         </p>
         <div className="inline-actions">
+          <Link
+            className="route-link"
+            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+          >
+            返回当前任务工作台
+          </Link>
           <Link className="route-link route-link-secondary" to="/member">
             返回成员任务列表
           </Link>

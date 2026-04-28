@@ -695,15 +695,21 @@ export function MemberMaterialStatusPage() {
         <p className="eyebrow">材料状态</p>
         <h2>成员材料状态</h2>
         <p>
-          当前页聚合当前成员自己提交的材料状态，只展示本人材料的识别进度、发票校验异常和缺失材料提示，不暴露同任务下其他成员的材料详情。
+          当前页是单任务发票工作台下的专项状态页，只展示本人材料的识别进度、发票校验异常和缺失材料提示。
         </p>
         <div className="inline-actions">
+          <Link
+            className="route-link"
+            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+          >
+            返回当前任务工作台
+          </Link>
           <Link className="route-link route-link-secondary" to="/member">
             返回成员任务列表
           </Link>
           {selectedTask?.status === "open" ? (
             <Link
-              className="route-link"
+              className="route-link route-link-secondary"
               to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
             >
               去上传更多材料

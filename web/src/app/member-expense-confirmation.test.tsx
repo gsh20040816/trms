@@ -172,6 +172,10 @@ describe("MemberExpenseConfirmationPage", () => {
     renderMemberExpenseConfirmationRoute();
 
     expect(await screen.findByRole("heading", { name: "成员费用确认" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回当前任务工作台" })).toHaveAttribute(
+      "href",
+      "/member/invoices/workbench?taskId=TASK-OPEN",
+    );
     const detailList = await screen.findByLabelText("成员费用明细列表");
     const detailCard = within(detailList).getByRole("heading", { name: "INV-001" }).closest("article");
     if (!detailCard) {

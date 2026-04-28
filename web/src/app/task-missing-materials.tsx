@@ -461,15 +461,21 @@ export function MemberMissingMaterialsPage() {
         <p className="eyebrow">我的待补材料</p>
         <h2>我的缺失材料</h2>
         <p>
-          当前页只展示当前成员本人需要补充的材料，不暴露同任务下其他成员的缺失项。
+          当前页是单任务发票工作台下的专项补材料视图，只展示当前成员本人需要补充的材料。
         </p>
         <div className="inline-actions">
+          <Link
+            className="route-link"
+            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+          >
+            返回当前任务工作台
+          </Link>
           <Link className="route-link route-link-secondary" to="/member">
             返回成员任务列表
           </Link>
           {selectedTask?.status === "open" ? (
             <Link
-              className="route-link"
+              className="route-link route-link-secondary"
               to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
             >
               去补充材料

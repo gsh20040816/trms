@@ -299,15 +299,21 @@ export function MemberMaterialUploadPage() {
         <p className="eyebrow">材料提交</p>
         <h2>成员材料上传</h2>
         <p>
-          从当前开放的任务中选择目标任务，指定材料类型后即可上传一个或多个文件。
+          当前页是单任务发票工作台下的专项上传入口，用于补充发票或附件材料。
         </p>
         <div className="inline-actions">
+          <Link
+            className="route-link"
+            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+          >
+            返回当前任务工作台
+          </Link>
           <Link className="route-link route-link-secondary" to="/member">
             返回成员任务列表
           </Link>
           {selectedTask ? (
             <Link
-              className="route-link"
+              className="route-link route-link-secondary"
               to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
             >
               查看当前任务材料状态

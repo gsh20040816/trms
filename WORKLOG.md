@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-29 02:42 - Funnel member entry points into invoice workbench
+
+### 完成内容
+- 收口成员端主入口到单任务发票工作台：
+  - 成员任务列表顶部主按钮改为进入发票工作台；
+  - 每个任务行的主按钮改为“进入工作台”，保留状态驱动的次级直达动作；
+  - `closed` 任务的次级直达动作改为进入缺失材料页，避免继续把材料状态页当作默认下一步。
+- 收口相关页面的返回路径：
+  - 成员材料上传、材料状态、费用确认、缺失材料页都新增“返回当前任务工作台”主链接；
+  - 这些页面的说明文案明确为“工作台下的专项入口”，不再把自己表达成并列主入口。
+- 补充前端回归测试：
+  - `member-task-list.test.tsx` 断言任务列表主入口和任务行主入口都进入工作台；
+  - `member-material-upload.test.tsx`、`member-material-status.test.tsx`、`member-expense-confirmation.test.tsx` 断言相关页面可回到当前任务工作台。
+
+### 根因
+- 现有成员端虽然已经有单任务发票工作台，但成员任务列表仍把“上传材料 / 查看状态 / 费用确认”作为并列主入口，导致工作台没有成为默认处理上下文。
+- 上传、材料状态、缺失材料、费用确认页面也仍以各自页面为中心组织返回路径，用户一旦跳入专项页，就容易丢失“当前任务工作台”这一主上下文。
+- 这与 `docs/UI原型图对照与交互规范补充.md` 中“成员端应形成单任务处理闭环”的约束不一致，属于信息架构层面的入口优先级问题，而不是后端能力缺失。
+
+### 修改文件
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/app/member-material-upload.tsx`
+- `web/src/app/member-material-upload.test.tsx`
+- `web/src/app/member-material-status.tsx`
+- `web/src/app/member-material-status.test.tsx`
+- `web/src/app/member-expense-confirmation.tsx`
+- `web/src/app/member-expense-confirmation.test.tsx`
+- `web/src/app/task-missing-materials.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- --run member-task-list.test.tsx member-material-upload.test.tsx member-material-status.test.tsx member-expense-confirmation.test.tsx member-invoice-workbench.test.tsx`
+    - 5 个测试文件、17 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 347 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮只收口“成员入口优先级”和“返回当前任务工作台”的导航，不重写成员端页面布局，也不把 `/member` 默认路由直接改成工作台。
+- 上传、缺失材料、材料状态、费用确认等专项页仍然保留直接访问能力，方便从通知或深链接进入；但它们不再作为成员主流程的首选入口。
+
 ## 2026-04-29 02:36 - Add member self-service split adjustment in invoice workbench
 
 ### 完成内容

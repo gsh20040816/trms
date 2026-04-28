@@ -60,14 +60,21 @@ function buildStatusTone(status: TaskStatus) {
   return "neutral" as const;
 }
 
-function buildPrimaryActionLink(task: ReimbursementTask) {
+function buildWorkbenchLink(task: ReimbursementTask) {
+  return `/member/invoices/workbench?taskId=${encodeURIComponent(task.id)}`;
+}
+
+function buildDirectActionLink(task: ReimbursementTask) {
   if (task.status === "open") {
     return `/member/materials/upload?taskId=${encodeURIComponent(task.id)}`;
   }
-  if (task.status === "closed" || task.status === "reviewing") {
-    return `/member/materials/status?taskId=${encodeURIComponent(task.id)}`;
+  if (task.status === "closed") {
+    return `/member/materials/missing?taskId=${encodeURIComponent(task.id)}`;
   }
-  return `/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`;
+  if (task.status === "reviewing") {
+    return `/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`;
+  }
+  return `/member/materials/status?taskId=${encodeURIComponent(task.id)}`;
 }
 
 export function MemberTaskListPage() {
@@ -140,12 +147,12 @@ export function MemberTaskListPage() {
         <PageHeader
           eyebrow="成员工作台"
           title="我的报销任务"
-          description="先看我参与的任务、截止时间和下一步动作，再决定上传材料、补充信息或确认费用。"
+          description="先看我参与的任务，再优先进入单任务发票工作台处理上传、补材料和费用确认。"
           meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
           actions={(
             <div className="page-actions">
-              <Link className="button button-primary" to="/member/materials/upload">
-                提交材料
+              <Link className="button button-primary" to="/member/invoices/workbench">
+                进入发票工作台
               </Link>
             </div>
           )}
@@ -176,7 +183,7 @@ export function MemberTaskListPage() {
       {state.status === "ready" && sortedVisibleTasks.length > 0 ? (
         <SectionCard
           title="任务列表"
-          description="直接从任务列表进入材料提交、材料状态或费用确认。"
+          description="优先从这里进入单任务发票工作台；如需跳过汇总页，也可以直接执行当前下一步。"
           action={<StatusBadge tone="info">共 {sortedVisibleTasks.length} 条</StatusBadge>}
         >
           <TaskTable
@@ -206,11 +213,11 @@ export function MemberTaskListPage() {
                 <td>{NEXT_ACTIONS[task.status]}</td>
                 <td>
                   <div className="table-actions">
-                    <Link className="button button-primary button-small" to={buildPrimaryActionLink(task)}>
-                      {NEXT_ACTIONS[task.status]}
+                    <Link className="button button-primary button-small" to={buildWorkbenchLink(task)}>
+                      进入工作台
                     </Link>
-                    <Link className="button button-secondary button-small" to={`/member/materials/status?taskId=${encodeURIComponent(task.id)}`}>
-                      查看状态
+                    <Link className="button button-secondary button-small" to={buildDirectActionLink(task)}>
+                      {NEXT_ACTIONS[task.status]}
                     </Link>
                   </div>
                 </td>
