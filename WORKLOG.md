@@ -1,5 +1,92 @@
 # WORKLOG
 
+## 2026-04-29 04:13 - Support multi-role account binding and switching
+
+### 完成内容
+- 将认证模型从“单账号单角色”扩展为“单账号多角色 + 会话激活角色”：
+  - 后端用户模型新增 `roles` 集合，登录会话新增 `active_role`；
+  - Alembic 新增 `20260429_01` 迁移，把既有 `role` 数据回填到 `roles` 与 `active_role`。
+- 增加角色切换闭环：
+  - 后端新增 `POST /api/auth/switch-role`，同一 bearer 会话内可切换到账号已绑定角色；
+  - `request-context` 和 `me` 返回当前激活角色与可切换角色集合。
+- 前端接入多角色工作台切换：
+  - 会话存储支持 `availableRoles`；
+  - 同账号访问其他已绑定角色工作台时，会自动切换当前激活角色并进入对应页面；
+  - 登录页“当前会话”区域补充可切换身份按钮。
+- 补齐认证与前端回归测试：
+  - 后端测试覆盖多角色登录、切换成功、未绑定角色切换失败、生产环境禁止在角色集合中混入特权角色；
+  - 前端测试覆盖已绑定多角色账号进入其他工作台时的自动切换。
+
+### 根因
+- 当前实现把 `user.role` 当作账号唯一角色，导致同一人如果既是报销成员又承担管理员或系统管理员职责，只能靠多个账号切换，认证上下文也无法表达“当前激活角色”和“可切换角色集合”。
+- 首页和导航此前虽然已经按 `availableRoles` 预留了可见入口过滤逻辑，但后端没有真实角色集合、前端也没有切换会话能力，导致这个边界停留在占位状态。
+
+### 关键改动点
+- 后端认证模型、请求身份和仓储：
+  - `src/trms_backend/domain/auth.py`
+  - `src/trms_backend/api/auth.py`
+  - `src/trms_backend/api/request_identity.py`
+  - `src/trms_backend/api/request_task_access.py`
+  - `src/trms_backend/infrastructure/models.py`
+  - `src/trms_backend/infrastructure/repositories.py`
+  - `alembic/versions/20260429_01_auth_multi_role_sessions.py`
+- 后端回归测试：
+  - `tests/test_auth_api.py`
+  - `tests/test_request_identity.py`
+  - `tests/test_database_migrations.py`
+- 前端会话与切换：
+  - `web/src/app/auth-store.ts`
+  - `web/src/app/auth.tsx`
+  - `web/src/lib/api/trms.ts`
+  - `web/src/lib/api/types.ts`
+  - `web/src/app/App.test.tsx`
+
+### 风险与影响面
+- 本轮把“多角色绑定”收口到账号数据模型、登录响应和会话切换，不包含完整的系统管理员账号/角色管理后台；后续若要支持“存量账号追加角色”“撤销角色”等运维流程，应作为独立任务继续做，不要继续挤在本轮里。
+- 为避免成员态借同一 `actor_id` 直接走管理员访问边界，本轮把任务管理员可见性收口为“`actor_id` 匹配且当前激活角色为 `admin/system_admin`”；其他业务接口后续若新增类似双重条件，也应沿用相同约束。
+- `vite build` 仍有既有单 chunk 超过 500 kB 告警，本轮未新增构建失败。
+
+### 修改文件
+- `alembic/versions/20260429_01_auth_multi_role_sessions.py`
+- `src/trms_backend/domain/auth.py`
+- `src/trms_backend/api/auth.py`
+- `src/trms_backend/api/request_identity.py`
+- `src/trms_backend/api/request_task_access.py`
+- `src/trms_backend/infrastructure/models.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_auth_api.py`
+- `tests/test_request_identity.py`
+- `tests/test_database_migrations.py`
+- `web/src/app/auth-store.ts`
+- `web/src/app/auth.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/app/App.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_auth_api.py tests/test_request_identity.py`
+    - 20 个测试通过
+  - `cd web && npm test -- --run src/app/App.test.tsx`
+    - 1 个测试文件、8 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 356 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认同一账号的多角色属于同一真实用户，因此沿用同一个 `actor_id`、`display_name` 和可选 `member_code`，只切换激活角色，不创建多份会话主体信息。
+- 本轮默认多角色绑定发生在账号创建/初始化后的数据层和认证层；如果后续产品要求系统管理员在 Web 页面上给存量账号增删角色，应新增独立任务，而不是继续扩大当前改动面。
+
 ## 2026-04-29 03:56 - Close the member single-task workflow loop in the workbench
 
 ### 完成内容

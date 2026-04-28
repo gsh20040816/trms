@@ -23,6 +23,7 @@ class UserAccountRow(Base):
     username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     actor_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     member_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -43,6 +44,7 @@ class AuthSessionRow(Base):
         index=True,
     )
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    active_role: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

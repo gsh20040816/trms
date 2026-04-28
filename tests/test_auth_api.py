@@ -64,6 +64,7 @@ def test_register_creates_user_and_returns_bearer_session(tmp_path):
         "id": body["user"]["id"],
         "username": "member1",
         "role": "member",
+        "roles": ["member"],
         "actor_id": "2250001",
         "display_name": "王队员",
         "member_code": "MEM-001",
@@ -119,6 +120,7 @@ def test_request_context_returns_anonymous_identity_without_bearer_token(tmp_pat
         "is_authenticated": False,
         "source": "anonymous",
         "role": None,
+        "available_roles": [],
         "actor_id": None,
         "member_id": None,
         "user": None,
@@ -140,12 +142,14 @@ def test_request_context_returns_authenticated_identity_with_member_mapping(tmp_
         "is_authenticated": True,
         "source": "bearer",
         "role": "member",
+        "available_roles": ["member"],
         "actor_id": "2250001",
         "member_id": "MEM-001",
         "user": {
             "id": register_response.json()["user"]["id"],
             "username": "member1",
             "role": "member",
+            "roles": ["member"],
             "actor_id": "2250001",
             "display_name": "王队员",
             "member_code": "MEM-001",
@@ -211,6 +215,7 @@ def test_production_register_still_allows_member_self_registration(tmp_path):
 
     assert response.status_code == 201
     assert response.json()["user"]["role"] == "member"
+    assert response.json()["user"]["roles"] == ["member"]
 
 
 def test_bootstrap_admin_creates_privileged_account_and_records_audit_source(tmp_path):
@@ -235,6 +240,7 @@ def test_bootstrap_admin_creates_privileged_account_and_records_audit_source(tmp
     assert response.status_code == 201
     body = response.json()
     assert body["user"]["role"] == "admin"
+    assert body["user"]["roles"] == ["admin"]
 
     session_factory = build_session_factory(f"sqlite:///{tmp_path}/production.db")
     with session_scope(session_factory) as session:
@@ -281,3 +287,100 @@ def test_bootstrap_admin_rejects_second_privileged_bootstrap(tmp_path):
         code="conflict",
     )
     assert "bootstrap is already completed" in payload["detail"]
+
+
+def test_login_returns_available_roles_for_multi_role_account(tmp_path):
+    client = make_client(tmp_path)
+
+    register_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            role="member",
+            roles=["member", "admin"],
+            actor_id="hybrid-1",
+            member_code="MEM-001",
+        ),
+    )
+
+    assert register_response.status_code == 201
+    assert register_response.json()["user"]["roles"] == ["member", "admin"]
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={"username": "member1", "password": "correct-password"},
+    )
+
+    assert login_response.status_code == 200
+    assert login_response.json()["user"]["role"] == "member"
+    assert login_response.json()["user"]["roles"] == ["member", "admin"]
+
+
+def test_switch_role_updates_active_role_for_current_session(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            role="member",
+            roles=["member", "admin"],
+            actor_id="hybrid-1",
+            member_code="MEM-001",
+        ),
+    )
+    token = register_response.json()["access_token"]
+
+    response = client.post(
+        "/api/auth/switch-role",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role": "admin"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["access_token"] == token
+    assert response.json()["user"]["role"] == "admin"
+    assert response.json()["user"]["roles"] == ["member", "admin"]
+
+    request_context_response = client.get(
+        "/api/auth/request-context",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert request_context_response.status_code == 200
+    assert request_context_response.json()["role"] == "admin"
+    assert request_context_response.json()["available_roles"] == ["member", "admin"]
+
+
+def test_switch_role_rejects_unassigned_role(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post("/api/auth/register", json=register_payload())
+    token = register_response.json()["access_token"]
+
+    response = client.post(
+        "/api/auth/switch-role",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role": "admin"},
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="role 'admin' is not assigned to this account",
+    )
+
+
+def test_production_register_rejects_privileged_role_in_role_set(tmp_path):
+    client = make_client(tmp_path, runtime_config=make_production_runtime_config(tmp_path))
+
+    response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            role="member",
+            roles=["member", "admin"],
+        ),
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="self-service registration for role 'admin' is disabled",
+    )

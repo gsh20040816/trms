@@ -17,6 +17,8 @@ from trms_backend.domain.auth import (
     PrivilegedBootstrapAlreadyCompletedError,
     PrivilegedBootstrapDisabledError,
     PrivilegedSelfRegistrationDisabledError,
+    RoleNotAssignedError,
+    RoleSwitchInput,
     UserLoginInput,
     UserRegisterInput,
     UsernameAlreadyExistsError,
@@ -24,6 +26,7 @@ from trms_backend.domain.auth import (
     login_user,
     register_user,
     revoke_access_token,
+    switch_active_role,
 )
 
 
@@ -118,6 +121,30 @@ def build_auth_router(
     def me(identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)]):
         assert identity.user is not None
         return identity.user
+
+    @router.post("/switch-role")
+    def switch_role(
+        payload: RoleSwitchInput,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        authorization: Annotated[str | None, Header()] = None,
+    ):
+        assert identity.user is not None
+        access_token = extract_bearer_token(authorization)
+        if access_token is None:
+            raise build_invalid_bearer_token_exception()
+        try:
+            return switch_active_role(repository, access_token, payload.role)
+        except InvalidCredentialsError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(error),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from error
+        except RoleNotAssignedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
 
     @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
     def logout(

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
@@ -10,6 +10,7 @@ import {
   logoutCurrentSession,
   registerWithPassword,
   setMockSession,
+  switchCurrentRole,
   useAuthSession,
 } from "./auth-store";
 import { resolveAuthUiConfig, type AuthUiConfig } from "./auth-ui-config";
@@ -259,6 +260,31 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
               ? "当前是开发调试会话。"
               : `当前账号：${session.username ?? session.actorId}。`}
           </p>
+          {session.availableRoles.length > 1 ? (
+            <div className="inline-actions" aria-label="可切换身份">
+              {session.availableRoles.map((availableRole) => {
+                const availableRoleRoute = getRoleRouteOrThrow(availableRole);
+                const isActive = availableRole === session.role;
+                return (
+                  <button
+                    key={availableRole}
+                    className={isActive ? "route-link" : "route-link route-link-secondary"}
+                    disabled={isActive}
+                    type="button"
+                    onClick={() => {
+                      void switchCurrentRole(availableRole).catch((switchError: unknown) => {
+                        setError(switchError);
+                      });
+                    }}
+                  >
+                    {isActive
+                      ? `当前身份：${availableRoleRoute.loginLabel}`
+                      : `切换到${availableRoleRoute.loginLabel}`}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="inline-actions">
             <Link className="route-link" to={activeRoleRoute.path}>
               进入当前入口
@@ -284,6 +310,31 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
 export function ProtectedRoleRoute({ roleRoute }: { roleRoute: RoleRouteConfig }) {
   const session = useAuthSession();
   const location = useLocation();
+  const [switchFailure, setSwitchFailure] = useState<{
+    error: unknown;
+    role: UserRole;
+  } | null>(null);
+  const canSwitchToRole = session?.availableRoles.includes(roleRoute.role) ?? false;
+  const switchError = switchFailure?.role === roleRoute.role ? switchFailure.error : null;
+
+  useEffect(() => {
+    if (!session || session.role === roleRoute.role || !canSwitchToRole) {
+      return;
+    }
+
+    let isCancelled = false;
+    void switchCurrentRole(roleRoute.role).catch((error: unknown) => {
+      if (!isCancelled) {
+        setSwitchFailure({
+          error,
+          role: roleRoute.role,
+        });
+      }
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, [canSwitchToRole, roleRoute.role, session]);
 
   if (!session) {
     return (
@@ -295,17 +346,35 @@ export function ProtectedRoleRoute({ roleRoute }: { roleRoute: RoleRouteConfig }
   }
 
   if (session.role !== roleRoute.role) {
+    if (canSwitchToRole && !switchError) {
+      return (
+        <RoleShell
+          emphasis="切换身份"
+          title={`正在切换到${roleRoute.loginLabel}`}
+          summary="当前账号已绑定该角色，系统正在切换激活身份并进入对应工作台。"
+        >
+          <p className="status-note">
+            目标入口：{roleRoute.title}
+          </p>
+        </RoleShell>
+      );
+    }
     const currentRoleRoute = getRoleRouteOrThrow(session.role);
     return (
       <RoleShell
         emphasis="访问受限"
         title={`${roleRoute.title} 暂不可访问`}
-        summary={`当前登录身份不匹配；此入口仅允许${roleRoute.loginLabel}访问。`}
+        summary={
+          switchError
+            ? `切换到${roleRoute.loginLabel}失败；请稍后重试。`
+            : `当前登录身份不匹配；此入口仅允许${roleRoute.loginLabel}访问。`
+        }
       >
         <p className="status-note">
           当前身份为 {currentRoleRoute.loginLabel} / {session.displayName}
           {session.memberCode ? `（${session.memberCode}）` : ""}。
         </p>
+        {switchError ? <ApiErrorNotice error={switchError} /> : null}
         <div className="inline-actions">
           <Link className="route-link" to={currentRoleRoute.path}>
             进入我的入口

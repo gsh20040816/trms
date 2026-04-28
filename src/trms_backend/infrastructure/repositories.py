@@ -155,6 +155,7 @@ class SqlAlchemyAuthRepository(AuthRepository):
             username=data.username,
             password_hash=data.password_hash,
             role=data.role.value,
+            roles=[role.value for role in data.roles],
             actor_id=data.actor_id,
             display_name=data.display_name,
             member_code=data.member_code,
@@ -179,23 +180,27 @@ class SqlAlchemyAuthRepository(AuthRepository):
 
     def get_user_by_token_hash(self, token_hash: str) -> AuthenticatedUser | None:
         with session_scope(self._session_factory) as session:
-            row = session.scalars(
-                select(UserAccountRow)
+            record = session.execute(
+                select(UserAccountRow, AuthSessionRow.active_role)
                 .join(AuthSessionRow, AuthSessionRow.user_id == UserAccountRow.id)
                 .where(
                     AuthSessionRow.token_hash == token_hash,
                     AuthSessionRow.revoked_at.is_(None),
                 )
             ).first()
-            return _authenticated_user_from_row(row) if row else None
+            if record is None:
+                return None
+            row, active_role = record
+            return _authenticated_user_from_row(row, active_role=UserRole(active_role))
 
-    def create_session(self, *, user_id: str, token_hash: str) -> None:
+    def create_session(self, *, user_id: str, token_hash: str, active_role: UserRole) -> None:
         with session_scope(self._session_factory) as session:
             session.add(
                 AuthSessionRow(
                     id=str(uuid4()),
                     user_id=user_id,
                     token_hash=token_hash,
+                    active_role=active_role.value,
                     created_at=datetime.now(timezone.utc),
                     revoked_at=None,
                 )
@@ -215,15 +220,37 @@ class SqlAlchemyAuthRepository(AuthRepository):
             session.add(row)
             return True
 
+    def switch_session_active_role(
+        self,
+        *,
+        token_hash: str,
+        active_role: UserRole,
+    ) -> AuthenticatedUser | None:
+        with session_scope(self._session_factory) as session:
+            session_row = session.scalars(
+                select(AuthSessionRow).where(
+                    AuthSessionRow.token_hash == token_hash,
+                    AuthSessionRow.revoked_at.is_(None),
+                )
+            ).first()
+            if session_row is None:
+                return None
+            user_row = session.get(UserAccountRow, session_row.user_id)
+            if user_row is None:
+                return None
+            session_row.active_role = active_role.value
+            session.add(session_row)
+            return _authenticated_user_from_row(user_row, active_role=active_role)
+
     def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
-        normalized_roles = tuple(role.value for role in roles)
-        if not normalized_roles:
+        if not roles:
             return 0
         with session_scope(self._session_factory) as session:
-            return (
-                session.query(UserAccountRow)
-                .filter(UserAccountRow.role.in_(normalized_roles))
-                .count()
+            rows = session.scalars(select(UserAccountRow)).all()
+            return sum(
+                1
+                for row in rows
+                if any(role in _roles_from_row(row) for role in roles)
             )
 
 
@@ -1283,11 +1310,38 @@ def _global_invoice_config_from_row(row: GlobalInvoiceConfigRow) -> GlobalInvoic
     )
 
 
-def _authenticated_user_from_row(row: UserAccountRow) -> AuthenticatedUser:
+def _roles_from_row(row: UserAccountRow) -> list[UserRole]:
+    normalized_roles: list[UserRole] = []
+    for raw_role in row.roles or [row.role]:
+        role = UserRole(raw_role)
+        if role not in normalized_roles:
+            normalized_roles.append(role)
+    if not normalized_roles:
+        normalized_roles.append(UserRole(row.role))
+    return normalized_roles
+
+
+def _resolve_active_role(row: UserAccountRow, active_role: UserRole | None) -> UserRole:
+    available_roles = _roles_from_row(row)
+    if active_role is not None and active_role in available_roles:
+        return active_role
+    fallback_role = UserRole(row.role)
+    if fallback_role in available_roles:
+        return fallback_role
+    return available_roles[0]
+
+
+def _authenticated_user_from_row(
+    row: UserAccountRow,
+    *,
+    active_role: UserRole | None = None,
+) -> AuthenticatedUser:
+    roles = _roles_from_row(row)
     return AuthenticatedUser(
         id=row.id,
         username=row.username,
-        role=UserRole(row.role),
+        role=_resolve_active_role(row, active_role),
+        roles=roles,
         actor_id=row.actor_id,
         display_name=row.display_name,
         member_code=row.member_code,
@@ -1297,11 +1351,13 @@ def _authenticated_user_from_row(row: UserAccountRow) -> AuthenticatedUser:
 
 
 def _stored_auth_user_from_row(row: UserAccountRow) -> StoredAuthUser:
+    roles = _roles_from_row(row)
     return StoredAuthUser(
         id=row.id,
         username=row.username,
         password_hash=row.password_hash,
         role=UserRole(row.role),
+        roles=roles,
         actor_id=row.actor_id,
         display_name=row.display_name,
         member_code=row.member_code,

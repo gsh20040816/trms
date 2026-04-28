@@ -32,6 +32,7 @@ class UserRegisterInput(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=256)
     role: UserRole
+    roles: list[UserRole] | None = None
     display_name: str | None = Field(default=None, max_length=128)
     actor_id: str | None = Field(default=None, max_length=128)
     member_code: str | None = Field(default=None, max_length=128)
@@ -39,6 +40,7 @@ class UserRegisterInput(BaseModel):
     @model_validator(mode="after")
     def normalize_fields(self) -> "UserRegisterInput":
         self.username = _normalize_required(self.username)
+        self.roles = _normalize_roles(self.roles, self.role)
         self.display_name = _normalize_optional(self.display_name)
         self.actor_id = _normalize_optional(self.actor_id)
         self.member_code = _normalize_optional(self.member_code)
@@ -59,6 +61,7 @@ class UserCreate(BaseModel):
     username: str
     password_hash: str
     role: UserRole
+    roles: list[UserRole]
     actor_id: str
     display_name: str
     member_code: str | None
@@ -70,6 +73,7 @@ class AuthenticatedUser(BaseModel):
     id: str
     username: str
     role: UserRole
+    roles: list[UserRole]
     actor_id: str
     display_name: str
     member_code: str | None
@@ -85,6 +89,10 @@ class AuthSession(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: AuthenticatedUser
+
+
+class RoleSwitchInput(BaseModel):
+    role: UserRole
 
 
 class UsernameAlreadyExistsError(ValueError):
@@ -126,6 +134,11 @@ class PrivilegedBootstrapAlreadyCompletedError(ValueError):
         )
 
 
+class RoleNotAssignedError(ValueError):
+    def __init__(self, role: UserRole) -> None:
+        super().__init__(f"role '{role.value}' is not assigned to this account")
+
+
 class AuthRepository(Protocol):
     def create_user(self, data: UserCreate) -> AuthenticatedUser:
         raise NotImplementedError
@@ -136,10 +149,18 @@ class AuthRepository(Protocol):
     def get_user_by_token_hash(self, token_hash: str) -> AuthenticatedUser | None:
         raise NotImplementedError
 
-    def create_session(self, *, user_id: str, token_hash: str) -> None:
+    def create_session(self, *, user_id: str, token_hash: str, active_role: UserRole) -> None:
         raise NotImplementedError
 
     def revoke_session(self, *, token_hash: str) -> bool:
+        raise NotImplementedError
+
+    def switch_session_active_role(
+        self,
+        *,
+        token_hash: str,
+        active_role: UserRole,
+    ) -> AuthenticatedUser | None:
         raise NotImplementedError
 
     def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
@@ -152,8 +173,11 @@ def register_user(
     *,
     allow_privileged_self_registration: bool = True,
 ) -> AuthSession:
-    if _is_privileged_role(payload.role) and not allow_privileged_self_registration:
-        raise PrivilegedSelfRegistrationDisabledError(payload.role)
+    requested_roles = _normalize_roles(payload.roles, payload.role)
+    if not allow_privileged_self_registration:
+        privileged_role = next((role for role in requested_roles if _is_privileged_role(role)), None)
+        if privileged_role is not None:
+            raise PrivilegedSelfRegistrationDisabledError(privileged_role)
     user = repository.create_user(
         _build_user_create(
             payload,
@@ -217,6 +241,30 @@ def revoke_access_token(repository: AuthRepository, access_token: str) -> bool:
     return repository.revoke_session(token_hash=hash_token(normalized_token))
 
 
+def switch_active_role(
+    repository: AuthRepository,
+    access_token: str,
+    target_role: UserRole,
+) -> AuthSession:
+    normalized_token = access_token.strip()
+    if not normalized_token:
+        raise InvalidCredentialsError()
+
+    user = repository.get_user_by_token_hash(hash_token(normalized_token))
+    if user is None:
+        raise InvalidCredentialsError()
+    if target_role not in user.roles:
+        raise RoleNotAssignedError(target_role)
+
+    switched_user = repository.switch_session_active_role(
+        token_hash=hash_token(normalized_token),
+        active_role=target_role,
+    )
+    if switched_user is None:
+        raise InvalidCredentialsError()
+    return AuthSession(access_token=normalized_token, user=switched_user)
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(PASSWORD_SALT_BYTES)
     digest = hashlib.pbkdf2_hmac(
@@ -262,7 +310,11 @@ def hash_token(access_token: str) -> str:
 
 def _create_auth_session(repository: AuthRepository, user: AuthenticatedUser) -> AuthSession:
     access_token = secrets.token_urlsafe(ACCESS_TOKEN_BYTES)
-    repository.create_session(user_id=user.id, token_hash=hash_token(access_token))
+    repository.create_session(
+        user_id=user.id,
+        token_hash=hash_token(access_token),
+        active_role=user.role,
+    )
     return AuthSession(access_token=access_token, user=user)
 
 
@@ -274,11 +326,13 @@ def _build_user_create(
     username = payload.username.lower()
     display_name = payload.display_name or payload.username
     actor_id = payload.actor_id or payload.username
-    member_code = payload.member_code if payload.role is UserRole.MEMBER else None
+    roles = _normalize_roles(payload.roles, payload.role)
+    member_code = payload.member_code if UserRole.MEMBER in roles else None
     return UserCreate(
         username=username,
         password_hash=hash_password(payload.password),
         role=payload.role,
+        roles=roles,
         actor_id=actor_id,
         display_name=display_name,
         member_code=member_code,
@@ -302,3 +356,16 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized if normalized else None
+
+
+def _normalize_roles(
+    roles: list[UserRole] | None,
+    fallback_role: UserRole,
+) -> list[UserRole]:
+    normalized_roles: list[UserRole] = []
+    for role in roles or []:
+        if role not in normalized_roles:
+            normalized_roles.append(role)
+    if fallback_role not in normalized_roles:
+        normalized_roles.insert(0, fallback_role)
+    return normalized_roles

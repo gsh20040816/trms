@@ -46,11 +46,12 @@ function normalizeAvailableRoles(
   return [fallbackRole];
 }
 
-function createSession(role: UserRole): AuthSession {
+function createSession(role: UserRole, availableRoles?: UserRole[]): AuthSession {
   const roleRoute = getRoleRouteOrThrow(role);
+  const normalizedAvailableRoles = normalizeAvailableRoles(availableRoles, role);
   return {
     role,
-    availableRoles: [role],
+    availableRoles: normalizedAvailableRoles,
     actorId: roleRoute.mockActorId,
     displayName: roleRoute.mockDisplayName,
     memberCode: roleRoute.mockMemberCode,
@@ -199,8 +200,8 @@ export function buildLoginPath(nextPath?: string) {
   return `/login?${searchParams.toString()}`;
 }
 
-export function setMockSession(role: UserRole) {
-  currentSession = createSession(role);
+export function setMockSession(role: UserRole, availableRoles?: UserRole[]) {
+  currentSession = createSession(role, availableRoles);
   persistSession(currentSession);
   emitChange();
 }
@@ -235,6 +236,31 @@ export async function registerWithPassword(payload: {
 
 export async function loginWithPassword(payload: { username: string; password: string }) {
   const response = await trmsApi.login(payload);
+  currentSession = createSessionFromAuthResponse(response);
+  persistSession(currentSession);
+  emitChange();
+  return currentSession;
+}
+
+export async function switchCurrentRole(role: UserRole) {
+  if (!currentSession || currentSession.role === role) {
+    return currentSession;
+  }
+  if (!currentSession.availableRoles.includes(role)) {
+    throw new Error(`Current account cannot switch to role '${role}'`);
+  }
+
+  if (currentSession.isMock || !currentSession.accessToken) {
+    currentSession = {
+      ...currentSession,
+      role,
+    };
+    persistSession(currentSession);
+    emitChange();
+    return currentSession;
+  }
+
+  const response = await trmsApi.switchRole(currentSession.accessToken, { role });
   currentSession = createSessionFromAuthResponse(response);
   persistSession(currentSession);
   emitChange();

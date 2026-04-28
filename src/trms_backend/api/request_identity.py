@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Callable
 
 from fastapi import Depends, Header, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from trms_backend.domain.auth import (
     AuthRepository,
@@ -23,6 +23,7 @@ class RequestIdentity(BaseModel):
     is_authenticated: bool
     source: RequestIdentitySource
     role: UserRole | None = None
+    available_roles: list[UserRole] = Field(default_factory=list)
     actor_id: str | None = None
     member_id: str | None = None
     user: AuthenticatedUser | None = None
@@ -92,6 +93,7 @@ def resolve_request_identity_from_authorization(
         is_authenticated=True,
         source=RequestIdentitySource.BEARER,
         role=user.role,
+        available_roles=user.roles,
         actor_id=user.actor_id,
         member_id=user.member_code,
         user=user,

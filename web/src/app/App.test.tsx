@@ -61,6 +61,7 @@ describe("web app account auth", () => {
             id: "user-admin",
             username: "admin",
             role: "admin",
+            roles: ["admin"],
             actor_id: "admin-1",
             display_name: "张管理员",
             member_code: null,
@@ -177,6 +178,19 @@ describe("web app account auth", () => {
 
     expect(screen.getByRole("heading", { name: "系统管理 暂不可访问" })).toBeInTheDocument();
     expect(screen.getByText("当前身份为 成员 / 王队员（MEM-001）。")).toBeInTheDocument();
+  });
+
+  it("switches to another bound role when entering its workspace", async () => {
+    setMockSession("member", ["member", "system_admin"]);
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/system"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "系统管理员工作台" })).toBeInTheDocument();
+    expect(screen.getByText("这里集中处理账号、角色、全局配置和运行状态。普通报销任务入口不会显示技术诊断信息。")).toBeInTheDocument();
   });
 
   it("shows only the current member workspace on the logged-in home page", () => {

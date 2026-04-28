@@ -64,7 +64,7 @@ export type AuthenticatedUser = {
   id: string;
   username: string;
   role: UserRole;
-  roles?: UserRole[];
+  roles: UserRole[];
   actor_id: string;
   display_name: string;
   member_code: string | null;
@@ -90,6 +90,10 @@ export type RegisterPayload = {
 export type LoginPayload = {
   username: string;
   password: string;
+};
+
+export type RoleSwitchPayload = {
+  role: UserRole;
 };
 
 export type ReimbursementTask = {

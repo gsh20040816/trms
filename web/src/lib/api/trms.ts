@@ -25,6 +25,7 @@ import type {
   RecognitionTaskList,
   RegisterPayload,
   ReimbursementTask,
+  RoleSwitchPayload,
   TaskCreateInput,
   TaskExportBoundary,
   TaskExportJobRecord,
@@ -122,6 +123,16 @@ export const trmsApi = {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+    });
+  },
+
+  switchRole(accessToken: string, payload: RoleSwitchPayload) {
+    return apiClient.request<AuthSessionResponse>("/auth/switch-role", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: payload,
     });
   },
 
