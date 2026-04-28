@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-04-28 10:21 - Establish frontend main-flow E2E placeholder
+
+### 完成内容
+- 新增 `web/src/app/main-flow-e2e-placeholder.test.tsx`，用单个状态化 mock API 测试串起第一阶段前端主流程占位：
+  - 管理员创建任务并进入任务列表；
+  - 管理员将草稿任务切换为开放提交；
+  - 成员上传发票材料；
+  - 管理员录入发票字段；
+  - 管理员保存费用分摊；
+  - 成员确认个人费用；
+  - 管理员查看复核总览并进入导出管理页。
+- 本测试明确把 E2E 边界固定为 `Vitest + Testing Library + createMemoryRouter + mock API`：
+  - 不接真实浏览器自动化；
+  - 不接真实后端、AI、Telegram、邮件或对象存储；
+  - 重点验证前端主流程路由、页面协作和关键交互是否仍能串联。
+- 将 `TASKS.md` 中“建立前端主流程 E2E 占位”标记为已完成。
+
+### 修改文件
+- `web/src/app/main-flow-e2e-placeholder.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前前端虽然已经具备任务创建、材料上传、发票录入、分摊、确认、复核和导出等分页面测试，但这些测试大多按单页拆开，缺少一条从“任务创建后如何一路走到导出入口”的跨页面主流程占位。
+- 结果是单页回归虽然在，但页面之间的路由衔接、角色切换和前后步骤依赖没有被统一锁定；后续任何页面改动都可能让主链路断在中间，却不一定会被现有页面级测试及时发现。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- main-flow-e2e-placeholder`
+    - 1 个前端测试文件、1 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 165 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本任务是“E2E 占位”而不是真浏览器端到端自动化：测试重点是固定第一阶段主流程的前端协作边界，而不是引入新的浏览器测试栈。
+- pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守采用仓库现有的 Vitest/Memory Router 测试基础设施完成主流程占位，而不是额外引入 Playwright；后续若需要真实浏览器级回归，可在这一占位链路基础上迁移或并行补充。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立 CLI 项目骨架”，优先固定 CLI 入口、最小命令集和本地运行方式，再补 JSON 输出与登录占位。
+
 ## 2026-04-28 10:12 - Establish frontend form and upload component tests
 
 ### 完成内容
