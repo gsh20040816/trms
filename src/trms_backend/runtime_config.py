@@ -14,7 +14,7 @@ AsyncJobMode = Literal["in_process", "worker"]
 DEFAULT_DATABASE_URL = "sqlite:///./trms.db"
 DEFAULT_MATERIAL_STORAGE_DIR = "./data/materials"
 DEFAULT_API_HOST = "127.0.0.1"
-DEFAULT_API_PORT = 8000
+DEFAULT_API_PORT = 9876
 DEFAULT_CORS_ALLOWED_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://localhost:5173",
@@ -348,7 +348,7 @@ def load_runtime_config(
     llm_timeout_seconds: str | float | int | None = None,
     llm_max_retries: str | int | None = None,
 ) -> RuntimeConfig:
-    environment_variables = _load_environment_variables(env)
+    environment_variables = os.environ if env is None else env
     raw_environment = environment if environment is not None else environment_variables.get("TRMS_ENV")
     normalized_environment = (raw_environment or "development").strip().lower()
     if normalized_environment not in VALID_ENVIRONMENTS:
@@ -591,7 +591,7 @@ def _resolve_value(explicit_value: object | None, environment_value: object | No
     return environment_value
 
 
-def _load_environment_variables(env: Mapping[str, str] | None) -> Mapping[str, str]:
+def load_runtime_environment_variables(env: Mapping[str, str] | None = None) -> Mapping[str, str]:
     if env is not None:
         return env
 

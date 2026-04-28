@@ -2,7 +2,7 @@
 
 更新时间：2026-04-28
 
-本文档为第一阶段提供最小可运行的部署基线，对应 `deploy/docker-compose.yml`、`deploy/Dockerfile.api`、`deploy/Dockerfile.web` 和根目录 `.env.example`。
+本文档为第一阶段提供最小可运行的部署基线，对应 `deploy/docker-compose.yml`、`deploy/Dockerfile.api`、`deploy/Dockerfile.web` 和根目录 `.env.example`。本地开发环境建议改用根目录 `.env.development.example` 复制为 `.env`。
 
 根目录 `.env` 也是当前仓库统一的运行配置文件：后端 `uv run python -m trms_backend`、worker 和 `web` 前端开发/构建流程都会默认读取这同一份文件；若 shell 中显式传入同名环境变量，则以显式环境变量为准。
 

@@ -1,5 +1,75 @@
 # WORKLOG
 
+## 2026-04-28 22:05 - Change default dev port to 9876 and add development env template
+
+### 完成内容
+- 修改默认开发端口：
+  - `src/trms_backend/runtime_config.py` 的默认 API 端口从 `8000` 调整为 `9876`；
+  - `src/trms_cli/cli.py` 的默认后端地址同步改为 `http://127.0.0.1:9876`；
+  - `tests/test_runtime_config.py` 的开发默认值断言同步更新。
+- 收口 `.env` 自动加载边界：
+  - `src/trms_backend/runtime_config.py` 不再在通用配置加载阶段隐式读取根目录 `.env`，避免测试和纯模块导入被本地生产配置污染；
+  - `src/trms_backend/__main__.py` 改为只在 `python -m trms_backend` / `python -m trms_backend worker` 入口合并根目录 `.env` 与当前进程环境变量；
+  - 保留“本地直跑自动读取 `.env`”的行为，同时让 `pytest` 和直接 `import trms_backend.main` 继续使用显式传入配置或进程环境。
+- 收口容器与部署默认端口：
+  - 更新 `deploy/Dockerfile.api` 的 `EXPOSE` 和默认启动端口到 `9876`；
+  - 更新 `deploy/reverse-proxy.nginx.conf` 的上游目标端口到 `9876`；
+  - 更新 `deploy/docker-compose.yml` 的 API 健康检查端口到 `9876`；
+  - 更新 `scripts/backup-restore-drill.sh` 生成的隔离环境变量模板，使其与新的默认端口一致。
+- 补充开发环境模板：
+  - 新增根目录 `.env.development.example`，覆盖本地 SQLite、本地材料目录、`9876` API 端口、`5173` 前端端口和本地联调用 `VITE_API_BASE_URL`；
+  - 保留根目录 `.env.example` 作为部署 / 生产基线模板；
+  - 更新 `.gitignore` 白名单，确保新的开发模板会被纳入版本控制。
+- 更新文档：
+  - `README.md` 明确区分生产模板 `.env.example` 与开发模板 `.env.development.example`；
+  - 本地开发默认 `TRMS_PUBLIC_API_BASE_URL` 和 `TRMS_API_PORT` 示例同步改为 `9876`；
+  - 部署文档补充“本地开发优先使用开发模板”的说明。
+
+### 根因
+- 当前仓库虽然已经统一根目录 `.env` 入口，但默认开发端口仍是 `8000`，且这个值散落在后端默认值、CLI 默认地址、容器启动参数、反向代理和健康检查中。
+- 如果只修改后端默认常量，不同步调整这些入口，最终会出现“本地直跑默认 9876，但 CLI、容器和代理仍默认 8000”的不一致状态，开发联调和部署自检都会产生假故障。
+- 同时，仓库当前根目录已有一份部署型 `.env`；如果在通用配置加载函数里全局隐式读取 `.env`，`pytest` 导入 `trms_backend.main` 时会直接吃到生产数据库连接串，导致测试阶段错误连向不存在的 `postgres` 主机。
+
+### 修改文件
+- `.env.development.example`
+- `.env.example`
+- `.gitignore`
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+- `deploy/Dockerfile.api`
+- `deploy/docker-compose.yml`
+- `deploy/reverse-proxy.nginx.conf`
+- `docs/生产部署清单与Docker Compose基线.md`
+- `scripts/backup-restore-drill.sh`
+- `src/trms_backend/runtime_config.py`
+- `src/trms_backend/__main__.py`
+- `src/trms_cli/cli.py`
+- `tests/test_runtime_config.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_runtime_config.py tests/test_health_api.py`
+    - 18 个测试通过
+  - `uv run pytest tests/test_async_jobs.py tests/test_cli_login.py tests/test_runtime_config.py`
+    - 26 个测试通过
+  - `env UV_CACHE_DIR=/home/gsh/.cache/uv ./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 316 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - 调整 `.env` 自动加载边界前，曾因根目录现有部署型 `.env` 被测试导入阶段误读取，触发对 `postgres` 主机的错误连接；本轮已通过把 `.env` 合并收口到 `python -m trms_backend` / `worker` 入口修复该问题；
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上后两项均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：用户要求的“开发环境 `.env.example`”是新增一份本地开发专用模板，而不是替换现有部署模板，因此本轮采用 `.env.development.example` 命名并保留原 `.env.example` 作为部署基线。
+
 ## 2026-04-28 21:10 - Unify root .env configuration entry
 
 ### 完成内容

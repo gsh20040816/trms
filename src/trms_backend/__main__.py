@@ -26,7 +26,11 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyValidationRepository,
 )
 from trms_backend.infrastructure.storage import build_material_file_storage
-from trms_backend.runtime_config import RuntimeConfig, load_runtime_config
+from trms_backend.runtime_config import (
+    RuntimeConfig,
+    load_runtime_config,
+    load_runtime_environment_variables,
+)
 
 
 def run_api_command(argv: Sequence[str]) -> int:
@@ -40,7 +44,13 @@ def run_api_command(argv: Sequence[str]) -> int:
     )
     args = parser.parse_args(list(argv))
 
-    config = load_runtime_config(api_host=args.host, api_port=args.port)
+    environment_variables = load_runtime_environment_variables()
+    config = load_runtime_config(
+        env=environment_variables,
+        api_host=args.host,
+        api_port=args.port,
+    )
+    os.environ.update(environment_variables)
     os.environ["TRMS_API_HOST"] = config.api_host
     os.environ["TRMS_API_PORT"] = str(config.api_port)
 
@@ -121,7 +131,7 @@ def run_worker_command(argv: Sequence[str]) -> int:
     )
     args = parser.parse_args(list(argv))
 
-    config = load_runtime_config()
+    config = load_runtime_config(env=load_runtime_environment_variables())
     worker = build_async_job_worker(config)
     if args.once:
         worker.run_once()

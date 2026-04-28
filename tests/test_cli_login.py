@@ -64,7 +64,7 @@ def test_login_command_reports_json_without_printing_secrets(monkeypatch, tmp_pa
         "ok": True,
         "command": "login",
         "data": {
-            "base_url": "http://127.0.0.1:8000",
+            "base_url": "http://127.0.0.1:9876",
             "member_id": member_id,
             "token_store_backend": "local_file",
             "token_store_path": str(config_dir / TOKEN_STORE_FILENAME),

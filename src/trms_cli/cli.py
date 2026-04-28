@@ -20,7 +20,7 @@ from trms_backend.domain.materials import (
 )
 from trms_cli.token_store import TokenStoreError, load_token_session, save_token_session
 
-DEFAULT_BASE_URL = os.getenv("TRMS_API_BASE_URL", "http://127.0.0.1:8000")
+DEFAULT_BASE_URL = os.getenv("TRMS_API_BASE_URL", "http://127.0.0.1:9876")
 CLI_JSON_SCHEMA_VERSION = "trms-cli.v1"
 CLI_PROTOCOL_VERSION = "1"
 CLI_CLIENT_HEADER = "X-TRMS-Client"
@@ -392,7 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
     login_parser.add_argument(
         "--base-url",
         default=DEFAULT_BASE_URL,
-        help="TRMS API base URL, defaults to TRMS_API_BASE_URL or http://127.0.0.1:8000",
+        help="TRMS API base URL, defaults to TRMS_API_BASE_URL or http://127.0.0.1:9876",
     )
     login_parser.add_argument(
         "--member-id",
@@ -411,7 +411,7 @@ def build_parser() -> argparse.ArgumentParser:
     health_parser.add_argument(
         "--base-url",
         default=DEFAULT_BASE_URL,
-        help="TRMS API base URL, defaults to TRMS_API_BASE_URL or http://127.0.0.1:8000",
+        help="TRMS API base URL, defaults to TRMS_API_BASE_URL or http://127.0.0.1:9876",
     )
     health_parser.add_argument(
         "--json",

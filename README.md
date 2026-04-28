@@ -9,10 +9,13 @@
 
 ## 统一配置文件
 
-仓库统一使用根目录 `.env` 作为运行配置文件，模板为根目录 `.env.example`：
+仓库统一使用根目录 `.env` 作为运行配置文件：
+
+- 部署 / 生产基线模板：根目录 `.env.example`
+- 本地开发模板：根目录 `.env.development.example`
 
 ```bash
-cp .env.example .env
+cp .env.development.example .env
 ```
 
 配置生效边界如下：
@@ -76,9 +79,9 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_STORAGE_BACKEND=local`
 - `MATERIAL_STORAGE_DIR=./data/materials`
 - `TRMS_CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173`
-- `TRMS_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api`
+- `TRMS_PUBLIC_API_BASE_URL=http://127.0.0.1:9876/api`
 - `TRMS_API_HOST=127.0.0.1`
-- `TRMS_API_PORT=8000`
+- `TRMS_API_PORT=9876`
 
 本地跨端口联调示例：
 
@@ -115,9 +118,9 @@ TRMS_STORAGE_S3_KEY_PREFIX=prod \
 TRMS_CORS_ALLOWED_ORIGINS=https://trms.example.edu \
 TRMS_PUBLIC_API_BASE_URL=https://trms.example.edu/api \
 TRMS_API_HOST=0.0.0.0 \
-TRMS_API_PORT=8000 \
+TRMS_API_PORT=9876 \
 uv run alembic upgrade head && \
-uv run python -m trms_backend --host 0.0.0.0 --port 8000
+uv run python -m trms_backend --host 0.0.0.0 --port 9876
 ```
 
 OpenAI 兼容 LLM Provider 配置边界：

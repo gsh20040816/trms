@@ -5,7 +5,11 @@ from fastapi.testclient import TestClient
 
 import trms_backend.runtime_config as runtime_config_module
 from trms_backend.main import create_app
-from trms_backend.runtime_config import RuntimeConfigError, load_runtime_config
+from trms_backend.runtime_config import (
+    RuntimeConfigError,
+    load_runtime_config,
+    load_runtime_environment_variables,
+)
 
 
 def test_load_runtime_config_uses_development_defaults():
@@ -19,9 +23,9 @@ def test_load_runtime_config_uses_development_defaults():
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     )
-    assert config.public_api_base_url == "http://127.0.0.1:8000/api"
+    assert config.public_api_base_url == "http://127.0.0.1:9876/api"
     assert config.api_host == "127.0.0.1"
-    assert config.api_port == 8000
+    assert config.api_port == 9876
     assert config.async_jobs.mode == "in_process"
     assert config.async_jobs.worker_poll_interval_seconds == 5
     assert config.auth.allow_admin_self_register is True
@@ -29,7 +33,7 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.llm_provider is None
 
 
-def test_load_runtime_config_reads_root_dotenv_file(monkeypatch, tmp_path):
+def test_load_runtime_environment_variables_reads_root_dotenv_file(monkeypatch, tmp_path):
     dotenv_path = tmp_path / ".env"
     dotenv_path.write_text(
         "\n".join(
@@ -54,7 +58,8 @@ def test_load_runtime_config_reads_root_dotenv_file(monkeypatch, tmp_path):
     monkeypatch.delenv("TRMS_LLM_API_KEY", raising=False)
     monkeypatch.delenv("TRMS_LLM_MODEL", raising=False)
 
-    config = load_runtime_config()
+    environment = load_runtime_environment_variables()
+    config = load_runtime_config(env=environment)
 
     assert config.api_host == "0.0.0.0"
     assert config.api_port == 8100
@@ -72,7 +77,7 @@ def test_process_environment_overrides_root_dotenv(monkeypatch, tmp_path):
     monkeypatch.setattr(runtime_config_module, "DEFAULT_DOTENV_PATH", dotenv_path)
     monkeypatch.setenv("TRMS_API_PORT", "8200")
 
-    config = load_runtime_config()
+    config = load_runtime_config(env=load_runtime_environment_variables())
 
     assert config.api_port == 8200
 

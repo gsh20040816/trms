@@ -64,7 +64,8 @@ def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
         def run_once(self) -> None:
             calls.append("run_once")
 
-    monkeypatch.setattr(backend_main, "load_runtime_config", lambda: config)
+    monkeypatch.setattr(backend_main, "load_runtime_config", lambda **_: config)
+    monkeypatch.setattr(backend_main, "load_runtime_environment_variables", lambda: {})
     monkeypatch.setattr(backend_main, "build_async_job_worker", lambda runtime_config: FakeWorker())
 
     exit_code = backend_main.main(["worker", "--once"])
@@ -80,8 +81,9 @@ def test_backend_main_keeps_legacy_api_entrypoint(monkeypatch):
     monkeypatch.setattr(
         backend_main,
         "load_runtime_config",
-        lambda api_host=None, api_port=None: config,
+        lambda api_host=None, api_port=None, env=None: config,
     )
+    monkeypatch.setattr(backend_main, "load_runtime_environment_variables", lambda: {})
     monkeypatch.setattr(
         backend_main.uvicorn,
         "run",
