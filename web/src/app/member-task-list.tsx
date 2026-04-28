@@ -159,6 +159,12 @@ export function MemberTaskListPage() {
                 >
                   查看材料状态
                 </Link>
+                <Link
+                  className="route-link route-link-secondary"
+                  to={`/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`}
+                >
+                  确认费用明细
+                </Link>
                 {task.status === "open" ? (
                   <Link
                     className="route-link"

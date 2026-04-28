@@ -104,6 +104,10 @@ describe("MemberTaskListPage", () => {
       "href",
       "/member/materials/status?taskId=TASK-OPEN",
     );
+    expect(within(taskCard).getByRole("link", { name: "确认费用明细" })).toHaveAttribute(
+      "href",
+      "/member/expenses/confirm?taskId=TASK-OPEN",
+    );
     expect(screen.queryByText("CCPC Final")).not.toBeInTheDocument();
   });
 

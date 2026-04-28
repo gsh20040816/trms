@@ -350,6 +350,51 @@ export type TaskReviewSummaryInvoiceItem = {
   splits: TaskReviewSummarySplitItem[];
 };
 
+export type ExpenseDetailScope = "member" | "task";
+
+export type ExpenseDetailInvoiceSnapshot = {
+  id: string;
+  material_id: string;
+  invoice_number: string;
+  issue_date: ApiDate | null;
+  transaction_time: ApiDateTime | null;
+  buyer_name: string;
+  seller_name: string | null;
+  amount_cents: number;
+  expense_type: ExpenseType;
+  created_at: ApiDateTime;
+  updated_at: ApiDateTime;
+};
+
+export type ExpenseDetailConfirmationSnapshot = {
+  id: string;
+  member_id: string;
+  split_version: number;
+  status: ConfirmationStatus;
+  dispute_reason: string | null;
+  confirmed_at: ApiDateTime;
+  updated_at: ApiDateTime;
+};
+
+export type ExpenseDetailItem = {
+  split_id: string;
+  split_version: number;
+  member_id: string;
+  amount_cents: number;
+  note: string | null;
+  created_at: ApiDateTime;
+  updated_at: ApiDateTime;
+  invoice: ExpenseDetailInvoiceSnapshot;
+  confirmation: ExpenseDetailConfirmationSnapshot | null;
+};
+
+export type ExpenseDetailList = {
+  actor_id: string;
+  scope: ExpenseDetailScope;
+  total_amount_cents: number;
+  items: ExpenseDetailItem[];
+};
+
 export type OverdueConfirmationList = {
   task_id: string;
   administrator_id: string;

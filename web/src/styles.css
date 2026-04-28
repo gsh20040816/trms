@@ -588,12 +588,31 @@ select {
   gap: 20px;
 }
 
+.member-confirmation-list {
+  display: grid;
+  gap: 20px;
+}
+
 .member-status-card {
+  max-width: none;
+}
+
+.member-confirmation-card {
   max-width: none;
 }
 
 .member-status-meta-grid {
   margin-top: 18px;
+}
+
+.confirmation-reason-field {
+  margin-top: 18px;
+}
+
+.confirmation-feedback {
+  margin: 14px 0 0;
+  color: #0d5a34;
+  font-weight: 700;
 }
 
 .member-status-section {

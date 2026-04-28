@@ -1,5 +1,60 @@
 # WORKLOG
 
+## 2026-04-28 09:08 - Implement member expense confirmation page
+
+### 完成内容
+- 为成员入口补齐费用确认页面：
+  - 新增 `web/src/app/member-expense-confirmation.tsx`，在 `/member/expenses/confirm` 按任务展示当前成员本人相关的费用明细、归属金额、分摊版本、关联发票摘要和辅助材料摘要；
+  - 页面只复用现有 `GET /api/tasks/{taskId}/expense-details`、`GET /api/invoices/{invoice_id}/supporting-materials` 和 `PUT /api/splits/{split_id}/confirmation`，不新增后端接口。
+- 打通成员入口：
+  - 更新 `web/src/app/routes.tsx` 注册成员确认路由；
+  - 更新 `web/src/app/member-task-list.tsx`，从成员任务列表增加“确认费用明细”入口。
+- 补齐前端类型与测试：
+  - 扩展 `web/src/lib/api/types.ts` 和 `web/src/lib/api/trms.ts`，补齐费用明细和关联附件列表调用边界；
+  - 新增 `web/src/app/member-expense-confirmation.test.tsx`，覆盖“展示个人费用与附件摘要并确认”“异议原因必填并可提交异议”“分摊版本失效时提示刷新”；
+  - 更新 `web/src/app/member-task-list.test.tsx`，覆盖成员任务卡片到费用确认页的导航入口。
+- 将 `TASKS.md` 中“实现成员费用确认页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/member-expense-confirmation.tsx`
+- `web/src/app/member-expense-confirmation.test.tsx`
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 前一轮管理员已经具备发票录入与分摊编辑能力，但成员端仍缺少“查看自己最终被分到哪些费用，并对金额作确认或提出异议”的页面，导致“分摊完成 -> 成员确认 -> 管理员最终复核”的 Web 主链路仍然断开。
+- 后端实际上已经提供成员费用明细查询、分摊确认/异议提交和关联附件列表接口，当前缺口集中在成员前端的路由、聚合展示和失效版本提示，而不是新的后端业务实现。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- member-expense-confirmation member-task-list`
+    - 2 个前端测试文件、5 个测试通过
+  - `cd web && npm run lint`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 161 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，12 个前端测试文件、34 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+- 说明：
+  - pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 成员确认页当前按任务维度选择，并只展示 `expense-details` 接口返回的“当前成员本人相关分摊”；不会在前端推断或暴露无关成员费用。
+- 分摊版本过旧或已失效的提示当前保守地基于服务端返回 `404 split not found` 识别；页面不会把该失败伪装成确认成功，而是明确提示成员刷新最新明细后再提交。
+- 关联附件摘要当前只展示已由后端正式关联到发票的辅助材料；如果成员已上传但管理员尚未关联，页面不会自行猜测“应该属于哪张发票”。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现管理员复核总览页面”，直接复用本轮已接入的成员确认状态、异议展示和分摊版本语义。
+
 ## 2026-04-28 08:56 - Implement admin split editor page
 
 ### 完成内容

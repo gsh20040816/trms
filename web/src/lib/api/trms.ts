@@ -4,6 +4,7 @@ import type {
   ApiListResponse,
   ConfirmationRecord,
   ConfirmationSubmit,
+  ExpenseDetailList,
   ExpenseSplitRecord,
   ExpenseSplitReplace,
   FinanceDraftExport,
@@ -60,6 +61,12 @@ export const trmsApi = {
   getTaskReviewSummary(taskId: string, actorId: string) {
     return apiClient.request<TaskReviewSummary>(
       `/tasks/${encodeSegment(taskId)}/review-summary${buildQuery({ actor_id: actorId })}`,
+    );
+  },
+
+  listTaskExpenseDetails(taskId: string, actorId: string) {
+    return apiClient.request<ExpenseDetailList>(
+      `/tasks/${encodeSegment(taskId)}/expense-details${buildQuery({ actor_id: actorId })}`,
     );
   },
 
@@ -138,6 +145,12 @@ export const trmsApi = {
   listInvoiceValidations(invoiceId: string) {
     return apiClient.request<ApiListResponse<ValidationResult>>(
       `/invoices/${encodeSegment(invoiceId)}/validations`,
+    );
+  },
+
+  listInvoiceSupportingMaterials(invoiceId: string) {
+    return apiClient.request<ApiListResponse<MaterialRecord>>(
+      `/invoices/${encodeSegment(invoiceId)}/supporting-materials`,
     );
   },
 

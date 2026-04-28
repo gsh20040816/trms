@@ -1,0 +1,629 @@
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+
+import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { ApiError } from "../lib/api/client";
+import { trmsApi } from "../lib/api/trms";
+import type {
+  ConfirmationStatus,
+  ExpenseDetailItem,
+  ExpenseDetailList,
+  ExpenseType,
+  MaterialRecord,
+  MaterialType,
+  ReimbursementTask,
+  TaskStatus,
+} from "../lib/api/types";
+import { useAuthSession } from "./auth-store";
+
+type VisibleTaskState =
+  | { status: "loading" }
+  | { status: "error"; error: unknown }
+  | { status: "ready"; visibleTasks: ReimbursementTask[] };
+
+type SelectedTaskExpenseState =
+  | { status: "idle" }
+  | { status: "loading"; task: ReimbursementTask }
+  | { status: "error"; task: ReimbursementTask; error: unknown }
+  | { status: "ready"; task: ReimbursementTask; details: ExpenseDetailList; items: ExpenseConfirmationItem[] };
+
+type ExpenseConfirmationItem = {
+  detail: ExpenseDetailItem;
+  supportingMaterials: MaterialRecord[];
+};
+
+type SubmitFeedback = {
+  splitId: string;
+  status: Extract<ConfirmationStatus, "confirmed" | "disputed">;
+};
+
+const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  draft: "草稿",
+  open: "开放提交",
+  closed: "已关闭",
+  reviewing: "复核中",
+  ready_to_export: "可导出",
+  completed: "已归档",
+};
+
+const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
+  registration: "参赛费",
+  railway: "铁路交通",
+  airfare: "航空交通",
+  local_transport: "市内交通",
+  hotel: "住宿费",
+  other: "其他费用",
+};
+
+const MATERIAL_TYPE_LABELS: Record<MaterialType, string> = {
+  invoice: "发票",
+  payment_record: "支付记录",
+  competition_notice: "比赛通知",
+  itinerary: "行程单",
+  order_screenshot: "订单截图",
+  other_attachment: "其他附件",
+};
+
+const CONFIRMATION_STATUS_LABELS: Record<ConfirmationStatus, string> = {
+  pending: "待确认",
+  confirmed: "已确认",
+  disputed: "有异议",
+};
+
+function pickSelectedTaskId(
+  tasks: ReimbursementTask[],
+  preferredTaskId: string | null,
+  currentTaskId: string,
+) {
+  const visibleTaskIds = new Set(tasks.map((task) => task.id));
+  if (currentTaskId.length > 0 && visibleTaskIds.has(currentTaskId)) {
+    return currentTaskId;
+  }
+  if (preferredTaskId && visibleTaskIds.has(preferredTaskId)) {
+    return preferredTaskId;
+  }
+  return tasks[0]?.id ?? "";
+}
+
+function buildExpenseConfirmationItems(
+  details: ExpenseDetailList,
+  supportingMaterialsByInvoiceId: Map<string, MaterialRecord[]>,
+) {
+  return [...details.items]
+    .sort((left, right) => {
+      const leftTime = left.invoice.transaction_time ?? left.updated_at;
+      const rightTime = right.invoice.transaction_time ?? right.updated_at;
+      return rightTime.localeCompare(leftTime);
+    })
+    .map((detail) => ({
+      detail,
+      supportingMaterials: supportingMaterialsByInvoiceId.get(detail.invoice.id) ?? [],
+    }));
+}
+
+function getCurrentConfirmationStatus(item: ExpenseConfirmationItem): ConfirmationStatus {
+  return item.detail.confirmation?.status ?? "pending";
+}
+
+function countItemsByStatus(
+  items: ExpenseConfirmationItem[],
+  targetStatus: ConfirmationStatus,
+) {
+  return items.filter((item) => getCurrentConfirmationStatus(item) === targetStatus).length;
+}
+
+function formatTaskStatus(status: TaskStatus) {
+  return TASK_STATUS_LABELS[status];
+}
+
+function formatExpenseType(expenseType: ExpenseType) {
+  return EXPENSE_TYPE_LABELS[expenseType] ?? expenseType;
+}
+
+function formatMaterialType(materialType: MaterialType) {
+  return MATERIAL_TYPE_LABELS[materialType] ?? materialType;
+}
+
+function formatConfirmationStatus(status: ConfirmationStatus) {
+  return CONFIRMATION_STATUS_LABELS[status];
+}
+
+function formatCurrencyFromCents(cents: number) {
+  return `￥${(cents / 100).toFixed(2)}`;
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function resolveInvoiceTimeLabel(detail: ExpenseDetailItem) {
+  if (detail.invoice.transaction_time) {
+    return formatDateTime(detail.invoice.transaction_time);
+  }
+  if (detail.invoice.issue_date) {
+    return detail.invoice.issue_date;
+  }
+  return "未录入";
+}
+
+function isSplitStaleError(error: unknown) {
+  return error instanceof ApiError && error.status === 404 && error.message === "split not found";
+}
+
+export function MemberExpenseConfirmationPage() {
+  const session = useAuthSession();
+  const [searchParams] = useSearchParams();
+  const preferredTaskId = searchParams.get("taskId");
+  const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
+  const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [expenseState, setExpenseState] = useState<SelectedTaskExpenseState>({ status: "idle" });
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [submitError, setSubmitError] = useState<unknown>(null);
+  const [submitFeedback, setSubmitFeedback] = useState<SubmitFeedback | null>(null);
+  const [submittingSplitId, setSubmittingSplitId] = useState<string | null>(null);
+  const [staleSplitId, setStaleSplitId] = useState<string | null>(null);
+  const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
+  const [disputeErrors, setDisputeErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadVisibleTasks() {
+      if (!session || session.role !== "member") {
+        return;
+      }
+
+      setTaskState({ status: "loading" });
+
+      try {
+        const allTasks = await trmsApi.listTasks();
+        const visibleTasks = allTasks.filter((task) => task.member_ids.includes(session.actorId));
+
+        if (cancelled) {
+          return;
+        }
+
+        setTaskState({ status: "ready", visibleTasks });
+        setSelectedTaskId((currentTaskId) => pickSelectedTaskId(visibleTasks, preferredTaskId, currentTaskId));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setTaskState({ status: "error", error });
+      }
+    }
+
+    void loadVisibleTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preferredTaskId, session]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSelectedTaskExpenses(task: ReimbursementTask) {
+      setExpenseState({ status: "loading", task });
+      setSubmitError(null);
+
+      try {
+        const details = await trmsApi.listTaskExpenseDetails(task.id, session!.actorId);
+        const uniqueInvoiceIds = [...new Set(details.items.map((item) => item.invoice.id))];
+        const supportingEntries = await Promise.all(
+          uniqueInvoiceIds.map(async (invoiceId) => [
+            invoiceId,
+            (await trmsApi.listInvoiceSupportingMaterials(invoiceId)).items,
+          ] as const),
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        const supportingMaterialsByInvoiceId = new Map(supportingEntries);
+        setExpenseState({
+          status: "ready",
+          task,
+          details,
+          items: buildExpenseConfirmationItems(details, supportingMaterialsByInvoiceId),
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setExpenseState({ status: "error", task, error });
+      }
+    }
+
+    if (!session || session.role !== "member" || taskState.status !== "ready") {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const selectedTask = taskState.visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
+    if (!selectedTask) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void loadSelectedTaskExpenses(selectedTask);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshNonce, selectedTaskId, session, taskState]);
+
+  if (!session || session.role !== "member") {
+    return null;
+  }
+
+  const actorId = session.actorId;
+  const visibleTasks = taskState.status === "ready" ? taskState.visibleTasks : [];
+  const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
+  const readyItems = expenseState.status === "ready" ? expenseState.items : [];
+  const totalAmountCents = expenseState.status === "ready" ? expenseState.details.total_amount_cents : 0;
+  const pendingCount = countItemsByStatus(readyItems, "pending");
+  const confirmedCount = countItemsByStatus(readyItems, "confirmed");
+  const disputedCount = countItemsByStatus(readyItems, "disputed");
+
+  async function submitConfirmation(
+    item: ExpenseConfirmationItem,
+    status: Extract<ConfirmationStatus, "confirmed" | "disputed">,
+  ) {
+    const disputeReason = disputeReasons[item.detail.split_id]?.trim() ?? "";
+    if (status === "disputed" && !disputeReason) {
+      setDisputeErrors((current) => ({
+        ...current,
+        [item.detail.split_id]: "提交异议时必须填写原因。",
+      }));
+      return;
+    }
+
+    setSubmitError(null);
+    setSubmitFeedback(null);
+    setStaleSplitId(null);
+    setDisputeErrors((current) => {
+      if (!(item.detail.split_id in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[item.detail.split_id];
+      return next;
+    });
+    setSubmittingSplitId(item.detail.split_id);
+
+    try {
+      await trmsApi.submitSplitConfirmation(item.detail.split_id, {
+        actor_id: actorId,
+        member_id: actorId,
+        status,
+        dispute_reason: status === "disputed" ? disputeReason : null,
+      });
+      setSubmitFeedback({
+        splitId: item.detail.split_id,
+        status,
+      });
+      if (status === "disputed") {
+        setDisputeReasons((current) => ({
+          ...current,
+          [item.detail.split_id]: "",
+        }));
+      }
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      if (isSplitStaleError(error)) {
+        setStaleSplitId(item.detail.split_id);
+        return;
+      }
+      setSubmitError(error);
+    } finally {
+      setSubmittingSplitId(null);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <section className="status-card auth-panel">
+        <p className="eyebrow">Member Confirmation</p>
+        <h2>成员费用确认</h2>
+        <p>
+          当前页只复用成员费用明细、发票附件列表和确认提交接口，帮助成员核对“这笔费用为何归到自己名下”，并直接确认或提交异议。
+        </p>
+        <p className="status-note">
+          当前使用 mock 成员身份 {session.displayName}（{session.actorId}）。如果管理员修改了分摊金额或成员归属，旧明细版本会失效；页面会显式提示刷新，不把失效版本伪装成提交成功。
+        </p>
+        <div className="inline-actions">
+          <Link className="route-link route-link-secondary" to="/member">
+            返回成员任务列表
+          </Link>
+          {selectedTask ? (
+            <Link
+              className="route-link route-link-secondary"
+              to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
+            >
+              查看材料状态
+            </Link>
+          ) : null}
+          <span className="status-chip">当前可见任务 {visibleTasks.length} 个</span>
+        </div>
+      </section>
+
+      {taskState.status === "loading" ? (
+        <section className="status-card">
+          <p className="eyebrow">Loading</p>
+          <h2>正在加载可见任务</h2>
+          <p>正在读取当前成员可访问的报销任务，以便定位待确认的费用明细。</p>
+        </section>
+      ) : null}
+
+      {taskState.status === "error" ? <ApiErrorNotice error={taskState.error} /> : null}
+      {submitError ? <ApiErrorNotice error={submitError} /> : null}
+
+      {taskState.status === "ready" && visibleTasks.length === 0 ? (
+        <section className="status-card">
+          <p className="eyebrow">Empty</p>
+          <h2>当前没有可确认费用的报销任务</h2>
+          <p>当前 mock 成员尚未匹配到任何可见任务，因此也没有可加载的个人费用明细。</p>
+        </section>
+      ) : null}
+
+      {taskState.status === "ready" && visibleTasks.length > 0 ? (
+        <section className="status-card auth-panel">
+          <div className="admin-form-header">
+            <div>
+              <p className="eyebrow">Task Scope</p>
+              <h2>选择要确认的任务</h2>
+            </div>
+            {selectedTask ? (
+              <span className={`status-chip task-status-chip task-status-${selectedTask.status}`}>
+                {formatTaskStatus(selectedTask.status)}
+              </span>
+            ) : null}
+          </div>
+          <div className="admin-form-grid">
+            <label className="field-stack">
+              <span>目标任务</span>
+              <select
+                aria-label="目标任务"
+                value={selectedTaskId}
+                onChange={(event) => {
+                  setSelectedTaskId(event.target.value);
+                  setSubmitFeedback(null);
+                  setStaleSplitId(null);
+                }}
+              >
+                {visibleTasks.map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.competition_name}（{task.id}）
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">成员页只展示 `task.member_ids` 包含当前成员的任务。</span>
+            </label>
+            {selectedTask ? (
+              <dl className="task-meta-grid member-status-meta-grid">
+                <div>
+                  <dt>比赛名称</dt>
+                  <dd>{selectedTask.competition_name}</dd>
+                </div>
+                <div>
+                  <dt>截止时间</dt>
+                  <dd>{formatDateTime(selectedTask.deadline)}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
+          {expenseState.status === "ready" ? (
+            <div className="token-list" aria-label="费用确认摘要">
+              <span className="token-chip">本人费用 {readyItems.length} 条</span>
+              <span className="token-chip">总金额 {formatCurrencyFromCents(totalAmountCents)}</span>
+              <span className="token-chip">待确认 {pendingCount} 条</span>
+              <span className="token-chip">已确认 {confirmedCount} 条</span>
+              <span className="token-chip">有异议 {disputedCount} 条</span>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {selectedTask && expenseState.status === "loading" ? (
+        <section className="status-card">
+          <p className="eyebrow">Loading</p>
+          <h2>正在汇总个人费用明细</h2>
+          <p>正在读取当前任务下与你相关的分摊、确认状态和关联附件摘要。</p>
+        </section>
+      ) : null}
+
+      {selectedTask && expenseState.status === "error" ? <ApiErrorNotice error={expenseState.error} /> : null}
+
+      {expenseState.status === "ready" && readyItems.length === 0 ? (
+        <section className="status-card">
+          <p className="eyebrow">Empty</p>
+          <h2>当前任务下没有待展示的个人费用</h2>
+          <p>
+            任务 {expenseState.task.id} 当前对你可见，但服务端还没有返回与你相关的有效费用分摊；可能尚未分摊，也可能管理员还未把这部分费用归属到你名下。
+          </p>
+        </section>
+      ) : null}
+
+      {expenseState.status === "ready" && readyItems.length > 0 ? (
+        <section className="member-confirmation-list" aria-label="成员费用明细列表">
+          {readyItems.map((item) => {
+            const currentStatus = getCurrentConfirmationStatus(item);
+            const disputeReason = disputeReasons[item.detail.split_id] ?? "";
+            const disputeError = disputeErrors[item.detail.split_id];
+            const isSubmitting = submittingSplitId === item.detail.split_id;
+            const isStale = staleSplitId === item.detail.split_id;
+            const hasFeedback = submitFeedback?.splitId === item.detail.split_id;
+
+            return (
+              <article key={item.detail.split_id} className="status-card member-confirmation-card">
+                <div className="member-status-section-header">
+                  <div>
+                    <p className="task-card-id">费用明细 {item.detail.split_id}</p>
+                    <h2>{item.detail.invoice.invoice_number}</h2>
+                  </div>
+                  <span className={`status-chip member-status-chip-${currentStatus}`}>
+                    {formatConfirmationStatus(currentStatus)}
+                  </span>
+                </div>
+
+                <dl className="task-meta-grid member-status-meta-grid">
+                  <div>
+                    <dt>归属金额</dt>
+                    <dd>{formatCurrencyFromCents(item.detail.amount_cents)}</dd>
+                  </div>
+                  <div>
+                    <dt>发票总额</dt>
+                    <dd>{formatCurrencyFromCents(item.detail.invoice.amount_cents)}</dd>
+                  </div>
+                  <div>
+                    <dt>费用类型</dt>
+                    <dd>{formatExpenseType(item.detail.invoice.expense_type)}</dd>
+                  </div>
+                  <div>
+                    <dt>明细版本</dt>
+                    <dd>v{item.detail.split_version}</dd>
+                  </div>
+                  <div>
+                    <dt>交易/开票时间</dt>
+                    <dd>{resolveInvoiceTimeLabel(item.detail)}</dd>
+                  </div>
+                  <div>
+                    <dt>最近确认更新时间</dt>
+                    <dd>{item.detail.confirmation ? formatDateTime(item.detail.confirmation.updated_at) : "尚未确认"}</dd>
+                  </div>
+                </dl>
+
+                <section className="member-status-section">
+                  <div className="member-status-section-header">
+                    <h4>关联发票摘要</h4>
+                    <span className="status-chip">{item.detail.invoice.id}</span>
+                  </div>
+                  <ul className="member-status-detail-list">
+                    <li>购买方：{item.detail.invoice.buyer_name}</li>
+                    <li>销售方：{item.detail.invoice.seller_name ?? "未录入"}</li>
+                    <li>发票材料：{item.detail.invoice.material_id}</li>
+                    <li>任务成员备注：{item.detail.note ?? "无"}</li>
+                  </ul>
+                </section>
+
+                <section className="member-status-section">
+                  <div className="member-status-section-header">
+                    <h4>关联附件摘要</h4>
+                    <span className="status-chip">{item.supportingMaterials.length} 份</span>
+                  </div>
+                  {item.supportingMaterials.length === 0 ? (
+                    <p className="field-hint">当前发票还没有已关联的辅助材料；如果你认为缺少支付记录、行程单或比赛通知，应先补材料或联系管理员关联。</p>
+                  ) : (
+                    <ul className="member-status-message-list">
+                      {item.supportingMaterials.map((material) => (
+                        <li key={material.id}>
+                          <strong>{formatMaterialType(material.material_type)} / {material.original_filename}</strong>
+                          <span>材料编号：{material.id}</span>
+                          <span>上传时间：{formatDateTime(material.created_at)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                {item.detail.confirmation?.dispute_reason ? (
+                  <section className="member-status-section">
+                    <div className="member-status-section-header">
+                      <h4>当前异议记录</h4>
+                      <span className="status-chip member-status-chip-disputed">需管理员处理</span>
+                    </div>
+                    <p>{item.detail.confirmation.dispute_reason}</p>
+                  </section>
+                ) : null}
+
+                <section className="member-status-section">
+                  <div className="member-status-section-header">
+                    <h4>确认或提出异议</h4>
+                    <span className="status-chip">成员本人提交</span>
+                  </div>
+                  <label className="field-stack confirmation-reason-field">
+                    <span>异议原因</span>
+                    <textarea
+                      aria-label={`异议原因 ${item.detail.split_id}`}
+                      value={disputeReason}
+                      placeholder="如果金额、归属或附件关联不正确，请写明原因。"
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setDisputeReasons((current) => ({
+                          ...current,
+                          [item.detail.split_id]: nextValue,
+                        }));
+                        setDisputeErrors((current) => {
+                          if (!(item.detail.split_id in current)) {
+                            return current;
+                          }
+                          const next = { ...current };
+                          delete next[item.detail.split_id];
+                          return next;
+                        });
+                      }}
+                    />
+                    {disputeError ? <span className="field-error">{disputeError}</span> : null}
+                  </label>
+                  <div className="inline-actions">
+                    <button
+                      className="route-link"
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => {
+                        void submitConfirmation(item, "confirmed");
+                      }}
+                    >
+                      {isSubmitting ? "提交中..." : "确认这笔费用"}
+                    </button>
+                    <button
+                      className="route-link route-link-secondary"
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => {
+                        void submitConfirmation(item, "disputed");
+                      }}
+                    >
+                      {isSubmitting ? "提交中..." : "提交异议"}
+                    </button>
+                    {isStale ? (
+                      <button
+                        className="route-link route-link-secondary"
+                        type="button"
+                        onClick={() => {
+                          setStaleSplitId(null);
+                          setRefreshNonce((current) => current + 1);
+                        }}
+                      >
+                        重新加载明细
+                      </button>
+                    ) : null}
+                  </div>
+                  {hasFeedback ? (
+                    <p className="confirmation-feedback">
+                      {submitFeedback.status === "confirmed" ? "已提交确认，页面已刷新最新确认状态。" : "已提交异议，页面已刷新最新确认状态。"}
+                    </p>
+                  ) : null}
+                  {isStale ? (
+                    <p className="field-error-block">
+                      当前费用明细版本已失效，通常是管理员刚修改了分摊金额或成员归属；请刷新后再确认。
+                    </p>
+                  ) : null}
+                </section>
+              </article>
+            );
+          })}
+        </section>
+      ) : null}
+    </div>
+  );
+}

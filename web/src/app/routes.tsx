@@ -5,6 +5,7 @@ import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminInvoiceEditorPage } from "./admin-invoice-editor";
 import { AdminSplitEditorPage } from "./admin-split-editor";
 import { AdminTaskListPage } from "./admin-task-list";
+import { MemberExpenseConfirmationPage } from "./member-expense-confirmation";
 import { MemberMaterialStatusPage } from "./member-material-status";
 import { MemberMaterialUploadPage } from "./member-material-upload";
 import { MemberTaskListPage } from "./member-task-list";
@@ -51,6 +52,10 @@ export const routes: RouteObject[] = [
           {
             path: "materials/status",
             element: <MemberMaterialStatusPage />,
+          },
+          {
+            path: "expenses/confirm",
+            element: <MemberExpenseConfirmationPage />,
           },
         ],
       },
