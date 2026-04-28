@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-29 05:27 - Evaluate common competition templates
+
+### 完成内容
+- 新增 `docs/常见比赛模板评估.md`，明确“常见比赛模板”不进入第一阶段，而是保留为后续阶段增强项。
+- 将 `TASKS.md` 中“评估常见比赛模板”标记为已完成。
+
+### 根因
+- 需求文档只把“常见比赛模板”列为 Could have，架构文档也已把“历史比赛模板和成员复用”归入后续阶段，不属于第一阶段主链路阻塞能力。
+- 当前任务创建链路只有显式字段录入：后端 `TaskCreateInput` 和前端 `admin-task-create` 页面都没有模板来源、模板版本或字段覆盖语义。
+- 如果现在直接引入模板，就必须同时回答模板与全局抬头/税号默认值、历史成员复用、当前登录管理员责任边界之间的合并规则，会污染现有最小创建闭环。
+
+### 关键改动点
+- 新增评估文档：
+  - `docs/常见比赛模板评估.md`
+- 同步任务状态：
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只新增评估文档和任务记录，不改动任何业务代码、接口语义、数据库结构或测试逻辑。
+- 当前结论是“后续阶段再做”，因此不会提升当前管理员创建任务的录入效率；但它避免了在第一阶段把模板默认值、全局配置和成员复用三套来源混进同一条创建路径。
+
+### 修改文件
+- `docs/常见比赛模板评估.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 418 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“常见比赛模板”解释为“创建任务时的一次性预填模板”，而不是新建一套会持续回写任务或自动带出成员名单的主数据系统。
+- 本轮按当前代码状态保守判断：模板若后续落地，应只覆盖稳定默认值，不应与 `member_ids`、`administrator_id`、具体比赛日期和全局抬头税号共用同一来源语义。
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
 ## 2026-04-29 05:31 - Evaluate historical member reuse
 
 ### 完成内容
