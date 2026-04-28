@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-28 13:18 - Analyze production readiness and extend task list
+
+### 完成内容
+- 对照需求文档 V0.2、架构设计 V0.1、README、当前 `TASKS.md` 和代码入口，完成当前系统生产就绪性分析。
+- 确认当前系统不能上生产环境：
+  - AI/OCR/LLM 识别仍主要是任务、结果和人工录入边界，未接入真实 OpenAI 兼容 LLM Provider；
+  - Web 登录已具备基础账号闭环，但业务 API 仍存在 `actor_id` / `submitter_id` / `member_id` 由前端或调用方自报的迁移边界；
+  - 注册流程仍允许用户选择角色，生产环境下不能允许任意注册管理员或系统管理员；
+  - 端口、CORS、公开 API base URL、LLM `api_key` / `base_url` / `model`、对象存储、worker 等生产运行配置未形成统一配置模型；
+  - 数据库仍使用 `create_all` 建表策略，缺少生产迁移机制；
+  - 原始文件默认本地存储，缺少 S3/MinIO 等对象存储适配、下载鉴权和备份恢复演练；
+  - 审计日志、请求 ID、指标、权限越权回归和上线部署基线仍在未完成任务中。
+- 更新 `TASKS.md`，新增“P3 - 生产配置、真实识别与部署补齐”任务组，覆盖：
+  - 刷新验收映射和生产差距清单；
+  - 后端与前端端口/API 地址配置；
+  - OpenAI 兼容 LLM API key/base URL/model 配置；
+  - PDF 文本提取、LLM 结构化识别、异步 worker；
+  - Alembic 迁移、对象存储、生产账号注册策略、Docker Compose 部署和上线前演练。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 `TASKS.md` 已覆盖大量第一阶段业务功能，但其中一部分是“占位/边界/骨架”完成，不等同于生产环境可用。
+- 需求文档明确要求 AI Agent 识别、基础权限、操作日志、数据备份和多渠道可用；架构文档进一步要求对象存储、异步任务队列、审计日志、私有文件访问、生产部署和敏感配置管理。
+- 用户追加要求“系统前后端端口可以配置，以及配置 OpenAI 兼容的 LLM API key/base url”，当前仓库仅有 `DATABASE_URL`、`MATERIAL_STORAGE_DIR`、`VITE_API_BASE_URL`、CLI base URL 等零散配置，缺少统一生产配置和 LLM Provider 配置。
+
+### 当前结论
+- 当前系统适合继续作为本地开发和第一阶段闭环验证基础，不适合直接上生产环境。
+- 现有未完成任务可以覆盖权限、审计、可观测性和测试质量的一部分，但不能完全补齐生产上线要求；新增任务完成后，任务队列才覆盖“满足需求文档并可上线”的必要边界。
+
+### 验证结果
+- 首次在沙箱内运行 `./scripts/verify.sh` 失败：
+  - `uv` 需要写入 `/home/gsh/.cache/uv`，当前沙箱对该路径只读；
+  - 该失败是环境权限问题，不是代码或文档变更导致。
+- 已在获批的沙箱外环境通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过；
+    - `pytest` 224 个用例通过；
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；
+    - `git diff --check` 通过。
+- 既有警告：
+  - `pytest` 仍有 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+
+### 假设
+- “上生产环境”按至少小规模内网生产使用理解，需要真实持久化数据库、私有文件存储、身份权限收口、审计、备份恢复、部署基线、可配置端口和外部 LLM 配置，不接受开发调试入口和本地 `create_all` 作为生产方案。
+- OpenAI 兼容 LLM Provider 只要求兼容接口配置和可替换 Provider，不要求把 API key 写入数据库或前端配置。
+
 ## 2026-04-28 12:56 - Add username password account auth
 
 ### 完成内容
