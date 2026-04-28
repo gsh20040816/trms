@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-28 18:21 - Record material deletion mark audit logs
+
+### 完成内容
+- 为材料删除标记接口补齐统一审计：
+  - 在 `src/trms_backend/api/materials.py` 的 `POST /api/materials/{material_id}/deletion-mark` 接口新增 `mark_material_deleted` 审计写入；
+  - 成功路径记录操作者、材料对象、任务 ID、请求 ID 和删除后的最小材料摘要；
+  - 失败路径记录材料不存在、任务不存在、操作者越权、删除冲突，以及 bearer 身份与 `administrator_id` 不一致时的拒绝结果。
+- 补充删除标记审计回归测试：
+  - 成功删除后，断言同一材料存在 `submit_material -> mark_material_deleted` 两条审计；
+  - 成员越权删除、主发票引用冲突、认证身份与请求体不一致三类失败路径均断言写入拒绝审计。
+
+### 根因
+- 上一轮已经建立了“材料删除标记”业务边界，但删除接口仍未接入统一审计仓储。
+- 如果继续保持现状，管理员撤出材料主路径这一关键动作将无法回答“谁在什么时候删掉了哪份材料、是成功还是被拒绝”，不满足需求文档和架构文档对敏感材料操作可追溯的要求。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/materials.py`
+- `tests/test_materials_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py -k 'mark_material_deleted or mismatched_authenticated_administrator_id or primary_invoice_material_deleted'`
+    - 4 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 305 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：未携带或携带无效 bearer token 的请求会在认证依赖层直接被 `401` 拒绝，因此本轮不额外为这类请求补写删除审计；此类失败仍可通过统一错误响应中的 `request_id` 追踪。
+
 ## 2026-04-28 18:14 - Establish material deletion mark boundary
 
 ### 完成内容

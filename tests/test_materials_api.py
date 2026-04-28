@@ -331,6 +331,24 @@ def test_task_administrator_can_mark_material_deleted_without_removing_file(tmp_
     assert stored.status is MaterialStatus.DELETED
     assert storage_path.read_bytes() == b"fake-pdf-content"
 
+    audit_logs = list_material_audit_logs(tmp_path, material["id"])
+    assert len(audit_logs) == 2
+    assert [item.action for item in audit_logs] == [
+        "submit_material",
+        "mark_material_deleted",
+    ]
+    assert audit_logs[1].actor_id == "admin-1"
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].task_id == task_id
+    assert audit_logs[1].request_id.startswith("req_")
+    assert audit_logs[1].detail == {
+        "deleted_status": "deleted",
+        "submitter_id": "2250001",
+        "channel": "web",
+        "material_type": "invoice",
+        "original_filename": "ticket.pdf",
+    }
+
 
 def test_member_cannot_mark_material_deleted(tmp_path):
     client = make_client(tmp_path)
@@ -366,6 +384,16 @@ def test_member_cannot_mark_material_deleted(tmp_path):
         code="forbidden",
         detail="actor is not allowed to delete materials for this task",
     )
+
+    audit_logs = list_material_audit_logs(tmp_path, material_id)
+    assert len(audit_logs) == 2
+    assert audit_logs[1].action == "mark_material_deleted"
+    assert audit_logs[1].actor_id == "2250001"
+    assert audit_logs[1].result is AuditLogResult.REJECTED
+    assert audit_logs[1].task_id == task_id
+    assert audit_logs[1].detail == {
+        "failure_reason": "actor is not allowed to delete materials for this task",
+    }
 
 
 def test_mark_deleted_requires_authenticated_request(tmp_path):
@@ -420,6 +448,61 @@ def test_cannot_mark_primary_invoice_material_deleted(tmp_path):
         code="conflict",
         detail="material is referenced by an invoice and cannot be marked deleted",
     )
+
+    audit_logs = list_material_audit_logs(tmp_path, material_id)
+    assert len(audit_logs) == 2
+    assert audit_logs[1].action == "mark_material_deleted"
+    assert audit_logs[1].actor_id == "admin-1"
+    assert audit_logs[1].result is AuditLogResult.REJECTED
+    assert audit_logs[1].task_id == task_id
+    assert audit_logs[1].detail == {
+        "failure_reason": "material is referenced by an invoice and cannot be marked deleted",
+        "current_status": "assigned",
+    }
+
+
+def test_mark_deleted_rejects_mismatched_authenticated_administrator_id_with_audit(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+
+    response = client.post(
+        f"/api/materials/{material_id}/deletion-mark",
+        json={"administrator_id": "admin-2"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail=(
+            "administrator_id does not match the authenticated request identity: "
+            "expected 'admin-1', got 'admin-2'"
+        ),
+    )
+
+    audit_logs = list_material_audit_logs(tmp_path, material_id)
+    assert len(audit_logs) == 2
+    assert audit_logs[1].action == "mark_material_deleted"
+    assert audit_logs[1].actor_id == "admin-1"
+    assert audit_logs[1].result is AuditLogResult.REJECTED
+    assert audit_logs[1].task_id is None
+    assert audit_logs[1].detail == {
+        "failure_reason": (
+            "administrator_id does not match the authenticated request identity: "
+            "expected 'admin-1', got 'admin-2'"
+        ),
+        "requested_administrator_id": "admin-2",
+    }
 
 
 def test_cannot_mark_supporting_material_deleted_when_linked_to_invoice(tmp_path):

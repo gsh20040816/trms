@@ -268,33 +268,112 @@ def build_material_router(
     @router.post("/api/materials/{material_id}/deletion-mark")
     def mark_material_deleted(
         material_id: str,
+        request: Request,
         payload: MaterialDeletionMarkRequest,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
-        administrator_id = resolve_required_actor_request_field(
-            identity,
-            payload.administrator_id,
-            field_name="administrator_id",
-        )
+        request_id = ensure_request_id(request)
+        try:
+            administrator_id = resolve_required_actor_request_field(
+                identity,
+                payload.administrator_id,
+                field_name="administrator_id",
+            )
+        except HTTPException as error:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=identity.actor_id or payload.administrator_id,
+                material_id=material_id,
+                task_id=None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject deletion mark for material {material_id}",
+                detail={
+                    "failure_reason": error.detail,
+                    "requested_administrator_id": payload.administrator_id,
+                },
+                request_id=request_id,
+            )
+            raise
+
+        material = material_repository.get(material_id)
         try:
             deleted_material = material_deletion_service.mark_deleted(
                 material_id=material_id,
                 actor_id=administrator_id,
             )
         except MaterialDeletionNotFoundError:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=administrator_id,
+                material_id=material_id,
+                task_id=None,
+                result=AuditLogResult.FAILED,
+                summary=f"fail to mark material {material_id} deleted",
+                detail={"failure_reason": "material not found"},
+                request_id=request_id,
+            )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
-        except MaterialDeletionTaskNotFoundError:
+        except MaterialDeletionTaskNotFoundError as error:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=administrator_id,
+                material_id=material_id,
+                task_id=error.task_id,
+                result=AuditLogResult.FAILED,
+                summary=f"fail to mark material {material_id} deleted",
+                detail={"failure_reason": "task not found"},
+                request_id=request_id,
+            )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         except MaterialDeletionActorNotAllowedError as error:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=administrator_id,
+                material_id=material_id,
+                task_id=material.task_id if material is not None else None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject unauthorized deletion mark for material {material_id}",
+                detail={"failure_reason": str(error)},
+                request_id=request_id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),
             ) from error
         except MaterialDeletionConflictError as error:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=administrator_id,
+                material_id=material_id,
+                task_id=material.task_id if material is not None else None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject deletion mark for material {material_id}",
+                detail={
+                    "failure_reason": str(error),
+                    "current_status": material.status if material is not None else None,
+                },
+                request_id=request_id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(error),
             ) from error
+        _record_material_deletion_audit(
+            audit_log_repository,
+            actor_id=administrator_id,
+            material_id=material_id,
+            task_id=deleted_material.task_id,
+            result=AuditLogResult.SUCCEEDED,
+            summary=f"mark material {material_id} deleted",
+            detail={
+                "deleted_status": deleted_material.status,
+                "submitter_id": deleted_material.submitter_id,
+                "channel": deleted_material.channel,
+                "material_type": deleted_material.material_type,
+                "original_filename": deleted_material.original_filename,
+            },
+            request_id=request_id,
+        )
         return {"item": deleted_material}
 
     @router.get("/api/tasks/{task_id}/materials")
@@ -356,6 +435,32 @@ def _record_material_claim_audit(
                 "submitter_id": submitter_id,
                 **detail,
             },
+            task_id=task_id,
+            request_id=request_id,
+        )
+    )
+
+
+def _record_material_deletion_audit(
+    audit_log_repository: AuditLogRepository,
+    *,
+    actor_id: str,
+    material_id: str,
+    task_id: str | None,
+    result: AuditLogResult,
+    summary: str,
+    detail: dict[str, object],
+    request_id: str | None,
+) -> None:
+    audit_log_repository.create(
+        AuditLogCreate(
+            actor_id=actor_id,
+            object_type="material",
+            object_id=material_id,
+            action="mark_material_deleted",
+            result=result,
+            summary=summary,
+            detail=detail,
             task_id=task_id,
             request_id=request_id,
         )
