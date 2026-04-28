@@ -27,6 +27,11 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_PUBLIC_API_BASE_URL`
 - `TRMS_API_HOST`
 - `TRMS_API_PORT`
+- `TRMS_LLM_API_KEY`
+- `TRMS_LLM_BASE_URL`
+- `TRMS_LLM_MODEL`
+- `TRMS_LLM_TIMEOUT_SECONDS`
+- `TRMS_LLM_MAX_RETRIES`
 
 开发环境默认值：
 
@@ -58,6 +63,25 @@ TRMS_PUBLIC_API_BASE_URL=https://trms.example.edu/api \
 TRMS_API_HOST=0.0.0.0 \
 TRMS_API_PORT=8000 \
 uv run python -m trms_backend --host 0.0.0.0 --port 8000
+```
+
+OpenAI 兼容 LLM Provider 配置边界：
+
+- 只有在至少配置了一个 `TRMS_LLM_*` 变量时，后端才会尝试启用 LLM Provider 配置块。
+- 一旦开始配置 `TRMS_LLM_*`，`TRMS_LLM_API_KEY` 和 `TRMS_LLM_MODEL` 必填；缺失时服务会在启动阶段直接报错。
+- `TRMS_LLM_BASE_URL` 默认为 `https://api.openai.com/v1`，可替换为任何 OpenAI 兼容接口地址；尾部 `/` 会被规范化去掉。
+- `TRMS_LLM_TIMEOUT_SECONDS` 默认 `30`，`TRMS_LLM_MAX_RETRIES` 默认 `2`。
+- 当前仓库尚未接入真实 PDF/LLM 识别执行器；未配置 LLM Provider 时，后续识别执行链应将任务显式视为 `disabled`，而不是伪造识别成功。
+
+示例：
+
+```bash
+TRMS_LLM_API_KEY=sk-example \
+TRMS_LLM_BASE_URL=https://llm.example.com/v1 \
+TRMS_LLM_MODEL=gpt-4.1-mini \
+TRMS_LLM_TIMEOUT_SECONDS=20 \
+TRMS_LLM_MAX_RETRIES=1 \
+uv run python -m trms_backend --reload
 ```
 
 ## Web 前端
@@ -102,6 +126,7 @@ npm run dev
 - 所有 `VITE_*` 变量都会进入前端构建产物，只能保存公开配置。
 - 不要把 OpenAI 兼容 LLM `api_key`、后端 secret、数据库凭据或长期 token 写入 `VITE_*` 变量。
 - 前端页面和测试不应展示上述 secret；相关敏感配置只能保留在后端环境变量或专用密钥管理中。
+- `TRMS_LLM_API_KEY` 只允许从后端环境变量或密钥管理读取，不入库、不返回前端，也不应写入日志。
 
 ## 基础账号登录
 

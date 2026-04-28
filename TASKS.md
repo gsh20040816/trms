@@ -673,7 +673,7 @@
     - 前端不会在页面或日志中展示 LLM API key、后端 secret 或长期 token
     - 有最小测试或构建验证覆盖默认 API base URL 行为
 
-- [ ] 增加 OpenAI 兼容 LLM Provider 配置
+- [x] 增加 OpenAI 兼容 LLM Provider 配置
   - Done when:
     - 后端支持通过环境变量配置 OpenAI 兼容接口的 `api_key`、`base_url`、`model`、超时和重试上限
     - API key 只从环境变量或密钥管理读取，不入库、不写日志、不返回前端

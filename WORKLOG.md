@@ -1,5 +1,72 @@
 # WORKLOG
 
+## 2026-04-28 13:33 - Add OpenAI-compatible LLM provider runtime configuration
+
+### 完成内容
+- 更新 `src/trms_backend/runtime_config.py`：
+  - 新增可选 `llm_provider` 配置块，统一收口 `TRMS_LLM_API_KEY`、`TRMS_LLM_BASE_URL`、`TRMS_LLM_MODEL`、`TRMS_LLM_TIMEOUT_SECONDS`、`TRMS_LLM_MAX_RETRIES`；
+  - 仅当检测到任一 `TRMS_LLM_*` 配置时才尝试启用该配置块；
+  - 一旦开始配置 `TRMS_LLM_*`，强制要求 `TRMS_LLM_API_KEY` 和 `TRMS_LLM_MODEL` 存在；
+  - 对 `base_url` 做绝对 `http(s)` URL 校验和尾部 `/` 规范化；
+  - 为日志场景增加 `to_safe_log_fields()`，显式脱敏 `api_key`。
+- 新增 `src/trms_backend/application/recognition_runtime.py`：
+  - 提供 `resolve_recognition_llm_capability()`；
+  - 未配置 LLM Provider 时，明确返回识别能力 `disabled` 和 `llm_provider_not_configured` 失败原因；
+  - 已配置时返回可供后续真实识别执行链复用的 `base_url`、`model`、超时和重试上限。
+- 更新 `src/trms_backend/main.py`：
+  - 启动时将 LLM 能力判定挂到 `app.state.recognition_llm_capability`，作为后续识别执行入口的统一读点。
+- 新增/更新测试：
+  - `tests/test_runtime_config.py` 覆盖默认禁用、配置读取、缺失密钥、`base_url` 规范化和日志脱敏；
+  - `tests/test_recognition_runtime.py` 覆盖识别能力 `enabled` / `disabled` 判定。
+- 更新 `README.md`：
+  - 补充后端 LLM Provider 环境变量说明、默认值、示例和安全边界；
+  - 明确当前仓库尚未接入真实 PDF/LLM 执行器，本轮只建立配置和禁用状态边界。
+- 更新 `TASKS.md`，将“增加 OpenAI 兼容 LLM Provider 配置”标记为已完成。
+
+### 修改文件
+- `src/trms_backend/runtime_config.py`
+- `src/trms_backend/application/recognition_runtime.py`
+- `src/trms_backend/main.py`
+- `tests/test_runtime_config.py`
+- `tests/test_recognition_runtime.py`
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有统一运行配置只覆盖数据库、文件存储、CORS 和 API 地址，尚未把外部 LLM Provider 的 `api_key`、`base_url`、`model`、超时和重试边界纳入同一个配置模型。
+- 如果继续让后续识别链各处自行读取 `TRMS_LLM_*` 环境变量，会重复出现：
+  - 配置散落；
+  - 缺失密钥或模型时只能到运行期才暴露；
+  - `api_key` 容易在调试输出里泄露；
+  - “未配置 LLM” 与 “识别成功” 之间缺少明确状态边界。
+
+### 当前结论
+- 后端现在已经可以用统一配置模型承载 OpenAI 兼容 LLM Provider 设置，并在启动阶段尽早拒绝缺失关键配置的半配置状态。
+- 未配置 LLM Provider 时，系统现在至少有了明确的 `disabled` 能力判定和标准失败原因，后续真实 PDF/LLM 识别执行器可以直接复用，而不是再自行发明一套隐式降级逻辑。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_runtime_config.py tests/test_recognition_runtime.py`
+    - 9 个测试通过
+  - `python3 -m compileall src tests`
+    - 编译检查通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 233 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 既有警告：
+  - `pytest` 仍有 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告
+  这些均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮保守假设 LLM Provider 配置在当前阶段应保持“可选但显式”，即：完全未配置时允许系统继续运行，但一旦开始配置 `TRMS_LLM_*`，就必须把关键字段一次配齐。
+- 本轮保守假设 `TRMS_LLM_MODEL` 不应存在隐式默认值；与数据库地址不同，错误的默认模型会把问题从启动阶段推迟到真实识别请求阶段。
+- 本轮不接入真实 PDF 文本提取、OCR、OpenAI 兼容请求发送或异步 worker；这些仍留给后续 `TASKS.md` 中紧随其后的识别流水线任务。
+
 ## 2026-04-28 13:28 - Add web runtime host/port and API base URL boundaries
 
 ### 完成内容

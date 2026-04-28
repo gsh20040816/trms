@@ -20,6 +20,7 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.public_api_base_url == "http://127.0.0.1:8000/api"
     assert config.api_host == "127.0.0.1"
     assert config.api_port == 8000
+    assert config.llm_provider is None
 
 
 def test_load_runtime_config_requires_explicit_production_settings():
@@ -40,6 +41,55 @@ def test_load_runtime_config_rejects_illegal_port():
         load_runtime_config(env={"TRMS_API_PORT": "70000"})
 
     assert "api_port" in str(exc_info.value)
+
+
+def test_load_runtime_config_reads_llm_provider_and_normalizes_base_url():
+    config = load_runtime_config(
+        env={
+            "TRMS_LLM_API_KEY": " sk-test-secret ",
+            "TRMS_LLM_BASE_URL": " https://llm.example.com/v1/ ",
+            "TRMS_LLM_MODEL": " gpt-4.1-mini ",
+            "TRMS_LLM_TIMEOUT_SECONDS": "45",
+            "TRMS_LLM_MAX_RETRIES": "3",
+        }
+    )
+
+    assert config.llm_provider is not None
+    assert config.llm_provider.api_key.get_secret_value() == "sk-test-secret"
+    assert config.llm_provider.base_url == "https://llm.example.com/v1"
+    assert config.llm_provider.model == "gpt-4.1-mini"
+    assert config.llm_provider.timeout_seconds == 45
+    assert config.llm_provider.max_retries == 3
+
+
+def test_load_runtime_config_requires_llm_api_key_when_other_llm_settings_present():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(
+            env={
+                "TRMS_LLM_MODEL": "gpt-4.1-mini",
+                "TRMS_LLM_BASE_URL": "https://llm.example.com/v1",
+            }
+        )
+
+    assert "TRMS_LLM_API_KEY is required when any TRMS_LLM_* setting is configured" in str(
+        exc_info.value
+    )
+
+
+def test_llm_provider_safe_log_fields_redact_api_key():
+    config = load_runtime_config(
+        env={
+            "TRMS_LLM_API_KEY": "sk-live-secret-value",
+            "TRMS_LLM_MODEL": "gpt-4.1-mini",
+        }
+    )
+
+    assert config.llm_provider is not None
+    safe_log_fields = config.llm_provider.to_safe_log_fields()
+
+    assert safe_log_fields["api_key"] == "[redacted]"
+    assert safe_log_fields["api_key_configured"] is True
+    assert "sk-live-secret-value" not in str(safe_log_fields)
 
 
 def test_create_app_applies_configured_cors_origins(tmp_path):

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 
 RuntimeEnvironment = Literal["development", "test", "production"]
 
@@ -18,6 +18,9 @@ DEFAULT_CORS_ALLOWED_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://localhost:5173",
 )
+DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
+DEFAULT_LLM_MAX_RETRIES = 2
 VALID_ENVIRONMENTS = frozenset({"development", "test", "production"})
 
 
@@ -25,6 +28,46 @@ class RuntimeConfigError(ValueError):
     def __init__(self, issues: list[str]) -> None:
         self.issues = issues
         super().__init__("invalid runtime configuration: " + "; ".join(issues))
+
+
+class LLMProviderConfig(BaseModel):
+    api_key: SecretStr
+    base_url: str
+    model: str
+    timeout_seconds: float = Field(gt=0, le=300)
+    max_retries: int = Field(ge=0, le=10)
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def validate_api_key(cls, value: SecretStr | str) -> SecretStr:
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            raise ValueError("llm_provider.api_key must not be empty")
+        return SecretStr(normalized)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        return _normalize_http_url(value, field_name="llm_provider.base_url", allow_path=True)
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("llm_provider.model must not be empty")
+        return normalized
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return {
+            "base_url": self.base_url,
+            "model": self.model,
+            "timeout_seconds": self.timeout_seconds,
+            "max_retries": self.max_retries,
+            "api_key": "[redacted]",
+            "api_key_configured": True,
+        }
 
 
 class RuntimeConfig(BaseModel):
@@ -35,6 +78,7 @@ class RuntimeConfig(BaseModel):
     public_api_base_url: str
     api_host: str
     api_port: int = Field(ge=1, le=65535)
+    llm_provider: LLMProviderConfig | None = None
 
     @field_validator("database_url")
     @classmethod
@@ -107,6 +151,11 @@ def load_runtime_config(
     public_api_base_url: str | None = None,
     api_host: str | None = None,
     api_port: str | int | None = None,
+    llm_api_key: str | None = None,
+    llm_base_url: str | None = None,
+    llm_model: str | None = None,
+    llm_timeout_seconds: str | float | int | None = None,
+    llm_max_retries: str | int | None = None,
 ) -> RuntimeConfig:
     environment_variables = os.environ if env is None else env
     raw_environment = environment if environment is not None else environment_variables.get("TRMS_ENV")
@@ -167,6 +216,58 @@ def load_runtime_config(
             port=str(raw_api_port),
         )
 
+    raw_llm_api_key = _resolve_value(llm_api_key, environment_variables.get("TRMS_LLM_API_KEY"))
+    raw_llm_base_url = _resolve_value(
+        llm_base_url,
+        environment_variables.get("TRMS_LLM_BASE_URL"),
+    )
+    raw_llm_model = _resolve_value(llm_model, environment_variables.get("TRMS_LLM_MODEL"))
+    raw_llm_timeout_seconds = _resolve_value(
+        llm_timeout_seconds,
+        environment_variables.get("TRMS_LLM_TIMEOUT_SECONDS"),
+    )
+    raw_llm_max_retries = _resolve_value(
+        llm_max_retries,
+        environment_variables.get("TRMS_LLM_MAX_RETRIES"),
+    )
+
+    llm_provider_payload: dict[str, object] | None = None
+    if any(
+        value is not None
+        for value in (
+            raw_llm_api_key,
+            raw_llm_base_url,
+            raw_llm_model,
+            raw_llm_timeout_seconds,
+            raw_llm_max_retries,
+        )
+    ):
+        if not _has_meaningful_value(raw_llm_api_key):
+            issues.append(
+                "TRMS_LLM_API_KEY is required when any TRMS_LLM_* setting is configured"
+            )
+        if not _has_meaningful_value(raw_llm_model):
+            issues.append(
+                "TRMS_LLM_MODEL is required when any TRMS_LLM_* setting is configured"
+            )
+        llm_provider_payload = {
+            "api_key": raw_llm_api_key,
+            "base_url": (
+                raw_llm_base_url if raw_llm_base_url is not None else DEFAULT_LLM_BASE_URL
+            ),
+            "model": raw_llm_model,
+            "timeout_seconds": (
+                raw_llm_timeout_seconds
+                if raw_llm_timeout_seconds is not None
+                else DEFAULT_LLM_TIMEOUT_SECONDS
+            ),
+            "max_retries": (
+                raw_llm_max_retries
+                if raw_llm_max_retries is not None
+                else DEFAULT_LLM_MAX_RETRIES
+            ),
+        }
+
     if issues:
         raise RuntimeConfigError(issues)
 
@@ -180,6 +281,7 @@ def load_runtime_config(
                 "public_api_base_url": raw_public_api_base_url,
                 "api_host": raw_api_host,
                 "api_port": raw_api_port,
+                "llm_provider": llm_provider_payload,
             }
         )
     except ValidationError as error:
@@ -190,6 +292,16 @@ def _resolve_value(explicit_value: object | None, environment_value: object | No
     if explicit_value is not None:
         return explicit_value
     return environment_value
+
+
+def _has_meaningful_value(value: object | None) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, SecretStr):
+        return bool(value.get_secret_value().strip())
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
 
 
 def _build_default_public_api_base_url(*, host: str, port: str) -> str:
