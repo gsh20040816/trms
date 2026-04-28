@@ -5,20 +5,25 @@ import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationRecord,
-  ConfirmationStatus,
   ExpenseSplitRecord,
-  ExpenseType,
-  MaterialType,
   RecognitionTaskRecord,
   RecognitionTaskStatus,
   ReimbursementTask,
-  SubmissionChannel,
   TaskReviewSummary,
-  TaskStatus,
   ValidationResult,
-  ValidationSeverity,
-  ValidationStatus,
 } from "../lib/api/types";
+import {
+  describeRecognitionFailure,
+  formatConfirmationStatus,
+  formatExpenseType,
+  formatMaterialType,
+  formatMemberLabel,
+  formatSubmissionChannel,
+  formatTaskStatus,
+  formatValidationRule,
+  formatValidationSeverity,
+  formatValidationStatus,
+} from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 
 type ReviewPageState =
@@ -43,40 +48,6 @@ type ReviewAnomalyItem = {
   tone: "failed" | "pending";
 };
 
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
-  reviewing: "复核中",
-  ready_to_export: "可导出",
-  completed: "已归档",
-};
-
-const MATERIAL_TYPE_LABELS: Record<MaterialType, string> = {
-  invoice: "发票",
-  payment_record: "支付记录",
-  competition_notice: "比赛通知",
-  itinerary: "行程单",
-  order_screenshot: "订单截图",
-  other_attachment: "其他附件",
-};
-
-const CHANNEL_LABELS: Record<SubmissionChannel, string> = {
-  web: "Web",
-  cli: "CLI",
-  telegram: "Telegram",
-  email: "Email",
-};
-
-const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
-  registration: "参赛费",
-  railway: "铁路交通",
-  airfare: "航空交通",
-  local_transport: "市内交通",
-  hotel: "住宿费",
-  other: "其他费用",
-};
-
 const RECOGNITION_STATUS_LABELS: Record<RecognitionTaskStatus, string> = {
   pending: "识别中",
   succeeded: "识别成功",
@@ -84,55 +55,8 @@ const RECOGNITION_STATUS_LABELS: Record<RecognitionTaskStatus, string> = {
   needs_confirmation: "待人工确认",
 };
 
-const VALIDATION_STATUS_LABELS: Record<ValidationStatus, string> = {
-  passed: "通过",
-  failed: "失败",
-  pending: "待确认",
-  not_applicable: "不适用",
-};
-
-const VALIDATION_SEVERITY_LABELS: Record<ValidationSeverity, string> = {
-  blocker: "Must",
-  warning: "Warning",
-  info: "Info",
-};
-
-const CONFIRMATION_STATUS_LABELS: Record<ConfirmationStatus, string> = {
-  pending: "待确认",
-  confirmed: "已确认",
-  disputed: "有异议",
-};
-
-function formatTaskStatus(status: TaskStatus) {
-  return TASK_STATUS_LABELS[status];
-}
-
-function formatMaterialType(type: MaterialType) {
-  return MATERIAL_TYPE_LABELS[type] ?? type;
-}
-
-function formatChannel(channel: SubmissionChannel) {
-  return CHANNEL_LABELS[channel] ?? channel;
-}
-
-function formatExpenseType(expenseType: ExpenseType) {
-  return EXPENSE_TYPE_LABELS[expenseType] ?? expenseType;
-}
-
 function formatRecognitionStatus(status: RecognitionTaskStatus) {
   return RECOGNITION_STATUS_LABELS[status];
-}
-
-function formatValidationStatus(status: ValidationStatus) {
-  return VALIDATION_STATUS_LABELS[status];
-}
-
-function formatValidationSeverity(severity: ValidationSeverity) {
-  return VALIDATION_SEVERITY_LABELS[severity];
-}
-
-function formatConfirmationStatus(status: ConfirmationStatus) {
-  return CONFIRMATION_STATUS_LABELS[status];
 }
 
 function formatCurrencyFromCents(cents: number) {
@@ -154,7 +78,7 @@ function buildReviewAnomalies(
 
   if (reviewSummary.counts.blocker_failed_validation_count > 0) {
     items.push({
-      label: "Must 级失败校验",
+      label: "需要立即处理",
       count: reviewSummary.counts.blocker_failed_validation_count,
       tone: "failed",
     });
@@ -365,9 +289,9 @@ export function AdminReviewOverviewPage() {
     return (
       <div className="page-stack">
         <section className="status-card">
-          <p className="eyebrow">Task Missing</p>
+          <p className="eyebrow">复核总览</p>
           <h2>任务标识缺失</h2>
-          <p>当前路由未提供任务编号，无法进入管理员复核总览。</p>
+          <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
       </div>
     );
@@ -391,13 +315,10 @@ export function AdminReviewOverviewPage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-review-hero">
-        <p className="eyebrow">Admin Review</p>
+        <p className="eyebrow">复核总览</p>
         <h2>管理员复核总览</h2>
         <p>
-          本页聚合现有 `review-summary` 与 `overdue-confirmations` 数据，只做复核信息汇总与风险暴露，不在前端擅自替代后端做最终确认判定。
-        </p>
-        <p className="status-note">
-          当前仍使用 mock 管理员身份 {session.displayName}（{session.actorId}）。如后端拒绝读取复核摘要，本页会直接显示真实错误，不伪装为“可继续导出”。
+          这里集中查看当前任务的材料风险、待确认费用、成员异议和导出准备情况。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/admin">
@@ -430,12 +351,9 @@ export function AdminReviewOverviewPage() {
 
       {state.status === "ready" && isForeignTask ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">Access Scope</p>
+          <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
-          <p>
-            当前任务的 `administrator_id` 为 {task?.administrator_id}，与当前 mock 管理员
-            {session.actorId} 不一致。为避免在真实鉴权接入前误操作，本页不展示复核详情。
-          </p>
+          <p>你当前没有查看该任务的权限，如需访问请联系对应负责人。</p>
         </section>
       ) : null}
 
@@ -517,7 +435,7 @@ export function AdminReviewOverviewPage() {
                 <ul className="token-list" aria-label="未完成确认成员">
                   {outstandingMemberIds.map((memberId) => (
                     <li key={memberId} className="token-chip">
-                      {memberId}
+                      {formatMemberLabel(memberId)}
                     </li>
                   ))}
                 </ul>
@@ -582,7 +500,7 @@ export function AdminReviewOverviewPage() {
                     </div>
                     <div className="admin-review-inline-metadata">
                       <span className="token-chip">{formatMaterialType(material.material_type)}</span>
-                      <span className="token-chip">{formatChannel(material.channel)}</span>
+                      <span className="token-chip">{formatSubmissionChannel(material.channel)}</span>
                     </div>
                     <div className="task-meta-grid admin-review-meta-grid">
                       <div>
@@ -638,8 +556,8 @@ export function AdminReviewOverviewPage() {
                       </div>
                       <div className="admin-review-inline-metadata">
                         <span className="token-chip">{formatMaterialType(item.material.material_type)}</span>
-                        <span className="token-chip">{formatChannel(item.material.channel)}</span>
-                        <span className="token-chip">提交人 {item.material.submitter_id ?? "未解析"}</span>
+                        <span className="token-chip">{formatSubmissionChannel(item.material.channel)}</span>
+                        <span className="token-chip">{formatMemberLabel(item.material.submitter_id)}</span>
                       </div>
                       <div className="task-meta-grid admin-review-meta-grid">
                         <div>
@@ -669,10 +587,8 @@ export function AdminReviewOverviewPage() {
                             </li>
                             {recognition.failure ? (
                               <li>
-                                <strong>失败阶段</strong>
-                                <span>
-                                  {recognition.failure.stage} / {recognition.failure.reason}
-                                </span>
+                                <strong>识别提示</strong>
+                                <span>{describeRecognitionFailure(recognition.failure)}</span>
                               </li>
                             ) : null}
                             <li>
@@ -739,9 +655,7 @@ export function AdminReviewOverviewPage() {
                         <span className="token-chip">
                           {formatExpenseType(invoiceItem.invoice.expense_type)}
                         </span>
-                        <span className="token-chip">
-                          提交人 {invoiceMaterial?.material.submitter_id ?? "未解析"}
-                        </span>
+                        <span className="token-chip">{formatMemberLabel(invoiceMaterial?.material.submitter_id)}</span>
                         <span className="token-chip">
                           附件 {invoiceItem.supporting_material_ids.length} 份
                         </span>
@@ -778,7 +692,7 @@ export function AdminReviewOverviewPage() {
                               ? abnormalValidations.map((validation) => (
                                   <li key={validation.id}>
                                     <strong>
-                                      {formatValidationSeverity(validation.severity)} / {validation.rule_code}
+                                      {formatValidationSeverity(validation.severity)} / {formatValidationRule(validation.rule_code)}
                                     </strong>
                                     <span
                                       className={`status-chip ${buildValidationBadgeClass(validation)}`}
@@ -806,7 +720,7 @@ export function AdminReviewOverviewPage() {
                             {invoiceItem.splits.map(({ split, confirmation }) => (
                               <li key={split.id}>
                                 <strong>
-                                  {split.member_id} / {formatCurrencyFromCents(split.amount_cents)}
+                                  {formatMemberLabel(split.member_id)} / {formatCurrencyFromCents(split.amount_cents)}
                                 </strong>
                                 <span
                                   className={`status-chip ${buildConfirmationBadgeClass(confirmation)}`}

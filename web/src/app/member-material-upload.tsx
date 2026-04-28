@@ -296,14 +296,10 @@ export function MemberMaterialUploadPage() {
   return (
     <div className="page-stack">
       <section className="status-card auth-panel">
-        <p className="eyebrow">Member Upload</p>
+        <p className="eyebrow">材料提交</p>
         <h2>成员材料上传</h2>
         <p>
-          本页只覆盖成员 Web 端上传材料的最小闭环：从当前成员可见且仍开放的任务中选择目标任务，指定材料类型，并调用现有
-          `POST /api/tasks/{'{task_id}'}/materials` 接口上传一个或多个文件。
-        </p>
-        <p className="status-note">
-          当前使用 mock 成员身份 {memberSession.displayName}（{memberSession.actorId}）。提交渠道固定为 Web，不在前端伪造 CLI、Telegram 或邮件提交。
+          从当前开放的任务中选择目标任务，指定材料类型后即可上传一个或多个文件。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/member">
@@ -323,7 +319,7 @@ export function MemberMaterialUploadPage() {
 
       {pageState.status === "loading" ? (
         <section className="status-card">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">材料提交</p>
           <h2>正在加载可上传任务</h2>
           <p>正在读取当前成员可访问的任务，并筛选仍开放提交的上传目标。</p>
         </section>
@@ -333,10 +329,10 @@ export function MemberMaterialUploadPage() {
 
       {pageState.status === "ready" && uploadableTasks.length === 0 ? (
         <section className="status-card">
-          <p className="eyebrow">No Open Task</p>
+          <p className="eyebrow">暂无开放任务</p>
           <h2>当前没有可上传的开放任务</h2>
           <p>
-            你当前可见的任务共有 {pageState.visibleTasks.length} 个，但其中没有状态为“开放提交”的任务；成员端此时不应继续向后端发起上传请求。
+            你当前可见的任务共有 {pageState.visibleTasks.length} 个，但目前都不在收集阶段。
           </p>
           <p className="status-note">
             如需补交，请先由管理员重新开放任务或新建新的报销收集任务。
@@ -355,7 +351,7 @@ export function MemberMaterialUploadPage() {
           <section className="status-card auth-panel">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Upload Form</p>
+                <p className="eyebrow">上传表单</p>
                 <h2>选择任务并上传文件</h2>
               </div>
               <span className="status-chip">开放任务 {uploadableTasks.length} 个</span>
@@ -385,11 +381,11 @@ export function MemberMaterialUploadPage() {
               </label>
 
               <label className="field-stack">
-                <span>提交渠道</span>
+                <span>提交方式</span>
                 <select name="channel" value={WEB_CHANNEL} disabled>
-                  <option value={WEB_CHANNEL}>Web 页面（web）</option>
+                  <option value={WEB_CHANNEL}>网页提交</option>
                 </select>
-                <span className="field-hint">成员 Web 页面固定按 `channel=web` 提交。</span>
+                <span className="field-hint">当前页面默认按网页提交记录。</span>
               </label>
 
               <label className="field-stack">
@@ -411,7 +407,7 @@ export function MemberMaterialUploadPage() {
                 {validationErrors.materialType ? (
                   <span className="field-error">{validationErrors.materialType}</span>
                 ) : (
-                  <span className="field-hint">材料类型会直接传给后端统一材料归档流程。</span>
+                  <span className="field-hint">请选择最接近的材料类型，便于后续整理和复核。</span>
                 )}
               </label>
 
@@ -432,7 +428,7 @@ export function MemberMaterialUploadPage() {
                   <span className="field-error">{validationErrors.files}</span>
                 ) : (
                   <span className="field-hint">
-                    支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时，后端会逐文件返回成功或失败结果。
+                    支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会分别提示每个文件的结果。
                   </span>
                 )}
               </label>

@@ -149,7 +149,7 @@ describe("admin task create page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
-    expect(await screen.findByRole("heading", { name: "管理员任务列表" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "待处理任务" })).toBeInTheDocument();
     expect(await screen.findByText("ICPC 区域赛")).toBeInTheDocument();
 
     const postCall = fetchSpy.mock.calls.find(([, init]) => init?.method === "POST");
@@ -227,9 +227,7 @@ describe("admin task create page", () => {
     fillRequiredTaskForm();
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(
-      screen.getByText("missing invoice configuration fields: invoice_title, tax_number"),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
   });
 });

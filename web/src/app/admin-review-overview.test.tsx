@@ -270,7 +270,7 @@ describe("AdminReviewOverviewPage", () => {
     );
 
     const riskSummary = within(screen.getByLabelText("复核风险摘要"));
-    expect(riskSummary.getByText("Must 级失败校验")).toBeInTheDocument();
+    expect(riskSummary.getByText("需要立即处理")).toBeInTheDocument();
     expect(riskSummary.getByText("待归属材料")).toBeInTheDocument();
     expect(riskSummary.getByText("待成员确认")).toBeInTheDocument();
     expect(riskSummary.getByText("成员异议")).toBeInTheDocument();
@@ -302,7 +302,7 @@ describe("AdminReviewOverviewPage", () => {
     );
 
     const outstandingMembers = within(screen.getByLabelText("未完成确认成员"));
-    expect(outstandingMembers.getByText("2250002")).toBeInTheDocument();
+    expect(outstandingMembers.getByText("成员 2250002")).toBeInTheDocument();
     const overdueMembers = within(screen.getByLabelText("逾期未确认成员"));
     expect(overdueMembers.getByText("2250002")).toBeInTheDocument();
   });
@@ -312,7 +312,7 @@ describe("AdminReviewOverviewPage", () => {
 
     renderReviewRoute();
 
-    expect(await screen.findByRole("heading", { name: "管理员后台 暂不可访问" })).toBeInTheDocument();
-    expect(screen.getByText("当前登录身份不匹配；此入口仅允许管理员身份访问。")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "管理员工作台 暂不可访问" })).toBeInTheDocument();
+    expect(screen.getByText("当前登录身份不匹配；此入口仅允许管理员访问。")).toBeInTheDocument();
   });
 });

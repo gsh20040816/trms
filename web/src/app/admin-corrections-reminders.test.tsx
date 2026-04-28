@@ -335,7 +335,7 @@ describe("AdminCorrectionsRemindersPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "记录补材料提醒" }));
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(screen.getByText("member 2250002 is not part of this task")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
   });
 });

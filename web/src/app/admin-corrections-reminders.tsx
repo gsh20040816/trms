@@ -306,13 +306,10 @@ export function AdminCorrectionsRemindersPage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-review-hero">
-        <p className="eyebrow">Admin Corrections</p>
+        <p className="eyebrow">更正与提醒</p>
         <h2>管理员人工更正与补材料提醒</h2>
         <p>
-          本页只复用现有复核摘要与补材料提醒接口，聚焦两件事：把复核中发现的问题准确跳转到人工更正页，以及把管理员的补材料提醒记录下来。
-        </p>
-        <p className="status-note">
-          当前仍使用 mock 管理员身份 {session.displayName}（{session.actorId}）。更正动作继续在现有发票录入页和分摊编辑页完成；若后端拒绝提醒创建，本页会直接展示真实错误，不伪装为“已提醒”。
+          这里集中处理两件事：跳转到需要补录或更正的发票，以及记录对成员的补材料提醒。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/review`}>
@@ -326,7 +323,7 @@ export function AdminCorrectionsRemindersPage() {
 
       {pageState.status === "loading" ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">更正与提醒</p>
           <h2>正在加载更正与提醒上下文</h2>
           <p>正在读取任务详情、复核摘要和补材料提醒记录，请稍候。</p>
         </section>
@@ -337,12 +334,9 @@ export function AdminCorrectionsRemindersPage() {
 
       {pageState.status === "ready" && isForeignTask ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">Access Scope</p>
+          <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
-          <p>
-            当前任务的 `administrator_id` 为 {task?.administrator_id}，与当前 mock 管理员
-            {session.actorId} 不一致。为避免真实鉴权未接入前误操作，本页不展示更正入口与提醒表单。
-          </p>
+          <p>你当前没有处理该任务的权限，如需访问请联系对应负责人。</p>
         </section>
       ) : null}
 

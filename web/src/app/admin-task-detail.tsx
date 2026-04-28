@@ -4,21 +4,13 @@ import { Link, useParams } from "react-router-dom";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type { ReimbursementTask, TaskStatus } from "../lib/api/types";
+import { formatMemberLabel, formatTaskStatus } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 
 type TaskDetailState =
   | { status: "loading" }
   | { status: "error"; error: unknown }
   | { status: "ready"; task: ReimbursementTask };
-
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
-  reviewing: "复核中",
-  ready_to_export: "可导出",
-  completed: "已归档",
-};
 
 const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   draft: ["open"],
@@ -37,10 +29,6 @@ const FEE_CATEGORY_LABELS: Record<string, string> = {
   hotel: "住宿费",
   other: "其他",
 };
-
-function formatTaskStatus(status: TaskStatus) {
-  return TASK_STATUS_LABELS[status];
-}
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -110,9 +98,9 @@ export function AdminTaskDetailPage() {
     return (
       <div className="page-stack">
         <section className="status-card">
-          <p className="eyebrow">Task Missing</p>
+          <p className="eyebrow">任务详情</p>
           <h2>任务标识缺失</h2>
-          <p>当前路由未提供任务编号，无法读取详情。</p>
+          <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
       </div>
     );
@@ -121,7 +109,6 @@ export function AdminTaskDetailPage() {
   const task = state.status === "ready" ? state.task : null;
   const allowedTransitions = task ? TASK_STATUS_TRANSITIONS[task.status] : [];
   const isForeignTask = task ? task.administrator_id !== session.actorId : false;
-  const foreignTaskAdministratorId = isForeignTask && task ? task.administrator_id : null;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
 
   async function handleStatusUpdate(targetStatus: TaskStatus) {
@@ -149,15 +136,10 @@ export function AdminTaskDetailPage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-task-detail-hero">
-        <p className="eyebrow">Admin Task Detail</p>
+        <p className="eyebrow">任务详情</p>
         <h2>任务详情与状态操作</h2>
         <p>
-          本页聚焦管理员查看单个任务的基础配置，并直接调用现有
-          `GET /api/tasks/{taskId}` 与 `PATCH /api/tasks/{taskId}/status`
-          接口执行状态流转。
-        </p>
-        <p className="status-note">
-          当前仍使用 mock 管理员身份 {session.displayName}（{session.actorId}）。若后端拒绝状态流转，本页会直接展示服务端返回的失败原因，不在前端伪装成功。
+          这里集中查看任务信息、成员范围、费用类别和当前可执行的下一步操作。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/admin">
@@ -198,11 +180,10 @@ export function AdminTaskDetailPage() {
 
       {state.status === "ready" && isForeignTask ? (
         <section className="status-card admin-task-detail-panel">
-          <p className="eyebrow">Access Scope</p>
+          <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
           <p>
-            当前任务的 `administrator_id` 为 {foreignTaskAdministratorId}，与当前 mock 管理员
-            {session.actorId} 不一致。为避免在真实鉴权接入前误操作，这里不展示状态流转按钮。
+            你当前没有处理该任务的权限，如需访问请联系对应负责人。
           </p>
         </section>
       ) : null}
@@ -236,8 +217,8 @@ export function AdminTaskDetailPage() {
                 <dd>{formatDateTime(visibleTask.deadline)}</dd>
               </div>
               <div>
-                <dt>管理员标识</dt>
-                <dd>{visibleTask.administrator_id}</dd>
+                <dt>任务负责人</dt>
+                <dd>{session.displayName}</dd>
               </div>
               <div>
                 <dt>项目/课题信息</dt>
@@ -269,7 +250,7 @@ export function AdminTaskDetailPage() {
             <ul className="token-list" aria-label="任务成员名单">
               {visibleTask.member_ids.map((memberId) => (
                 <li key={memberId} className="token-chip">
-                  {memberId}
+                  {formatMemberLabel(memberId)}
                 </li>
               ))}
             </ul>
@@ -305,7 +286,7 @@ export function AdminTaskDetailPage() {
             {allowedTransitions.length > 0 ? (
               <>
                 <p className="field-hint">
-                  当前页只展示后端状态机允许的下一步操作；若任务仍缺少发布条件、复核条件或导出完成记录，后端会返回明确的 `409` 错误。
+                  只显示当前可执行的下一步操作。如果条件未满足，页面会给出可执行提示。
                 </p>
                 <div className="status-action-grid">
                   {allowedTransitions.map((targetStatus) => (
@@ -325,7 +306,7 @@ export function AdminTaskDetailPage() {
               </>
             ) : (
               <p className="field-hint">
-                当前状态已经没有前端可继续触发的下一步流转。如需进入 `completed`，仍需后端先记录导出完成事实。
+                当前任务已经没有可继续推进的下一步操作，可返回任务列表查看其他事项。
               </p>
             )}
           </article>

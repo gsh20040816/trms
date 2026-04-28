@@ -408,7 +408,7 @@ describe("MemberMaterialStatusPage", () => {
 
     renderMemberStatusRoute("/member/materials/status?taskId=TASK-OPEN");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("接口请求失败");
-    expect(screen.getByRole("alert")).toHaveTextContent("material list failed");
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作未完成");
+    expect(screen.getByRole("alert")).toHaveTextContent("系统暂时无法完成该操作，请稍后重试。");
   });
 });

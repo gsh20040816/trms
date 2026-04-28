@@ -16,6 +16,7 @@ import { MemberTaskListPage } from "./member-task-list";
 import { MockLoginPage, ProtectedRoleRoute } from "./auth";
 import { HomePage, NotFoundPage, RootLayout } from "./pages";
 import { findRoleRouteByRole, roleRoutes, type UserRole } from "./role-routes";
+import { SystemAdminDashboardPage } from "./system-admin-dashboard";
 
 function getRoleRouteOrThrow(role: UserRole) {
   const roleRoute = findRoleRouteByRole(role);
@@ -114,6 +115,12 @@ export const routes: RouteObject[] = [
         .map((roleRoute) => ({
           path: roleRoute.path.slice(1),
           element: <ProtectedRoleRoute roleRoute={roleRoute} />,
+          children: [
+            {
+              index: true,
+              element: <SystemAdminDashboardPage />,
+            },
+          ],
         })),
       {
         path: "*",

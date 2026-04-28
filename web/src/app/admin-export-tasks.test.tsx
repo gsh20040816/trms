@@ -214,7 +214,7 @@ describe("admin export tasks page", () => {
     });
 
     expect(
-      await screen.findByText("报销汇总表 导出任务已创建，当前状态：待执行。"),
+      await screen.findByText("报销汇总表 导出任务已创建，当前状态：待生成。"),
     ).toBeInTheDocument();
     expect(screen.getByText("export-job-summary")).toBeInTheDocument();
 
@@ -223,7 +223,7 @@ describe("admin export tasks page", () => {
     const refreshedSummaryActions = within(refreshedSummaryCard as HTMLElement);
 
     await act(async () => {
-      fireEvent.click(refreshedSummaryActions.getByRole("button", { name: "查看 CSV 即时输出" }));
+      fireEvent.click(refreshedSummaryActions.getByRole("button", { name: "查看在线预览" }));
       await Promise.resolve();
     });
 
@@ -262,7 +262,7 @@ describe("admin export tasks page", () => {
     const summaryActions = within(summaryCard as HTMLElement);
 
     expect(summaryActions.getByRole("button", { name: "创建报销汇总表任务" })).toBeDisabled();
-    expect(summaryActions.getByRole("button", { name: "查看 CSV 即时输出" })).toBeDisabled();
+    expect(summaryActions.getByRole("button", { name: "查看在线预览" })).toBeDisabled();
     expect(
       screen.getByText("当前还没有导出任务记录。创建任务后，这里会显示状态、失败原因和下载入口占位说明。"),
     ).toBeInTheDocument();

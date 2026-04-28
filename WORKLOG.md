@@ -1,5 +1,92 @@
 # WORKLOG
 
+## 2026-04-28 20:36 - Refine web dashboards and user-facing copy
+
+### 完成内容
+- 重构前端工作台壳层与首页信息架构：
+  - 新增 [web/src/components/dashboard.tsx](web/src/components/dashboard.tsx)，统一 `PageHeader`、`StatCard`、`SectionCard`、`StatusBadge`、`EmptyState`、`RoleWorkspace`、`TaskTable`；
+  - 重写 [web/src/app/pages.tsx](web/src/app/pages.tsx) 与 [web/src/styles.css](web/src/styles.css)，把原来的宣传式 Hero 改成紧凑导航、后台页头、统计卡片和任务主工作区；
+  - 新增 [web/src/app/system-admin-dashboard.tsx](web/src/app/system-admin-dashboard.tsx)，让系统管理员默认看到配置、角色、系统状态与审计入口，而不是占位说明。
+- 建立统一业务文案映射层：
+  - 新增 [web/src/lib/ui-text.ts](web/src/lib/ui-text.ts)，统一角色、任务状态、材料类型、费用类型、识别状态、校验级别、字段名和常见后端错误的业务文案映射；
+  - [web/src/components/ApiErrorNotice.tsx](web/src/components/ApiErrorNotice.tsx) 改为通过统一 `ErrorMessage` 组件输出用户可执行提示，不再显示 `HTTP`、`API Error` 等开发者视角文案。
+- 重构管理员与成员主工作台：
+  - [web/src/app/admin-task-list.tsx](web/src/app/admin-task-list.tsx) 改成“统计卡片 + 筛选区 + 任务表格”为主视觉；
+  - [web/src/app/member-task-list.tsx](web/src/app/member-task-list.tsx) 改成“我的报销任务”表格视图，突出截止时间与下一步动作；
+  - [web/src/app/auth.tsx](web/src/app/role-routes.tsx) 更新登录页、角色入口和角色错配提示，统一为业务语言。
+- 清理多处普通业务页中的技术暴露文案：
+  - 已修改 [web/src/app/admin-task-detail.tsx](web/src/app/admin-task-detail.tsx)、[web/src/app/admin-review-overview.tsx](web/src/app/admin-review-overview.tsx)、[web/src/app/admin-export-tasks.tsx](web/src/app/admin-export-tasks.tsx)、[web/src/app/admin-invoice-editor.tsx](web/src/app/admin-invoice-editor.tsx)、[web/src/app/member-material-upload.tsx](web/src/app/member-material-upload.tsx)、[web/src/app/member-material-status.tsx](web/src/app/member-material-status.tsx)、[web/src/app/member-expense-confirmation.tsx](web/src/app/member-expense-confirmation.tsx)、[web/src/app/task-missing-materials.tsx](web/src/app/task-missing-materials.tsx) 等页面的显性技术文案。
+
+### 根因
+- 当前前端的核心问题不是“少几个颜色或卡片”，而是信息架构从一开始就站在开发者视角：首页像宣传页，后台页像边界说明文档，任务表格不在视觉中心，普通用户还能直接看到 API、路径、字段名和内部状态术语。
+- 如果只做局部样式修补，任务列表仍然不会成为后台主工作区，且技术化文案会继续污染成员和管理员界面，因此本轮必须同时收口布局层、设计系统组件和统一文案映射层。
+
+### 修改文件
+- `TASKS.md`
+- `web/src/app/App.test.tsx`
+- `web/src/app/admin-corrections-reminders.test.tsx`
+- `web/src/app/admin-corrections-reminders.tsx`
+- `web/src/app/admin-export-tasks.test.tsx`
+- `web/src/app/admin-export-tasks.tsx`
+- `web/src/app/admin-invoice-editor.test.tsx`
+- `web/src/app/admin-invoice-editor.tsx`
+- `web/src/app/admin-review-overview.test.tsx`
+- `web/src/app/admin-review-overview.tsx`
+- `web/src/app/admin-split-editor.test.tsx`
+- `web/src/app/admin-split-editor.tsx`
+- `web/src/app/admin-task-create.test.tsx`
+- `web/src/app/admin-task-create.tsx`
+- `web/src/app/admin-task-detail.test.tsx`
+- `web/src/app/admin-task-detail.tsx`
+- `web/src/app/admin-task-list.test.tsx`
+- `web/src/app/admin-task-list.tsx`
+- `web/src/app/auth.tsx`
+- `web/src/app/main-flow-e2e-placeholder.test.tsx`
+- `web/src/app/member-expense-confirmation.test.tsx`
+- `web/src/app/member-expense-confirmation.tsx`
+- `web/src/app/member-material-status.test.tsx`
+- `web/src/app/member-material-status.tsx`
+- `web/src/app/member-material-upload.test.tsx`
+- `web/src/app/member-material-upload.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/app/permission-visibility.test.tsx`
+- `web/src/app/role-routes.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/app/system-admin-dashboard.tsx`
+- `web/src/app/task-missing-materials.tsx`
+- `web/src/components/ApiErrorNotice.test.tsx`
+- `web/src/components/ApiErrorNotice.tsx`
+- `web/src/components/RoleShell.tsx`
+- `web/src/components/dashboard.tsx`
+- `web/src/lib/api/client.test.ts`
+- `web/src/lib/api/errors.ts`
+- `web/src/lib/ui-text.ts`
+- `web/src/styles.css`
+
+### 验证结果
+- 已通过：
+  - `env UV_CACHE_DIR=/home/gsh/.cache/uv ./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 314 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 额外说明：
+  - 本轮在 full access 环境下改用用户目录 `UV_CACHE_DIR=/home/gsh/.cache/uv` 后，根目录 `verify.sh` 已稳定跑完整套验证；
+  - 修复过程中补删了 [web/src/app/member-task-list.tsx](web/src/app/member-task-list.tsx) 与 [web/src/app/pages.tsx](web/src/app/pages.tsx) 末尾多余空行，以消除 `git diff --check` 的尾部空白报错；
+  - 新增 `.gitignore` 规则忽略本地 `data/` 材料目录和 `*.tsbuildinfo` 构建缓存，避免把本地产物带入工作树。
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：成员学号/成员编号仍是业务上可识别的身份信息，因此在管理员页里可以显示为“成员 2250001”一类标签，但不再暴露 `member_id`、`administrator_id` 等字段名。
+- 当前保守假设：部分导出预览仍以结构化文本展示是可接受的第一阶段边界，但界面文案必须改成“在线预览/草稿预览”，不能把 `JSON`、`API 输出` 直接当成业务页面标题。
+
 ## 2026-04-28 20:05 - Add backup and recovery strategy notes
 
 ### 完成内容

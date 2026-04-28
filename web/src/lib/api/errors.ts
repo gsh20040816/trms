@@ -1,7 +1,9 @@
+import { formatFieldLabel, mapBackendMessage } from "../ui-text";
+
 type ApiErrorRecord = Record<string, unknown>;
 
 export type ApiErrorFieldIssue = {
-  path: string;
+  label: string;
   message: string;
 };
 
@@ -65,8 +67,8 @@ function normalizeFieldIssues(detail: unknown): ApiErrorFieldIssue[] {
 
     return [
       {
-        path: formatLocation(item.loc),
-        message: item.msg,
+        label: formatFieldLabel(formatLocation(item.loc)),
+        message: translateFieldIssueMessage(String(item.msg)),
       },
     ];
   });
@@ -81,9 +83,32 @@ function detailText(detail: unknown) {
 
 function fallbackMessage(status: number) {
   if (status === 0) {
-    return "无法连接到 TRMS 后端服务";
+    return "网络连接异常，请检查网络后重试。";
   }
-  return `请求失败（HTTP ${status}）`;
+  return status >= 500
+    ? "系统暂时无法完成该操作，请稍后重试。"
+    : "当前操作未完成，请检查填写内容后重试。";
+}
+
+function translateFieldIssueMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (normalized === "field required") {
+    return "请填写此项。";
+  }
+  if (normalized.includes("valid string")) {
+    return "请输入有效内容。";
+  }
+  if (normalized.includes("valid integer") || normalized.includes("valid number")) {
+    return "请输入有效数字。";
+  }
+  if (normalized.includes("should have at least")) {
+    return "填写内容过短，请补充后重试。";
+  }
+  if (normalized.includes("unsupported fee categories")) {
+    return "所选费用类别暂不支持。";
+  }
+  return message;
 }
 
 export function extractApiErrorMessage(payload: unknown) {
@@ -113,29 +138,15 @@ export function extractApiErrorMessage(payload: unknown) {
 
 export function summarizeApiError(status: number, payload: unknown): ApiErrorSummary {
   const fieldIssues = isRecord(payload) ? normalizeFieldIssues(payload.detail) : [];
-  const message = extractApiErrorMessage(payload) ?? fallbackMessage(status);
+  const rawMessage = extractApiErrorMessage(payload) ?? fallbackMessage(status);
+  const message = mapBackendMessage(rawMessage, status);
   const detailLines = (() => {
-    if (fieldIssues.length > 0) {
-      return fieldIssues.map((issue) => `${issue.path}: ${issue.message}`);
-    }
-
-    if (isRecord(payload)) {
-      const directDetail = detailText(payload.detail);
-      if (directDetail !== null && directDetail !== message) {
-        return [directDetail];
-      }
-    }
-
-    if (typeof payload === "string" && payload !== message) {
-      return [payload];
-    }
-
     return [];
   })();
 
   return {
     status,
-    title: status === 0 ? "网络请求失败" : "接口请求失败",
+    title: status === 0 ? "网络连接异常" : "操作未完成",
     message,
     fieldIssues,
     detailLines,
@@ -146,8 +157,8 @@ export function summarizeUnknownError(error: unknown): ApiErrorSummary {
   if (error instanceof Error) {
     return {
       status: 0,
-      title: "前端处理失败",
-      message: error.message || "前端遇到未预期错误",
+      title: "操作未完成",
+      message: mapBackendMessage(error.message || "前端遇到未预期错误"),
       fieldIssues: [],
       detailLines: [],
     };
@@ -155,8 +166,8 @@ export function summarizeUnknownError(error: unknown): ApiErrorSummary {
 
   return {
     status: 0,
-    title: "前端处理失败",
-    message: "前端遇到未预期错误",
+    title: "操作未完成",
+    message: "系统暂时无法完成该操作，请稍后重试。",
     fieldIssues: [],
     detailLines: [],
   };

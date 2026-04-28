@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -162,19 +162,11 @@ describe("admin task list page", () => {
 
     renderAdminRoute();
 
-    expect(await screen.findByRole("heading", { name: "管理员任务列表" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "待处理任务" })).toBeInTheDocument();
     expect(screen.getByLabelText("管理员任务概览")).toBeInTheDocument();
     expect(screen.getByText("全国邀请赛")).toBeInTheDocument();
     expect(screen.getByText("区域赛报销")).toBeInTheDocument();
-    expect(screen.getByText("先处理 Must 级失败校验")).toBeInTheDocument();
-
-    const alphaSummary = within(screen.getByLabelText("TASK-ALPHA 异常摘要"));
-    expect(alphaSummary.getByText("Must 级失败校验")).toBeInTheDocument();
-    expect(alphaSummary.getByText("识别失败")).toBeInTheDocument();
-    expect(alphaSummary.getByText("识别待人工确认")).toBeInTheDocument();
-    expect(alphaSummary.getByText("成员异议")).toBeInTheDocument();
-    expect(alphaSummary.getByText("待确认费用明细")).toBeInTheDocument();
-    expect(alphaSummary.getByText("逾期未确认成员")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "补材料" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("基础搜索"), {
       target: { value: "区域赛" },
@@ -247,7 +239,7 @@ describe("admin task list page", () => {
 
     renderAdminRoute();
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(screen.getByText("task list is temporarily unavailable")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("系统暂时不可用，请稍后再试。")).toBeInTheDocument();
   });
 });

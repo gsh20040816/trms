@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { useAuthSession } from "./auth-store";
+import { EmptyState, PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge, TaskTable } from "../components/dashboard";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -10,6 +10,8 @@ import type {
   TaskReviewSummary,
   TaskStatus,
 } from "../lib/api/types";
+import { formatTaskStatus } from "../lib/ui-text";
+import { useAuthSession } from "./auth-store";
 
 type AdminTaskDigest = {
   task: ReimbursementTask;
@@ -24,39 +26,15 @@ type TaskListState =
 
 type TaskStatusFilter = "all" | TaskStatus;
 
-type TaskAnomalyItem = {
-  label: string;
-  count: number;
-  tone: "failed" | "pending";
-};
-
-type TaskActionHint = {
-  title: string;
-  summary: string;
-};
-
 const TASK_STATUS_OPTIONS: Array<{ value: TaskStatusFilter; label: string }> = [
   { value: "all", label: "全部状态" },
   { value: "draft", label: "草稿" },
-  { value: "open", label: "开放提交" },
-  { value: "closed", label: "已关闭" },
-  { value: "reviewing", label: "复核中" },
+  { value: "open", label: "收集中" },
+  { value: "closed", label: "已截止" },
+  { value: "reviewing", label: "待复核" },
   { value: "ready_to_export", label: "可导出" },
-  { value: "completed", label: "已归档" },
+  { value: "completed", label: "已完成" },
 ];
-
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
-  reviewing: "复核中",
-  ready_to_export: "可导出",
-  completed: "已归档",
-};
-
-function formatTaskStatus(status: TaskStatus) {
-  return TASK_STATUS_LABELS[status];
-}
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -65,126 +43,49 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatDateRange(task: ReimbursementTask) {
-  return `${task.competition_start_date} 至 ${task.competition_end_date}`;
+function buildOutstandingConfirmationCount(reviewSummary: TaskReviewSummary) {
+  return reviewSummary.counts.pending_confirmation_count + reviewSummary.counts.missing_confirmation_count;
 }
 
-function buildTaskAnomalies(
-  reviewSummary: TaskReviewSummary,
-  overdueSummary: OverdueConfirmationList,
-): TaskAnomalyItem[] {
-  const items: TaskAnomalyItem[] = [];
-
-  if (reviewSummary.counts.blocker_failed_validation_count > 0) {
-    items.push({
-      label: "Must 级失败校验",
-      count: reviewSummary.counts.blocker_failed_validation_count,
-      tone: "failed",
-    });
-  }
-  if (reviewSummary.counts.failed_recognition_count > 0) {
-    items.push({
-      label: "识别失败",
-      count: reviewSummary.counts.failed_recognition_count,
-      tone: "failed",
-    });
-  }
-  if (reviewSummary.counts.needs_confirmation_recognition_count > 0) {
-    items.push({
-      label: "识别待人工确认",
-      count: reviewSummary.counts.needs_confirmation_recognition_count,
-      tone: "pending",
-    });
-  }
-  if (reviewSummary.counts.disputed_confirmation_count > 0) {
-    items.push({
-      label: "成员异议",
-      count: reviewSummary.counts.disputed_confirmation_count,
-      tone: "failed",
-    });
-  }
-
-  const unresolvedConfirmationCount =
-    reviewSummary.counts.pending_confirmation_count
-    + reviewSummary.counts.missing_confirmation_count;
-  if (unresolvedConfirmationCount > 0) {
-    items.push({
-      label: "待确认费用明细",
-      count: unresolvedConfirmationCount,
-      tone: "pending",
-    });
-  }
-  if (overdueSummary.is_overdue && overdueSummary.total_overdue_members > 0) {
-    items.push({
-      label: "逾期未确认成员",
-      count: overdueSummary.total_overdue_members,
-      tone: "failed",
-    });
-  }
-
-  return items;
+function buildMaterialGapCount(reviewSummary: TaskReviewSummary) {
+  return Number(reviewSummary.counts.pending_assignment_material_count ?? 0)
+    + Number(reviewSummary.counts.blocker_failed_validation_count ?? 0);
 }
 
 function buildPriorityScore(reviewSummary: TaskReviewSummary, overdueSummary: OverdueConfirmationList) {
+  const overdueMemberCount = Number(overdueSummary.total_overdue_members ?? 0);
   return reviewSummary.counts.blocker_failed_validation_count * 100
     + reviewSummary.counts.disputed_confirmation_count * 70
     + reviewSummary.counts.failed_recognition_count * 50
     + reviewSummary.counts.needs_confirmation_recognition_count * 30
-    + (reviewSummary.counts.pending_confirmation_count + reviewSummary.counts.missing_confirmation_count) * 10
-    + (overdueSummary.is_overdue ? overdueSummary.total_overdue_members * 20 : 0);
+    + buildOutstandingConfirmationCount(reviewSummary) * 10
+    + (overdueSummary.is_overdue ? overdueMemberCount * 20 : 0);
 }
 
-function buildTaskActionHint(
-  task: ReimbursementTask,
-  reviewSummary: TaskReviewSummary,
-  overdueSummary: OverdueConfirmationList,
-): TaskActionHint {
-  if (reviewSummary.counts.blocker_failed_validation_count > 0) {
-    return {
-      title: "先处理 Must 级失败校验",
-      summary: "当前任务还不能顺利推进到导出阶段，应优先修复关键校验异常。",
-    };
+function buildTaskAction(task: ReimbursementTask, reviewSummary: TaskReviewSummary, overdueSummary: OverdueConfirmationList) {
+  if (buildMaterialGapCount(reviewSummary) > 0) {
+    return "补材料";
   }
-  if (reviewSummary.counts.disputed_confirmation_count > 0 || overdueSummary.total_overdue_members > 0) {
-    return {
-      title: "催办成员确认或处理异议",
-      summary: "先把成员异议和逾期确认清掉，再继续推进复核与导出。",
-    };
-  }
-  if (reviewSummary.counts.failed_recognition_count > 0 || reviewSummary.counts.needs_confirmation_recognition_count > 0) {
-    return {
-      title: "补人工更正与识别确认",
-      summary: "识别失败和低置信度字段会拖慢后续复核，建议先回到发票更正页处理。",
-    };
-  }
-  if (task.status === "draft") {
-    return {
-      title: "补齐配置后发布任务",
-      summary: "草稿态任务应先确认成员名单、截止时间和费用类别，再开放提交。",
-    };
-  }
-  if (task.status === "open") {
-    return {
-      title: "继续收集材料",
-      summary: "当前仍在开放提交阶段，建议盯住截止时间并提前处理高风险任务。",
-    };
-  }
-  if (task.status === "closed" || task.status === "reviewing") {
-    return {
-      title: "进入复核总览推进清单",
-      summary: "任务已接近复核阶段，应把缺失材料、确认和异常项尽快清零。",
-    };
+  if (buildOutstandingConfirmationCount(reviewSummary) > 0 || overdueSummary.total_overdue_members > 0) {
+    return "催确认";
   }
   if (task.status === "ready_to_export") {
-    return {
-      title: "创建导出任务",
-      summary: "当前已达到可导出状态，可直接进入导出工作台生成所需材料。",
-    };
+    return "导出材料";
   }
-  return {
-    title: "保持归档记录可追溯",
-    summary: "当前任务已完成归档，后续主要用于查询和追溯，不再继续推进。",
-  };
+  if (task.status === "draft") {
+    return "完善任务";
+  }
+  return "进入处理";
+}
+
+function buildStatusTone(task: ReimbursementTask, reviewSummary: TaskReviewSummary, overdueSummary: OverdueConfirmationList) {
+  if (buildPriorityScore(reviewSummary, overdueSummary) > 0) {
+    return "warning" as const;
+  }
+  if (task.status === "ready_to_export" || task.status === "completed") {
+    return "success" as const;
+  }
+  return "info" as const;
 }
 
 export function AdminTaskListPage() {
@@ -247,16 +148,18 @@ export function AdminTaskListPage() {
     };
   }, [session]);
 
+  if (!session || session.role !== "admin") {
+    return null;
+  }
+
   const allItems = state.status === "ready" ? state.items : [];
   const filteredItems = allItems.filter(({ task }) => {
     const matchesStatus = statusFilter === "all" || task.status === statusFilter;
     const matchesSearch =
       deferredSearchQuery.length === 0
-      || task.id.toLowerCase().includes(deferredSearchQuery)
       || task.competition_name.toLowerCase().includes(deferredSearchQuery);
     return matchesStatus && matchesSearch;
   });
-
   const sortedFilteredItems = [...filteredItems].sort((left, right) => {
     const rightScore = buildPriorityScore(right.reviewSummary, right.overdueSummary);
     const leftScore = buildPriorityScore(left.reviewSummary, left.overdueSummary);
@@ -277,78 +180,50 @@ export function AdminTaskListPage() {
     readyToExportCount: allItems.filter(({ task }) => task.status === "ready_to_export").length,
   };
 
-  if (!session || session.role !== "admin") {
-    return null;
-  }
-
   return (
-    <div className="page-stack">
-      <section className="status-card dashboard-panel">
-        <div className="task-card-top">
-          <div>
-            <p className="eyebrow">Admin Tasks</p>
-            <h2>管理员任务列表</h2>
-          </div>
-          {state.status === "ready" ? (
-            <span className="status-chip">当前任务 {filteredItems.length} / {dashboardStats.total}</span>
-          ) : null}
-        </div>
-        <p>
-          当前页改成管理员工作台入口：先看哪些任务需要处理，再决定进入详情、复核还是导出，而不是先读大段说明文本。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link" to="/admin/tasks/new">
-            创建新任务
-          </Link>
-        </div>
-        <div className="dashboard-kpi-grid" aria-label="管理员任务概览">
-          <div className="kpi-card">
-            <strong className="kpi-value">{dashboardStats.total}</strong>
-            <span className="kpi-label">我负责的任务</span>
-            <p>只统计 `administrator_id` 与当前身份一致的任务。</p>
-          </div>
-          <div className="kpi-card">
-            <strong className="kpi-value">{dashboardStats.activeCount}</strong>
-            <span className="kpi-label">推进中的任务</span>
-            <p>包含开放提交、已关闭和复核中的任务。</p>
-          </div>
-          <div className="kpi-card">
-            <strong className="kpi-value">{dashboardStats.attentionCount}</strong>
-            <span className="kpi-label">需要优先处理</span>
-            <p>含 Must 级失败、识别异常、异议或逾期确认的任务。</p>
-          </div>
-          <div className="kpi-card">
-            <strong className="kpi-value">{dashboardStats.readyToExportCount}</strong>
-            <span className="kpi-label">可直接导出</span>
-            <p>这类任务可以直接进入导出工作台生成材料。</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="status-card admin-filter-panel">
-        <div className="admin-filter-header">
-          <div>
-            <p className="eyebrow">筛选与搜索</p>
-            <h2>先筛任务，再处理异常</h2>
-          </div>
-        </div>
-        <div className="admin-filter-grid">
+    <RoleWorkspace
+      header={(
+        <PageHeader
+          eyebrow="管理员工作台"
+          title="待处理任务"
+          description="先看我负责的任务、材料风险和待确认情况，再进入复核、提醒或导出。"
+          meta={`当前身份：${session.displayName}`}
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-primary" to="/admin/tasks/new">
+                创建任务
+              </Link>
+            </div>
+          )}
+        />
+      )}
+      summary={(
+        <section className="stat-grid" aria-label="管理员任务概览">
+          <StatCard label="我负责的任务" value={dashboardStats.total} description="当前归你负责的全部报销任务。" />
+          <StatCard label="推进中的任务" value={dashboardStats.activeCount} description="仍在收集、截止后待处理或待复核的任务。" />
+          <StatCard label="需要优先处理" value={dashboardStats.attentionCount} description="存在缺失材料、待确认费用或逾期事项。" />
+          <StatCard label="可导出任务" value={dashboardStats.readyToExportCount} description="条件已满足，可直接整理导出材料。" />
+        </section>
+      )}
+    >
+      <SectionCard title="筛选任务" description="通过任务名称和状态快速定位要处理的事项。">
+        <div className="filter-grid">
           <label className="field-stack">
-            <span>基础搜索</span>
+            <span>搜索任务</span>
             <input
+              aria-label="基础搜索"
               type="search"
-              name="task-search"
               value={searchQuery}
-              placeholder="输入任务编号或比赛名称"
+              placeholder="输入任务名称"
               onChange={(event) => {
                 setSearchQuery(event.target.value);
               }}
             />
           </label>
           <label className="field-stack">
-            <span>状态筛选</span>
+            <span>任务状态</span>
             <select
-              name="task-status-filter"
+              aria-label="状态筛选"
               value={statusFilter}
               onChange={(event) => {
                 setStatusFilter(event.target.value as TaskStatusFilter);
@@ -362,135 +237,95 @@ export function AdminTaskListPage() {
             </select>
           </label>
         </div>
-      </section>
+      </SectionCard>
 
       {state.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">Loading</p>
-          <h2>正在加载任务列表</h2>
-          <p>正在读取管理员任务、复核摘要和逾期确认摘要，请稍候。</p>
-        </section>
+        <SectionCard title="正在加载任务列表" description="正在读取任务概览，请稍候。" />
       ) : null}
 
       {state.status === "error" ? <ApiErrorNotice error={state.error} /> : null}
 
       {state.status === "ready" && allItems.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">Empty</p>
-          <h2>当前管理员名下还没有任务</h2>
-          <p>
-            当前 mock 管理员身份尚未匹配到任何 `administrator_id = {session.actorId}` 的任务；可先创建任务，再回到这里继续推进复核工作流。
-          </p>
-        </section>
+        <EmptyState
+          title="当前管理员名下还没有任务"
+          description="可以先创建一个新的报销任务，随后回到这里查看收集、复核和导出进度。"
+          action={(
+            <Link className="button button-primary" to="/admin/tasks/new">
+              创建新任务
+            </Link>
+          )}
+        />
       ) : null}
 
       {state.status === "ready" && allItems.length > 0 && sortedFilteredItems.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">No Match</p>
-          <h2>没有匹配当前筛选条件的任务</h2>
-          <p>请放宽状态筛选或清空搜索词，再重新查看管理员任务列表。</p>
-        </section>
+        <EmptyState
+          title="没有匹配当前筛选条件的任务"
+          description="可以清空搜索条件或切换状态筛选后重新查看。"
+        />
       ) : null}
 
       {state.status === "ready" && sortedFilteredItems.length > 0 ? (
-        <section className="task-card-grid" aria-label="管理员任务列表">
-          {sortedFilteredItems.map(({ task, reviewSummary, overdueSummary }) => {
-            const anomalies = buildTaskAnomalies(reviewSummary, overdueSummary);
-            const nextAction = buildTaskActionHint(task, reviewSummary, overdueSummary);
-
-            return (
-              <article key={task.id} className="task-card">
-                <div className="task-card-header">
-                  <div>
-                    <p className="task-card-id">任务编号 {task.id}</p>
-                    <h3>{task.competition_name}</h3>
-                  </div>
-                  <span className={`status-chip task-status-chip task-status-${task.status}`}>
-                    {formatTaskStatus(task.status)}
-                  </span>
-                </div>
-
-                <p className="task-stage-line">当前阶段：{formatTaskStatus(task.status)}</p>
-
-                <dl className="task-meta-grid">
-                  <div>
-                    <dt>比赛时间</dt>
-                    <dd>{formatDateRange(task)}</dd>
-                  </div>
-                  <div>
-                    <dt>截止时间</dt>
-                    <dd>{formatDateTime(task.deadline)}</dd>
-                  </div>
-                  <div>
-                    <dt>材料 / 发票</dt>
-                    <dd>
-                      {reviewSummary.counts.material_count} / {reviewSummary.counts.invoice_count}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>确认进度</dt>
-                    <dd>
-                      {reviewSummary.counts.confirmed_split_count} / {reviewSummary.counts.split_count}
-                    </dd>
-                  </div>
-                </dl>
-
-                <div className="task-insight-grid">
-                  <section className="task-insight">
-                    <span className="task-insight-label">推荐动作</span>
-                    <strong>{nextAction.title}</strong>
-                    <p>{nextAction.summary}</p>
-                  </section>
-                  <section className="task-insight">
-                    <span className="task-insight-label">异常视图</span>
-                    <strong>{anomalies.length > 0 ? `${anomalies.length} 类待处理问题` : "当前无异常"}</strong>
-                    <p>
-                      {anomalies.length > 0
-                        ? "优先清掉 Must 级失败、成员异议和逾期确认，再进入下一阶段。"
-                        : "当前没有阻断性问题，可按任务状态继续推进。"}
-                    </p>
-                  </section>
-                </div>
-
-                <section className="task-anomaly-panel" aria-label={`${task.id} 异常摘要`}>
-                  <div className="task-anomaly-header">
-                    <h4>异常摘要</h4>
-                    <span className="status-chip">
-                      {anomalies.length > 0 ? `${anomalies.length} 类异常` : "当前无异常"}
-                    </span>
-                  </div>
-                  {anomalies.length > 0 ? (
-                    <ul className="anomaly-chip-list">
-                      {anomalies.map((anomaly) => (
-                        <li
-                          key={`${task.id}:${anomaly.label}`}
-                          className={`anomaly-chip anomaly-chip-${anomaly.tone}`}
-                        >
-                          <span>{anomaly.label}</span>
-                          <strong>{anomaly.count}</strong>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="task-healthy-note">
-                      当前未发现 Must 级失败校验、识别异常、成员异议或逾期未确认成员。
-                    </p>
-                  )}
-                </section>
-
-                <div className="inline-actions">
-                  <Link className="route-link" to={`/admin/tasks/${task.id}`}>
-                    查看详情与状态操作
-                  </Link>
-                  <Link className="route-link route-link-secondary" to={`/admin/tasks/${task.id}/review`}>
-                    进入复核总览
-                  </Link>
-                </div>
-              </article>
-            );
-          })}
-        </section>
+        <SectionCard
+          title="任务列表"
+          description="任务列表是当前页面的主工作区，优先处理临近截止且存在风险的任务。"
+          action={<StatusBadge tone="info">共 {sortedFilteredItems.length} 条</StatusBadge>}
+        >
+          <TaskTable
+            caption="管理员待处理任务"
+            header={(
+              <tr>
+                <th>任务名称</th>
+                <th>状态</th>
+                <th>负责人</th>
+                <th>截止时间</th>
+                <th>待补材料</th>
+                <th>待确认费用</th>
+                <th>操作</th>
+              </tr>
+            )}
+          >
+            {sortedFilteredItems.map(({ task, reviewSummary, overdueSummary }) => {
+              const materialGapCount = buildMaterialGapCount(reviewSummary);
+              const outstandingCount = buildOutstandingConfirmationCount(reviewSummary);
+              const overdueCount = Number(overdueSummary.total_overdue_members ?? 0);
+              return (
+                <tr key={task.id}>
+                  <td>
+                    <div className="table-primary">
+                      <strong>{task.competition_name}</strong>
+                      <span>
+                        {task.competition_location} · {formatTaskStatus(task.status)}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <StatusBadge tone={buildStatusTone(task, reviewSummary, overdueSummary)}>
+                      {formatTaskStatus(task.status)}
+                    </StatusBadge>
+                  </td>
+                  <td>{session.displayName}</td>
+                  <td>{formatDateTime(task.deadline)}</td>
+                  <td>{materialGapCount}</td>
+                  <td>
+                    {outstandingCount}
+                    {overdueCount > 0 ? <span className="table-subnote">，逾期 {overdueCount}</span> : null}
+                  </td>
+                  <td>
+                    <div className="table-actions">
+                      <Link className="button button-primary button-small" to={`/admin/tasks/${task.id}/review`}>
+                        {buildTaskAction(task, reviewSummary, overdueSummary)}
+                      </Link>
+                      <Link className="button button-secondary button-small" to={`/admin/tasks/${task.id}`}>
+                        查看详情
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </TaskTable>
+        </SectionCard>
       ) : null}
-    </div>
+    </RoleWorkspace>
   );
 }

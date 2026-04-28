@@ -436,13 +436,10 @@ export function AdminSplitEditorPage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-task-detail-hero">
-        <p className="eyebrow">Admin Split Editor</p>
+        <p className="eyebrow">费用分摊</p>
         <h2>费用分摊编辑</h2>
         <p>
-          本页只复用现有任务详情、管理员复核摘要和发票分摊接口，聚焦管理员为单张发票维护归属成员和分摊金额，并显式展示服务端拒绝原因。
-        </p>
-        <p className="status-note">
-          当前使用 mock 管理员身份 {session.displayName}（{session.actorId}）。前端只提示分摊合计与发票金额差额，不把差额自动修正成“成功”，最终以服务端返回结果为准。
+          在这里为单张发票维护归属成员和分摊金额，并检查总额是否一致。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
@@ -456,7 +453,7 @@ export function AdminSplitEditorPage() {
 
       {pageState.status === "loading" ? (
         <section className="status-card admin-task-detail-panel">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">费用分摊</p>
           <h2>正在加载分摊编辑上下文</h2>
           <p>正在读取任务信息、发票列表、当前分摊和确认状态，请稍候。</p>
         </section>
@@ -467,12 +464,9 @@ export function AdminSplitEditorPage() {
 
       {pageState.status === "ready" && isForeignTask ? (
         <section className="status-card admin-task-detail-panel">
-          <p className="eyebrow">Access Scope</p>
+          <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
-          <p>
-            当前任务的 `administrator_id` 为 {task?.administrator_id}，与当前 mock 管理员
-            {session.actorId} 不一致。为避免真实鉴权未接入前误编辑无关任务分摊，本页不展示分摊表单。
-          </p>
+          <p>你当前没有处理该任务的权限，如需访问请联系对应负责人。</p>
         </section>
       ) : null}
 

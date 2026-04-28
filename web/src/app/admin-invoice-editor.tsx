@@ -13,6 +13,11 @@ import type {
   TaskReviewSummaryMaterialItem,
   ValidationResult,
 } from "../lib/api/types";
+import {
+  describeRecognitionFailure,
+  formatMemberLabel,
+  formatValidationRule,
+} from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 
 type InvoiceEditorPageState =
@@ -70,9 +75,9 @@ const RECOGNITION_STATUS_LABELS: Record<string, string> = {
 };
 
 const RECOGNITION_SOURCE_LABELS: Record<string, string> = {
-  ai: "AI",
-  ocr: "OCR",
-  pdf_text: "PDF 文本",
+  ai: "系统识别",
+  ocr: "图片识别",
+  pdf_text: "文档识别",
   manual: "人工更正",
 };
 
@@ -94,9 +99,9 @@ const VALIDATION_STATUS_LABELS: Record<string, string> = {
 };
 
 const VALIDATION_SEVERITY_LABELS: Record<string, string> = {
-  blocker: "Blocker",
-  warning: "Warning",
-  info: "Info",
+  blocker: "需要立即处理",
+  warning: "需要关注",
+  info: "已记录",
 };
 
 const INVOICE_FIELD_CONFIGS: InvoiceFieldConfig[] = [
@@ -515,9 +520,9 @@ export function AdminInvoiceEditorPage() {
     return (
       <div className="page-stack">
         <section className="status-card">
-          <p className="eyebrow">Task Missing</p>
+          <p className="eyebrow">发票补录</p>
           <h2>任务标识缺失</h2>
-          <p>当前路由未提供任务编号，无法进入发票人工录入与更正页。</p>
+          <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
       </div>
     );
@@ -608,13 +613,10 @@ export function AdminInvoiceEditorPage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-task-detail-hero">
-        <p className="eyebrow">Admin Invoice Entry</p>
+        <p className="eyebrow">发票补录与更正</p>
         <h2>发票人工录入与更正</h2>
         <p>
-          本页只复用现有任务详情、管理员复核摘要和发票录入接口，聚焦管理员在识别结果基础上录入或更正发票字段，并立即查看刷新后的校验反馈。
-        </p>
-        <p className="status-note">
-          当前使用 mock 管理员身份 {session.displayName}（{session.actorId}）。保存时不会在前端伪装“已重新校验”，而是直接依据服务端返回的校验结果和随后刷新的复核摘要展示状态。
+          在这里根据已有识别结果补录或修正发票信息，并查看保存后的校验反馈。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
@@ -625,7 +627,7 @@ export function AdminInvoiceEditorPage() {
 
       {pageState.status === "loading" ? (
         <section className="status-card admin-task-detail-panel">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">发票补录</p>
           <h2>正在加载发票录入上下文</h2>
           <p>正在读取任务信息、发票材料和识别/校验摘要，请稍候。</p>
         </section>
@@ -636,12 +638,9 @@ export function AdminInvoiceEditorPage() {
 
       {pageState.status === "ready" && isForeignTask ? (
         <section className="status-card admin-task-detail-panel">
-          <p className="eyebrow">Access Scope</p>
+          <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
-          <p>
-            当前任务的 `administrator_id` 为 {task?.administrator_id}，与当前 mock 管理员
-            {session.actorId} 不一致。为避免真实鉴权未接入前误录入无关任务发票，本页不展示编辑表单。
-          </p>
+          <p>你当前没有处理该任务的权限，如需访问请联系对应负责人。</p>
         </section>
       ) : null}
 
@@ -693,7 +692,7 @@ export function AdminInvoiceEditorPage() {
                           <dl className="task-meta-grid invoice-editor-summary-grid">
                             <div>
                               <dt>提交人</dt>
-                              <dd>{material.submitter_id ?? "未知提交人"}</dd>
+                              <dd>{formatMemberLabel(material.submitter_id)}</dd>
                             </div>
                             <div>
                               <dt>识别状态</dt>
@@ -889,7 +888,7 @@ export function AdminInvoiceEditorPage() {
 
                     {selectedRecognition?.status === "failed" && selectedRecognition.failure ? (
                       <p className="field-hint">
-                        当前识别失败于 {selectedRecognition.failure.stage} 阶段：{selectedRecognition.failure.reason}
+                        {describeRecognitionFailure(selectedRecognition.failure)}
                       </p>
                     ) : null}
 
@@ -992,7 +991,7 @@ export function AdminInvoiceEditorPage() {
                         {selectedValidations.map((validation) => (
                           <li key={validation.id}>
                             <div className="task-card-header">
-                              <strong>{validation.rule_code}</strong>
+                              <strong>{formatValidationRule(validation.rule_code)}</strong>
                               <span className={`status-chip member-status-chip-${validation.status}`}>
                                 {formatValidationStatus(validation.status)}
                               </span>
@@ -1009,7 +1008,7 @@ export function AdminInvoiceEditorPage() {
 
                   <div className="admin-form-footer">
                     <p className="field-hint">
-                      当前录入入口仅保守地放在管理员路径；若后续需要成员侧直接编辑，可在独立任务中复用本页字段与反馈边界继续扩展。
+                      保存后请继续根据校验结果补充材料或回到复核页处理剩余问题。
                     </p>
                     <button className="route-link" type="submit" disabled={isSubmitting}>
                       {isSubmitting ? "正在保存并刷新摘要" : "保存发票字段"}

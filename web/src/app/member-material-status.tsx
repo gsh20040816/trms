@@ -10,9 +10,15 @@ import type {
   RecognitionTaskList,
   RecognitionTaskRecord,
   ReimbursementTask,
-  TaskStatus,
   ValidationResult,
 } from "../lib/api/types";
+import {
+  describeRecognitionFailure,
+  formatMaterialType,
+  formatSubmissionChannel,
+  formatTaskStatus,
+  formatValidationRule,
+} from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 
 type VisibleTaskState =
@@ -40,24 +46,6 @@ type MemberMaterialStatusItem = {
   invoice: InvoiceRecord | null;
   validations: ValidationResult[];
   missingMaterialTips: MissingMaterialTip[];
-};
-
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
-  reviewing: "复核中",
-  ready_to_export: "可导出",
-  completed: "已归档",
-};
-
-const MATERIAL_TYPE_LABELS: Record<MaterialType, string> = {
-  invoice: "发票",
-  payment_record: "支付记录",
-  competition_notice: "比赛通知",
-  itinerary: "行程单",
-  order_screenshot: "订单截图",
-  other_attachment: "其他附件",
 };
 
 const RECOGNITION_STATUS_LABELS: Record<string, string> = {
@@ -100,14 +88,6 @@ function pickSelectedTaskId(
     return preferredTaskId;
   }
   return tasks[0]?.id ?? "";
-}
-
-function formatTaskStatus(status: TaskStatus) {
-  return TASK_STATUS_LABELS[status];
-}
-
-function formatMaterialType(materialType: MaterialType) {
-  return MATERIAL_TYPE_LABELS[materialType] ?? materialType;
 }
 
 function formatDateTime(value: string) {
@@ -161,9 +141,7 @@ function summarizeRecognition(recognition: RecognitionTaskRecord | null) {
     return {
       tone: "failed" as const,
       title: RECOGNITION_STATUS_LABELS[recognition.status],
-      details: recognition.failure
-        ? [`失败阶段：${recognition.failure.stage}`, `失败原因：${recognition.failure.reason}`]
-        : ["识别失败，但服务端未返回失败明细。"],
+      details: [describeRecognitionFailure(recognition.failure)],
     };
   }
 
@@ -411,13 +389,10 @@ export function MemberMaterialStatusPage() {
   return (
     <div className="page-stack">
       <section className="status-card auth-panel">
-        <p className="eyebrow">Member Status</p>
+        <p className="eyebrow">材料状态</p>
         <h2>成员材料状态</h2>
         <p>
           当前页聚合当前成员自己提交的材料状态，只展示本人材料的识别进度、发票校验异常和缺失材料提示，不暴露同任务下其他成员的材料详情。
-        </p>
-        <p className="status-note">
-          当前使用 mock 成员身份 {session.displayName}（{session.actorId}）。页面基于现有材料列表、识别任务和发票校验接口做只读聚合，不额外引入新的成员专用后端路由。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/member">
@@ -447,9 +422,9 @@ export function MemberMaterialStatusPage() {
 
       {taskState.status === "ready" && visibleTasks.length === 0 ? (
         <section className="status-card">
-          <p className="eyebrow">Empty</p>
+          <p className="eyebrow">暂无任务</p>
           <h2>当前没有可查看状态的报销任务</h2>
-          <p>当前 mock 成员尚未匹配到任何可见任务，因此也没有可聚合的材料状态。</p>
+          <p>管理员创建并发布相关任务后，你可以在这里查看自己的材料状态。</p>
         </section>
       ) : null}
 
@@ -482,7 +457,7 @@ export function MemberMaterialStatusPage() {
                   </option>
                 ))}
               </select>
-              <span className="field-hint">只列出当前成员可见任务；状态页继续只聚合你本人提交的材料。</span>
+              <span className="field-hint">这里只列出你可以查看的任务，并只汇总你本人提交的材料。</span>
             </label>
             {selectedTask ? (
               <dl className="task-meta-grid member-status-meta-grid">
@@ -520,12 +495,9 @@ export function MemberMaterialStatusPage() {
 
       {selectedTask && materialState.status === "ready" && materialState.items.length === 0 ? (
         <section className="status-card">
-          <p className="eyebrow">Empty</p>
+          <p className="eyebrow">尚未提交</p>
           <h2>当前任务下还没有你提交的材料</h2>
-          <p>
-            任务 {materialState.task.id} 当前对你可见，但在现有材料列表里还没有 `submitter_id`
-            为 {session.actorId} 的记录，因此状态页不会显示同任务其他成员的材料。
-          </p>
+          <p>你还没有向当前任务提交材料，可以先上传发票或辅助材料。</p>
         </section>
       ) : null}
 
@@ -556,7 +528,7 @@ export function MemberMaterialStatusPage() {
                   </div>
                   <div>
                     <dt>提交渠道</dt>
-                    <dd>{item.material.channel}</dd>
+                    <dd>{formatSubmissionChannel(item.material.channel)}</dd>
                   </div>
                   <div>
                     <dt>重复文件</dt>
@@ -598,7 +570,7 @@ export function MemberMaterialStatusPage() {
                     <ul className="member-status-message-list" aria-label={`${item.material.id} 校验异常列表`}>
                       {validationSummary.abnormalValidations.map((validation) => (
                         <li key={validation.id}>
-                          <strong>{validation.rule_code}</strong>
+                          <strong>{formatValidationRule(validation.rule_code)}</strong>
                           <span>{validation.message}</span>
                         </li>
                       ))}

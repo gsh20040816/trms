@@ -13,8 +13,8 @@ import type {
   TaskExportCapability,
   TaskExportJobRecord,
   TaskExportJobStatus,
-  TaskStatus,
 } from "../lib/api/types";
+import { formatExportJobStatus, formatTaskStatus } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 
 type ExportPageState =
@@ -38,15 +38,6 @@ type PreviewState =
       content: string;
     };
 
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
-  reviewing: "复核中",
-  ready_to_export: "可导出",
-  completed: "已归档",
-};
-
 const EXPORT_KIND_LABELS: Record<ExportArtifactKind, string> = {
   reimbursement_summary: "报销汇总表",
   member_details: "成员明细表",
@@ -68,15 +59,8 @@ const EXPORT_KIND_DESCRIPTIONS: Record<ExportArtifactKind, string> = {
 const EXPORT_FORMAT_LABELS: Record<ExportArtifactFormat, string> = {
   xlsx: "XLSX",
   csv: "CSV",
-  json: "JSON",
+  json: "在线预览",
   pdf: "PDF",
-};
-
-const EXPORT_JOB_STATUS_LABELS: Record<TaskExportJobStatus, string> = {
-  pending: "待执行",
-  running: "执行中",
-  succeeded: "已完成",
-  failed: "失败",
 };
 
 const PREFERRED_JOB_FORMATS: Record<ExportArtifactKind, ExportArtifactFormat> = {
@@ -88,20 +72,12 @@ const PREFERRED_JOB_FORMATS: Record<ExportArtifactKind, ExportArtifactFormat> = 
   merged_pdf: "pdf",
 };
 
-function formatTaskStatus(status: TaskStatus) {
-  return TASK_STATUS_LABELS[status];
-}
-
 function formatExportKind(kind: ExportArtifactKind) {
   return EXPORT_KIND_LABELS[kind];
 }
 
 function formatExportFormat(format: ExportArtifactFormat) {
   return EXPORT_FORMAT_LABELS[format] ?? format.toUpperCase();
-}
-
-function formatExportJobStatus(status: TaskExportJobStatus) {
-  return EXPORT_JOB_STATUS_LABELS[status];
 }
 
 function formatDateTime(value: string) {
@@ -139,15 +115,15 @@ function buildPreviewDescriptor(capability: TaskExportCapability) {
   if (capability.kind === "finance_draft") {
     return {
       available: true,
-      buttonLabel: "查看 JSON 草稿",
-      placeholderLabel: "JSON 即时输出",
+      buttonLabel: "查看草稿预览",
+      placeholderLabel: "在线草稿预览",
     };
   }
 
   return {
     available: capability.implemented_formats.includes("csv"),
-    buttonLabel: "查看 CSV 即时输出",
-    placeholderLabel: capability.implemented_formats.includes("csv") ? "CSV 即时输出" : "下载入口占位",
+    buttonLabel: "查看在线预览",
+    placeholderLabel: capability.implemented_formats.includes("csv") ? "在线预览" : "下载入口待开放",
   };
 }
 
@@ -156,9 +132,9 @@ function buildPreviewNote(kind: ExportArtifactKind) {
     return "当前展示的是 PDF 合并顺序与可读性检查计划，不代表真实持久化下载产物。";
   }
   if (kind === "finance_draft") {
-    return "当前展示的是即时 JSON 草稿，真实 XLSX 下载入口将在导出产物持久化后接入。";
+    return "当前展示的是在线草稿预览，正式下载入口会在导出产物生成后提供。";
   }
-  return "当前展示的是即时 API 输出预览，真实 XLSX 下载入口将在导出产物持久化后接入。";
+  return "当前展示的是在线预览，正式下载入口会在导出产物生成后提供。";
 }
 
 function stringifyStructuredPreview(payload: FinanceDraftExport | MergedPdfExportPlan) {
@@ -243,9 +219,9 @@ export function AdminExportTasksPage() {
     return (
       <div className="page-stack">
         <section className="status-card">
-          <p className="eyebrow">Task Missing</p>
+          <p className="eyebrow">导出任务</p>
           <h2>任务标识缺失</h2>
-          <p>当前路由未提供任务编号，无法进入导出任务页。</p>
+          <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
       </div>
     );
@@ -343,10 +319,10 @@ export function AdminExportTasksPage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-review-hero">
-        <p className="eyebrow">Admin Exports</p>
+        <p className="eyebrow">导出与提交材料</p>
         <h2>导出任务页面</h2>
         <p>
-          本页复用现有导出能力边界、导出任务模型和即时输出接口，负责创建导出任务、查看状态以及保留下载入口占位，不新增新的导出协议。
+          这里用于生成汇总表、成员明细、缺失材料清单和提交草稿，并查看最近一次导出状态。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
@@ -363,7 +339,7 @@ export function AdminExportTasksPage() {
 
       {pageState.status === "loading" ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">导出任务</p>
           <h2>正在加载导出边界</h2>
           <p>正在读取任务信息、导出能力和既有导出任务，请稍候。</p>
         </section>
@@ -391,8 +367,8 @@ export function AdminExportTasksPage() {
                 <dd>{pageState.boundary.export_allowed ? "已满足" : "未满足"}</dd>
               </div>
               <div>
-                <dt>执行模式</dt>
-                <dd>{pageState.boundary.execution_mode}</dd>
+                <dt>导出方式</dt>
+                <dd>{pageState.boundary.execution_mode === "worker" ? "后台生成" : "立即生成"}</dd>
               </div>
               <div>
                 <dt>导出任务数</dt>
@@ -414,7 +390,7 @@ export function AdminExportTasksPage() {
                 <ul className="admin-review-list" aria-label="导出阻塞原因">
                   {pageState.boundary.blocking_reasons.map((reason) => (
                     <li key={reason}>
-                      <strong>后端返回</strong>
+                      <strong>待处理事项</strong>
                       <span>{reason}</span>
                     </li>
                   ))}
@@ -458,7 +434,7 @@ export function AdminExportTasksPage() {
                       允许格式：{capability.formats.map(formatExportFormat).join(" / ")}
                     </span>
                     <span className="status-chip">
-                      即时预览：{previewDescriptor.placeholderLabel}
+                      在线预览：{previewDescriptor.placeholderLabel}
                     </span>
                     {latestJob ? (
                       <span className={`status-chip ${buildJobStatusTone(latestJob.status)}`}>
@@ -491,7 +467,7 @@ export function AdminExportTasksPage() {
                       </button>
                     ) : (
                       <span className="field-hint">
-                        下载入口占位：当前后端尚无可直接预览的即时输出。
+                        当前还没有可预览的在线内容，可先创建导出任务。
                       </span>
                     )}
                   </div>
@@ -502,9 +478,9 @@ export function AdminExportTasksPage() {
 
           {previewState.status === "loading" ? (
             <section className="status-card admin-review-panel export-preview-panel">
-              <p className="eyebrow">Preview Loading</p>
+              <p className="eyebrow">预览加载中</p>
               <h2>{previewState.title}</h2>
-              <p>正在拉取当前即时输出，请稍候。</p>
+              <p>正在准备当前预览内容，请稍候。</p>
             </section>
           ) : null}
 
@@ -516,7 +492,7 @@ export function AdminExportTasksPage() {
 
           {previewState.status === "ready" ? (
             <section className="status-card admin-review-panel export-preview-panel">
-              <p className="eyebrow">Preview</p>
+              <p className="eyebrow">预览</p>
               <h2>{previewState.title}</h2>
               <p>{previewState.note}</p>
               <pre className="export-preview-content">{previewState.content}</pre>
@@ -559,7 +535,7 @@ export function AdminExportTasksPage() {
                       </div>
                       <div>
                         <dt>数据版本</dt>
-                        <dd>{job.is_latest_for_task ? "当前最新版本" : "旧版本，数据已变化"}</dd>
+                        <dd>{job.is_latest_for_task ? "当前最新版本" : "任务数据已更新"}</dd>
                       </div>
                       <div>
                         <dt>创建时间</dt>
@@ -578,7 +554,7 @@ export function AdminExportTasksPage() {
                     ) : null}
 
                     <p className="field-hint">
-                      下载入口占位：当前仅记录导出任务元数据，尚未持久化产物 URL；真实下载链接将在导出文件落盘或对象存储接入后补齐。
+                      当前先记录导出状态与时间；正式下载入口会在导出产物生成后提供。
                     </p>
                   </article>
                 ))}

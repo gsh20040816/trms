@@ -214,14 +214,10 @@ export function AdminTaskCreatePage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-create-hero">
-        <p className="eyebrow">Admin Task Create</p>
+        <p className="eyebrow">创建任务</p>
         <h2>创建报销任务</h2>
         <p>
-          本页只覆盖管理员创建报销任务的最小闭环：录入基础信息、成员名单和费用类别，提交到现有
-          `POST /api/tasks` 接口，并在失败时显式展示服务端错误。
-        </p>
-        <p className="status-note">
-          当前仍使用 mock 管理员身份 {session.displayName}（{session.actorId}）。抬头和税号留空时，将由后端尝试继承全局配置；若后端未配置，会返回明确错误。
+          填写比赛信息、成员名单、费用类别和报销基础信息后，即可创建一个新的报销任务。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/admin">
@@ -468,15 +464,15 @@ export function AdminTaskCreatePage() {
             </label>
           </div>
           <p className="field-hint">
-            本轮前端只做最小边界：这两个字段允许留空，由后端决定是否使用系统级默认值。
+            这两个字段可以留空；如果系统已配置默认值，会自动补入。
           </p>
         </section>
 
         <section className="status-card admin-form-card admin-form-footer">
           <div>
-            <p className="eyebrow">Submit</p>
+            <p className="eyebrow">提交</p>
             <h2>提交创建请求</h2>
-            <p>提交失败时不会静默降级，页面会直接展示服务端返回的 `detail` 或字段错误。</p>
+            <p>如果信息不完整或不符合要求，页面会直接提示需要补充的内容。</p>
           </div>
           <div className="inline-actions">
             <Link className="route-link route-link-secondary" to="/admin">

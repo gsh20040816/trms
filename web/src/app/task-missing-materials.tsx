@@ -4,13 +4,11 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type {
-  ExpenseType,
-  MaterialType,
   MissingMaterialItem,
   ReimbursementTask,
-  TaskStatus,
   VisibleMissingMaterialList,
 } from "../lib/api/types";
+import { formatExpenseType, formatMaterialType, formatMemberLabel, formatTaskStatus, formatValidationRule } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 
 type GroupMode = "member" | "invoice" | "expense_type";
@@ -38,50 +36,11 @@ type SelectedTaskMissingMaterialState =
   | { status: "error"; task: ReimbursementTask; error: unknown }
   | { status: "ready"; task: ReimbursementTask; list: VisibleMissingMaterialList };
 
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
-  reviewing: "复核中",
-  ready_to_export: "可导出",
-  completed: "已归档",
-};
-
-const MATERIAL_TYPE_LABELS: Record<MaterialType, string> = {
-  invoice: "发票",
-  payment_record: "支付记录",
-  competition_notice: "比赛通知",
-  itinerary: "行程单",
-  order_screenshot: "订单截图",
-  other_attachment: "其他附件",
-};
-
-const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
-  registration: "参赛费",
-  railway: "铁路交通",
-  airfare: "航空交通",
-  local_transport: "市内交通",
-  hotel: "住宿费",
-  other: "其他费用",
-};
-
 const GROUP_MODE_LABELS: Record<GroupMode, string> = {
   member: "按成员查看",
   invoice: "按发票查看",
   expense_type: "按费用类型查看",
 };
-
-function formatTaskStatus(status: TaskStatus) {
-  return TASK_STATUS_LABELS[status];
-}
-
-function formatMaterialType(materialType: MaterialType) {
-  return MATERIAL_TYPE_LABELS[materialType] ?? materialType;
-}
-
-function formatExpenseType(expenseType: ExpenseType) {
-  return EXPENSE_TYPE_LABELS[expenseType] ?? expenseType;
-}
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -111,8 +70,8 @@ function buildGroupDescriptor(item: MissingMaterialItem, groupMode: GroupMode) {
       key: item.member_id ?? "__unresolved__",
       title: item.member_id ?? "未解析提交人",
       subtitle: item.member_id
-        ? `当前成员涉及 ${formatExpenseType(item.expense_type)} 等缺失项`
-        : "当前缺失项尚未解析到具体提交成员",
+        ? `${formatMemberLabel(item.member_id)}涉及 ${formatExpenseType(item.expense_type)} 等待补材料项`
+        : "当前缺失项尚未归到具体成员",
     };
   }
 
@@ -120,7 +79,7 @@ function buildGroupDescriptor(item: MissingMaterialItem, groupMode: GroupMode) {
     return {
       key: item.invoice_id,
       title: `发票 ${item.invoice_number}`,
-      subtitle: `${formatExpenseType(item.expense_type)} / ${item.member_id ?? "未解析提交人"}`,
+      subtitle: `${formatExpenseType(item.expense_type)} / ${formatMemberLabel(item.member_id)}`,
     };
   }
 
@@ -191,9 +150,9 @@ function MissingMaterialGroupList({
                 <strong>
                   {item.invoice_number} / {formatMaterialType(item.required_material_type)}
                 </strong>
-                <span>提交成员：{item.member_id ?? "未解析提交人"}</span>
+                <span>相关成员：{formatMemberLabel(item.member_id)}</span>
                 <span>费用类型：{formatExpenseType(item.expense_type)}</span>
-                <span>规则编码：{item.source_rule_code}</span>
+                <span>问题类型：{formatValidationRule(item.source_rule_code)}</span>
                 <span>{item.message}</span>
                 <span>发现时间：{formatDateTime(item.detected_at)}</span>
               </li>
@@ -260,9 +219,9 @@ export function AdminMissingMaterialsPage() {
     return (
       <div className="page-stack">
         <section className="status-card">
-          <p className="eyebrow">Task Missing</p>
+          <p className="eyebrow">缺失材料</p>
           <h2>任务标识缺失</h2>
-          <p>当前路由未提供任务编号，无法查看缺失材料清单。</p>
+          <p>暂时无法读取该任务，请从任务列表重新进入。</p>
         </section>
       </div>
     );
@@ -277,13 +236,10 @@ export function AdminMissingMaterialsPage() {
   return (
     <div className="page-stack">
       <section className="status-card admin-review-hero">
-        <p className="eyebrow">Missing Materials</p>
+        <p className="eyebrow">缺失材料</p>
         <h2>缺失材料清单</h2>
         <p>
-          本页直接读取任务级缺失材料聚合结果，支持按成员、发票或费用类型切换查看，不把导出接口硬套成页面数据源。
-        </p>
-        <p className="status-note">
-          当前仍使用 mock 管理员身份 {session.displayName}（{session.actorId}）。如果后端拒绝访问，本页会直接显示真实错误。
+          这里集中查看当前任务里仍需补充的材料，并按成员、发票或费用类型整理查看。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/admin">
@@ -307,12 +263,9 @@ export function AdminMissingMaterialsPage() {
 
       {state.status === "ready" && isForeignTask ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">Access Scope</p>
+          <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
-          <p>
-            当前任务的 `administrator_id` 为 {task?.administrator_id}，与当前 mock 管理员
-            {session.actorId} 不一致。为避免在真实鉴权接入前误操作，本页不展示缺失材料详情。
-          </p>
+          <p>你当前没有查看该任务的权限，如需访问请联系对应负责人。</p>
         </section>
       ) : null}
 
@@ -378,16 +331,16 @@ export function AdminMissingMaterialsPage() {
                   <option value="invoice">按发票查看</option>
                   <option value="expense_type">按费用类型查看</option>
                 </select>
-                <span className="field-hint">当前缺失项只读展示，不在本页直接代替管理员完成补材料提醒或人工更正。</span>
+                <span className="field-hint">这里用于梳理待补材料，提醒和更正可在其他工作页继续处理。</span>
               </label>
             </div>
           </section>
 
           {visibleList.items.length === 0 ? (
             <section className="status-card admin-review-panel">
-              <p className="eyebrow">Empty</p>
+              <p className="eyebrow">当前状态良好</p>
               <h2>当前任务没有缺失材料</h2>
-              <p>现有缺失材料聚合结果为空，说明当前任务下没有命中“需补充材料”的失败校验。</p>
+              <p>当前没有发现需要补充的材料，可以继续推进其他复核事项。</p>
             </section>
           ) : (
             <MissingMaterialGroupList groups={readyGroups} />
@@ -505,13 +458,10 @@ export function MemberMissingMaterialsPage() {
   return (
     <div className="page-stack">
       <section className="status-card auth-panel">
-        <p className="eyebrow">Member Missing Materials</p>
+        <p className="eyebrow">我的待补材料</p>
         <h2>我的缺失材料</h2>
         <p>
           当前页只展示当前成员本人需要补充的材料，不暴露同任务下其他成员的缺失项。
-        </p>
-        <p className="status-note">
-          当前仍使用 mock 成员身份 {session.displayName}（{session.actorId}）。页面直接读取服务端按成员裁剪后的缺失材料列表，不在前端二次猜测权限。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/member">
@@ -540,9 +490,9 @@ export function MemberMissingMaterialsPage() {
 
       {taskState.status === "ready" && visibleTasks.length === 0 ? (
         <section className="status-card">
-          <p className="eyebrow">Empty</p>
+          <p className="eyebrow">暂无任务</p>
           <h2>当前没有可查看的报销任务</h2>
-          <p>当前 mock 成员尚未匹配到任何可见任务，因此也没有可读取的缺失材料清单。</p>
+          <p>管理员创建并发布相关任务后，你可以在这里查看待补材料。</p>
         </section>
       ) : null}
 
@@ -575,7 +525,7 @@ export function MemberMissingMaterialsPage() {
                   </option>
                 ))}
               </select>
-              <span className="field-hint">这里只列出当前成员可见任务，且缺失材料清单继续只返回当前成员本人相关条目。</span>
+              <span className="field-hint">这里只列出你可以查看的任务，并只显示与你相关的待补材料。</span>
             </label>
             <label className="field-stack">
               <span>查看维度</span>
@@ -589,7 +539,7 @@ export function MemberMissingMaterialsPage() {
                 <option value="invoice">按发票查看</option>
                 <option value="expense_type">按费用类型查看</option>
               </select>
-              <span className="field-hint">成员视角不提供“按成员查看”，因为当前列表不会包含其他成员数据。</span>
+              <span className="field-hint">成员视角不显示其他成员的信息。</span>
             </label>
           </div>
           {selectedTask && visibleList ? (
@@ -614,12 +564,9 @@ export function MemberMissingMaterialsPage() {
 
       {selectedTask && listState.status === "ready" && listState.list.items.length === 0 ? (
         <section className="status-card">
-          <p className="eyebrow">Empty</p>
+          <p className="eyebrow">已补齐</p>
           <h2>当前任务下你没有待补材料</h2>
-          <p>
-            任务 {listState.task.id} 当前对你可见，但现有缺失材料聚合结果里没有 `member_id`
-            为 {session.actorId} 的条目。
-          </p>
+          <p>当前任务下没有与你相关的待补材料记录，如有新提醒会在这里显示。</p>
         </section>
       ) : null}
 

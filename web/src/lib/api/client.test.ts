@@ -49,11 +49,11 @@ describe("ApiClient", () => {
     await expect(client.request("/tasks", { method: "POST", body: { member_ids: [""] } })).rejects.toMatchObject({
       status: 422,
       summary: {
-        title: "接口请求失败",
-        message: "请求参数不合法",
+        title: "操作未完成",
+        message: "当前操作未完成，请检查填写内容后重试。",
         fieldIssues: [
           {
-            path: "member_ids.0",
+            label: "成员名单第 1 项",
             message: "list items must not be blank",
           },
         ],
@@ -87,9 +87,9 @@ describe("ApiClient", () => {
     await expect(client.request("/tasks")).rejects.toMatchObject({
       status: 0,
       summary: {
-        title: "网络请求失败",
-        message: "无法连接到 TRMS 后端服务",
-        detailLines: ["fetch failed"],
+        title: "网络连接异常",
+        message: "网络连接异常，请检查网络后重试。",
+        detailLines: [],
       },
     });
   });

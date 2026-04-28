@@ -87,8 +87,8 @@ describe("front-end permission visibility", () => {
 
     renderRoute("/member");
 
-    expect(await screen.findByRole("heading", { name: "成员可提交任务" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "上传材料" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "我的报销任务" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "提交材料" }).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: "创建新任务" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "录入或更正发票" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "进入复核总览" })).not.toBeInTheDocument();
@@ -103,8 +103,8 @@ describe("front-end permission visibility", () => {
 
     renderRoute("/admin/tasks/TASK-SECRET");
 
-    expect(await screen.findByRole("heading", { name: "管理员后台 暂不可访问" })).toBeInTheDocument();
-    expect(screen.getByText("当前登录身份不匹配；此入口仅允许管理员身份访问。")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "管理员工作台 暂不可访问" })).toBeInTheDocument();
+    expect(screen.getByText("当前登录身份不匹配；此入口仅允许管理员访问。")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "录入或更正发票" })).not.toBeInTheDocument();
     expect(screen.queryByText("TASK-SECRET")).not.toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -158,8 +158,8 @@ describe("front-end permission visibility", () => {
 
     renderRoute("/admin");
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(screen.getByText("task list is temporarily unavailable")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("系统暂时不可用，请稍后再试。")).toBeInTheDocument();
     expectSensitiveConfigNotVisible();
   });
 });

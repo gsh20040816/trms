@@ -277,7 +277,7 @@ describe("admin invoice editor page", () => {
     expect(screen.getByDisplayValue("AI-INV-001")).toBeInTheDocument();
     expect(screen.getByDisplayValue("123.45")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Tongji ACM Lab")).toBeInTheDocument();
-    expect(screen.getByText("来源：OCR，置信度 43%")).toBeInTheDocument();
+    expect(screen.getByText("来源：图片识别，置信度 43%")).toBeInTheDocument();
     expect(screen.getAllByText("待确认")).not.toHaveLength(0);
 
     const validationList = screen.getByText("当前材料还没有对应发票校验结果；若这是首次录入，保存后会生成新的校验结果。");
@@ -357,7 +357,7 @@ describe("admin invoice editor page", () => {
     ).toBeInTheDocument();
 
     const validationList = within(screen.getByLabelText("发票校验结果列表"));
-    expect(validationList.getByText("invoice_tax_number_match")).toBeInTheDocument();
+    expect(validationList.getByText("税号需要核对")).toBeInTheDocument();
     expect(validationList.getByText("税号不匹配")).toBeInTheDocument();
   });
 
@@ -387,11 +387,7 @@ describe("admin invoice editor page", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "保存发票字段" }));
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "invoice expense type railway is not allowed for task; allowed fee categories: hotel",
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
   });
 });

@@ -31,13 +31,12 @@ describe("web app account auth", () => {
 
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole("heading", { name: "把报销流程变成一条可推进的工作流" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "按阶段推进，不按页面迷路" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "查看该入口" })).toHaveLength(3);
-    expect(screen.getByRole("heading", { name: "管理员后台" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "当前前端先解决三件事" })).toBeInTheDocument();
-    expect(screen.getByText("先看下一步")).toBeInTheDocument();
-    expect(screen.getByText("先看异常")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tongji ACM 报销管理系统" })).toBeInTheDocument();
+    expect(screen.getByText("报销成员")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "查看入口" })).toHaveLength(3);
+    expect(screen.getByRole("heading", { name: "管理员" })).toBeInTheDocument();
+    expect(screen.getByText("材料与确认")).toBeInTheDocument();
+    expect(screen.getByText("任务优先")).toBeInTheDocument();
   });
 
   it("redirects unauthenticated users to the account login page", () => {
@@ -48,7 +47,7 @@ describe("web app account auth", () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole("heading", { name: "账号登录与注册" })).toBeInTheDocument();
-    expect(screen.getByText("检测到未登录访问，原请求入口：/admin")).toBeInTheDocument();
+    expect(screen.getByText("检测到你需要先登录，登录后会自动返回原页面。")).toBeInTheDocument();
   });
 
   it("allows registering and entering the requested route with an account session", async () => {
@@ -100,10 +99,10 @@ describe("web app account auth", () => {
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "password123" } });
     fireEvent.change(screen.getByLabelText("角色"), { target: { value: "admin" } });
     fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "张管理员" } });
-    fireEvent.change(screen.getByLabelText("业务身份 ID"), { target: { value: "admin-1" } });
+    fireEvent.change(screen.getByLabelText("身份编号"), { target: { value: "admin-1" } });
     fireEvent.click(screen.getByRole("button", { name: "注册并登录" }));
 
-    expect(await screen.findByRole("heading", { name: "管理员任务列表" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "待处理任务" })).toBeInTheDocument();
     expect(
       await screen.findByText("当前管理员名下还没有任务"),
     ).toBeInTheDocument();
@@ -131,9 +130,9 @@ describe("web app account auth", () => {
 
     render(<RouterProvider router={router} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "以成员身份进入" }));
+    fireEvent.click(screen.getByRole("button", { name: "以成员进入" }));
 
-    expect(await screen.findByRole("heading", { name: "成员可提交任务" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "我的报销任务" })).toBeInTheDocument();
     expect(await screen.findByText("当前没有可见报销任务")).toBeInTheDocument();
   });
 
@@ -178,6 +177,6 @@ describe("web app account auth", () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole("heading", { name: "系统管理 暂不可访问" })).toBeInTheDocument();
-    expect(screen.getByText("当前身份为 成员身份 / 王队员（MEM-001）。")).toBeInTheDocument();
+    expect(screen.getByText("当前身份为 成员 / 王队员（MEM-001）。")).toBeInTheDocument();
   });
 });

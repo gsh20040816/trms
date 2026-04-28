@@ -288,7 +288,7 @@ describe("MemberMaterialUploadPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(screen.getByText("material upload window is closed")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
   });
 });

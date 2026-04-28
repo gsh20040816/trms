@@ -1,44 +1,32 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { useAuthSession } from "./auth-store";
+import { EmptyState, PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge, TaskTable } from "../components/dashboard";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type { ReimbursementTask, TaskStatus } from "../lib/api/types";
+import { formatTaskStatus } from "../lib/ui-text";
+import { useAuthSession } from "./auth-store";
 
 type MemberTaskListState =
   | { status: "loading" }
   | { status: "error"; error: unknown }
   | { status: "ready"; items: ReimbursementTask[] };
 
-type MemberActionHint = {
-  title: string;
-  summary: string;
-  actions: string[];
+const NEXT_ACTIONS: Record<TaskStatus, string> = {
+  draft: "等待开放",
+  open: "提交材料",
+  closed: "查看待补项",
+  reviewing: "确认费用",
+  ready_to_export: "查看结果",
+  completed: "查看归档",
 };
-
-const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
-  reviewing: "复核中",
-  ready_to_export: "可导出",
-  completed: "已归档",
-};
-
-function formatTaskStatus(status: TaskStatus) {
-  return TASK_STATUS_LABELS[status];
-}
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatDateRange(task: ReimbursementTask) {
-  return `${task.competition_start_date} 至 ${task.competition_end_date}`;
 }
 
 function getTaskSortPriority(status: TaskStatus) {
@@ -59,40 +47,27 @@ function getTaskSortPriority(status: TaskStatus) {
   }
 }
 
-function buildActionHint(task: ReimbursementTask): MemberActionHint {
+function buildStatusTone(status: TaskStatus) {
+  if (status === "open") {
+    return "info" as const;
+  }
+  if (status === "reviewing" || status === "closed") {
+    return "warning" as const;
+  }
+  if (status === "ready_to_export" || status === "completed") {
+    return "success" as const;
+  }
+  return "neutral" as const;
+}
+
+function buildPrimaryActionLink(task: ReimbursementTask) {
   if (task.status === "open") {
-    return {
-      title: "先上传或补齐材料",
-      summary: "这是当前最重要的动作。开放提交阶段不需要先理解所有规则，先把相关发票和附件交上来。",
-      actions: ["上传材料", "查看材料状态", "查看缺失材料"],
-    };
+    return `/member/materials/upload?taskId=${encodeURIComponent(task.id)}`;
   }
   if (task.status === "closed" || task.status === "reviewing") {
-    return {
-      title: "先看缺失项和费用确认",
-      summary: "提交阶段已结束，接下来应查看识别结果、缺失材料和个人费用明细是否需要补充或确认。",
-      actions: ["查看材料状态", "查看缺失材料", "确认费用明细"],
-    };
+    return `/member/materials/status?taskId=${encodeURIComponent(task.id)}`;
   }
-  if (task.status === "ready_to_export") {
-    return {
-      title: "等待管理员导出",
-      summary: "当前任务已满足导出前条件，你主要需要保留查询入口，必要时再回看材料和费用明细。",
-      actions: ["查看材料状态", "确认费用明细"],
-    };
-  }
-  if (task.status === "completed") {
-    return {
-      title: "任务已归档",
-      summary: "当前任务已完成归档，后续主要用于追溯和核对，不再继续补交材料。",
-      actions: ["查看材料状态", "确认费用明细"],
-    };
-  }
-  return {
-    title: "等待管理员发布",
-    summary: "草稿态任务暂未开放成员操作，先等待管理员补齐配置并发布。",
-    actions: ["查看材料状态"],
-  };
+  return `/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`;
 }
 
 export function MemberTaskListPage() {
@@ -140,6 +115,10 @@ export function MemberTaskListPage() {
     };
   }, [session]);
 
+  if (!session || session.role !== "member") {
+    return null;
+  }
+
   const visibleTasks = state.status === "ready" ? state.items : [];
   const sortedVisibleTasks = [...visibleTasks].sort((left, right) => {
     const priorityDifference = getTaskSortPriority(left.status) - getTaskSortPriority(right.status);
@@ -155,159 +134,91 @@ export function MemberTaskListPage() {
     archivedCount: visibleTasks.filter((task) => task.status === "ready_to_export" || task.status === "completed").length,
   };
 
-  if (!session || session.role !== "member") {
-    return null;
-  }
-
   return (
-    <div className="page-stack">
-      <section className="status-card dashboard-panel">
-        <div className="task-card-top">
-          <div>
-            <p className="eyebrow">Member Tasks</p>
-            <h2>成员可提交任务</h2>
-          </div>
-          {state.status === "ready" ? (
-            <span className="status-chip">当前任务 {dashboardStats.total}</span>
-          ) : null}
-        </div>
-        <p>
-          当前页改成成员任务工作台：先看自己现在该做什么，再决定上传材料、补缺失项还是确认费用，不再把页面当成静态说明页。
-        </p>
-        <div className="dashboard-kpi-grid" aria-label="成员任务概览">
-          <div className="kpi-card">
-            <strong className="kpi-value">{dashboardStats.openCount}</strong>
-            <span className="kpi-label">正在开放提交</span>
-            <p>优先处理这类任务，避免错过截止时间。</p>
-          </div>
-          <div className="kpi-card">
-            <strong className="kpi-value">{dashboardStats.reviewCount}</strong>
-            <span className="kpi-label">等待补充或确认</span>
-            <p>重点查看识别状态、缺失材料和费用确认入口。</p>
-          </div>
-          <div className="kpi-card">
-            <strong className="kpi-value">{dashboardStats.archivedCount}</strong>
-            <span className="kpi-label">进入归档阶段</span>
-            <p>这类任务以查询和回看记录为主。</p>
-          </div>
-        </div>
-      </section>
-
-      {state.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">Loading</p>
-          <h2>正在加载成员可见任务</h2>
-          <p>正在读取当前成员可参与的比赛报销任务，请稍候。</p>
+    <RoleWorkspace
+      header={(
+        <PageHeader
+          eyebrow="成员工作台"
+          title="我的报销任务"
+          description="先看我参与的任务、截止时间和下一步动作，再决定上传材料、补充信息或确认费用。"
+          meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
+          actions={(
+            <div className="page-actions">
+              <Link className="button button-primary" to="/member/materials/upload">
+                提交材料
+              </Link>
+            </div>
+          )}
+        />
+      )}
+      summary={(
+        <section className="stat-grid" aria-label="成员任务概览">
+          <StatCard label="我参与的任务" value={dashboardStats.total} description="当前你可以查看或处理的全部报销任务。" />
+          <StatCard label="正在收集" value={dashboardStats.openCount} description="优先在截止前提交或补充材料。" />
+          <StatCard label="待补充或确认" value={dashboardStats.reviewCount} description="需要查看材料状态或确认费用的任务。" />
+          <StatCard label="已进入归档" value={dashboardStats.archivedCount} description="主要用于查询结果和回看记录。" />
         </section>
+      )}
+    >
+      {state.status === "loading" ? (
+        <SectionCard title="正在加载成员可见任务" description="正在读取你参与的报销任务，请稍候。" />
       ) : null}
 
       {state.status === "error" ? <ApiErrorNotice error={state.error} /> : null}
 
       {state.status === "ready" && sortedVisibleTasks.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">Empty</p>
-          <h2>当前没有可见报销任务</h2>
-          <p>
-            当前 mock 成员身份尚未匹配到任何 `member_ids` 包含 {session.actorId}
-            的任务；后续如果管理员创建并发布包含你的比赛任务，会在这里显示。
-          </p>
-        </section>
+        <EmptyState
+          title="当前没有可见报销任务"
+          description="管理员创建并发布包含你的报销任务后，会在这里显示。"
+        />
       ) : null}
 
       {state.status === "ready" && sortedVisibleTasks.length > 0 ? (
-        <section className="task-card-grid" aria-label="成员可见任务列表">
-          {sortedVisibleTasks.map((task) => {
-            const actionHint = buildActionHint(task);
-
-            return (
-              <article key={task.id} className="task-card">
-                <div className="task-card-header">
-                  <div>
-                    <p className="task-card-id">任务编号 {task.id}</p>
-                    <h3>{task.competition_name}</h3>
+        <SectionCard
+          title="任务列表"
+          description="直接从任务列表进入材料提交、材料状态或费用确认。"
+          action={<StatusBadge tone="info">共 {sortedVisibleTasks.length} 条</StatusBadge>}
+        >
+          <TaskTable
+            caption="成员任务列表"
+            header={(
+              <tr>
+                <th>任务名称</th>
+                <th>当前状态</th>
+                <th>截止时间</th>
+                <th>下一步</th>
+                <th>操作</th>
+              </tr>
+            )}
+          >
+            {sortedVisibleTasks.map((task) => (
+              <tr key={task.id}>
+                <td>
+                  <div className="table-primary">
+                    <strong>{task.competition_name}</strong>
+                    <span>{task.competition_location}</span>
                   </div>
-                  <span className={`status-chip task-status-chip task-status-${task.status}`}>
-                    {formatTaskStatus(task.status)}
-                  </span>
-                </div>
-
-                <p className="task-stage-line">当前阶段：{formatTaskStatus(task.status)}</p>
-
-                <dl className="task-meta-grid">
-                  <div>
-                    <dt>比赛时间</dt>
-                    <dd>{formatDateRange(task)}</dd>
-                  </div>
-                  <div>
-                    <dt>截止时间</dt>
-                    <dd>{formatDateTime(task.deadline)}</dd>
-                  </div>
-                  <div>
-                    <dt>任务状态</dt>
-                    <dd>{formatTaskStatus(task.status)}</dd>
-                  </div>
-                  <div>
-                    <dt>当前成员</dt>
-                    <dd>{session.displayName}</dd>
-                  </div>
-                </dl>
-
-                <div className="task-insight-grid">
-                  <section className="task-insight">
-                    <span className="task-insight-label">推荐动作</span>
-                    <strong>{actionHint.title}</strong>
-                    <p>{actionHint.summary}</p>
-                  </section>
-                  <section className="task-insight">
-                    <span className="task-insight-label">本页用途</span>
-                    <strong>先确定下一步，再进入具体操作页</strong>
-                    <p>成员工作台只做一件事：把当前任务按优先级摆出来，避免你在不同页面之间猜流程。</p>
-                  </section>
-                </div>
-
-                <ul className="task-workflow-list" aria-label={`${task.id} 建议动作`}>
-                  {actionHint.actions.map((action) => (
-                    <li key={`${task.id}:${action}`} className="task-workflow-item">
-                      {action}
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="inline-actions">
-                  <Link
-                    className="route-link route-link-secondary"
-                    to={`/member/materials/status?taskId=${encodeURIComponent(task.id)}`}
-                  >
-                    查看材料状态
-                  </Link>
-                  <Link
-                    className="route-link route-link-secondary"
-                    to={`/member/materials/missing?taskId=${encodeURIComponent(task.id)}`}
-                  >
-                    查看缺失材料
-                  </Link>
-                  <Link
-                    className="route-link route-link-secondary"
-                    to={`/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`}
-                  >
-                    确认费用明细
-                  </Link>
-                  {task.status === "open" ? (
-                    <Link
-                      className="route-link"
-                      to={`/member/materials/upload?taskId=${encodeURIComponent(task.id)}`}
-                    >
-                      上传材料
+                </td>
+                <td>
+                  <StatusBadge tone={buildStatusTone(task.status)}>{formatTaskStatus(task.status)}</StatusBadge>
+                </td>
+                <td>{formatDateTime(task.deadline)}</td>
+                <td>{NEXT_ACTIONS[task.status]}</td>
+                <td>
+                  <div className="table-actions">
+                    <Link className="button button-primary button-small" to={buildPrimaryActionLink(task)}>
+                      {NEXT_ACTIONS[task.status]}
                     </Link>
-                  ) : (
-                    <span className="status-note">当前任务未处于开放提交状态，暂不能从成员端继续上传材料。</span>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </section>
+                    <Link className="button button-secondary button-small" to={`/member/materials/status?taskId=${encodeURIComponent(task.id)}`}>
+                      查看状态
+                    </Link>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </TaskTable>
+        </SectionCard>
       ) : null}
-    </div>
+    </RoleWorkspace>
   );
 }

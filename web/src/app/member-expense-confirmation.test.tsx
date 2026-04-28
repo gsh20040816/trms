@@ -465,7 +465,7 @@ describe("MemberExpenseConfirmationPage", () => {
 
     fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(screen.getByText("confirmation window has been locked")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
   });
 });

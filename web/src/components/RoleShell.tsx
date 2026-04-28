@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { SectionCard, StatusBadge } from "./dashboard";
+
 type RoleShellProps = {
   title: string;
   summary: string;
@@ -9,11 +11,12 @@ type RoleShellProps = {
 
 export function RoleShell({ title, summary, emphasis, children }: RoleShellProps) {
   return (
-    <section className="status-card">
-      <p className="eyebrow">{emphasis}</p>
-      <h2>{title}</h2>
-      <p>{summary}</p>
+    <SectionCard
+      title={title}
+      description={summary}
+      action={<StatusBadge tone="warning">{emphasis}</StatusBadge>}
+    >
       {children}
-    </section>
+    </SectionCard>
   );
 }

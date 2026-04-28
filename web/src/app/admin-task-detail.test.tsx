@@ -77,7 +77,7 @@ describe("admin task detail page", () => {
     expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
     expect(screen.getByText("全国邀请赛")).toBeInTheDocument();
     expect(screen.getByText("Project A")).toBeInTheDocument();
-    expect(screen.getAllByText("张管理员")).toHaveLength(2);
+    expect(screen.getAllByText("张管理员").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "录入或更正发票" })).toHaveAttribute(
@@ -102,15 +102,15 @@ describe("admin task detail page", () => {
     );
 
     const members = within(screen.getByLabelText("任务成员名单"));
-    expect(members.getByText("2250001")).toBeInTheDocument();
-    expect(members.getByText("2250002")).toBeInTheDocument();
+    expect(members.getByText("成员 2250001")).toBeInTheDocument();
+    expect(members.getByText("成员 2250002")).toBeInTheDocument();
 
     const categories = within(screen.getByLabelText("任务费用类别"));
     expect(categories.getByText("参赛费")).toBeInTheDocument();
     expect(categories.getByText("住宿费")).toBeInTheDocument();
 
-    expect(screen.getByRole("button", { name: "切换为开放提交" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "切换为复核中" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为收集中" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为待复核" })).toBeInTheDocument();
   });
 
   it("updates task status when the backend accepts the transition", async () => {
@@ -165,12 +165,12 @@ describe("admin task detail page", () => {
 
     renderAdminTaskDetailRoute("TASK-DRAFT");
 
-    const openButton = await screen.findByRole("button", { name: "切换为开放提交" });
+    const openButton = await screen.findByRole("button", { name: "切换为收集中" });
     fireEvent.click(openButton);
 
-    expect(await screen.findByText("当前状态：开放提交")).toBeInTheDocument();
+    expect(await screen.findByText("当前状态：收集中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为草稿" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "切换为已关闭" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为已截止" })).toBeInTheDocument();
   });
 
   it("shows a page-level error when the backend rejects a status transition", async () => {
@@ -212,11 +212,9 @@ describe("admin task detail page", () => {
 
     renderAdminTaskDetailRoute("TASK-READY");
 
-    fireEvent.click(await screen.findByRole("button", { name: "切换为已归档" }));
+    fireEvent.click(await screen.findByRole("button", { name: "切换为已完成" }));
 
-    expect(await screen.findByRole("heading", { name: "接口请求失败" })).toBeInTheDocument();
-    expect(
-      screen.getByText("task cannot transition to completed before export completion is recorded"),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
+    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
   });
 });

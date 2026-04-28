@@ -332,13 +332,10 @@ export function MemberExpenseConfirmationPage() {
   return (
     <div className="page-stack">
       <section className="status-card auth-panel">
-        <p className="eyebrow">Member Confirmation</p>
+        <p className="eyebrow">费用确认</p>
         <h2>成员费用确认</h2>
         <p>
-          当前页只复用成员费用明细、发票附件列表和确认提交接口，帮助成员核对“这笔费用为何归到自己名下”，并直接确认或提交异议。
-        </p>
-        <p className="status-note">
-          当前使用 mock 成员身份 {session.displayName}（{session.actorId}）。如果管理员修改了分摊金额或成员归属，旧明细版本会失效；页面会显式提示刷新，不把失效版本伪装成提交成功。
+          在这里核对分到自己名下的费用，确认无误后提交，或者说明异议原因。
         </p>
         <div className="inline-actions">
           <Link className="route-link route-link-secondary" to="/member">
@@ -358,7 +355,7 @@ export function MemberExpenseConfirmationPage() {
 
       {taskState.status === "loading" ? (
         <section className="status-card">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">费用确认</p>
           <h2>正在加载可见任务</h2>
           <p>正在读取当前成员可访问的报销任务，以便定位待确认的费用明细。</p>
         </section>
@@ -369,9 +366,9 @@ export function MemberExpenseConfirmationPage() {
 
       {taskState.status === "ready" && visibleTasks.length === 0 ? (
         <section className="status-card">
-          <p className="eyebrow">Empty</p>
+          <p className="eyebrow">暂无任务</p>
           <h2>当前没有可确认费用的报销任务</h2>
-          <p>当前 mock 成员尚未匹配到任何可见任务，因此也没有可加载的个人费用明细。</p>
+          <p>管理员创建并发布相关任务后，你可以在这里确认个人费用。</p>
         </section>
       ) : null}
 
@@ -406,7 +403,7 @@ export function MemberExpenseConfirmationPage() {
                   </option>
                 ))}
               </select>
-              <span className="field-hint">成员页只展示 `task.member_ids` 包含当前成员的任务。</span>
+              <span className="field-hint">这里只列出你可以查看和确认的任务。</span>
             </label>
             {selectedTask ? (
               <dl className="task-meta-grid member-status-meta-grid">
@@ -445,11 +442,9 @@ export function MemberExpenseConfirmationPage() {
 
       {expenseState.status === "ready" && readyItems.length === 0 ? (
         <section className="status-card">
-          <p className="eyebrow">Empty</p>
+          <p className="eyebrow">暂无费用</p>
           <h2>当前任务下没有待展示的个人费用</h2>
-          <p>
-            任务 {expenseState.task.id} 当前对你可见，但服务端还没有返回与你相关的有效费用分摊；可能尚未分摊，也可能管理员还未把这部分费用归属到你名下。
-          </p>
+          <p>当前还没有分配到你名下的费用，管理员完成分摊后会在这里显示。</p>
         </section>
       ) : null}
 

@@ -86,33 +86,18 @@ describe("MemberTaskListPage", () => {
       render(<RouterProvider router={router} />);
     });
 
-    expect(await screen.findByRole("heading", { name: "成员可提交任务" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "我的报销任务" })).toBeInTheDocument();
     expect(screen.getByLabelText("成员任务概览")).toBeInTheDocument();
-    const taskList = screen.getByLabelText("成员可见任务列表");
-    const taskCards = within(taskList).getAllByRole("article");
-    expect(taskCards).toHaveLength(1);
-    const [taskCard] = taskCards;
-    if (!taskCard) {
-      throw new Error("expected one visible member task card");
-    }
-    expect(within(taskCard).getByText("ICPC Xi'an Regional")).toBeInTheDocument();
-    expect(within(taskCard).getAllByText("开放提交")).toHaveLength(2);
-    expect(within(taskCard).getByText("先上传或补齐材料")).toBeInTheDocument();
-    expect(within(taskCard).getByRole("link", { name: "上传材料" })).toHaveAttribute(
+    const taskList = screen.getByRole("table", { name: "成员任务列表" });
+    expect(within(taskList).getByText("ICPC Xi'an Regional")).toBeInTheDocument();
+    expect(within(taskList).getByText("收集中")).toBeInTheDocument();
+    expect(within(taskList).getByRole("link", { name: "提交材料" })).toHaveAttribute(
       "href",
       "/member/materials/upload?taskId=TASK-OPEN",
     );
-    expect(within(taskCard).getByRole("link", { name: "查看材料状态" })).toHaveAttribute(
+    expect(within(taskList).getByRole("link", { name: "查看状态" })).toHaveAttribute(
       "href",
       "/member/materials/status?taskId=TASK-OPEN",
-    );
-    expect(within(taskCard).getByRole("link", { name: "查看缺失材料" })).toHaveAttribute(
-      "href",
-      "/member/materials/missing?taskId=TASK-OPEN",
-    );
-    expect(within(taskCard).getByRole("link", { name: "确认费用明细" })).toHaveAttribute(
-      "href",
-      "/member/expenses/confirm?taskId=TASK-OPEN",
     );
     expect(screen.queryByText("CCPC Final")).not.toBeInTheDocument();
   });

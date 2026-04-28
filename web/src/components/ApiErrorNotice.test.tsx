@@ -17,10 +17,9 @@ describe("ApiErrorNotice", () => {
     render(<ApiErrorNotice error={error} />);
 
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.getByText("接口请求失败")).toBeInTheDocument();
-    expect(screen.getByText("请求参数不合法")).toBeInTheDocument();
-    expect(screen.getByText("HTTP 422")).toBeInTheDocument();
-    expect(screen.getByText("fee_categories.1")).toBeInTheDocument();
-    expect(screen.getByText("unsupported fee categories: taxi")).toBeInTheDocument();
+    expect(screen.getByText("操作未完成")).toBeInTheDocument();
+    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(screen.getByText("费用类别第 2 项")).toBeInTheDocument();
+    expect(screen.getByText("所选费用类别暂不支持。")).toBeInTheDocument();
   });
 });
