@@ -926,4 +926,475 @@ describe("MemberInvoiceWorkbenchPage", () => {
     await screen.findByText("支付记录 / MAT-EDIT-001");
     expect(screen.getByLabelText("MAT-EDIT-001 材料类型")).toHaveValue("payment_record");
   });
+
+  it("lets the member adjust split targets and shows refreshed confirmation states", async () => {
+    let currentSplits: Array<{
+      id: string;
+      invoice_id: string;
+      member_id: string;
+      amount_cents: number;
+      note: string | null;
+      version: number;
+      is_active: boolean;
+      created_at: string;
+      updated_at: string;
+    }> = [
+      {
+        id: "SPLIT-SHARED-001",
+        invoice_id: "INV-SHARED-001",
+        member_id: "2250001",
+        amount_cents: 12345,
+        note: "self paid",
+        version: 1,
+        is_active: true,
+        created_at: "2026-04-28T13:05:00+08:00",
+        updated_at: "2026-04-28T13:05:00+08:00",
+      },
+    ];
+    let currentConfirmations = [
+      {
+        id: "CONF-SHARED-001",
+        split_id: "SPLIT-SHARED-001",
+        member_id: "2250001",
+        split_version: 1,
+        split_amount_cents: 12345,
+        split_note: "self paid",
+        is_current: true,
+        status: "confirmed",
+        dispute_reason: null,
+        confirmed_at: "2026-04-28T13:06:00+08:00",
+        updated_at: "2026-04-28T13:06:00+08:00",
+      },
+    ];
+    let receivedSplitPayload: Array<{ member_id: string; amount_cents: number; note?: string | null }> = [];
+
+    function buildMemberStatusResponse() {
+      const ownSplit = currentSplits.find((split) => split.member_id === "2250001");
+      const ownConfirmation = ownSplit
+        ? currentConfirmations.find(
+          (confirmation) => confirmation.split_id === ownSplit.id && confirmation.is_current,
+        ) ?? null
+        : null;
+      return {
+        task_id: "TASK-OPEN",
+        actor_id: "2250001",
+        total_expense_amount_cents: ownSplit?.amount_cents ?? 0,
+        counts: {
+          material_count: 1,
+          missing_material_count: 0,
+          expense_detail_count: ownSplit ? 1 : 0,
+          recognition_pending_count: 0,
+          recognition_succeeded_count: 0,
+          recognition_failed_count: 0,
+          recognition_needs_confirmation_count: 0,
+          validation_passed_count: 1,
+          validation_failed_count: 0,
+          validation_pending_count: 0,
+          validation_not_applicable_count: 0,
+          confirmed_expense_count: ownConfirmation?.status === "confirmed" ? 1 : 0,
+          pending_confirmation_count: ownConfirmation?.status === "pending" ? 1 : 0,
+          disputed_confirmation_count: 0,
+          missing_confirmation_count: ownConfirmation ? 0 : 1,
+        },
+        materials: [
+          {
+            material_id: "MAT-SHARED-001",
+            submitter_id: "2250001",
+            material_type: "invoice",
+            original_filename: "shared.pdf",
+            material_status: "assigned",
+            recognition_status: null,
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: "INV-SHARED-001",
+            invoice_number: "SHARED-001",
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T13:00:00+08:00",
+          },
+        ],
+        missing_materials: [],
+        expense_details: ownSplit ? [
+          {
+            split_id: ownSplit.id,
+            split_version: ownSplit.version,
+            member_id: ownSplit.member_id,
+            amount_cents: ownSplit.amount_cents,
+            note: ownSplit.note,
+            created_at: ownSplit.created_at,
+            updated_at: ownSplit.updated_at,
+            invoice: {
+              id: "INV-SHARED-001",
+              material_id: "MAT-SHARED-001",
+              invoice_number: "SHARED-001",
+              issue_date: "2026-04-25",
+              transaction_time: "2026-04-25T09:00:00+08:00",
+              buyer_name: "同济大学",
+              seller_name: "12306",
+              amount_cents: 12345,
+              expense_type: "railway",
+              created_at: "2026-04-28T13:00:00+08:00",
+              updated_at: "2026-04-28T13:05:00+08:00",
+            },
+            confirmation: ownConfirmation ? {
+              id: ownConfirmation.id,
+              member_id: ownConfirmation.member_id,
+              split_version: ownConfirmation.split_version,
+              status: ownConfirmation.status,
+              dispute_reason: ownConfirmation.dispute_reason,
+              confirmed_at: ownConfirmation.confirmed_at,
+              updated_at: ownConfirmation.updated_at,
+            } : null,
+          },
+        ] : [],
+      };
+    }
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = init?.method ?? "GET";
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Shared Expense",
+            competition_location: "杭州",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse(buildMemberStatusResponse()));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "INV-SHARED-001",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-SHARED-001",
+              invoice_number: "SHARED-001",
+              issue_date: "2026-04-25",
+              transaction_time: "2026-04-25T09:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "12306",
+              amount_cents: 12345,
+              expense_type: "railway",
+              created_at: "2026-04-28T13:00:00+08:00",
+              updated_at: "2026-04-28T13:05:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-SHARED-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({ latest_effective: null, items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-SHARED-001/validations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-SHARED-001/supporting-materials") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-SHARED-001/splits" && method === "GET") {
+        return Promise.resolve(jsonResponse({ items: currentSplits }));
+      }
+
+      if (url === "/api/invoices/INV-SHARED-001/splits" && method === "PUT") {
+        if (typeof init?.body !== "string") {
+          throw new Error("expected PUT body to be serialized JSON");
+        }
+        const payload = JSON.parse(init.body) as {
+          items: Array<{ member_id: string; amount_cents: number; note?: string | null }>;
+        };
+        receivedSplitPayload = payload.items;
+        currentSplits = payload.items.map((item, index) => ({
+          id: index === 0 ? "SPLIT-SHARED-001" : "SPLIT-SHARED-002",
+          invoice_id: "INV-SHARED-001",
+          member_id: item.member_id,
+          amount_cents: item.amount_cents,
+          note: item.note ?? null,
+          version: 2,
+          is_active: true,
+          created_at: "2026-04-28T13:05:00+08:00",
+          updated_at: "2026-04-28T13:20:00+08:00",
+        }));
+        currentConfirmations = [
+          {
+            id: "CONF-SHARED-002",
+            split_id: "SPLIT-SHARED-001",
+            member_id: "2250001",
+            split_version: 2,
+            split_amount_cents: 10000,
+            split_note: "self adjusted",
+            is_current: true,
+            status: "pending",
+            dispute_reason: null,
+            confirmed_at: "2026-04-28T13:20:00+08:00",
+            updated_at: "2026-04-28T13:20:00+08:00",
+          },
+        ];
+        return Promise.resolve(jsonResponse({ items: currentSplits }));
+      }
+
+      if (url === "/api/invoices/INV-SHARED-001/confirmations") {
+        return Promise.resolve(jsonResponse({ items: currentConfirmations }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench split test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByRole("heading", { name: "SHARED-001" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 1 金额"), {
+      target: { value: "100.00" },
+    });
+    fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 1 备注"), {
+      target: { value: "self adjusted" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "新增分摊对象" }));
+    fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 2 成员"), {
+      target: { value: "2250002" },
+    });
+    fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 2 金额"), {
+      target: { value: "23.45" },
+    });
+    fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 2 备注"), {
+      target: { value: "shared ride" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存分摊方案" }));
+
+    await screen.findByText("备注：shared ride");
+    expect(receivedSplitPayload).toEqual([
+      { member_id: "2250001", amount_cents: 10000, note: "self adjusted" },
+      { member_id: "2250002", amount_cents: 2345, note: "shared ride" },
+    ]);
+
+    const splitSection = screen.getByRole("list", { name: "MAT-SHARED-001 分摊列表" });
+    const splitEntries = within(splitSection).getAllByRole("listitem");
+    expect(splitEntries).toHaveLength(2);
+    expect(within(splitEntries[0]!).getByText("确认状态：待确认")).toBeInTheDocument();
+    expect(within(splitEntries[1]!).getByText("确认状态：待确认")).toBeInTheDocument();
+  });
+
+  it("shows backend failure reasons when saving split changes is rejected", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = init?.method ?? "GET";
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Shared Expense",
+            competition_location: "杭州",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 12345,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 1,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 1,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: 1,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-FAIL-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "shared.pdf",
+              material_status: "assigned",
+              recognition_status: null,
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: "INV-FAIL-001",
+              invoice_number: "FAIL-001",
+              validation_status: "passed",
+              validation_messages: [],
+              created_at: "2026-04-28T13:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [
+            {
+              split_id: "SPLIT-FAIL-001",
+              split_version: 1,
+              member_id: "2250001",
+              amount_cents: 12345,
+              note: "self paid",
+              created_at: "2026-04-28T13:05:00+08:00",
+              updated_at: "2026-04-28T13:05:00+08:00",
+              invoice: {
+                id: "INV-FAIL-001",
+                material_id: "MAT-FAIL-001",
+                invoice_number: "FAIL-001",
+                issue_date: "2026-04-25",
+                transaction_time: "2026-04-25T09:00:00+08:00",
+                buyer_name: "同济大学",
+                seller_name: "12306",
+                amount_cents: 12345,
+                expense_type: "railway",
+                created_at: "2026-04-28T13:00:00+08:00",
+                updated_at: "2026-04-28T13:05:00+08:00",
+              },
+              confirmation: {
+                id: "CONF-FAIL-001",
+                member_id: "2250001",
+                split_version: 1,
+                status: "confirmed",
+                dispute_reason: null,
+                confirmed_at: "2026-04-28T13:06:00+08:00",
+                updated_at: "2026-04-28T13:06:00+08:00",
+              },
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "INV-FAIL-001",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-FAIL-001",
+              invoice_number: "FAIL-001",
+              issue_date: "2026-04-25",
+              transaction_time: "2026-04-25T09:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "12306",
+              amount_cents: 12345,
+              expense_type: "railway",
+              created_at: "2026-04-28T13:00:00+08:00",
+              updated_at: "2026-04-28T13:05:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-FAIL-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({ latest_effective: null, items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-FAIL-001/validations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-FAIL-001/supporting-materials") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-FAIL-001/splits" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "SPLIT-FAIL-001",
+              invoice_id: "INV-FAIL-001",
+              member_id: "2250001",
+              amount_cents: 12345,
+              note: "self paid",
+              version: 1,
+              is_active: true,
+              created_at: "2026-04-28T13:05:00+08:00",
+              updated_at: "2026-04-28T13:05:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-FAIL-001/splits" && method === "PUT") {
+        return Promise.resolve(jsonResponse(
+          { detail: "split amount total must equal invoice amount" },
+          { status: 409 },
+        ));
+      }
+
+      if (url === "/api/invoices/INV-FAIL-001/confirmations") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "CONF-FAIL-001",
+              split_id: "SPLIT-FAIL-001",
+              member_id: "2250001",
+              split_version: 1,
+              split_amount_cents: 12345,
+              split_note: "self paid",
+              is_current: true,
+              status: "confirmed",
+              dispute_reason: null,
+              confirmed_at: "2026-04-28T13:06:00+08:00",
+              updated_at: "2026-04-28T13:06:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench split failure test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByRole("heading", { name: "FAIL-001" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("INV-FAIL-001 分摊行 1 金额"), {
+      target: { value: "100.00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存分摊方案" }));
+
+    expect(
+      await screen.findByText("split amount total must equal invoice amount"),
+    ).toBeInTheDocument();
+  });
 });

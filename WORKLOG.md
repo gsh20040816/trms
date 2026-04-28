@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-04-29 02:36 - Add member self-service split adjustment in invoice workbench
+
+### 完成内容
+- 在成员发票工作台补齐金额分配对象自助调整入口：
+  - 每张本人发票新增“分配对象 / 金额 / 备注”可编辑表单；
+  - 支持新增分摊对象、修改金额和分摊备注，并沿用既有后端总额约束；
+  - 保存后自动刷新当前任务工作台，避免成员继续看到过期的分摊与确认状态。
+- 收口成员侧可见性与失败反馈：
+  - 工作台继续只针对“本人上传发票”暴露完整分摊编辑入口，不扩展到无关成员发票；
+  - 分摊保存失败时优先展示后端返回的真实拒绝原因，而不是泛化成统一失败文案；
+  - 页面显式提示“保存后，受影响成员需要重新确认费用”，并在刷新后展示最新确认状态。
+- 补充回归测试：
+  - 后端 `tests/test_web_bearer_request_identity_api.py` 新增 bearer 场景，覆盖本人提交人成功调整和无关成员被拒绝；
+  - 前端 `web/src/app/member-invoice-workbench.test.tsx` 新增工作台测试，覆盖分摊对象调整后的确认状态刷新，以及后端拒绝原因在成员端可见。
+
+### 根因
+- 现有后端已经具备分摊替换、总额校验和确认状态重置能力，但成员端没有稳定入口去编辑“这张票分配给谁、备注是什么”，导致该任务在实际产品链路上仍未闭环。
+- 工作台此前只能读到当前分摊结果，成员修改后也无法在同一上下文中立即看到“哪些确认被打回待确认”，这会让成员误以为修改已经完全完成。
+- 前端保存失败时默认走通用 4xx 文案归一化，具体的业务拒绝原因会被抹平，不满足任务要求中的“失败原因在成员端可见”。
+
+### 修改文件
+- `web/src/app/member-invoice-workbench.tsx`
+- `web/src/app/member-invoice-workbench.test.tsx`
+- `tests/test_web_bearer_request_identity_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_web_bearer_request_identity_api.py`
+    - 11 个测试通过
+  - `cd web && npm test -- --run member-invoice-workbench.test.tsx`
+    - 5 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 347 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮只在“成员发票工作台”中为本人上传发票开放自助分摊调整入口，不改动管理员侧分摊编辑流，也不改动 CLI 交互。
+- 本轮复用既有后端权限语义：工作台入口只暴露给发票提交人本人；更宽的 API 语义和后续是否继续收口，仍由后续权限任务统一处理。
+
 ## 2026-04-29 02:17 - Add member self-service material type correction
 
 ### 完成内容

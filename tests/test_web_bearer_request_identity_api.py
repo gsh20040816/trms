@@ -714,6 +714,181 @@ def test_member_bearer_fee_and_confirmation_queries_only_expose_own_records(tmp_
     )
 
 
+def test_member_submitter_bearer_can_replace_own_invoice_splits_and_reset_confirmations(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = register_and_get_token(
+        client,
+        username="admin1",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
+    member_one_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    member_two_token = register_and_get_token(
+        client,
+        username="member2",
+        role="member",
+        actor_id="2250002",
+        member_code="2250002",
+    )
+    task_id = create_task(client)
+    open_task(client, task_id)
+
+    upload_response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_one_token),
+        data={"channel": "web", "material_type": "invoice"},
+        files={"files": ("shared-expense.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert upload_response.status_code == 201
+    material_id = upload_response.json()["items"][0]["id"]
+
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        headers=auth_headers(admin_token),
+        json={
+            **{key: value for key, value in valid_invoice_payload().items() if key != "actor_id"},
+            "amount_cents": 20000,
+        },
+    )
+    assert invoice_response.status_code == 201
+    invoice_id = invoice_response.json()["invoice"]["id"]
+
+    initial_split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=auth_headers(admin_token),
+        json={
+            "items": [
+                {"member_id": "2250001", "amount_cents": 12000, "note": "self paid"},
+                {"member_id": "2250002", "amount_cents": 8000, "note": "shared"},
+            ],
+        },
+    )
+    assert initial_split_response.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in initial_split_response.json()["items"]}
+
+    confirm_response = client.put(
+        f"/api/splits/{split_ids['2250002']}/confirmation",
+        headers=auth_headers(member_two_token),
+        json={"status": "confirmed"},
+    )
+    assert confirm_response.status_code == 200
+
+    replace_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=auth_headers(member_one_token),
+        json={
+            "items": [
+                {"member_id": "2250001", "amount_cents": 11000, "note": "self adjusted"},
+                {"member_id": "2250002", "amount_cents": 9000, "note": "shared adjusted"},
+            ],
+        },
+    )
+
+    assert replace_response.status_code == 200
+    assert {item["member_id"]: item["version"] for item in replace_response.json()["items"]} == {
+        "2250001": 2,
+        "2250002": 2,
+    }
+
+    confirmations_response = client.get(
+        f"/api/invoices/{invoice_id}/confirmations",
+        headers=auth_headers(member_one_token),
+    )
+
+    assert confirmations_response.status_code == 200
+    current_confirmations = {
+        item["member_id"]: item
+        for item in confirmations_response.json()["items"]
+        if item["is_current"]
+    }
+    assert current_confirmations["2250002"]["status"] == "pending"
+    assert current_confirmations["2250002"]["split_version"] == 2
+    assert current_confirmations["2250002"]["split_amount_cents"] == 9000
+    assert current_confirmations["2250002"]["split_note"] == "shared adjusted"
+
+
+def test_unrelated_member_bearer_cannot_replace_other_member_invoice_splits(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = register_and_get_token(
+        client,
+        username="admin1",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
+    member_one_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    member_three_token = register_and_get_token(
+        client,
+        username="member3",
+        role="member",
+        actor_id="2250003",
+        member_code="2250003",
+    )
+    task_id = create_task(client)
+    open_task(client, task_id)
+
+    upload_response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        headers=auth_headers(member_one_token),
+        data={"channel": "web", "material_type": "invoice"},
+        files={"files": ("shared-expense.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert upload_response.status_code == 201
+    material_id = upload_response.json()["items"][0]["id"]
+
+    invoice_response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        headers=auth_headers(admin_token),
+        json={
+            **{key: value for key, value in valid_invoice_payload().items() if key != "actor_id"},
+            "amount_cents": 20000,
+        },
+    )
+    assert invoice_response.status_code == 201
+    invoice_id = invoice_response.json()["invoice"]["id"]
+
+    initial_split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=auth_headers(admin_token),
+        json={
+            "items": [
+                {"member_id": "2250001", "amount_cents": 12000},
+                {"member_id": "2250002", "amount_cents": 8000},
+            ],
+        },
+    )
+    assert initial_split_response.status_code == 200
+
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=auth_headers(member_three_token),
+        json={
+            "items": [
+                {"member_id": "2250001", "amount_cents": 12000},
+                {"member_id": "2250002", "amount_cents": 8000},
+            ],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "only the invoice submitter, split member, or task administrator can submit splits"
+    )
+
+
 def test_admin_bearer_export_routes_do_not_require_actor_id(tmp_path):
     client = make_client(tmp_path)
     admin_token = register_and_get_token(
