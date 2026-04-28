@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-28 17:30 - Add export artifact access control coverage
+
+### 完成内容
+- 仅补测试，不修改导出业务逻辑：
+  - 在 `tests/test_export_async_jobs.py` 补充导出产物下载接口的访问控制覆盖；
+  - 新增“负责人管理员可下载已生成导出文件、无关管理员 `403`、匿名请求 `401`”断言；
+  - 在导出产物尚未生成的边界测试中补充成员直接访问下载接口会被 `403` 拒绝，避免只验证导出状态查询而遗漏真实文件下载路径。
+
+### 根因
+- 上一轮已经收口导出与异步作业接口的权限边界，但自动化测试仍缺一段关键闭环：
+  - 已覆盖导出状态详情接口的匿名/成员拒绝；
+  - 已覆盖负责人管理员能下载成功产物；
+  - 但没有显式证明“下载接口本身”会拒绝成员和无关管理员。
+- 这会让导出文件访问控制只停留在实现层推断，而不是由回归测试稳定约束。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `tests/test_export_async_jobs.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_export_async_jobs.py tests/test_exports_api.py`
+    - 25 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 292 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：第一阶段导出产物下载仍统一走管理员导出管理边界，不在本轮把成员可下载“与本人相关的导出子集”扩展为新需求；若后续需要更细粒度授权，应单独新增任务并补对应测试。
+
 ## 2026-04-28 17:24 - Close export and async job permission boundaries
 
 ### 完成内容

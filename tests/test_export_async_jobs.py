@@ -65,6 +65,18 @@ def member_auth_headers(client: TestClient) -> dict[str, str]:
     )
 
 
+def outsider_admin_auth_headers(client: TestClient) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username="admin2",
+            role="admin",
+            actor_id="admin-2",
+            member_code=None,
+        )
+    )
+
+
 def build_processor(tmp_path, runtime_config) -> ExportAsyncJobProcessor:
     session_factory = build_session_factory(runtime_config.database_url)
     init_database(session_factory)
@@ -170,6 +182,60 @@ def test_export_artifact_download_reports_not_ready_and_rejects_non_admin(tmp_pa
     assert forbidden_status.json()["detail"] == (
         "actor is not allowed to manage exports for this task"
     )
+
+    forbidden_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=member_auth_headers(client),
+    )
+    assert forbidden_download.status_code == 403
+    assert forbidden_download.json()["detail"] == (
+        "actor is not allowed to manage exports for this task"
+    )
+
+
+def test_export_artifact_download_is_limited_to_responsible_administrator(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="railway-b.pdf",
+        split_items=[{"member_id": "2250001", "amount_cents": 12345}],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(
+        client,
+        task_id,
+        format="csv",
+    )
+    processor = build_processor(tmp_path, runtime_config)
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+
+    owner_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=admin_auth_headers(client),
+    )
+    assert owner_download.status_code == 200
+    assert owner_download.headers["content-type"].startswith("text/csv")
+
+    outsider_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=outsider_admin_auth_headers(client),
+    )
+    assert outsider_download.status_code == 403
+    assert outsider_download.json()["detail"] == (
+        "actor is not allowed to manage exports for this task"
+    )
+
+    anonymous_download = client.get(f"/api/tasks/exports/{export_job['id']}/artifact")
+    assert anonymous_download.status_code == 401
+    assert anonymous_download.json()["detail"] == "invalid or missing bearer token"
 
 
 def test_export_async_processor_marks_unimplemented_job_failed(tmp_path):
