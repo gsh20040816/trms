@@ -1,5 +1,64 @@
 # WORKLOG
 
+## 2026-04-28 10:52 - Add CLI visible-task membership filter
+
+### 完成内容
+- 为 CLI 会话增加显式成员绑定：
+  - `src/trms_cli/cli.py` 的 `login` 命令新增必填 `--member-id`；
+  - `src/trms_cli/token_store.py` 在本地 session 中保存 `member_id`，`tasks` 命令读取后自动附加到任务列表请求。
+- 为后端任务列表增加最小成员过滤：
+  - `GET /api/tasks` 新增可选 `member_id` 查询参数；
+  - `src/trms_backend/infrastructure/repositories.py` 增加 `list_for_member`，仅返回成员编号出现在任务 `member_ids` 中的任务。
+- 增补回归测试，覆盖：
+  - CLI 登录会话保存成员编号且不泄露 token；
+  - CLI 任务列表请求会自动携带 `member_id`；
+  - 有可见任务和无可见任务两条路径；
+  - API 按 `member_id` 过滤任务列表。
+- 将 `TASKS.md` 中“增加 CLI 可见任务权限过滤”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `src/trms_cli/token_store.py`
+- `src/trms_backend/api/tasks.py`
+- `src/trms_backend/domain/tasks.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `tests/test_cli_login.py`
+- `tests/test_cli_tasks.py`
+- `tests/test_tasks_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 上一轮 CLI `tasks` 命令虽然已经能列出开放且未过期的任务，但底层仍直接读取未过滤的 `/api/tasks` 全量列表。
+- 这会把与当前成员无关的比赛任务暴露给 CLI，和需求文档中“成员先查询自己当前可提交任务”的链路不一致，也会让后续 CLI 上传命令缺少稳定的任务可见性边界。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_login.py tests/test_cli_tasks.py tests/test_tasks_api.py`
+    - 47 个相关测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 178 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只实现 CLI 任务列表的最小成员过滤，没有提前实现 P3 中“统一请求身份上下文”和“基础权限控制”。
+- 当前后端仍然把 `member_id` 视为 CLI 显式传入的占位身份信息；真正把访问控制与 token/角色统一绑定，仍属于后续 P3 任务范围。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设“CLI 可见任务权限过滤”的最小闭环是：
+  - CLI 登录时先显式绑定成员编号；
+  - CLI 任务列表请求只按该成员编号过滤任务；
+  - 不在本轮提前引入真实 token 解析、统一角色模型或全局身份上下文。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 材料提交占位流程”，优先复用本轮的 `member_id` 会话绑定，把材料上传请求也收敛到同一 CLI 身份边界中。
+
 ## 2026-04-28 10:45 - Add CLI task listing command
 
 ### 完成内容

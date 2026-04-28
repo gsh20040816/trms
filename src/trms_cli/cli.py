@@ -7,6 +7,7 @@ import getpass
 import json
 import os
 import sys
+from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -75,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="TRMS API base URL, defaults to TRMS_API_BASE_URL or http://127.0.0.1:8000",
     )
     login_parser.add_argument(
+        "--member-id",
+        required=True,
+        help="bind the CLI session to a task member id",
+    )
+    login_parser.add_argument(
         "--json",
         dest="json_output",
         action="store_true",
@@ -136,12 +142,16 @@ def load_secret(*, label: str, env_name: str) -> str:
 
 def run_login_command(args: argparse.Namespace) -> int:
     base_url = args.base_url.rstrip("/")
+    member_id = args.member_id.strip()
+    if not member_id:
+        raise CliError("member id is required", code="member_binding_required")
     access_token = load_secret(label="TRMS CLI access token", env_name=ACCESS_TOKEN_ENV)
     refresh_token = load_secret(label="TRMS CLI refresh token", env_name=REFRESH_TOKEN_ENV)
 
     try:
         token_store_path = save_token_session(
             base_url=base_url,
+            member_id=member_id,
             access_token=access_token,
             refresh_token=refresh_token,
         )
@@ -156,6 +166,7 @@ def run_login_command(args: argparse.Namespace) -> int:
                 "command": "login",
                 "data": {
                     "base_url": base_url,
+                    "member_id": member_id,
                     "token_store_backend": "local_file",
                     "token_store_path": str(token_store_path),
                 },
@@ -163,7 +174,7 @@ def run_login_command(args: argparse.Namespace) -> int:
         )
         return 0
 
-    print(f"Stored TRMS CLI tokens at {token_store_path}")
+    print(f"Stored TRMS CLI session for member {member_id} at {token_store_path}")
     return 0
 
 
@@ -204,7 +215,7 @@ def run_tasks_command(args: argparse.Namespace) -> int:
 
     base_url = session.base_url.rstrip("/")
     status_code, payload = fetch_json(
-        build_task_list_url(base_url),
+        build_task_list_url(base_url, member_id=session.member_id),
         headers={"Authorization": f"Bearer {session.access_token}"},
     )
     if status_code != 200:
@@ -222,6 +233,7 @@ def run_tasks_command(args: argparse.Namespace) -> int:
                 "command": "tasks",
                 "data": {
                     "base_url": base_url,
+                    "member_id": session.member_id,
                     "count": len(tasks),
                     "items": [asdict(task) for task in tasks],
                 },
@@ -239,11 +251,12 @@ def run_tasks_command(args: argparse.Namespace) -> int:
     return 0
 
 
-def build_task_list_url(base_url: str) -> str:
+def build_task_list_url(base_url: str, *, member_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
+    query_string = urlencode({"member_id": member_id})
     if normalized_base_url.endswith("/api"):
-        return f"{normalized_base_url}/tasks"
-    return f"{normalized_base_url}/api/tasks"
+        return f"{normalized_base_url}/tasks?{query_string}"
+    return f"{normalized_base_url}/api/tasks?{query_string}"
 
 
 def parse_visible_tasks(payload: object) -> list[VisibleTaskSummary]:

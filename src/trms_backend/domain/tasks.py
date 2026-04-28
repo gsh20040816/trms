@@ -185,6 +185,9 @@ class TaskRepository(Protocol):
     def list(self) -> list[ReimbursementTask]:
         raise NotImplementedError
 
+    def list_for_member(self, member_id: str) -> list[ReimbursementTask]:
+        raise NotImplementedError
+
     def update_status(self, task_id: str, target_status: TaskStatus) -> ReimbursementTask | None:
         raise NotImplementedError
 

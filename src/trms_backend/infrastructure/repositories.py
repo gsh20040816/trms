@@ -144,6 +144,19 @@ class SqlAlchemyTaskRepository:
             rows = session.scalars(select(TaskRow).order_by(TaskRow.created_at)).all()
             return [_task_from_row(row) for row in rows]
 
+    def list_for_member(self, member_id: str) -> list[ReimbursementTask]:
+        normalized_member_id = member_id.strip()
+        if not normalized_member_id:
+            return []
+
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(select(TaskRow).order_by(TaskRow.created_at)).all()
+            return [
+                _task_from_row(row)
+                for row in rows
+                if normalized_member_id in row.member_ids
+            ]
+
     def update_status(self, task_id: str, target_status: TaskStatus) -> ReimbursementTask | None:
         with session_scope(self._session_factory) as session:
             row = session.get(TaskRow, task_id)

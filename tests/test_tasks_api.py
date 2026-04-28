@@ -216,6 +216,33 @@ def test_list_tasks_returns_created_tasks(tmp_path):
     ]
 
 
+def test_list_tasks_filters_by_member_id(tmp_path):
+    client = make_client(tmp_path)
+    first = valid_task_payload()
+    second = valid_task_payload() | {
+        "competition_name": "CCPC Final",
+        "member_ids": ["2250003", "2250999"],
+    }
+
+    client.post("/api/tasks", json=first)
+    client.post("/api/tasks", json=second)
+
+    response = client.get("/api/tasks", params={"member_id": "2250999"})
+
+    assert response.status_code == 200
+    assert [task["competition_name"] for task in response.json()] == ["CCPC Final"]
+
+
+def test_list_tasks_returns_empty_when_member_has_no_visible_tasks(tmp_path):
+    client = make_client(tmp_path)
+    client.post("/api/tasks", json=valid_task_payload())
+
+    response = client.get("/api/tasks", params={"member_id": "2250888"})
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_rejects_empty_member_list(tmp_path):
     client = make_client(tmp_path)
     payload = valid_task_payload() | {"member_ids": []}

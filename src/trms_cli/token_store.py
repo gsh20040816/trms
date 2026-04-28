@@ -21,6 +21,7 @@ class TokenStoreError(Exception):
 @dataclass(frozen=True)
 class TokenSession:
     base_url: str
+    member_id: str
     access_token: str
     refresh_token: str
 
@@ -40,6 +41,7 @@ def resolve_token_store_path() -> Path:
 def save_token_session(
     *,
     base_url: str,
+    member_id: str,
     access_token: str,
     refresh_token: str,
 ) -> Path:
@@ -52,6 +54,7 @@ def save_token_session(
     payload = {
         "schema_version": TOKEN_STORE_SCHEMA_VERSION,
         "base_url": base_url,
+        "member_id": member_id,
         "access_token": access_token,
         "refresh_token": refresh_token,
     }
@@ -95,6 +98,7 @@ def load_token_session() -> TokenSession:
 
     return TokenSession(
         base_url=_require_non_empty_string(payload, "base_url", token_store_path),
+        member_id=_require_member_id(payload, token_store_path),
         access_token=_require_non_empty_string(payload, "access_token", token_store_path),
         refresh_token=_require_non_empty_string(payload, "refresh_token", token_store_path),
     )
@@ -107,6 +111,15 @@ def _require_non_empty_string(payload: dict[str, object], field_name: str, token
             f"token store field {field_name!r} must be a non-empty string: {token_store_path}"
         )
     return value.strip()
+
+
+def _require_member_id(payload: dict[str, object], token_store_path: Path) -> str:
+    try:
+        return _require_non_empty_string(payload, "member_id", token_store_path)
+    except TokenStoreError as error:
+        raise TokenStoreError(
+            "CLI token session is missing bound member id; run `trms-cli login --member-id ...` again"
+        ) from error
 
 
 def _assert_private_permissions(token_store_path: Path) -> None:

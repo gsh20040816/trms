@@ -92,8 +92,10 @@ def build_task_router(
         return repository.create(task_create)
 
     @router.get("")
-    def list_tasks():
-        return repository.list()
+    def list_tasks(member_id: Annotated[str | None, Query(min_length=1)] = None):
+        if member_id is None:
+            return repository.list()
+        return repository.list_for_member(member_id)
 
     @router.get("/{task_id}")
     def get_task(task_id: str):
