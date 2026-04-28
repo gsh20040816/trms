@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-04-28 17:25 - Split basic permission control task
+
+### 完成内容
+- 仅调整任务边界，不修改业务代码：
+  - 将 `TASKS.md` 中过大的“增加基础权限控制”拆成三个更小的后续任务：成员侧业务 API、管理员侧任务管理/复核、导出与异步作业权限边界；
+  - 保留原任务的目标，但按当前代码实际耦合点切到更可验证的落点，避免下一轮同时改动匿名旧接口、CLI bearer 调用链、管理员管理路径和导出/识别作业路径；
+  - 明确后续顺序：先收口成员侧可见范围，再收口管理员任务管理，最后收口导出和异步作业权限，为“导出文件访问控制测试”保留稳定前置条件。
+
+### 根因
+- 当前仓库虽然已经完成：
+  - 用户名密码登录；
+  - 统一 `RequestIdentity` 占位；
+  - Web 关键业务路径的 bearer 透传与关键字段对齐。
+- 但“基础权限控制”仍横跨多个尚未统一的边界：
+  - 一批成员侧接口仍保留匿名 `actor_id` / `member_id` / `submitter_id` 旧契约；
+  - 一批管理员侧任务管理与复核接口还没有统一接入请求身份上下文；
+  - 导出任务、导出文件下载、识别/导出异步作业接口和后续测试又是另一组独立切片。
+- 直接在一轮内完成原任务，会同时牵动后端多组路由、CLI 兼容调用和大量测试入口，超出“一个最小可验证任务”的边界。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 283 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：外部渠道接入（Telegram、邮件）仍维持其独立身份边界，本轮拆分只针对核心业务 API 的权限收口顺序，不在任务层面把渠道 webhook 直接并入 Web/CLI bearer 会话模型。
+- 当前保守假设：`RequestIdentity` 的“需要身份上下文”先按“逐路由收口并比对 bearer 与显式身份字段”的方式推进；是否把所有匿名旧契约一次性移除，将在拆分后的子任务中分别处理并验证。
+
 ## 2026-04-28 16:38 - Migrate web business APIs to bearer request identity
 
 ### 完成内容
