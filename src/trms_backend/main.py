@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.material_submission import MaterialSubmissionService
+from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
 from trms_backend.application.telegram_material_submission import (
@@ -47,11 +48,14 @@ def create_app(
     global_invoice_config: GlobalInvoiceConfig | None = None,
     material_file_storage: MaterialFileStorage | None = None,
     runtime_config: RuntimeConfig | None = None,
+    recognition_llm_client: OpenAiCompatibleRecognitionClient | None = None,
 ) -> FastAPI:
     config = runtime_config or load_runtime_config(database_url=database_url)
     app = FastAPI(title="TRMS API")
     app.state.runtime_config = config
     app.state.recognition_llm_capability = resolve_recognition_llm_capability(config)
+    if recognition_llm_client is None and config.llm_provider is not None:
+        recognition_llm_client = OpenAiCompatibleRecognitionClient(config.llm_provider)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(config.cors_allowed_origins),
@@ -89,6 +93,7 @@ def create_app(
         material_file_storage,
         recognition_task_repository,
         app.state.recognition_llm_capability,
+        recognition_llm_client,
     )
     email_material_submission_service = EmailMaterialSubmissionService(
         material_submission_service,

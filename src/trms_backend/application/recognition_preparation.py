@@ -3,10 +3,14 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
-from pydantic import BaseModel, Field
 from pypdf import PdfReader
 from pypdf.errors import FileNotDecryptedError, PdfReadError, PdfStreamError
 
+from trms_backend.application.recognition_llm import (
+    RecognitionDocumentInput,
+    RecognitionLlmClient,
+    RecognitionLlmExecutionError,
+)
 from trms_backend.application.recognition_runtime import (
     RecognitionLlmCapability,
     RecognitionLlmCapabilityStatus,
@@ -15,6 +19,7 @@ from trms_backend.domain.materials import MaterialFileStorage, MaterialRecord, M
 from trms_backend.domain.recognitions import (
     RecognitionFailureDetail,
     RecognitionFailureStage,
+    RecognitionFieldResult,
     RecognitionFieldSource,
     RecognitionResultPayload,
     RecognitionTaskRecord,
@@ -23,13 +28,6 @@ from trms_backend.domain.recognitions import (
 )
 
 _IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
-
-
-class RecognitionDocumentInput(BaseModel):
-    source: RecognitionFieldSource
-    text: str = Field(min_length=1)
-    page_count: int = Field(ge=1)
-    text_character_count: int = Field(ge=1)
 
 
 class RecognitionTaskExecutionNotFoundError(LookupError):
@@ -67,11 +65,13 @@ class RecognitionPreparationService:
         material_file_storage: MaterialFileStorage,
         recognition_task_repository: RecognitionTaskRepository,
         llm_capability: RecognitionLlmCapability,
+        recognition_llm_client: RecognitionLlmClient | None = None,
     ) -> None:
         self._material_repository = material_repository
         self._material_file_storage = material_file_storage
         self._recognition_task_repository = recognition_task_repository
         self._llm_capability = llm_capability
+        self._recognition_llm_client = recognition_llm_client
 
     def execute(self, recognition_task_id: str) -> RecognitionTaskRecord:
         task = self._recognition_task_repository.get(recognition_task_id)
@@ -114,18 +114,47 @@ class RecognitionPreparationService:
             )
 
         base_payload["preparation"]["recognition_input"] = document_input.model_dump(mode="json")
-        failure = (
-            self._llm_capability.failure
-            if self._llm_capability.status is RecognitionLlmCapabilityStatus.DISABLED
-            else RecognitionFailureDetail(
-                stage=RecognitionFailureStage.AI,
-                reason="structured_recognition_not_implemented",
+        if self._llm_capability.status is RecognitionLlmCapabilityStatus.DISABLED:
+            return self._fail_task(
+                recognition_task_id=recognition_task_id,
+                raw_response=base_payload,
+                failure=self._llm_capability.failure,
             )
-        )
-        return self._fail_task(
+        if self._recognition_llm_client is None:
+            return self._fail_task(
+                recognition_task_id=recognition_task_id,
+                raw_response=base_payload,
+                failure=RecognitionFailureDetail(
+                    stage=RecognitionFailureStage.AI,
+                    reason="structured_recognition_not_configured",
+                ),
+            )
+
+        try:
+            extraction = self._recognition_llm_client.recognize(
+                material=material,
+                document_input=document_input,
+            )
+        except RecognitionLlmExecutionError as error:
+            raw_response = dict(base_payload)
+            raw_response["llm"] = error.raw_response
+            return self._fail_task(
+                recognition_task_id=recognition_task_id,
+                raw_response=raw_response,
+                failure=error.failure,
+            )
+
+        raw_response = dict(base_payload)
+        raw_response["llm"] = extraction.raw_response
+        return self._complete_task(
             recognition_task_id=recognition_task_id,
-            raw_response=base_payload,
-            failure=failure,
+            raw_response=raw_response,
+            recognized_fields=extraction.recognized_fields,
+            target_status=(
+                RecognitionTaskStatus.NEEDS_CONFIRMATION
+                if extraction.has_pending_confirmation()
+                else RecognitionTaskStatus.SUCCEEDED
+            ),
         )
 
     def _fail_task(
@@ -140,6 +169,26 @@ class RecognitionPreparationService:
             RecognitionTaskStatus.FAILED,
             result=RecognitionResultPayload(raw_response=raw_response),
             failure=failure,
+        )
+        if updated is None:
+            raise RecognitionTaskExecutionNotFoundError(recognition_task_id)
+        return updated
+
+    def _complete_task(
+        self,
+        *,
+        recognition_task_id: str,
+        raw_response: dict[str, object],
+        recognized_fields: dict[str, RecognitionFieldResult],
+        target_status: RecognitionTaskStatus,
+    ) -> RecognitionTaskRecord:
+        updated = self._recognition_task_repository.update_status(
+            recognition_task_id,
+            target_status,
+            result=RecognitionResultPayload(
+                raw_response=raw_response,
+                recognized_fields=recognized_fields,
+            ),
         )
         if updated is None:
             raise RecognitionTaskExecutionNotFoundError(recognition_task_id)

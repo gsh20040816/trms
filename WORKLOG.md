@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-28 13:55 - Integrate OpenAI-compatible structured LLM recognition
+
+### 完成内容
+- 新增 `src/trms_backend/application/recognition_llm.py`，建立可替换的 OpenAI 兼容结构化识别客户端：
+  - 通过 `/chat/completions` 调用 OpenAI 兼容接口；
+  - 使用 `response_format=json_schema` 下发结构化提取 Schema；
+  - 仅在 Pydantic 校验通过后，才把识别结果映射为系统内 `recognized_fields`；
+  - 至少支持 `invoice_number`、`amount_cents`、`buyer_name`、`tax_number`、`transaction_time`、`location`、`expense_type`、`material_type` 八类结构化字段；
+  - 对 LLM 超时、请求失败、非 JSON、Schema 校验失败和“无任何可用字段”分别返回稳定失败原因。
+- 更新 `src/trms_backend/application/recognition_preparation.py` 与 `src/trms_backend/main.py`：
+  - 现有 `POST /api/recognition-tasks/{recognition_task_id}/execute` 从“预处理后直接失败占位”改为“预处理 -> LLM 识别 -> 落库状态更新”；
+  - 未配置 LLM Provider 时仍显式返回 `llm_provider_not_configured`；
+  - 已配置 LLM 时，识别成功写入结构化字段并进入 `succeeded`，低置信度字段存在时进入 `needs_confirmation`，不再把 AI 阶段统一伪装成失败。
+- 更新 `pyproject.toml` 与 `uv.lock`：
+  - 将 `httpx` 从开发依赖提升为运行时依赖，因为真实 LLM 调用链在后端主代码路径中直接使用它。
+- 新增/更新测试：
+  - `tests/test_recognition_llm.py` 使用 fake provider 覆盖成功解析、低置信度映射、非 JSON、字段缺失和超时重试路径；
+  - `tests/test_recognition_execution_api.py` 覆盖执行接口的真实结构化落库、低置信度转 `needs_confirmation`、以及 LLM 失败原因透传落库。
+- 更新 `TASKS.md`，将“接入 OpenAI 兼容 LLM 结构化识别最小闭环”标记为已完成。
+
+### 根因
+- 上一轮虽然已经补齐 PDF 文本提取和识别输入构建，但执行入口在拿到 `recognition_input` 后仍会直接以 `structured_recognition_not_implemented` 或 `llm_provider_not_configured` 结束。
+- 这意味着系统仍然没有真实的 AI 结构化识别主链路，发票字段只能依赖人工 PATCH 或人工录入，既不满足需求中的 AI 辅助识别，也无法把“LLM 失败”“输出格式错误”“低置信度待确认”这些不同状态清晰落库。
+
+### 修改文件
+- `pyproject.toml`
+- `uv.lock`
+- `src/trms_backend/application/recognition_llm.py`
+- `src/trms_backend/application/recognition_preparation.py`
+- `src/trms_backend/main.py`
+- `tests/test_recognition_llm.py`
+- `tests/test_recognition_execution_api.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_recognition_llm.py tests/test_recognition_execution_api.py tests/test_recognition_tasks_api.py tests/test_recognition_runtime.py`
+    - 22 个测试通过
+  - `python3 -m compileall src tests`
+    - 编译检查通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 246 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出相关测试路径中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量引用；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮将“低置信度字段进入 `needs_confirmation`”收敛为固定阈值 `confidence < 0.8`；当前任务只要求形成最小闭环，不在本轮引入新的全局配置项。若后续需要按字段或任务细化阈值，应拆成单独配置任务。
+- 本轮继续只处理“文本 PDF -> LLM 结构化识别”主路径；图片和扫描 PDF 仍保持 `ocr_not_configured` 的显式失败边界，没有借机扩展到真实 OCR。
+- 本轮将“附件类型”落到现有领域字段名 `material_type`，以保持与当前材料枚举和后续校验链一致，不另起一套平行命名。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“建立异步识别和导出任务执行机制”，把当前同步 `/execute` 入口下沉到 worker 或显式任务执行器，避免真实 LLM 调用长期停留在请求线程内。
+
 ## 2026-04-28 13:44 - Implement real PDF text extraction and recognition input preparation
 
 ### 完成内容
