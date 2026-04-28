@@ -774,6 +774,12 @@
     - 根目录新增开发环境模板文件，覆盖本地直跑 API 和 Web 联调所需变量
     - 文档明确生产模板与开发模板的区别
 
+- [x] 补齐本地 `uv` 启动的项目打包配置
+  - Done when:
+    - `uv sync` 会把当前仓库作为本地项目安装到 `.venv`
+    - `uv run python -m trms_backend` 与 `uv run python -m trms_cli` 不再因 `src/` 布局缺少打包配置而报 `No module named ...`
+    - 至少完成一次相关导入或帮助命令验证
+
 - [x] 拆分上线前安全与恢复演练任务
   - Done when:
     - 原任务已拆分到权限收口、安全回归、备份恢复演练和主流程演练等更小任务

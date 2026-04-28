@@ -1,5 +1,62 @@
 # WORKLOG
 
+## 2026-04-28 23:02 - Fix uv module entrypoints for src layout
+
+### 完成内容
+- 在 `pyproject.toml` 中补齐项目打包配置：
+  - 新增 `[build-system]`，使用 `hatchling` 作为构建后端；
+  - 新增 `[tool.hatch.build.targets.wheel]`，显式声明 `src/trms_backend` 与 `src/trms_cli` 两个包目录。
+- 修复本地 `uv` 运行入口：
+  - `uv sync` 现在会把当前仓库作为本地项目安装到 `.venv`；
+  - `uv run python -m trms_backend` 与 `uv run python -m trms_cli` 不再因为 `src/` 布局未打包而报 `No module named trms_backend`。
+- 补齐前端测试环境隔离：
+  - 更新 `web/src/test/setup.ts`，让前端测试固定使用同源 `/api`，不再受仓库根目录 `.env` 里开发联调用绝对 `VITE_API_BASE_URL` 的影响；
+  - 保持本地开发模板仍可继续使用 `http://127.0.0.1:9876/api` 做跨端口联调，不把“测试稳定”建立在回退开发配置之上。
+
+### 根因
+- 仓库使用 `src/` 布局，但此前 `pyproject.toml` 只有依赖声明，没有 `build-system` 和包发现配置。
+- 这会导致 `uv sync` 只安装第三方依赖，不安装当前项目本身；随后 `uv run python -m trms_backend` 的 `sys.path` 里没有 `src/`，模块导入必然失败。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `pyproject.toml`
+- `uv.lock`
+- `web/src/test/setup.ts`
+
+### 验证结果
+- 已通过：
+  - `uv sync`
+    - 当前项目已成功构建并安装为 `trms==0.1.0`
+  - `uv run python -c "import trms_backend, trms_cli; ..."`
+    - `trms_backend` 与 `trms_cli` 导入通过
+  - `uv run python -m trms_backend --help`
+    - 后端模块入口可正常解析并显示帮助信息
+  - `uv run python -m trms_cli --help`
+    - CLI 模块入口可正常解析并显示帮助信息
+  - `cd web && npm test -- src/lib/api/trms.test.ts`
+    - 3 个测试通过
+  - `cd web && npm test -- src/app/admin-task-list.test.tsx`
+    - 4 个测试通过
+  - `cd web && npm run lint && npm test && npm run build`
+    - 前端 lint、测试、构建通过
+  - `env UV_CACHE_DIR=/home/gsh/.cache/uv ./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 316 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：仓库短期内继续使用 `hatchling + src/` 作为最小打包方案即可，不需要为此额外引入更复杂的发布或 console script 配置。
+
 ## 2026-04-28 22:05 - Change default dev port to 9876 and add development env template
 
 ### 完成内容
