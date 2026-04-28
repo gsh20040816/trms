@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-04-28 13:28 - Add web runtime host/port and API base URL boundaries
+
+### 完成内容
+- 更新 `web/vite.config.ts`：
+  - 新增 `TRMS_WEB_HOST`、`TRMS_WEB_PORT` 开发态配置读取；
+  - 仅对 `vite dev` 生效，不进入前端构建产物；
+  - 对非法端口直接报错，避免开发联调时静默落到错误端口。
+- 更新 `web/src/lib/api/client.ts`：
+  - 将前端 API base URL 解析提炼为 `resolveApiBaseUrl()`；
+  - 默认继续使用同源 `/api`，显式配置 `VITE_API_BASE_URL` 时会去掉首尾空白和尾部 `/`。
+- 更新 `web/src/lib/api/client.test.ts`：
+  - 新增默认 `/api` 行为测试；
+  - 新增自定义 `VITE_API_BASE_URL` 规范化测试。
+- 更新 `README.md`：
+  - 补充前端开发服务 `host` / `port` 配置方式；
+  - 明确同源 `/api`、本地跨端口联调、生产反向代理三种 API 地址场景；
+  - 明确 `VITE_*` 变量是公开构建配置，禁止承载 LLM API key、后端 secret 或长期 token。
+- 更新 `TASKS.md`，将“建立前端运行端口和 API 地址配置边界”标记为已完成。
+
+### 修改文件
+- `web/vite.config.ts`
+- `web/src/lib/api/client.ts`
+- `web/src/lib/api/client.test.ts`
+- `README.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前前端虽然已经支持 `VITE_API_BASE_URL`，但 Vite 开发服务的监听 `host` / `port` 没有项目内统一边界。
+- `README.md` 只记录了本地通过 `VITE_API_BASE_URL` 直连后端的一个示例，没有覆盖同源 `/api` 和生产反向代理两种主路径，也没有明确 `VITE_*` 变量不能承载 secret。
+- 如果继续让这些配置停留在“默认 Vite 行为 + 零散说明”，后续部署时容易把开发联调配置和生产公开配置混在一起，甚至误把敏感配置放进前端构建产物。
+
+### 当前结论
+- 前端开发服务现在可通过 `TRMS_WEB_HOST`、`TRMS_WEB_PORT` 显式配置监听地址，且该配置只作用于开发态。
+- 前端 API 地址边界现在明确区分：
+  - 默认同源 `/api`；
+  - 本地跨端口联调使用 `VITE_API_BASE_URL`；
+  - 生产优先通过反向代理保持 `/api`，避免把不必要的环境细节硬编码进构建产物。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- src/lib/api/client.test.ts`
+    - 1 个测试文件、5 个测试通过
+  - `cd web && npm run build`
+    - 构建通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 228 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 既有警告：
+  - `pytest` 仍有 3 条第三方 `DeprecationWarning`，来源于 `HTTP_422_UNPROCESSABLE_ENTITY`
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告
+  这些均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮保守假设前端开发服务配置只需要覆盖 Vite `dev server` 的监听 `host` / `port`，不额外引入独立的生产前端端口配置系统。
+- 本轮保守假设生产部署推荐同源 `/api` + 反向代理；仅当确实需要跨域部署时，才在构建时写入公开可见的 `VITE_API_BASE_URL`。
+- 本轮不新增任何前端 secret 配置入口；后续 OpenAI 兼容 LLM Provider、后端 secret 和对象存储凭据仍应只留在后端配置层处理。
+
 ## 2026-04-28 13:44 - Add unified backend runtime configuration
 
 ### 完成内容

@@ -1,12 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiClient, ApiError } from "./client";
+import { ApiClient, ApiError, resolveApiBaseUrl } from "./client";
 
 describe("ApiClient", () => {
   const client = new ApiClient("/api");
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("defaults to same-origin /api when no API base URL is configured", () => {
+    expect(resolveApiBaseUrl({})).toBe("/api");
+  });
+
+  it("normalizes a configured API base URL without trailing slashes", () => {
+    expect(resolveApiBaseUrl({
+      VITE_API_BASE_URL: " http://127.0.0.1:8100/api/ ",
+    })).toBe("http://127.0.0.1:8100/api");
   });
 
   it("normalizes field validation errors into a unified summary", async () => {

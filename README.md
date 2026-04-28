@@ -70,11 +70,38 @@ npm run dev
 
 前端工程使用 React + TypeScript + Vite。仓库根目录执行 `./scripts/verify.sh` 时，如存在 `web/package.json`，会自动进入 `web/` 执行 `npm run lint`、`npm test` 和 `npm run build`。
 
-默认前端 API 地址为 `/api`。本地联调时可通过 Vite 代理或设置 `VITE_API_BASE_URL` 指向后端服务，例如：
+Vite 开发服务的监听 host/port 可通过环境变量配置，只影响 `npm run dev`，不会写入生产构建产物：
 
 ```bash
-VITE_API_BASE_URL=http://127.0.0.1:8000/api npm run dev
+TRMS_WEB_HOST=0.0.0.0 TRMS_WEB_PORT=4173 npm run dev
 ```
+
+前端 API 地址边界如下：
+
+1. 同源 `/api`
+
+默认前端 API 地址为 `/api`。适用于本地 Vite 代理或生产环境下由反向代理把 `/api` 转发到后端，无需额外公开后端地址。
+
+2. 本地跨端口联调
+
+本地联调时可通过设置 `VITE_API_BASE_URL` 指向后端服务，例如：
+
+```bash
+TRMS_WEB_HOST=127.0.0.1 \
+TRMS_WEB_PORT=5173 \
+VITE_API_BASE_URL=http://127.0.0.1:8100/api \
+npm run dev
+```
+
+3. 生产反向代理
+
+生产部署优先保持前端构建产物中的 API 地址为默认 `/api`，并由 Nginx、Caddy 或其他反向代理把 `/api` 路由到后端服务。只有在前后端必须跨域部署时，才应在构建时设置公开可见的 `VITE_API_BASE_URL`。
+
+安全边界：
+
+- 所有 `VITE_*` 变量都会进入前端构建产物，只能保存公开配置。
+- 不要把 OpenAI 兼容 LLM `api_key`、后端 secret、数据库凭据或长期 token 写入 `VITE_*` 变量。
+- 前端页面和测试不应展示上述 secret；相关敏感配置只能保留在后端环境变量或专用密钥管理中。
 
 ## 基础账号登录
 

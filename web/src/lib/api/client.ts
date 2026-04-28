@@ -14,8 +14,12 @@ function normalizePath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function defaultApiBaseUrl() {
-  const rawBaseUrl: unknown = import.meta.env.VITE_API_BASE_URL;
+type ApiBaseUrlEnvironment = {
+  VITE_API_BASE_URL?: string;
+};
+
+export function resolveApiBaseUrl(environment: ApiBaseUrlEnvironment = import.meta.env) {
+  const rawBaseUrl: unknown = environment.VITE_API_BASE_URL;
   const configuredBaseUrl = typeof rawBaseUrl === "string" ? rawBaseUrl.trim() : "";
   return normalizeBaseUrl(configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : "/api");
 }
@@ -63,7 +67,7 @@ function buildJsonParseErrorPayload(error: unknown) {
 export class ApiClient {
   readonly baseUrl: string;
 
-  constructor(baseUrl = defaultApiBaseUrl()) {
+  constructor(baseUrl = resolveApiBaseUrl()) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
   }
 
