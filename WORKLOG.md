@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-04-28 10:45 - Add CLI task listing command
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 新增 `tasks` 命令，建立 CLI 查询当前可提交任务的最小闭环：
+  - 复用本地 token 会话文件读取 `base_url` 和 access token；
+  - 调用后端任务列表接口并带上 `Authorization: Bearer ...` 请求头；
+  - 仅输出状态为 `open` 且截止时间晚于当前时间的任务，避免把草稿、已关闭或已过期任务伪装成“当前可提交”。
+- 为文本和 JSON 两种输出模式固定任务列表字段：
+  - 输出包含任务编号、比赛名称、状态和截止时间；
+  - JSON 输出继续复用 `trms-cli.v1` envelope，并返回 `count` 与 `items`。
+- 在 `src/trms_cli/token_store.py` 增加会话读取能力：
+  - 校验 token 文件存在、JSON 格式、schema version 和必要字段；
+  - 会话缺失或损坏时显式失败，而不是静默退化为匿名请求。
+- 新增 `tests/test_cli_tasks.py`，覆盖：
+  - 从本地会话读取 token 并成功查询任务列表；
+  - JSON 输出结构；
+  - 未登录时显式失败。
+- 将 `TASKS.md` 中“增加 CLI 任务查询能力”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `src/trms_cli/token_store.py`
+- `tests/test_cli_tasks.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 虽然已有 `health` 和 `login` 占位，但成员完成登录后仍无法查询有哪些任务可供后续提交材料，CLI 主流程停在“拿到 token”这一步。
+- 需求文档中的 CLI 提交流程明确要求“登录后先查询当前可提交任务，再选择目标任务上传”；如果不先建立这一最小查询能力，后续材料上传命令就只能要求用户手填任务编号，CLI 侧会缺少最基本的任务发现链路。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_health.py tests/test_cli_login.py tests/test_cli_tasks.py`
+    - 10 个 CLI 相关测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 175 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只实现“任务查询能力”，没有提前实现下一项“CLI 可见任务权限过滤”：
+  - 当前 CLI 通过 access token 建立认证请求边界；
+  - “只返回当前成员可参与任务”的服务端权限过滤仍留给下一轮按 `TASKS.md` 顺序处理。
+- 为兼容此前 `login` 可保存 `http://host/api` 这类 base URL 的情况，`tasks` 命令在请求任务列表时会识别已带 `/api` 前缀的 base URL，避免拼出重复的 `/api/api/tasks`。
+- 任务是否“当前可提交”当前按两个条件保守判断：
+  - 任务状态必须为 `open`；
+  - 任务截止时间必须晚于当前时间。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设“增加 CLI 任务查询能力”的最小闭环是：
+  - CLI 先基于现有后端 `GET /api/tasks` 建立列表查询命令；
+  - 成员可见性过滤作为紧随其后的独立任务处理，而不是在本轮提前引入未成型的权限系统。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 可见任务权限过滤”，优先把“当前成员只看到自己可参与任务”的约束下沉到 API 或明确的身份上下文边界中，再补对应 CLI 回归测试。
+
 ## 2026-04-28 10:38 - Establish CLI login and token storage placeholder
 
 ### 完成内容

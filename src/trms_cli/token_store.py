@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -15,6 +16,13 @@ TOKEN_STORE_FILENAME = "session.json"
 
 class TokenStoreError(Exception):
     """Raised when the CLI token store cannot be safely updated."""
+
+
+@dataclass(frozen=True)
+class TokenSession:
+    base_url: str
+    access_token: str
+    refresh_token: str
 
 
 def resolve_token_store_path() -> Path:
@@ -62,6 +70,43 @@ def save_token_session(
         _assert_private_permissions(token_store_path)
 
     return token_store_path
+
+
+def load_token_session() -> TokenSession:
+    token_store_path = resolve_token_store_path()
+    if not token_store_path.exists():
+        raise TokenStoreError("CLI token session not found; run `trms-cli login` first")
+
+    try:
+        with token_store_path.open(encoding="utf-8") as stream:
+            payload = json.load(stream)
+    except json.JSONDecodeError as error:
+        raise TokenStoreError(f"token store file contains invalid JSON: {token_store_path}") from error
+
+    if not isinstance(payload, dict):
+        raise TokenStoreError(f"token store payload must be an object: {token_store_path}")
+
+    schema_version = payload.get("schema_version")
+    if schema_version != TOKEN_STORE_SCHEMA_VERSION:
+        raise TokenStoreError(
+            "token store schema version is not supported: "
+            f"{schema_version!r}; expected {TOKEN_STORE_SCHEMA_VERSION!r}"
+        )
+
+    return TokenSession(
+        base_url=_require_non_empty_string(payload, "base_url", token_store_path),
+        access_token=_require_non_empty_string(payload, "access_token", token_store_path),
+        refresh_token=_require_non_empty_string(payload, "refresh_token", token_store_path),
+    )
+
+
+def _require_non_empty_string(payload: dict[str, object], field_name: str, token_store_path: Path) -> str:
+    value = payload.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise TokenStoreError(
+            f"token store field {field_name!r} must be a non-empty string: {token_store_path}"
+        )
+    return value.strip()
 
 
 def _assert_private_permissions(token_store_path: Path) -> None:
