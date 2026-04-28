@@ -381,6 +381,15 @@ class SqlAlchemyMaterialRepository:
             session.add(row)
         return _material_from_row(row)
 
+    def mark_deleted(self, material_id: str) -> MaterialRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(MaterialRow, material_id)
+            if row is None or row.status != MaterialStatus.ASSIGNED.value:
+                return None
+            row.status = MaterialStatus.DELETED.value
+            session.add(row)
+        return _material_from_row(row)
+
     def list_by_task(self, task_id: str) -> list[MaterialRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(

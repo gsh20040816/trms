@@ -1,15 +1,24 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from pydantic import BaseModel, Field
 
 from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.material_submission_http import build_batch_response, read_uploaded_files
 from trms_backend.api.request_identity import (
     RequestIdentity,
+    build_authenticated_request_identity_dependency,
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
+from trms_backend.application.material_deletion import (
+    MaterialDeletionActorNotAllowedError,
+    MaterialDeletionConflictError,
+    MaterialDeletionNotFoundError,
+    MaterialDeletionService,
+    MaterialDeletionTaskNotFoundError,
+)
 from trms_backend.application.material_submission import (
     MaterialSubmissionService,
     MaterialSubmissionTaskNotFoundError,
@@ -31,15 +40,23 @@ from trms_backend.domain.tasks import (
 )
 
 
+class MaterialDeletionMarkRequest(BaseModel):
+    administrator_id: str = Field(min_length=1)
+
+
 def build_material_router(
     auth_repository: AuthRepository,
     task_repository: TaskRepository,
     material_repository: MaterialRepository,
     material_submission_service: MaterialSubmissionService,
+    material_deletion_service: MaterialDeletionService,
     audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(tags=["materials"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
+    authenticated_request_identity = build_authenticated_request_identity_dependency(
+        auth_repository
+    )
 
     @router.post("/api/tasks/{task_id}/materials", status_code=status.HTTP_201_CREATED)
     async def submit_materials(
@@ -247,6 +264,38 @@ def build_material_router(
             request_id=request_id,
         )
         return {"item": claimed_material}
+
+    @router.post("/api/materials/{material_id}/deletion-mark")
+    def mark_material_deleted(
+        material_id: str,
+        payload: MaterialDeletionMarkRequest,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        administrator_id = resolve_required_actor_request_field(
+            identity,
+            payload.administrator_id,
+            field_name="administrator_id",
+        )
+        try:
+            deleted_material = material_deletion_service.mark_deleted(
+                material_id=material_id,
+                actor_id=administrator_id,
+            )
+        except MaterialDeletionNotFoundError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        except MaterialDeletionTaskNotFoundError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        except MaterialDeletionActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except MaterialDeletionConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        return {"item": deleted_material}
 
     @router.get("/api/tasks/{task_id}/materials")
     def list_materials(

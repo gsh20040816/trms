@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
+from trms_backend.application.material_deletion import MaterialDeletionService
 from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
@@ -97,6 +98,11 @@ def create_app(
         recognition_task_repository,
         audit_log_repository,
     )
+    material_deletion_service = MaterialDeletionService(
+        task_repository,
+        material_repository,
+        invoice_repository,
+    )
     recognition_preparation_service = RecognitionPreparationService(
         material_repository,
         material_file_storage,
@@ -171,6 +177,7 @@ def create_app(
             task_repository,
             material_repository,
             material_submission_service,
+            material_deletion_service,
             audit_log_repository,
         )
     )

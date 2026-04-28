@@ -1,5 +1,59 @@
 # WORKLOG
 
+## 2026-04-28 18:14 - Establish material deletion mark boundary
+
+### 完成内容
+- 为材料域补齐最小软删除边界：
+  - 在 `src/trms_backend/domain/materials.py` 新增 `deleted` 状态，并为仓储补充 `mark_deleted` 能力；
+  - 新增 `src/trms_backend/application/material_deletion.py`，集中处理“材料存在性、任务归属、任务负责人权限、发票引用冲突”四类删除标记约束；
+  - 在 `src/trms_backend/api/materials.py` 新增 `POST /api/materials/{material_id}/deletion-mark`，要求认证请求，并校验 `administrator_id` 与 bearer 身份一致。
+- 收口删除标记的最小可见性与引用规则：
+  - 删除标记后的材料不再出现在 `list_by_task` 及其复用的任务级材料列表/导出输入中；
+  - 若材料已作为主发票材料，或已作为辅助材料挂到某张发票上，则拒绝删除标记，避免留下悬挂业务引用；
+  - 删除标记不会物理删除材料记录，也不会删除原始文件。
+- 补充回归测试：
+  - 管理员可成功标记删除，且材料从任务列表中隐藏；
+  - 原始文件仍保留在存储目录，数据库记录仍存在且状态变为 `deleted`；
+  - 成员越权删除被 `403` 拒绝，匿名请求被 `401` 拒绝；
+  - 已被主发票或辅助材料链路引用的材料删除被 `409` 拒绝。
+
+### 根因
+- 现有材料域只有 `assigned` / `pending_assignment` 两种状态，没有“误传后撤出主路径但保留追溯信息”的中间语义。
+- 如果直接物理删除材料，会破坏架构文档要求的“原始上传文件不得被覆盖、关键操作可审计、材料可追溯”约束。
+- 如果仅在 API 层临时屏蔽而不建立正式状态，又会让导出、复核、任务材料列表等复用 `list_by_task` 的路径继续把本应撤出的材料当作有效输入。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/materials.py`
+- `src/trms_backend/application/material_deletion.py`
+- `src/trms_backend/domain/materials.py`
+- `src/trms_backend/infrastructure/repositories.py`
+- `src/trms_backend/main.py`
+- `tests/test_materials_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_materials_api.py`
+    - 27 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 304 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：第一阶段“材料删除”仅表现为任务内软删除标记，不提供物理删除、回收站恢复或跨任务迁移能力。
+- 当前保守假设：只有任务负责人管理员可以标记已归属任务的材料删除；`pending_assignment` 材料的清理策略留给后续任务单独定义。
+- 当前保守假设：删除标记后的材料主要从任务级主列表和导出输入中隐藏；按材料 ID 的识别历史等追溯路径暂不额外屏蔽，以便后续审计和恢复设计继续沿用现有记录。
+
 ## 2026-04-28 18:05 - Record material submission and claim audit logs
 
 ### 完成内容

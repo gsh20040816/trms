@@ -3,8 +3,12 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 
 from trms_backend.domain.audit_logs import AuditLogResult
+from trms_backend.domain.materials import MaterialStatus
 from trms_backend.infrastructure.database import build_session_factory
-from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepository
+from trms_backend.infrastructure.repositories import (
+    SqlAlchemyAuditLogRepository,
+    SqlAlchemyMaterialRepository,
+)
 from trms_backend.domain.materials import MAX_MATERIAL_UPLOAD_SIZE_BYTES
 from trms_backend.domain.tasks import (
     ReimbursementTask,
@@ -15,7 +19,14 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 from api_error_assertions import assert_api_error
-from test_tasks_api import admin_auth_headers, update_task_row, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    create_invoice,
+    register_and_get_token,
+    update_task_row,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path):
@@ -42,6 +53,13 @@ def list_material_audit_logs(tmp_path, material_id: str):
         build_session_factory(f"sqlite:///{tmp_path}/test.db")
     )
     return repository.list_by_object(object_type="material", object_id=material_id)
+
+
+def get_material_record(tmp_path, material_id: str):
+    repository = SqlAlchemyMaterialRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return repository.get(material_id)
 
 
 def assert_single_pending_recognition_task(client: TestClient, material_id: str) -> None:
@@ -277,6 +295,171 @@ def test_claim_pending_assignment_material_rejects_assigned_material(tmp_path):
         status_code=409,
         code="conflict",
         detail="material is not pending assignment",
+    )
+
+
+def test_task_administrator_can_mark_material_deleted_without_removing_file(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    created = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    assert created.status_code == 201
+    material = created.json()["items"][0]
+    storage_path = tmp_path / "material-storage" / material["storage_key"]
+
+    response = client.post(
+        f"/api/materials/{material['id']}/deletion-mark",
+        json={"administrator_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "deleted"
+    listed = client.get(f"/api/tasks/{task_id}/materials")
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+    stored = get_material_record(tmp_path, material["id"])
+    assert stored is not None
+    assert stored.status is MaterialStatus.DELETED
+    assert storage_path.read_bytes() == b"fake-pdf-content"
+
+
+def test_member_cannot_mark_material_deleted(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+
+    member_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+    response = client.post(
+        f"/api/materials/{material_id}/deletion-mark",
+        json={"administrator_id": "2250001"},
+        headers=member_headers,
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="actor is not allowed to delete materials for this task",
+    )
+
+
+def test_mark_deleted_requires_authenticated_request(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+
+    response = client.post(
+        f"/api/materials/{material_id}/deletion-mark",
+        json={"administrator_id": "admin-1"},
+    )
+
+    assert_api_error(
+        response,
+        status_code=401,
+        code="unauthorized",
+        detail="invalid or missing bearer token",
+    )
+
+
+def test_cannot_mark_primary_invoice_material_deleted(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+    create_invoice(client, material_id)
+
+    response = client.post(
+        f"/api/materials/{material_id}/deletion-mark",
+        json={"administrator_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert_api_error(
+        response,
+        status_code=409,
+        code="conflict",
+        detail="material is referenced by an invoice and cannot be marked deleted",
+    )
+
+
+def test_cannot_mark_supporting_material_deleted_when_linked_to_invoice(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    invoice_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"invoice-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+    supporting_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-content", "image/png")},
+    ).json()["items"][0]["id"]
+    invoice_id = create_invoice(client, invoice_material_id)
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}"
+    )
+    assert attach_response.status_code == 200
+
+    response = client.post(
+        f"/api/materials/{supporting_material_id}/deletion-mark",
+        json={"administrator_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert_api_error(
+        response,
+        status_code=409,
+        code="conflict",
+        detail="material is referenced by supporting invoice links and cannot be marked deleted",
     )
 
 

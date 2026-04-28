@@ -37,6 +37,7 @@ class MaterialType(StrEnum):
 class MaterialStatus(StrEnum):
     ASSIGNED = "assigned"
     PENDING_ASSIGNMENT = "pending_assignment"
+    DELETED = "deleted"
 
 
 class MaterialCreate(BaseModel):
@@ -150,6 +151,9 @@ class MaterialRepository(Protocol):
     ) -> MaterialRecord | None:
         raise NotImplementedError
 
+    def mark_deleted(self, material_id: str) -> MaterialRecord | None:
+        raise NotImplementedError
+
     def get(self, material_id: str) -> MaterialRecord | None:
         raise NotImplementedError
 
@@ -249,6 +253,16 @@ class InMemoryMaterialRepository:
                     "claimed_at": claimed_at,
                 }
             )
+            self._materials[material_id] = updated
+            return updated
+
+    def mark_deleted(self, material_id: str) -> MaterialRecord | None:
+        with self._lock:
+            material = self._materials.get(material_id)
+            if material is None or material.status is not MaterialStatus.ASSIGNED:
+                return None
+
+            updated = material.model_copy(update={"status": MaterialStatus.DELETED})
             self._materials[material_id] = updated
             return updated
 
