@@ -1,5 +1,6 @@
 import type { RouteObject } from "react-router-dom";
 
+import { AdminCorrectionsRemindersPage } from "./admin-corrections-reminders";
 import { AdminTaskDetailPage } from "./admin-task-detail";
 import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminInvoiceEditorPage } from "./admin-invoice-editor";
@@ -92,6 +93,10 @@ export const routes: RouteObject[] = [
           {
             path: "tasks/:taskId/review",
             element: <AdminReviewOverviewPage />,
+          },
+          {
+            path: "tasks/:taskId/corrections",
+            element: <AdminCorrectionsRemindersPage />,
           },
           {
             path: "tasks/:taskId/missing-materials",

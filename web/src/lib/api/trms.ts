@@ -12,6 +12,8 @@ import type {
   ManualInvoiceEntry,
   ManualInvoiceEntryResponse,
   MaterialBatchUploadResponse,
+  MaterialReminderCreate,
+  MaterialReminderRecord,
   MaterialRecord,
   MergedPdfExportPlan,
   VisibleMissingMaterialList,
@@ -80,6 +82,22 @@ export const trmsApi = {
   listTaskOverdueConfirmations(taskId: string, actorId: string) {
     return apiClient.request<OverdueConfirmationList>(
       `/tasks/${encodeSegment(taskId)}/overdue-confirmations${buildQuery({ actor_id: actorId })}`,
+    );
+  },
+
+  listTaskMaterialReminders(taskId: string, actorId: string) {
+    return apiClient.request<ApiListResponse<MaterialReminderRecord>>(
+      `/tasks/${encodeSegment(taskId)}/material-reminders${buildQuery({ actor_id: actorId })}`,
+    );
+  },
+
+  createTaskMaterialReminder(taskId: string, payload: MaterialReminderCreate) {
+    return apiClient.request<MaterialReminderRecord>(
+      `/tasks/${encodeSegment(taskId)}/material-reminders`,
+      {
+        method: "POST",
+        body: payload,
+      },
     );
   },
 

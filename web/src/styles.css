@@ -273,6 +273,10 @@ select {
   margin-top: 18px;
 }
 
+.admin-form-field-full {
+  grid-column: 1 / -1;
+}
+
 .field-stack {
   display: grid;
   gap: 8px;

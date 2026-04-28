@@ -1,0 +1,565 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+
+import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { trmsApi } from "../lib/api/trms";
+import type {
+  ExpenseType,
+  MaterialReminderRecord,
+  RecognitionTaskStatus,
+  ReimbursementTask,
+  TaskReviewSummary,
+  ValidationResult,
+} from "../lib/api/types";
+import { useAuthSession } from "./auth-store";
+
+type CorrectionReminderPageState =
+  | { status: "loading" }
+  | { status: "error"; error: unknown }
+  | {
+      status: "ready";
+      task: ReimbursementTask;
+      summary: TaskReviewSummary;
+      reminders: MaterialReminderRecord[];
+    };
+
+type ReminderFormErrors = {
+  memberId?: string;
+  content?: string;
+};
+
+type RecognitionCorrectionAction = {
+  materialId: string;
+  invoiceId: string | null;
+  filename: string;
+  submitterId: string | null;
+  recognitionStatus: RecognitionTaskStatus | null;
+  lowConfidenceFieldNames: string[];
+  failureReason: string | null;
+  createdAt: string;
+};
+
+type InvoiceCorrectionAction = {
+  invoiceId: string;
+  materialId: string;
+  invoiceNumber: string;
+  amountCents: number;
+  expenseType: ExpenseType;
+  abnormalValidations: ValidationResult[];
+  disputedSplitCount: number;
+  pendingSplitCount: number;
+  updatedAt: string;
+};
+
+const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
+  registration: "参赛费",
+  railway: "火车票",
+  airfare: "航空费",
+  local_transport: "市内交通",
+  hotel: "住宿费",
+  other: "其他",
+};
+
+const RECOGNITION_STATUS_LABELS: Record<RecognitionTaskStatus, string> = {
+  pending: "识别中",
+  succeeded: "识别成功",
+  failed: "识别失败",
+  needs_confirmation: "待人工确认",
+};
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatCurrencyFromCents(cents: number) {
+  return `￥${(cents / 100).toFixed(2)}`;
+}
+
+function formatExpenseType(expenseType: ExpenseType) {
+  return EXPENSE_TYPE_LABELS[expenseType] ?? expenseType;
+}
+
+function formatRecognitionStatus(status: RecognitionTaskStatus | null) {
+  if (status === null) {
+    return "未触发识别";
+  }
+  return RECOGNITION_STATUS_LABELS[status];
+}
+
+function sortRemindersByCreatedAtDesc(items: MaterialReminderRecord[]) {
+  return items.slice().sort((left, right) => right.created_at.localeCompare(left.created_at));
+}
+
+function buildRecognitionCorrectionActions(summary: TaskReviewSummary): RecognitionCorrectionAction[] {
+  return summary.materials
+    .filter((item) => item.material.material_type === "invoice")
+    .map((item) => {
+      const recognition = item.latest_recognition;
+      const lowConfidenceFieldNames = recognition
+        ? Object.entries(recognition.recognized_fields)
+          .filter(([, field]) => field.status === "needs_confirmation")
+          .map(([fieldName]) => fieldName)
+        : [];
+
+      return {
+        materialId: item.material.id,
+        invoiceId: item.invoice_id,
+        filename: item.material.original_filename,
+        submitterId: item.material.submitter_id,
+        recognitionStatus: recognition?.status ?? null,
+        lowConfidenceFieldNames,
+        failureReason: recognition?.failure
+          ? `${recognition.failure.stage} / ${recognition.failure.reason}`
+          : null,
+        createdAt: item.material.created_at,
+      };
+    })
+    .filter((item) => {
+      return (
+        item.invoiceId === null
+        || item.recognitionStatus === "failed"
+        || item.recognitionStatus === "needs_confirmation"
+        || item.lowConfidenceFieldNames.length > 0
+      );
+    })
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+function buildInvoiceCorrectionActions(summary: TaskReviewSummary): InvoiceCorrectionAction[] {
+  return summary.invoices
+    .map((invoiceItem) => {
+      const abnormalValidations = invoiceItem.validations.filter(
+        (validation) => validation.status !== "passed" && validation.status !== "not_applicable",
+      );
+      const disputedSplitCount = invoiceItem.splits.filter(
+        ({ confirmation }) => confirmation?.status === "disputed",
+      ).length;
+      const pendingSplitCount = invoiceItem.splits.filter(
+        ({ confirmation }) => confirmation === null || confirmation.status === "pending",
+      ).length;
+
+      return {
+        invoiceId: invoiceItem.invoice.id,
+        materialId: invoiceItem.invoice.material_id,
+        invoiceNumber: invoiceItem.invoice.invoice_number,
+        amountCents: invoiceItem.invoice.amount_cents,
+        expenseType: invoiceItem.invoice.expense_type,
+        abnormalValidations,
+        disputedSplitCount,
+        pendingSplitCount,
+        updatedAt: invoiceItem.invoice.updated_at,
+      };
+    })
+    .filter((item) => {
+      return item.abnormalValidations.length > 0 || item.disputedSplitCount > 0;
+    })
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export function AdminCorrectionsRemindersPage() {
+  const session = useAuthSession();
+  const { taskId } = useParams<{ taskId: string }>();
+  const [pageState, setPageState] = useState<CorrectionReminderPageState>({ status: "loading" });
+  const [memberId, setMemberId] = useState("");
+  const [content, setContent] = useState("");
+  const [formErrors, setFormErrors] = useState<ReminderFormErrors>({});
+  const [submitError, setSubmitError] = useState<unknown>(null);
+  const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPage() {
+      if (!session || session.role !== "admin" || !taskId) {
+        return;
+      }
+
+      setPageState({ status: "loading" });
+      setSubmitError(null);
+
+      try {
+        const [task, summary, reminderResponse] = await Promise.all([
+          trmsApi.getTask(taskId),
+          trmsApi.getTaskReviewSummary(taskId, session.actorId),
+          trmsApi.listTaskMaterialReminders(taskId, session.actorId),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setPageState({
+          status: "ready",
+          task,
+          summary,
+          reminders: sortRemindersByCreatedAtDesc(reminderResponse.items),
+        });
+        setMemberId((current) => {
+          if (task.member_ids.includes(current)) {
+            return current;
+          }
+          return task.member_ids[0] ?? "";
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setPageState({
+          status: "error",
+          error,
+        });
+      }
+    }
+
+    void loadPage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, taskId]);
+
+  const recognitionActions = useMemo(
+    () => (pageState.status === "ready" ? buildRecognitionCorrectionActions(pageState.summary) : []),
+    [pageState],
+  );
+  const invoiceActions = useMemo(
+    () => (pageState.status === "ready" ? buildInvoiceCorrectionActions(pageState.summary) : []),
+    [pageState],
+  );
+
+  if (!session || session.role !== "admin") {
+    return null;
+  }
+
+  if (!taskId) {
+    return (
+      <div className="page-stack">
+        <section className="status-card">
+          <p className="eyebrow">Task Missing</p>
+          <h2>任务标识缺失</h2>
+          <p>当前路由未提供任务编号，无法进入人工更正与提醒页。</p>
+        </section>
+      </div>
+    );
+  }
+
+  const task = pageState.status === "ready" ? pageState.task : null;
+  const isForeignTask = task ? task.administrator_id !== session.actorId : false;
+  const visibleTask = pageState.status === "ready" && !isForeignTask ? pageState.task : null;
+  const visibleReminders = pageState.status === "ready" && !isForeignTask ? pageState.reminders : [];
+
+  function handleReminderSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void submitReminder();
+  }
+
+  async function submitReminder() {
+    if (!session || !taskId || !visibleTask) {
+      return;
+    }
+
+    const nextErrors: ReminderFormErrors = {};
+    if (!memberId.trim()) {
+      nextErrors.memberId = "请选择提醒对象。";
+    }
+    if (!content.trim()) {
+      nextErrors.content = "请输入提醒内容。";
+    }
+    setFormErrors(nextErrors);
+    setSubmitError(null);
+    setSubmitFeedback(null);
+    if (nextErrors.memberId || nextErrors.content) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const reminder = await trmsApi.createTaskMaterialReminder(taskId, {
+        administrator_id: session.actorId,
+        member_id: memberId.trim(),
+        content: content.trim(),
+      });
+
+      setPageState((current) => {
+        if (current.status !== "ready") {
+          return current;
+        }
+        return {
+          ...current,
+          reminders: sortRemindersByCreatedAtDesc([reminder, ...current.reminders]),
+        };
+      });
+      setContent("");
+      setFormErrors({});
+      setSubmitFeedback(`已记录对成员 ${reminder.member_id} 的补材料提醒。`);
+    } catch (error) {
+      setSubmitError(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <section className="status-card admin-review-hero">
+        <p className="eyebrow">Admin Corrections</p>
+        <h2>管理员人工更正与补材料提醒</h2>
+        <p>
+          本页只复用现有复核摘要与补材料提醒接口，聚焦两件事：把复核中发现的问题准确跳转到人工更正页，以及把管理员的补材料提醒记录下来。
+        </p>
+        <p className="status-note">
+          当前仍使用 mock 管理员身份 {session.displayName}（{session.actorId}）。更正动作继续在现有发票录入页和分摊编辑页完成；若后端拒绝提醒创建，本页会直接展示真实错误，不伪装为“已提醒”。
+        </p>
+        <div className="inline-actions">
+          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/review`}>
+            返回复核总览
+          </Link>
+          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
+            返回任务详情
+          </Link>
+        </div>
+      </section>
+
+      {pageState.status === "loading" ? (
+        <section className="status-card admin-review-panel">
+          <p className="eyebrow">Loading</p>
+          <h2>正在加载更正与提醒上下文</h2>
+          <p>正在读取任务详情、复核摘要和补材料提醒记录，请稍候。</p>
+        </section>
+      ) : null}
+
+      {pageState.status === "error" ? <ApiErrorNotice error={pageState.error} /> : null}
+      {submitError ? <ApiErrorNotice error={submitError} /> : null}
+
+      {pageState.status === "ready" && isForeignTask ? (
+        <section className="status-card admin-review-panel">
+          <p className="eyebrow">Access Scope</p>
+          <h2>当前任务不属于此管理员</h2>
+          <p>
+            当前任务的 `administrator_id` 为 {task?.administrator_id}，与当前 mock 管理员
+            {session.actorId} 不一致。为避免真实鉴权未接入前误操作，本页不展示更正入口与提醒表单。
+          </p>
+        </section>
+      ) : null}
+
+      {visibleTask ? (
+        <section className="task-detail-layout">
+          <article className="status-card admin-review-panel">
+            <div className="admin-form-header">
+              <div>
+                <p className="eyebrow">Corrections</p>
+                <h2>待人工更正项</h2>
+              </div>
+              <span className="status-chip">
+                {recognitionActions.length + invoiceActions.length} 个处理入口
+              </span>
+            </div>
+
+            <div className="admin-review-subsection">
+              <h4>识别字段待确认或待补录材料</h4>
+              {recognitionActions.length > 0 ? (
+                <ul className="admin-review-record-list" aria-label="识别字段更正列表">
+                  {recognitionActions.map((item) => (
+                    <li key={item.materialId} className="admin-review-record-card">
+                      <div className="task-card-header">
+                        <div>
+                          <p className="task-card-id">材料编号 {item.materialId}</p>
+                          <h3>{item.filename}</h3>
+                        </div>
+                        <span className="status-chip">
+                          {formatRecognitionStatus(item.recognitionStatus)}
+                        </span>
+                      </div>
+                      <div className="admin-review-inline-metadata">
+                        <span className="token-chip">提交人 {item.submitterId ?? "未解析"}</span>
+                        <span className="token-chip">
+                          低置信度字段 {item.lowConfidenceFieldNames.length} 个
+                        </span>
+                      </div>
+                      <div className="task-meta-grid admin-review-meta-grid">
+                        <div>
+                          <dt>已录入发票</dt>
+                          <dd>{item.invoiceId ?? "未录入"}</dd>
+                        </div>
+                        <div>
+                          <dt>上传时间</dt>
+                          <dd>{formatDateTime(item.createdAt)}</dd>
+                        </div>
+                      </div>
+                      {item.lowConfidenceFieldNames.length > 0 ? (
+                        <p className="field-hint">
+                          待确认字段：{item.lowConfidenceFieldNames.join("、")}
+                        </p>
+                      ) : null}
+                      {item.failureReason ? (
+                        <p className="field-hint">识别失败原因：{item.failureReason}</p>
+                      ) : null}
+                      <div className="inline-actions">
+                        <Link
+                          className="route-link"
+                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.materialId)}`}
+                        >
+                          更正识别字段与金额
+                        </Link>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="field-hint">当前复核摘要下没有需要人工确认识别字段的发票材料。</p>
+              )}
+            </div>
+
+            <div className="admin-review-subsection">
+              <h4>存在异常校验或异议的发票</h4>
+              {invoiceActions.length > 0 ? (
+                <ul className="admin-review-record-list" aria-label="金额更正列表">
+                  {invoiceActions.map((item) => (
+                    <li key={item.invoiceId} className="admin-review-record-card">
+                      <div className="task-card-header">
+                        <div>
+                          <p className="task-card-id">发票编号 {item.invoiceId}</p>
+                          <h3>{item.invoiceNumber}</h3>
+                        </div>
+                        <span className="status-chip">{formatCurrencyFromCents(item.amountCents)}</span>
+                      </div>
+                      <div className="admin-review-inline-metadata">
+                        <span className="token-chip">{formatExpenseType(item.expenseType)}</span>
+                        <span className="token-chip">异常校验 {item.abnormalValidations.length} 条</span>
+                        <span className="token-chip">异议分摊 {item.disputedSplitCount} 条</span>
+                      </div>
+                      <div className="task-meta-grid admin-review-meta-grid">
+                        <div>
+                          <dt>待确认分摊</dt>
+                          <dd>{item.pendingSplitCount}</dd>
+                        </div>
+                        <div>
+                          <dt>最近更新时间</dt>
+                          <dd>{formatDateTime(item.updatedAt)}</dd>
+                        </div>
+                      </div>
+                      <ul className="admin-review-list" aria-label={`发票 ${item.invoiceNumber} 异常摘要`}>
+                        {item.abnormalValidations.slice(0, 3).map((validation) => (
+                          <li key={validation.id}>
+                            <strong>{validation.rule_code}</strong>
+                            <span>{validation.message}</span>
+                          </li>
+                        ))}
+                        {item.abnormalValidations.length > 3 ? (
+                          <li>
+                            <strong>其他异常</strong>
+                            <span>还有 {item.abnormalValidations.length - 3} 条异常校验未在此处展开。</span>
+                          </li>
+                        ) : null}
+                      </ul>
+                      <div className="inline-actions">
+                        <Link
+                          className="route-link"
+                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.materialId)}`}
+                        >
+                          更正发票金额与字段
+                        </Link>
+                        <Link
+                          className="route-link route-link-secondary"
+                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(item.invoiceId)}`}
+                        >
+                          调整当前发票分摊
+                        </Link>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="field-hint">当前没有因异常校验或成员异议而需要优先更正的发票。</p>
+              )}
+            </div>
+          </article>
+
+          <article className="status-card admin-form-card">
+            <div className="admin-form-header">
+              <div>
+                <p className="eyebrow">Reminders</p>
+                <h2>记录补材料提醒</h2>
+              </div>
+              <span className="status-chip">{visibleReminders.length} 条已记录提醒</span>
+            </div>
+
+            <form onSubmit={handleReminderSubmit}>
+              <div className="admin-form-grid">
+                <label className="field-stack">
+                  <span>提醒对象成员</span>
+                  <select
+                    aria-label="提醒对象成员"
+                    value={memberId}
+                    onChange={(event) => {
+                      setMemberId(event.target.value);
+                      setFormErrors((current) => ({ ...current, memberId: undefined }));
+                    }}
+                  >
+                    {visibleTask.member_ids.length > 0 ? (
+                      visibleTask.member_ids.map((taskMemberId) => (
+                        <option key={taskMemberId} value={taskMemberId}>
+                          {taskMemberId}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">当前任务没有可提醒成员</option>
+                    )}
+                  </select>
+                  {formErrors.memberId ? <span className="field-error">{formErrors.memberId}</span> : null}
+                </label>
+
+                <label className="field-stack admin-form-field-full">
+                  <span>提醒内容</span>
+                  <textarea
+                    aria-label="提醒内容"
+                    value={content}
+                    placeholder="例如：请补充支付记录和比赛通知，并在补交后重新确认金额。"
+                    onChange={(event) => {
+                      setContent(event.target.value);
+                      setFormErrors((current) => ({ ...current, content: undefined }));
+                    }}
+                  />
+                  {formErrors.content ? <span className="field-error">{formErrors.content}</span> : null}
+                  <span className="field-hint">
+                    当前只记录管理员提醒内容与时间，不接入真实短信、邮件或 Telegram 发送。
+                  </span>
+                </label>
+              </div>
+
+              <div className="admin-form-footer">
+                <p className="field-hint">提醒内容会按原文存档，后续审计与通知接入可复用这条记录。</p>
+                <button className="route-link" type="submit" disabled={isSubmitting || visibleTask.member_ids.length === 0}>
+                  {isSubmitting ? "记录中..." : "记录补材料提醒"}
+                </button>
+              </div>
+            </form>
+
+            {submitFeedback ? <p className="confirmation-feedback">{submitFeedback}</p> : null}
+
+            <div className="admin-review-subsection">
+              <h4>已记录提醒</h4>
+              {visibleReminders.length > 0 ? (
+                <ul className="admin-review-list" aria-label="补材料提醒列表">
+                  {visibleReminders.map((reminder) => (
+                    <li key={reminder.id}>
+                      <strong>成员 {reminder.member_id}</strong>
+                      <span>{reminder.content}</span>
+                      <span>记录时间：{formatDateTime(reminder.created_at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="field-hint">当前任务还没有已记录的补材料提醒。</p>
+              )}
+            </div>
+          </article>
+        </section>
+      ) : null}
+    </div>
+  );
+}

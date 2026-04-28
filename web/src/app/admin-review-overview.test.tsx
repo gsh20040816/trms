@@ -264,6 +264,10 @@ describe("AdminReviewOverviewPage", () => {
 
     expect(await screen.findByRole("heading", { name: "管理员复核总览" })).toBeInTheDocument();
     expect(screen.getByText("ICPC 复核任务")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "处理更正与提醒" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-REVIEW/corrections",
+    );
 
     const riskSummary = within(screen.getByLabelText("复核风险摘要"));
     expect(riskSummary.getByText("Must 级失败校验")).toBeInTheDocument();
@@ -279,11 +283,23 @@ describe("AdminReviewOverviewPage", () => {
     const materialList = within(screen.getByLabelText("任务材料列表"));
     expect(materialList.getByText("invoice.pdf")).toBeInTheDocument();
     expect(materialList.getAllByText("待人工确认")).toHaveLength(2);
+    expect(materialList.getByRole("link", { name: "更正识别字段" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
+    );
 
     const invoiceList = within(screen.getByLabelText("发票复核列表"));
     expect(invoiceList.getByText("INV-001")).toBeInTheDocument();
     expect(invoiceList.getByText("发票抬头与任务抬头不一致")).toBeInTheDocument();
     expect(invoiceList.getByText("异议原因：报名费分摊比例需要调整")).toBeInTheDocument();
+    expect(invoiceList.getByRole("link", { name: "更正金额与字段" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
+    );
+    expect(invoiceList.getByRole("link", { name: "调整分摊" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
+    );
 
     const outstandingMembers = within(screen.getByLabelText("未完成确认成员"));
     expect(outstandingMembers.getByText("2250002")).toBeInTheDocument();

@@ -1,5 +1,64 @@
 # WORKLOG
 
+## 2026-04-28 09:46 - Implement admin corrections and reminders page
+
+### 完成内容
+- 新增管理员“人工更正与补材料提醒”页面：
+  - 新增 `web/src/app/admin-corrections-reminders.tsx`，在 `/admin/tasks/:taskId/corrections` 聚合展示复核后需要人工处理的两类入口：
+    - 识别字段待确认或尚未补录发票的材料，深链到发票录入页并自动定位 `materialId`；
+    - 存在异常校验或成员异议的发票，深链到发票录入页进行金额/字段更正，并提供到分摊编辑页的 `invoiceId` 深链。
+  - 页面同时接入 `GET /api/tasks/{taskId}/material-reminders` 与 `POST /api/tasks/{taskId}/material-reminders`，支持管理员记录补材料提醒并查看已记录历史。
+- 打通复核页入口与上下文跳转：
+  - 更新 `web/src/app/routes.tsx` 注册 `/admin/tasks/:taskId/corrections`；
+  - 更新 `web/src/app/admin-review-overview.tsx`，从复核总览增加“处理更正与提醒”入口，并在材料/发票卡片内增加“更正识别字段”“更正金额与字段”“调整分摊”的上下文链接。
+- 补齐前端测试与类型边界：
+  - 扩展 `web/src/lib/api/types.ts` 和 `web/src/lib/api/trms.ts`，补齐补材料提醒类型与客户端调用；
+  - 新增 `web/src/app/admin-corrections-reminders.test.tsx`，覆盖“展示更正入口并记录提醒”“后端拒绝提醒创建时直接展示错误”；
+  - 更新 `web/src/app/admin-review-overview.test.tsx`，覆盖复核页到更正/分摊入口的深链。
+- 将 `TASKS.md` 中“实现管理员人工更正与提醒页面”标记为已完成。
+
+### 修改文件
+- `web/src/app/admin-corrections-reminders.tsx`
+- `web/src/app/admin-corrections-reminders.test.tsx`
+- `web/src/app/admin-review-overview.tsx`
+- `web/src/app/admin-review-overview.test.tsx`
+- `web/src/app/routes.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 现有仓库已经有管理员发票人工录入、更正分摊和补材料提醒后端接口，但这些能力仍然分散：复核总览只能看风险，不能把“哪一张发票、哪一份材料需要处理”直接带到更正页面，也没有前端入口记录提醒。
+- 因此管理员在“发现问题 -> 进入更正 -> 记录提醒”这条链路上仍需要手工切换页面和手工定位对象，Web 主链路在复核阶段并不闭合。
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- admin-corrections-reminders admin-review-overview`
+    - 2 个前端测试文件、4 个测试通过
+  - `cd web && npm run lint`
+    - 通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 165 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，15 个前端测试文件、40 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 开发过程中第一次全量验证曾在 `cd web && npm run build` 阶段暴露一个真实 TypeScript 空值检查错误：`submitReminder` 内对 `session.actorId` 的访问未被类型收窄。本轮已修复后再次执行 `./scripts/verify.sh`，最终全量验证通过。
+- pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- “人工更正与提醒页面”当前只负责把复核发现的问题准确导向现有发票录入页和分摊编辑页，不在本页重复实现发票编辑或分摊编辑表单，避免和既有页面职责重叠。
+- 补材料提醒当前仍是系统内记录，不调用真实短信、邮件或 Telegram 发送；后续若接入通知渠道，应复用这里的提醒记录作为审计来源，而不是绕过记录直接发送。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“实现导出任务页面”，优先复用现有导出能力边界、任务模型和下载占位，不新增新的导出后端协议。
+
 ## 2026-04-28 09:34 - Implement missing materials pages
 
 ### 完成内容

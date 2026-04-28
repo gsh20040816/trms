@@ -406,6 +406,9 @@ export function AdminReviewOverviewPage() {
           <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
             返回任务详情
           </Link>
+          <Link className="route-link" to={`/admin/tasks/${taskId}/corrections`}>
+            处理更正与提醒
+          </Link>
           <Link className="route-link" to={`/admin/tasks/${taskId}/invoices`}>
             录入或更正发票
           </Link>
@@ -687,6 +690,16 @@ export function AdminReviewOverviewPage() {
                           <p className="field-hint">当前材料尚无识别任务结果。</p>
                         )}
                       </div>
+                      {item.material.material_type === "invoice" ? (
+                        <div className="inline-actions">
+                          <Link
+                            className="route-link route-link-secondary"
+                            to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.material.id)}`}
+                          >
+                            更正识别字段
+                          </Link>
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -811,6 +824,24 @@ export function AdminReviewOverviewPage() {
                         ) : (
                           <p className="field-hint">当前发票还没有分摊记录。</p>
                         )}
+                      </div>
+                      <div className="inline-actions">
+                        <Link
+                          className="route-link"
+                          to={
+                            `/admin/tasks/${taskId}/invoices?materialId=${
+                              encodeURIComponent(invoiceItem.invoice.material_id)
+                            }`
+                          }
+                        >
+                          更正金额与字段
+                        </Link>
+                        <Link
+                          className="route-link route-link-secondary"
+                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(invoiceItem.invoice.id)}`}
+                        >
+                          调整分摊
+                        </Link>
                       </div>
                     </li>
                   );

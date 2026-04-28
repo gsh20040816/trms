@@ -308,6 +308,21 @@ export type TaskExportJobRecord = {
   finished_at: ApiDateTime | null;
 };
 
+export type MaterialReminderCreate = {
+  administrator_id: string;
+  member_id: string;
+  content: string;
+};
+
+export type MaterialReminderRecord = {
+  id: string;
+  task_id: string;
+  administrator_id: string;
+  member_id: string;
+  content: string;
+  created_at: ApiDateTime;
+};
+
 export type TaskReviewSummaryCounts = {
   material_count: number;
   pending_assignment_material_count: number;
