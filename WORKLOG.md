@@ -1,5 +1,59 @@
 # WORKLOG
 
+## 2026-04-29 01:05 - Tighten formatted email submission identity trust boundary
+
+### 完成内容
+- 收口格式化邮件入站身份信任边界：
+  - `/api/email/materials` 不再默认信任表单中的 `resolved_member_id`；
+  - 只有后端配置了 `TRMS_AUTH_EMAIL_INBOUND_TOKEN`，且请求头 `X-TRMS-Email-Inbound-Token` 与之匹配时，才会把 `resolved_member_id` 当作可信成员身份直接写入成员主链路；
+  - 未携带可信入站 token 时，即使请求里显式带了 `resolved_member_id`，材料也只进入待归属流程，不再直接按该成员归档。
+- 补齐运行配置与部署说明：
+  - 新增 `TRMS_AUTH_EMAIL_INBOUND_TOKEN` 运行配置；
+  - `.env.example`、`.env.development.example`、`deploy/docker-compose.yml`、`README.md` 和 `docs/格式化邮件提交规范说明.md` 已同步记录该配置及其边界。
+- 补齐回归测试：
+  - 邮件入站覆盖“可信 token + resolved_member_id 直接归档”“缺少可信 token 时伪造成员身份失败并转待归属”“错误 token 拒绝”“未知任务转待归属”“未绑定进入待归属”和“部分附件失败”；
+  - 运行配置测试覆盖 `TRMS_AUTH_EMAIL_INBOUND_TOKEN` 的读取与日志脱敏。
+
+### 根因
+- `src/trms_backend/api/email_materials.py` 之前允许匿名调用方直接在表单中提供 `resolved_member_id`；
+- `src/trms_backend/application/email_material_submission.py` 收到该字段后，会直接按该成员调用统一材料提交主链路；
+- 这意味着任意调用方只要知道成员编号，就能伪造“邮件适配器已确认身份”的前提，把材料直接写入成员任务，违背需求、架构文档和邮件规范中“未受控身份只能待归属”的边界。
+
+### 修改文件
+- `src/trms_backend/api/email_materials.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/runtime_config.py`
+- `tests/test_email_materials_api.py`
+- `tests/test_runtime_config.py`
+- `.env.example`
+- `.env.development.example`
+- `deploy/docker-compose.yml`
+- `README.md`
+- `docs/格式化邮件提交规范说明.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_email_materials_api.py tests/test_runtime_config.py`
+    - 25 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 333 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮沿用 Telegram 渠道的最小可信边界：当前仓库仍未实现真实邮箱绑定，因此邮件渠道只有两条允许的成员身份来源：
+  - 受信任入站器通过 `TRMS_AUTH_EMAIL_INBOUND_TOKEN` 明确声明的 `resolved_member_id`；
+  - 否则一律进入待归属，由后续人工认领处理。
+
 ## 2026-04-29 00:57 - Tighten Telegram binding and inbound identity trust boundaries
 
 ### 完成内容

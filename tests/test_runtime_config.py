@@ -31,6 +31,7 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.auth.allow_admin_self_register is True
     assert config.auth.bootstrap_admin_token is None
     assert config.auth.telegram_inbound_token is None
+    assert config.auth.email_inbound_token is None
     assert config.llm_provider is None
 
 
@@ -232,6 +233,7 @@ def test_auth_config_reads_bootstrap_token_and_redacts_it_from_logs():
             "TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER": "false",
             "TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN": " bootstrap-secret ",
             "TRMS_AUTH_TELEGRAM_INBOUND_TOKEN": " telegram-inbound-secret ",
+            "TRMS_AUTH_EMAIL_INBOUND_TOKEN": " email-inbound-secret ",
         }
     )
 
@@ -240,6 +242,8 @@ def test_auth_config_reads_bootstrap_token_and_redacts_it_from_logs():
     assert config.auth.bootstrap_admin_token.get_secret_value() == "bootstrap-secret"
     assert config.auth.telegram_inbound_token is not None
     assert config.auth.telegram_inbound_token.get_secret_value() == "telegram-inbound-secret"
+    assert config.auth.email_inbound_token is not None
+    assert config.auth.email_inbound_token.get_secret_value() == "email-inbound-secret"
 
     safe_log_fields = config.auth.to_safe_log_fields()
 
@@ -247,8 +251,11 @@ def test_auth_config_reads_bootstrap_token_and_redacts_it_from_logs():
     assert safe_log_fields["bootstrap_admin_token_configured"] is True
     assert safe_log_fields["telegram_inbound_token"] == "[redacted]"
     assert safe_log_fields["telegram_inbound_token_configured"] is True
+    assert safe_log_fields["email_inbound_token"] == "[redacted]"
+    assert safe_log_fields["email_inbound_token_configured"] is True
     assert "bootstrap-secret" not in str(safe_log_fields)
     assert "telegram-inbound-secret" not in str(safe_log_fields)
+    assert "email-inbound-secret" not in str(safe_log_fields)
 
 
 def test_s3_file_storage_safe_log_fields_redact_credentials():

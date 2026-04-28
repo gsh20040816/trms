@@ -2,14 +2,27 @@ from fastapi.testclient import TestClient
 
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
+from trms_backend.runtime_config import load_runtime_config
 
 from test_tasks_api import admin_auth_headers, create_task
 
+TRUSTED_EMAIL_TOKEN = "email-secret"
 
-def make_client(tmp_path):
+
+def make_client(tmp_path, *, trusted_inbound_token: str | None = None):
+    runtime_config = load_runtime_config(
+        env={
+            "DATABASE_URL": f"sqlite:///{tmp_path}/test.db",
+            **(
+                {"TRMS_AUTH_EMAIL_INBOUND_TOKEN": trusted_inbound_token}
+                if trusted_inbound_token is not None
+                else {}
+            ),
+        }
+    )
     return TestClient(
         create_app(
-            f"sqlite:///{tmp_path}/test.db",
+            runtime_config=runtime_config,
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
         )
     )
@@ -36,12 +49,13 @@ def assert_single_pending_recognition_task(client: TestClient, material_id: str)
     assert body["items"][0]["status"] == "pending"
 
 
-def test_email_material_submission_routes_resolved_member_to_assigned_flow(tmp_path):
-    client = make_client(tmp_path)
+def test_email_material_submission_routes_trusted_resolved_member_to_assigned_flow(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
     task_id = create_open_task(client)
 
     response = client.post(
         "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
         data={
             "sender_email": "Member1@Tongji.edu.cn",
             "resolved_member_id": "2250001",
@@ -69,6 +83,55 @@ def test_email_material_submission_routes_resolved_member_to_assigned_flow(tmp_p
     assert material["channel"] == "email"
     assert material["storage_key"].startswith(f"{task_id}/")
     assert_single_pending_recognition_task(client, material["id"])
+
+
+def test_email_material_submission_without_trusted_header_keeps_claimed_member_pending_assignment(
+    tmp_path,
+):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        "/api/email/materials",
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"[TRMS] task:{task_id}",
+            "body": "material_type: invoice\nsubmitter_id: 2250999\n",
+        },
+        files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    material = response.json()["items"][0]
+    assert material["status"] == "pending_assignment"
+    assert material["task_id"] is None
+    assert material["submitter_id"] is None
+    assert material["task_id_hint"] == task_id
+    assert material["submitter_id_hint"] == "email:member1@tongji.edu.cn (submitter_id:2250999)"
+    assert material["channel"] == "email"
+    assert material["storage_key"].startswith("_pending_assignment/")
+    assert_single_pending_recognition_task(client, material["id"])
+
+
+def test_email_material_submission_rejects_invalid_trusted_header(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": "wrong-token"},
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"[TRMS] task:{task_id}",
+            "body": "material_type: invoice\n",
+        },
+        files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid email inbound token"
 
 
 def test_email_material_submission_routes_unresolved_sender_to_pending_assignment(tmp_path):
@@ -99,10 +162,11 @@ def test_email_material_submission_routes_unresolved_sender_to_pending_assignmen
 
 
 def test_email_material_submission_routes_unknown_task_to_pending_assignment(tmp_path):
-    client = make_client(tmp_path)
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
 
     response = client.post(
         "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
@@ -165,11 +229,12 @@ def test_email_material_submission_rejects_task_id_mismatch(tmp_path):
 
 
 def test_email_material_submission_reports_missing_attachment_filename_as_partial_failure(tmp_path):
-    client = make_client(tmp_path)
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
     task_id = create_open_task(client)
 
     response = client.post(
         "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",

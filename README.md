@@ -68,6 +68,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER`
 - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
 - `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`
+- `TRMS_AUTH_EMAIL_INBOUND_TOKEN`
 - `TRMS_LLM_API_KEY`
 - `TRMS_LLM_BASE_URL`
 - `TRMS_LLM_MODEL`
@@ -138,6 +139,13 @@ Telegram 入站可信边界：
 - `PUT /api/telegram-bindings/*` 与 Telegram 绑定查询接口现在都要求 bearer 身份，且仅 `admin` / `system_admin` 可管理。
 - 只有在后端配置了 `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`，且请求头 `X-TRMS-Telegram-Inbound-Token` 与之匹配时，`/api/telegram/materials` 才会把表单中的 `telegram_user_id` 当作可信身份来源。
 - 未配置该 token，或请求未携带该 token 时，Telegram 材料仍会被接收，但只进入待归属流程，不会直接归档到成员主链路。
+- 该 token 只允许保留在后端环境变量或渠道入站器密钥管理中，不入库、不返回前端，也不应写入日志。
+
+格式化邮件入站可信边界：
+
+- `/api/email/materials` 不再信任匿名调用方表单里的 `resolved_member_id`。
+- 只有在后端配置了 `TRMS_AUTH_EMAIL_INBOUND_TOKEN`，且请求头 `X-TRMS-Email-Inbound-Token` 与之匹配时，邮件入站器提供的 `resolved_member_id` 才会被当作可信成员身份直接写入成员主链路。
+- 未配置该 token，或请求未携带该 token 时，格式合法的邮件材料仍会被接收，但即使表单里带了 `resolved_member_id`，也只会进入待归属流程。
 - 该 token 只允许保留在后端环境变量或渠道入站器密钥管理中，不入库、不返回前端，也不应写入日志。
 
 异步任务运行模式边界：

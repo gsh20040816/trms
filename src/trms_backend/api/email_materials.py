@@ -1,6 +1,7 @@
+import hmac
 from typing import Annotated, Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
@@ -16,6 +17,8 @@ from trms_backend.domain.tasks import TaskSubmissionDeadlinePassedError, TaskSub
 
 def build_email_material_router(
     email_material_submission_service: EmailMaterialSubmissionService,
+    *,
+    trusted_inbound_token: str | None,
 ) -> APIRouter:
     router = APIRouter(tags=["email-materials"])
 
@@ -27,6 +30,7 @@ def build_email_material_router(
         body: Annotated[str, Form()],
         files: Annotated[list[UploadFile] | None, File()] = None,
         resolved_member_id: Annotated[str | None, Form()] = None,
+        email_inbound_token: Annotated[str | None, Header(alias="X-TRMS-Email-Inbound-Token")] = None,
     ):
         if not files:
             return _build_email_format_error_response(
@@ -35,12 +39,16 @@ def build_email_material_router(
             )
 
         uploaded_files = await read_uploaded_files(files)
+        trust_resolved_member_id = _is_trusted_email_request(
+            configured_token=trusted_inbound_token,
+            request_token=email_inbound_token,
+        )
         try:
             result = email_material_submission_service.submit(
                 sender_email=sender_email,
                 subject=subject,
                 body=body,
-                resolved_member_id=resolved_member_id,
+                resolved_member_id=resolved_member_id if trust_resolved_member_id else None,
                 files=uploaded_files,
                 request_id=ensure_request_id(request),
             )
@@ -71,6 +79,28 @@ def build_email_material_router(
         )
 
     return router
+
+
+def _is_trusted_email_request(
+    *,
+    configured_token: str | None,
+    request_token: str | None,
+) -> bool:
+    normalized_configured_token = (configured_token or "").strip()
+    if not normalized_configured_token:
+        return False
+
+    normalized_request_token = (request_token or "").strip()
+    if not normalized_request_token:
+        return False
+
+    if not hmac.compare_digest(normalized_request_token, normalized_configured_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid email inbound token",
+        )
+
+    return True
 
 
 def _build_email_format_error_response(*, error_code: str, detail: str) -> JSONResponse:
