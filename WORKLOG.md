@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-29 04:37 - Add material upload integration coverage
+
+### 完成内容
+- 新增上传链路集成测试文件 `tests/test_material_upload_integration.py`，集中覆盖本轮任务要求的上传主链路断言。
+- 已补齐以下集成场景：
+  - `web`、`cli`、可信 `telegram`、可信 `email` 四类已归属上传都会落到同一保存/落库/识别占位流程；
+  - 已验证文件内容落盘、本地存储 key、`sha256` hash 持久化，以及识别任务占位创建；
+  - 已验证跨渠道重复检测：同一任务内 `web` 首次上传后，`telegram` 再上传相同内容会正确标记 `duplicate_of`；
+  - 已验证批量上传部分成功：合法 PDF 成功入库，非法文本附件失败并返回明确错误，且失败文件不会伪造为已保存。
+
+### 根因
+- 现有仓库虽然已有 `test_materials_api.py`、`test_email_materials_api.py`、`test_telegram_materials_api.py` 和 `test_material_storage.py` 等零散测试，但断言分散在 API、渠道和底层存储文件中，缺少一组直接对照 `TASKS.md` Done when 的“材料上传集成测试”。
+- 当前首个未完成任务明确要求同时覆盖文件保存、hash、重复检测、批量部分成功和跨渠道统一流程，因此本轮补的是测试闭环，而不是继续改业务实现。
+
+### 关键改动点
+- 新增上传集成测试：
+  - `tests/test_material_upload_integration.py`
+- 更新任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮未修改任何生产业务逻辑，只新增测试；如果后续上传链路、重复检测策略或渠道归属边界回归，这组测试会先暴露问题。
+- 集成测试仍基于本地 `LocalMaterialFileStorage`，符合“不要依赖外部对象存储”的当前任务边界；S3 兼容存储契约仍由既有 `tests/test_material_storage.py` 负责，不在本轮扩大到外部依赖集成。
+- `telegram` 和 `email` 场景本轮只覆盖“可信入站并直接归属”的统一主链路，未把未绑定/待归属分支重新复制进该测试文件，因为那部分已有专门渠道测试覆盖。
+
+### 修改文件
+- `tests/test_material_upload_integration.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_material_upload_integration.py`
+    - 6 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 393 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认“不同渠道进入统一流程”应覆盖 `web`、`cli`、可信 `telegram`、可信 `email` 四条第一阶段主链路；待归属分支已由既有渠道测试覆盖，因此不在本轮重复铺开。
+
 ## 2026-04-29 04:24 - Add rule-layer validation test matrix
 
 ### 完成内容
