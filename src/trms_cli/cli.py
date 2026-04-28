@@ -5,11 +5,14 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import getpass
 import json
+import mimetypes
 import os
+from pathlib import Path
 import sys
 from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from trms_cli.token_store import TokenStoreError, load_token_session, save_token_session
 
@@ -33,6 +36,25 @@ class VisibleTaskSummary:
     competition_name: str
     status: str
     deadline: str
+
+
+@dataclass(frozen=True)
+class MaterialUploadSummary:
+    id: str
+    task_id: str
+    submitter_id: str
+    material_type: str
+    original_filename: str
+    status: str
+    recognition_status: str
+
+
+@dataclass(frozen=True)
+class MultipartUploadFile:
+    field_name: str
+    filename: str
+    content_type: str
+    content: bytes
 
 
 def emit_json(payload: dict[str, object], *, stream: object | None = None) -> None:
@@ -60,6 +82,89 @@ def fetch_json(url: str, *, headers: dict[str, str] | None = None) -> tuple[int,
         raise CliError(f"unable to reach TRMS API: {error.reason}", code="network_error") from error
     except json.JSONDecodeError as error:
         raise CliError("TRMS API returned invalid JSON", code="invalid_json_response") from error
+
+
+def post_multipart_json(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    fields: dict[str, str],
+    files: list[MultipartUploadFile],
+) -> tuple[int, object]:
+    body, content_type = encode_multipart_form_data(fields=fields, files=files)
+    request_headers = {
+        "Accept": "application/json",
+        "Content-Type": content_type,
+        "Content-Length": str(len(body)),
+    }
+    if headers:
+        request_headers.update(headers)
+    request = Request(url, method="POST", headers=request_headers, data=body)
+    try:
+        with urlopen(request, timeout=30) as response:
+            payload = json.load(response)
+            return response.status, payload
+    except HTTPError as error:
+        detail = read_http_error_detail(error)
+        if detail:
+            raise CliError(
+                f"request failed with status {error.code}: {detail}",
+                code="http_error",
+            ) from error
+        raise CliError(f"request failed with status {error.code}", code="http_error") from error
+    except URLError as error:
+        raise CliError(f"unable to reach TRMS API: {error.reason}", code="network_error") from error
+    except json.JSONDecodeError as error:
+        raise CliError("TRMS API returned invalid JSON", code="invalid_json_response") from error
+
+
+def read_http_error_detail(error: HTTPError) -> str | None:
+    payload = error.read().decode("utf-8", errors="replace").strip()
+    if not payload:
+        return None
+
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        return payload
+
+    if isinstance(parsed, dict):
+        detail = parsed.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+    return payload
+
+
+def encode_multipart_form_data(
+    *,
+    fields: dict[str, str],
+    files: list[MultipartUploadFile],
+) -> tuple[bytes, str]:
+    boundary = f"trms-cli-{uuid4().hex}"
+    body = bytearray()
+
+    for field_name, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(
+            f'Content-Disposition: form-data; name="{field_name}"\r\n\r\n'.encode("utf-8")
+        )
+        body.extend(value.encode("utf-8"))
+        body.extend(b"\r\n")
+
+    for upload_file in files:
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(
+            (
+                'Content-Disposition: form-data; '
+                f'name="{upload_file.field_name}"; filename="{upload_file.filename}"\r\n'
+            ).encode("utf-8")
+        )
+        body.extend(f"Content-Type: {upload_file.content_type}\r\n\r\n".encode("utf-8"))
+        body.extend(upload_file.content)
+        body.extend(b"\r\n")
+
+    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+    return bytes(body), f"multipart/form-data; boundary={boundary}"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +218,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit machine-readable JSON output",
     )
     tasks_parser.set_defaults(handler=run_tasks_command)
+
+    submit_parser = subparsers.add_parser(
+        "submit",
+        help="upload one local material file to a visible reimbursement task",
+    )
+    submit_parser.add_argument(
+        "--task-id",
+        required=True,
+        help="target reimbursement task id",
+    )
+    submit_parser.add_argument(
+        "--material-type",
+        required=True,
+        help="material type such as invoice or payment_record",
+    )
+    submit_parser.add_argument(
+        "file_path",
+        help="local file path to upload",
+    )
+    submit_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit machine-readable JSON output",
+    )
+    submit_parser.set_defaults(handler=run_submit_command)
 
     return parser
 
@@ -251,12 +382,134 @@ def run_tasks_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_submit_command(args: argparse.Namespace) -> int:
+    try:
+        session = load_token_session()
+    except TokenStoreError as error:
+        raise CliError(str(error), code="login_required") from error
+
+    upload_file = load_upload_file(args.file_path)
+    base_url = session.base_url.rstrip("/")
+    status_code, payload = post_multipart_json(
+        build_material_submit_url(base_url, task_id=args.task_id),
+        headers={"Authorization": f"Bearer {session.access_token}"},
+        fields={
+            "submitter_id": session.member_id,
+            "channel": "cli",
+            "material_type": args.material_type,
+        },
+        files=[upload_file],
+    )
+    if status_code != 201:
+        raise CliError(
+            f"material submit endpoint returned unexpected status {status_code}",
+            code="material_submit_unexpected_status",
+        )
+
+    upload = parse_material_upload_summary(payload)
+    if args.json_output:
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "submit",
+                "data": {
+                    "base_url": base_url,
+                    "task_id": upload.task_id,
+                    "member_id": session.member_id,
+                    "item": asdict(upload),
+                },
+            }
+        )
+        return 0
+
+    print(
+        "Uploaded material "
+        f"{upload.id} for task {upload.task_id} "
+        f"({upload.original_filename}, recognition: {upload.recognition_status})"
+    )
+    return 0
+
+
 def build_task_list_url(base_url: str, *, member_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     query_string = urlencode({"member_id": member_id})
     if normalized_base_url.endswith("/api"):
         return f"{normalized_base_url}/tasks?{query_string}"
     return f"{normalized_base_url}/api/tasks?{query_string}"
+
+
+def build_material_submit_url(base_url: str, *, task_id: str) -> str:
+    normalized_base_url = base_url.rstrip("/")
+    normalized_task_id = task_id.strip()
+    if not normalized_task_id:
+        raise CliError("task id is required", code="task_id_required")
+    if normalized_base_url.endswith("/api"):
+        return f"{normalized_base_url}/tasks/{normalized_task_id}/materials"
+    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/materials"
+
+
+def load_upload_file(file_path: str) -> MultipartUploadFile:
+    path = Path(file_path).expanduser()
+    if not path.exists():
+        raise CliError(f"local file does not exist: {path}", code="local_file_not_found")
+    if not path.is_file():
+        raise CliError(f"upload path is not a file: {path}", code="local_file_invalid")
+
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        raise CliError(f"unable to read local file: {path}", code="local_file_unreadable") from error
+
+    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return MultipartUploadFile(
+        field_name="files",
+        filename=path.name,
+        content_type=content_type,
+        content=content,
+    )
+
+
+def parse_material_upload_summary(payload: object) -> MaterialUploadSummary:
+    if not isinstance(payload, dict):
+        raise CliError(
+            "TRMS API returned invalid material upload payload",
+            code="material_submit_invalid_response",
+        )
+
+    items = payload.get("items")
+    if not isinstance(items, list) or len(items) != 1:
+        raise CliError(
+            "TRMS API returned invalid material upload payload",
+            code="material_submit_invalid_response",
+        )
+
+    item = items[0]
+    if not isinstance(item, dict):
+        raise CliError(
+            "TRMS API returned invalid material upload payload",
+            code="material_submit_invalid_response",
+        )
+
+    return MaterialUploadSummary(
+        id=_require_non_empty_material_field(item, "id"),
+        task_id=_require_non_empty_material_field(item, "task_id"),
+        submitter_id=_require_non_empty_material_field(item, "submitter_id"),
+        material_type=_require_non_empty_material_field(item, "material_type"),
+        original_filename=_require_non_empty_material_field(item, "original_filename"),
+        status=_require_non_empty_material_field(item, "status"),
+        recognition_status="pending",
+    )
+
+
+def _require_non_empty_material_field(item: dict[str, object], field_name: str) -> str:
+    value = item.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise CliError(
+            f"TRMS API material upload payload is missing a valid {field_name!r} field",
+            code="material_submit_invalid_response",
+        )
+    return value.strip()
 
 
 def parse_visible_tasks(payload: object) -> list[VisibleTaskSummary]:

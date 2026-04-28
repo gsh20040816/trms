@@ -1,5 +1,68 @@
 # WORKLOG
 
+## 2026-04-28 10:58 - Add CLI material submission placeholder
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 新增 `submit` 命令，建立 CLI 材料提交最小闭环：
+  - 从本地 session 读取 `base_url`、`member_id` 和 access token；
+  - 接收 `--task-id`、`--material-type` 和单个本地文件路径；
+  - 以 `channel=cli` 调用后端 `POST /api/tasks/{task_id}/materials` multipart 上传接口。
+- 在 CLI 侧补充最小本地文件装载边界：
+  - 缺失路径、目录路径、不可读文件时显式失败；
+  - 根据文件名推断 `Content-Type`，其余校验继续交给服务端，不提前复制服务端业务规则。
+- 固定上传结果输出：
+  - 文本模式输出材料编号、目标任务和识别占位状态 `pending`；
+  - JSON 模式继续复用 `trms-cli.v1` envelope，返回 `task_id`、`member_id` 和单个上传结果。
+- 新增 `tests/test_cli_submit.py`，覆盖：
+  - 从已登录 session 发起上传并携带 `Authorization`、`submitter_id`、`channel=cli`；
+  - JSON 输出结构；
+  - 本地文件不存在时显式失败；
+  - 服务端返回错误时不泄露 token。
+- 将 `TASKS.md` 中“增加 CLI 材料提交占位流程”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `tests/test_cli_submit.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 当前 CLI 已具备登录和任务查询能力，但成员在查询到可见任务后，仍无法从本地把实际发票或附件提交到后端，CLI 主流程卡在“看到任务但不能上传”这一步。
+- 后端材料上传接口和识别占位链路已经存在，如果 CLI 不尽快补上最小 multipart 提交边界，后续“批量逐文件结果”“本地预检查”“状态查询”都缺少实际上传入口作为前提。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_submit.py tests/test_cli_tasks.py tests/test_cli_login.py`
+    - 11 个 CLI 相关测试通过
+  - `uv run pytest tests/test_materials_api.py tests/test_recognition_tasks_api.py`
+    - 29 个上传与识别相关测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 182 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只实现单文件上传占位流程，没有提前实现下一项“CLI 批量上传逐文件结果”：
+  - 当前命令固定接收一个本地文件路径；
+  - 部分成功、逐文件退出码和多文件结果语义留给下一轮独立处理。
+- 上传成功后的 `recognition_status` 当前按后端既有契约保守固定为 `pending`：
+  - 后端材料上传后立即创建识别任务占位；
+  - 本轮不额外新增 CLI 轮询识别状态接口。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设“增加 CLI 材料提交占位流程”的最小闭环是：
+  - CLI 基于已登录 session 和已选任务发起单文件上传；
+  - 服务端继续负责材料类型、成员资格、截止时间和上传内容校验；
+  - CLI 只承担必要的本地文件读取与明确错误暴露，不提前复制完整预检查规则。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 批量上传逐文件结果”，在保留本轮单文件命令边界的前提下扩展多文件输入、部分成功输出和退出码语义。
+
 ## 2026-04-28 10:52 - Add CLI visible-task membership filter
 
 ### 完成内容
