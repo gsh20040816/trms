@@ -4,7 +4,7 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 from test_invoices_api import valid_invoice_payload
-from test_tasks_api import valid_task_payload
+from test_tasks_api import admin_auth_headers, auth_headers, register_and_get_token, valid_task_payload
 
 
 def make_client(tmp_path):
@@ -19,7 +19,11 @@ def make_client(tmp_path):
 def create_task(client: TestClient) -> str:
     response = client.post("/api/tasks", json=valid_task_payload())
     task_id = response.json()["id"]
-    response = client.patch(f"/api/tasks/{task_id}/status", json={"target_status": "open"})
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
     assert response.status_code == 200
     return task_id
 
@@ -92,6 +96,7 @@ def move_task_to_reviewing(client: TestClient, task_id: str) -> None:
         response = client.patch(
             f"/api/tasks/{task_id}/status",
             json={"target_status": target_status},
+            headers=admin_auth_headers(client),
         )
         assert response.status_code == 200
 
@@ -103,6 +108,7 @@ def test_task_administrator_can_list_expense_disputes(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/expense-disputes",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -126,10 +132,18 @@ def test_task_administrator_can_list_expense_disputes(tmp_path):
 def test_non_administrator_cannot_list_expense_disputes(tmp_path):
     client = make_client(tmp_path)
     task_id, _, _ = create_disputed_split_fixture(client)
+    member_token = register_and_get_token(
+        client,
+        username="member2",
+        role="member",
+        actor_id="2250002",
+        member_code="2250002",
+    )
 
     response = client.get(
         f"/api/tasks/{task_id}/expense-disputes",
         params={"actor_id": "2250002"},
+        headers=auth_headers(member_token),
     )
 
     assert response.status_code == 403
@@ -146,6 +160,7 @@ def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(t
     response = client.post(
         f"/api/tasks/{task_id}/expense-disputes/{split_id}/resolve",
         json={"administrator_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -162,6 +177,7 @@ def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(t
     ready_to_export_response = client.patch(
         f"/api/tasks/{task_id}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert ready_to_export_response.status_code == 409

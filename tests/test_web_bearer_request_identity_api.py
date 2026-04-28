@@ -34,8 +34,19 @@ def register_and_get_token(
             "member_code": member_code,
         },
     )
-    assert response.status_code == 201
-    return response.json()["access_token"]
+    if response.status_code == 201:
+        return response.json()["access_token"]
+
+    assert response.status_code == 409
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "username": username,
+            "password": "correct-password",
+        },
+    )
+    assert login_response.status_code == 200
+    return login_response.json()["access_token"]
 
 
 def create_task(client: TestClient) -> str:
@@ -45,9 +56,17 @@ def create_task(client: TestClient) -> str:
 
 
 def open_task(client: TestClient, task_id: str) -> None:
+    admin_token = register_and_get_token(
+        client,
+        username="taskadmin",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
     response = client.patch(
         f"/api/tasks/{task_id}/status",
         json={"target_status": "open"},
+        headers=auth_headers(admin_token),
     )
     assert response.status_code == 200
 
@@ -159,6 +178,176 @@ def test_admin_bearer_review_summary_and_material_reminders_do_not_require_actor
     assert list_response.status_code == 200
     assert len(list_response.json()["items"]) == 1
     assert list_response.json()["items"][0]["administrator_id"] == "admin-1"
+
+
+def test_admin_bearer_task_management_routes_bind_to_owned_tasks(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = register_and_get_token(
+        client,
+        username="admin1",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
+    outsider_admin_token = register_and_get_token(
+        client,
+        username="admin2",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    task_id = create_task(client)
+
+    own_list_response = client.get(
+        "/api/tasks",
+        headers=auth_headers(admin_token),
+    )
+    assert own_list_response.status_code == 200
+    assert [item["id"] for item in own_list_response.json()] == [task_id]
+
+    outsider_list_response = client.get(
+        "/api/tasks",
+        headers=auth_headers(outsider_admin_token),
+    )
+    assert outsider_list_response.status_code == 200
+    assert outsider_list_response.json() == []
+
+    own_task_response = client.get(
+        f"/api/tasks/{task_id}",
+        headers=auth_headers(admin_token),
+    )
+    assert own_task_response.status_code == 200
+    assert own_task_response.json()["id"] == task_id
+
+    outsider_task_response = client.get(
+        f"/api/tasks/{task_id}",
+        headers=auth_headers(outsider_admin_token),
+    )
+    assert outsider_task_response.status_code == 403
+    assert outsider_task_response.json()["detail"] == "actor is not allowed to view this task"
+
+    own_members_response = client.get(
+        f"/api/tasks/{task_id}/members",
+        headers=auth_headers(admin_token),
+    )
+    assert own_members_response.status_code == 200
+    assert own_members_response.json()["items"] == ["2250001", "2250002", "2250003"]
+
+    outsider_members_response = client.get(
+        f"/api/tasks/{task_id}/members",
+        headers=auth_headers(outsider_admin_token),
+    )
+    assert outsider_members_response.status_code == 403
+    assert outsider_members_response.json()["detail"] == (
+        "actor is not allowed to view task members for this task"
+    )
+
+    update_members_response = client.put(
+        f"/api/tasks/{task_id}/members",
+        headers=auth_headers(admin_token),
+        json={"member_ids": ["2250001", "2250002"]},
+    )
+    assert update_members_response.status_code == 200
+    assert update_members_response.json()["items"] == ["2250001", "2250002"]
+
+    outsider_update_members_response = client.put(
+        f"/api/tasks/{task_id}/members",
+        headers=auth_headers(outsider_admin_token),
+        json={"member_ids": ["2250001"]},
+    )
+    assert outsider_update_members_response.status_code == 403
+    assert outsider_update_members_response.json()["detail"] == (
+        "actor is not allowed to manage task members for this task"
+    )
+
+    anonymous_update_members_response = client.put(
+        f"/api/tasks/{task_id}/members",
+        json={"member_ids": ["2250001"]},
+    )
+    assert anonymous_update_members_response.status_code == 401
+    assert anonymous_update_members_response.json()["detail"] == "invalid or missing bearer token"
+
+    own_status_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        headers=auth_headers(admin_token),
+        json={"target_status": "open"},
+    )
+    assert own_status_response.status_code == 200
+    assert own_status_response.json()["status"] == "open"
+
+    outsider_status_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        headers=auth_headers(outsider_admin_token),
+        json={"target_status": "closed"},
+    )
+    assert outsider_status_response.status_code == 403
+    assert outsider_status_response.json()["detail"] == (
+        "actor is not allowed to manage task status for this task"
+    )
+
+    anonymous_status_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "closed"},
+    )
+    assert anonymous_status_response.status_code == 401
+    assert anonymous_status_response.json()["detail"] == "invalid or missing bearer token"
+
+
+def test_admin_bearer_review_routes_reject_anonymous_or_unrelated_admin(tmp_path):
+    client = make_client(tmp_path)
+    register_and_get_token(
+        client,
+        username="admin1",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
+    outsider_admin_token = register_and_get_token(
+        client,
+        username="admin2",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    task_id = create_task(client)
+
+    outsider_summary_response = client.get(
+        f"/api/tasks/{task_id}/review-summary",
+        headers=auth_headers(outsider_admin_token),
+    )
+    assert outsider_summary_response.status_code == 403
+    assert outsider_summary_response.json()["detail"] == (
+        "actor is not allowed to view review summary for this task"
+    )
+
+    anonymous_summary_response = client.get(f"/api/tasks/{task_id}/review-summary")
+    assert anonymous_summary_response.status_code == 401
+    assert anonymous_summary_response.json()["detail"] == "invalid or missing bearer token"
+
+    anonymous_reminder_response = client.post(
+        f"/api/tasks/{task_id}/material-reminders",
+        json={
+            "administrator_id": "admin-1",
+            "member_id": "2250002",
+            "content": "请补交支付记录",
+        },
+    )
+    assert anonymous_reminder_response.status_code == 401
+    assert anonymous_reminder_response.json()["detail"] == "invalid or missing bearer token"
+
+    outsider_reminder_response = client.post(
+        f"/api/tasks/{task_id}/material-reminders",
+        headers=auth_headers(outsider_admin_token),
+        json={
+            "administrator_id": "admin-2",
+            "member_id": "2250002",
+            "content": "请补交支付记录",
+        },
+    )
+    assert outsider_reminder_response.status_code == 403
+    assert outsider_reminder_response.json()["detail"] == (
+        "actor is not allowed to manage material reminders for this task"
+    )
 
 
 def test_bearer_invoice_split_confirmation_and_expense_details_use_authenticated_actor_id(tmp_path):

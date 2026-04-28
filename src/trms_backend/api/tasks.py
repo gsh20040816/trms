@@ -5,9 +5,11 @@ from pydantic import BaseModel, Field, model_validator
 
 from trms_backend.api.request_identity import (
     RequestIdentity,
+    build_authenticated_request_identity_dependency,
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.api.request_task_access import resolve_task_access_scope
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
     AutomaticReminderTaskGenerate,
@@ -113,6 +115,9 @@ def build_task_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
+    authenticated_request_identity = build_authenticated_request_identity_dependency(
+        auth_repository
+    )
 
     @router.post("", status_code=status.HTTP_201_CREATED)
     def create_task(payload: TaskCreateInput):
@@ -137,26 +142,52 @@ def build_task_router(
                 field_name="member_id",
             )
             return repository.list_for_member(resolved_member_id)
+        if identity.is_authenticated and identity.actor_id is not None:
+            return [
+                task
+                for task in repository.list()
+                if task.administrator_id == identity.actor_id
+            ]
         if member_id is None:
             return repository.list()
         return repository.list_for_member(member_id)
 
     @router.get("/{task_id}")
-    def get_task(task_id: str):
+    def get_task(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view this task",
+        )
         return task
 
     @router.get("/{task_id}/members")
-    def get_task_members(task_id: str):
+    def get_task_members(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+    ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view task members for this task",
+        )
         return {"items": task.member_ids}
 
     @router.post("/{task_id}/automatic-reminder-tasks", status_code=status.HTTP_201_CREATED)
-    def generate_automatic_reminder_tasks(task_id: str, payload: AutomaticReminderTaskGenerate):
+    def generate_automatic_reminder_tasks(
+        task_id: str,
+        payload: AutomaticReminderTaskGenerate,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
@@ -177,7 +208,13 @@ def build_task_router(
         try:
             return generate_task_automatic_reminder_tasks(
                 task,
-                payload=payload,
+                payload=AutomaticReminderTaskGenerate(
+                    actor_id=resolve_required_actor_request_field(
+                        identity,
+                        payload.actor_id,
+                        field_name="actor_id",
+                    )
+                ),
                 repository=automatic_reminder_task_repository,
                 materials=materials,
                 invoices=invoices,
@@ -194,7 +231,8 @@ def build_task_router(
     @router.get("/{task_id}/automatic-reminder-tasks")
     def list_automatic_reminder_tasks(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
@@ -204,7 +242,11 @@ def build_task_router(
             return {
                 "items": list_task_automatic_reminder_tasks(
                     task,
-                    actor_id=actor_id,
+                    actor_id=resolve_required_actor_request_field(
+                        identity,
+                        actor_id,
+                        field_name="actor_id",
+                    ),
                     repository=automatic_reminder_task_repository,
                 )
             }
@@ -218,7 +260,7 @@ def build_task_router(
     def create_material_reminder(
         task_id: str,
         payload: TaskMaterialReminderCreateRequest,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         task = repository.get(task_id)
         if task is None:
@@ -249,7 +291,7 @@ def build_task_router(
     @router.get("/{task_id}/material-reminders")
     def list_material_reminders(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
@@ -405,7 +447,8 @@ def build_task_router(
     @router.get("/{task_id}/expense-disputes")
     def list_task_expense_disputes(
         task_id: str,
-        actor_id: Annotated[str, Query(min_length=1)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
         if task is None:
@@ -423,7 +466,11 @@ def build_task_router(
         try:
             return build_expense_dispute_list(
                 task,
-                administrator_id=actor_id,
+                administrator_id=resolve_required_actor_request_field(
+                    identity,
+                    actor_id,
+                    field_name="actor_id",
+                ),
                 invoices=invoices,
                 splits_by_invoice_id=splits_by_invoice_id,
                 confirmations_by_split_id=confirmations_by_split_id,
@@ -437,7 +484,7 @@ def build_task_router(
     @router.get("/{task_id}/overdue-confirmations")
     def list_task_overdue_confirmations(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
@@ -475,7 +522,7 @@ def build_task_router(
     @router.get("/{task_id}/review-summary")
     def get_task_review_summary(
         task_id: str,
-        identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
         task = repository.get(task_id)
@@ -541,13 +588,19 @@ def build_task_router(
         task_id: str,
         split_id: str,
         payload: ConfirmationDisputeResolve,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        administrator_id = resolve_required_actor_request_field(
+            identity,
+            payload.administrator_id,
+            field_name="administrator_id",
+        )
         try:
-            ensure_task_administrator(task, actor_id=payload.administrator_id)
+            ensure_task_administrator(task, actor_id=administrator_id)
         except ExpenseDisputeActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -575,7 +628,7 @@ def build_task_router(
         return confirmation_repository.upsert_for_split(
             split_id,
             ConfirmationSubmit(
-                actor_id=payload.administrator_id,
+                actor_id=administrator_id,
                 member_id=confirmation.member_id,
                 status=ConfirmationStatus.PENDING,
                 dispute_reason=confirmation.dispute_reason,
@@ -583,10 +636,19 @@ def build_task_router(
         )
 
     @router.put("/{task_id}/members")
-    def update_task_members(task_id: str, payload: TaskMembersUpdate):
+    def update_task_members(
+        task_id: str,
+        payload: TaskMembersUpdate,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        if identity.actor_id != task.administrator_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to manage task members for this task",
+            )
         if task.status != TaskStatus.DRAFT:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -598,10 +660,19 @@ def build_task_router(
         return {"items": updated.member_ids}
 
     @router.patch("/{task_id}/status")
-    def update_task_status(task_id: str, payload: TaskStatusUpdate):
+    def update_task_status(
+        task_id: str,
+        payload: TaskStatusUpdate,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        if identity.actor_id != task.administrator_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to manage task status for this task",
+            )
 
         if not can_transition(task.status, payload.target_status):
             raise HTTPException(

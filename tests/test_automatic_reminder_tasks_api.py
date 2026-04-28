@@ -5,7 +5,13 @@ from fastapi.testclient import TestClient
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
-from test_tasks_api import update_task_row, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    register_and_get_token,
+    update_task_row,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path):
@@ -20,7 +26,11 @@ def make_client(tmp_path):
 def create_open_task(client: TestClient) -> str:
     response = client.post("/api/tasks", json=valid_task_payload())
     task_id = response.json()["id"]
-    response = client.patch(f"/api/tasks/{task_id}/status", json={"target_status": "open"})
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
     assert response.status_code == 200
     return task_id
 
@@ -95,6 +105,7 @@ def test_generate_automatic_reminder_tasks_creates_missing_material_and_unconfir
     response = client.post(
         f"/api/tasks/{task_id}/automatic-reminder-tasks",
         json={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 201
@@ -124,6 +135,7 @@ def test_generate_automatic_reminder_tasks_creates_missing_material_and_unconfir
     listed = client.get(
         f"/api/tasks/{task_id}/automatic-reminder-tasks",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert listed.status_code == 200
@@ -140,10 +152,12 @@ def test_generate_automatic_reminder_tasks_is_idempotent_for_same_snapshot(tmp_p
     first = client.post(
         f"/api/tasks/{task_id}/automatic-reminder-tasks",
         json={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
     second = client.post(
         f"/api/tasks/{task_id}/automatic-reminder-tasks",
         json={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert first.status_code == 201
@@ -162,14 +176,23 @@ def test_generate_automatic_reminder_tasks_is_idempotent_for_same_snapshot(tmp_p
 def test_non_administrator_cannot_manage_automatic_reminder_tasks(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)
+    member_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
 
     create_response = client.post(
         f"/api/tasks/{task_id}/automatic-reminder-tasks",
         json={"actor_id": "2250001"},
+        headers=auth_headers(member_token),
     )
     list_response = client.get(
         f"/api/tasks/{task_id}/automatic-reminder-tasks",
         params={"actor_id": "2250001"},
+        headers=auth_headers(member_token),
     )
 
     assert create_response.status_code == 403

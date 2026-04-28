@@ -1,5 +1,68 @@
 # WORKLOG
 
+## 2026-04-28 17:15 - Close administrator task management and review permissions
+
+### 完成内容
+- 收口管理员侧 bearer 身份上下文与管理范围：
+  - `GET /api/tasks` 在管理员 bearer 会话下默认只返回本人负责任务，避免后台任务列表继续暴露无关任务；
+  - `GET /api/tasks/{task_id}`、`GET /api/tasks/{task_id}/members` 在已认证场景下开始校验任务访问范围，非任务负责人和非任务成员不再能读取无关任务详情；
+  - `PUT /api/tasks/{task_id}/members`、`PATCH /api/tasks/{task_id}/status` 改为必须使用 bearer 身份上下文，匿名请求不再能直接伪装管理员修改任务。
+- 收口管理员复核与提醒接口：
+  - `POST/GET /api/tasks/{task_id}/automatic-reminder-tasks`、`POST/GET /api/tasks/{task_id}/material-reminders`、`GET /api/tasks/{task_id}/overdue-confirmations`、`GET /api/tasks/{task_id}/review-summary`、`GET /api/tasks/{task_id}/expense-disputes`、`POST /api/tasks/{task_id}/expense-disputes/{split_id}/resolve` 全部切到已认证请求身份；
+  - 对仍保留显式 `actor_id` / `administrator_id` 的接口，bearer 身份与显式字段不一致时会显式拒绝，而不是继续按请求自报身份执行。
+- 补管理员 bearer 越权回归测试：
+  - `tests/test_web_bearer_request_identity_api.py` 新增管理员任务列表过滤、任务详情/成员详情、成员管理、状态流转、匿名拒绝和无关管理员拒绝覆盖；
+  - 任务提醒、复核摘要、逾期确认、自动提醒、异议处理及其依赖测试统一切到 bearer 管理员或 bearer 成员场景，验证新边界不会回退到匿名旧契约。
+
+### 根因
+- 上一轮完成成员侧可见范围收口后，管理员侧仍残留两类权限缺口：
+  - 一批任务管理接口完全没有接入请求身份上下文，例如成员管理、状态流转和部分任务详情读取；
+  - 一批复核接口虽然接受 `actor_id` / `administrator_id`，但匿名请求仍可直接自报管理员身份执行。
+- 这使得 bearer 登录虽然已经进入 Web 管理台，但后端仍没有真正保证“只有任务负责人才能管理该任务并执行复核动作”。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/api/tasks.py`
+- `tests/test_automatic_reminder_tasks_api.py`
+- `tests/test_email_materials_api.py`
+- `tests/test_expense_details_api.py`
+- `tests/test_expense_disputes_api.py`
+- `tests/test_invoices_api.py`
+- `tests/test_material_storage.py`
+- `tests/test_materials_api.py`
+- `tests/test_missing_materials_api.py`
+- `tests/test_overdue_confirmations_api.py`
+- `tests/test_recognition_async_jobs.py`
+- `tests/test_recognition_execution_api.py`
+- `tests/test_recognition_tasks_api.py`
+- `tests/test_task_member_status_api.py`
+- `tests/test_task_review_summary_api.py`
+- `tests/test_tasks_api.py`
+- `tests/test_telegram_materials_api.py`
+- `tests/test_web_bearer_request_identity_api.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_tasks_api.py tests/test_web_bearer_request_identity_api.py tests/test_task_review_summary_api.py tests/test_overdue_confirmations_api.py tests/test_automatic_reminder_tasks_api.py tests/test_expense_disputes_api.py tests/test_task_member_status_api.py tests/test_missing_materials_api.py tests/test_expense_details_api.py`
+    - 70 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 288 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：第一阶段 `task.administrator_id` 仍直接绑定账号 `actor_id`，因此管理员侧权限收口继续以“bearer 的 `actor_id` 必须等于任务负责人”表达，而不在本轮扩展到独立任务负责人实体。
+- 当前保守假设：`GET /api/tasks/{task_id}` 与 `GET /api/tasks/{task_id}/members` 的匿名旧契约暂未整体移除；本轮只确保已认证请求不能越权读取无关任务，并优先收紧真正的管理员管理/复核写操作。
+
 ## 2026-04-28 16:56 - Close member-facing API identity and visibility scope
 
 ### 完成内容

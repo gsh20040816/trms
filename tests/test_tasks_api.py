@@ -19,6 +19,56 @@ def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = No
     )
 
 
+def register_and_get_token(
+    client: TestClient,
+    *,
+    username: str,
+    role: str,
+    actor_id: str,
+    member_code: str | None,
+) -> str:
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": username,
+            "password": "correct-password",
+            "role": role,
+            "display_name": username,
+            "actor_id": actor_id,
+            "member_code": member_code,
+        },
+    )
+    if response.status_code == 201:
+        return response.json()["access_token"]
+
+    assert response.status_code == 409
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "username": username,
+            "password": "correct-password",
+        },
+    )
+    assert login_response.status_code == 200
+    return login_response.json()["access_token"]
+
+
+def auth_headers(access_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {access_token}"}
+
+
+def admin_auth_headers(client: TestClient) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username="admin1",
+            role="admin",
+            actor_id="admin-1",
+            member_code=None,
+        )
+    )
+
+
 def update_task_row(tmp_path, task_id: str, **updates):
     session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
     with session_scope(session_factory) as session:
@@ -104,6 +154,7 @@ def open_task(client: TestClient, task_id: str) -> None:
     response = client.patch(
         f"/api/tasks/{task_id}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
     assert response.status_code == 200
 
@@ -113,6 +164,7 @@ def move_open_task_to_reviewing(client: TestClient, task_id: str) -> None:
         response = client.patch(
             f"/api/tasks/{task_id}/status",
             json={"target_status": target_status},
+            headers=admin_auth_headers(client),
         )
         assert response.status_code == 200
 
@@ -314,6 +366,7 @@ def test_administrator_can_record_and_list_material_reminders(tmp_path):
             "member_id": "2250002",
             "content": "请补充支付记录和比赛通知。",
         },
+        headers=admin_auth_headers(client),
     )
 
     assert create_response.status_code == 201
@@ -327,6 +380,7 @@ def test_administrator_can_record_and_list_material_reminders(tmp_path):
     list_response = client.get(
         f"/api/tasks/{task['id']}/material-reminders",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert list_response.status_code == 200
@@ -336,6 +390,13 @@ def test_administrator_can_record_and_list_material_reminders(tmp_path):
 def test_create_material_reminder_rejects_non_administrator(tmp_path):
     client = make_client(tmp_path)
     task = client.post("/api/tasks", json=valid_task_payload()).json()
+    member_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
 
     response = client.post(
         f"/api/tasks/{task['id']}/material-reminders",
@@ -344,6 +405,7 @@ def test_create_material_reminder_rejects_non_administrator(tmp_path):
             "member_id": "2250002",
             "content": "请补充支付记录。",
         },
+        headers=auth_headers(member_token),
     )
 
     assert response.status_code == 403
@@ -361,6 +423,7 @@ def test_create_material_reminder_rejects_member_outside_task(tmp_path):
             "member_id": "2250999",
             "content": "请补充订单截图。",
         },
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 422
@@ -377,12 +440,21 @@ def test_list_material_reminders_rejects_non_administrator(tmp_path):
             "member_id": "2250002",
             "content": "请补充比赛通知。",
         },
+        headers=admin_auth_headers(client),
     )
     assert create_response.status_code == 201
+    member_token = register_and_get_token(
+        client,
+        username="member2",
+        role="member",
+        actor_id="2250002",
+        member_code="2250002",
+    )
 
     response = client.get(
         f"/api/tasks/{task['id']}/material-reminders",
         params={"actor_id": "2250002"},
+        headers=auth_headers(member_token),
     )
 
     assert response.status_code == 403
@@ -396,6 +468,7 @@ def test_update_task_members_allows_replace_in_draft(tmp_path):
     response = client.put(
         f"/api/tasks/{created['id']}/members",
         json={"member_ids": ["2250001", "2250003", "2250999"]},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -412,11 +485,13 @@ def test_update_task_members_rejects_non_draft_task(tmp_path):
     client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
 
     response = client.put(
         f"/api/tasks/{created['id']}/members",
         json={"member_ids": ["2250001", "2250999"]},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -429,6 +504,7 @@ def test_update_missing_task_members_returns_404(tmp_path):
     response = client.put(
         "/api/tasks/missing/members",
         json={"member_ids": ["2250001"]},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 404
@@ -442,6 +518,7 @@ def test_update_task_status_allows_valid_transition(tmp_path):
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -456,6 +533,7 @@ def test_update_task_status_allows_transition_from_closed_to_reviewing(tmp_path)
     closed = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "closed"},
+        headers=admin_auth_headers(client),
     )
     assert closed.status_code == 200
     assert closed.json()["status"] == "closed"
@@ -463,6 +541,7 @@ def test_update_task_status_allows_transition_from_closed_to_reviewing(tmp_path)
     reviewing = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "reviewing"},
+        headers=admin_auth_headers(client),
     )
 
     assert reviewing.status_code == 200
@@ -477,6 +556,7 @@ def test_update_task_status_rejects_open_when_member_list_missing(tmp_path):
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -491,6 +571,7 @@ def test_update_task_status_rejects_open_when_fee_categories_missing(tmp_path):
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -507,6 +588,7 @@ def test_update_task_status_rejects_open_when_project_info_missing(tmp_path):
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -521,6 +603,7 @@ def test_update_task_status_rejects_open_when_reimburser_info_missing(tmp_path):
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -536,6 +619,7 @@ def test_update_task_status_rejects_invalid_transition(tmp_path):
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "completed"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -555,6 +639,7 @@ def test_update_task_status_allows_ready_to_export_after_review_conditions_met(t
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -580,6 +665,7 @@ def test_update_task_status_allows_ready_to_export_when_only_warning_validations
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -599,6 +685,7 @@ def test_update_task_status_rejects_ready_to_export_when_blocker_validation_fail
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -619,6 +706,7 @@ def test_update_task_status_rejects_ready_to_export_when_member_confirmation_mis
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -671,6 +759,7 @@ def test_update_task_status_rejects_ready_to_export_when_member_confirmation_is_
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -707,6 +796,7 @@ def test_update_task_status_rejects_ready_to_export_when_pending_assignment_mate
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -764,6 +854,7 @@ def test_update_task_status_rejects_ready_to_export_when_split_amount_changes_af
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -786,12 +877,14 @@ def test_update_task_status_rejects_completed_before_export_completion_is_record
     ready = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
     )
     assert ready.status_code == 200
 
     response = client.patch(
         f"/api/tasks/{task['id']}/status",
         json={"target_status": "completed"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409
@@ -806,6 +899,7 @@ def test_update_missing_task_status_returns_404(tmp_path):
     response = client.patch(
         "/api/tasks/missing/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 404
@@ -818,6 +912,7 @@ def test_run_task_deadline_check_closes_expired_open_task(tmp_path):
     client.patch(
         f"/api/tasks/{created['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
     update_task_row(
         tmp_path,
@@ -848,6 +943,7 @@ def test_run_task_deadline_check_ignores_non_open_tasks(tmp_path):
     client.patch(
         f"/api/tasks/{open_task['id']}/status",
         json={"target_status": "open"},
+        headers=admin_auth_headers(client),
     )
     update_task_row(
         tmp_path,

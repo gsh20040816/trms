@@ -6,7 +6,13 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 
 from test_invoices_api import valid_invoice_payload
-from test_tasks_api import update_task_row, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    register_and_get_token,
+    update_task_row,
+    valid_task_payload,
+)
 
 
 def make_client(tmp_path):
@@ -21,7 +27,11 @@ def make_client(tmp_path):
 def create_open_task(client: TestClient) -> str:
     response = client.post("/api/tasks", json=valid_task_payload())
     task_id = response.json()["id"]
-    response = client.patch(f"/api/tasks/{task_id}/status", json={"target_status": "open"})
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
     assert response.status_code == 200
     return task_id
 
@@ -110,6 +120,7 @@ def test_task_administrator_can_list_overdue_unconfirmed_members_after_deadline(
     response = client.get(
         f"/api/tasks/{task_id}/overdue-confirmations",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -136,6 +147,7 @@ def test_task_overdue_confirmation_list_is_empty_before_deadline(tmp_path):
     response = client.get(
         f"/api/tasks/{task_id}/overdue-confirmations",
         params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 200
@@ -158,10 +170,18 @@ def test_non_administrator_cannot_list_task_overdue_confirmations(tmp_path):
         task_id,
         deadline=datetime.now(UTC) - timedelta(seconds=1),
     )
+    member_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
 
     response = client.get(
         f"/api/tasks/{task_id}/overdue-confirmations",
         params={"actor_id": "2250001"},
+        headers=auth_headers(member_token),
     )
 
     assert response.status_code == 403
