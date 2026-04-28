@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-29 05:49 - Evaluate automatic missing-material reminder messaging
+
+### 完成内容
+- 新增 `docs/自动生成成员补材料消息评估.md`，明确“自动生成成员补材料消息”不进入第一阶段实现范围，而是保留为后续阶段增强项。
+- 将 `TASKS.md` 中“评估自动生成成员补材料消息”标记为已完成。
+
+### 根因
+- 需求文档只把“自动生成成员补材料消息”列为 Could have，而 FR-009 的第一阶段硬要求仍是“管理员可手动提醒成员补材料”和“管理员可查看自动提醒记录”，不是“系统必须真实自动向成员发出通知”。
+- 当前仓库虽然已经具备两块相关能力，但都还没形成通知闭环：
+  - `src/trms_backend/domain/automatic_reminders.py` 只会基于当前任务快照生成 `pending` 的自动提醒任务记录；
+  - `src/trms_backend/domain/material_reminders.py` 只会记录管理员手动填写的补材料提醒文本。
+- 仓库内当前不存在统一通知模块、消息模板渲染器、出站发送队列、送达状态模型或失败重试链路；Web、Telegram、邮件和 CLI 也都还没有可审计的主动通知出站能力。
+- 在 `AC-018 审计记录` 仍未完成的前提下，如果现在直接加入自动消息外发，会把“谁触发、发给谁、发了什么、是否送达”的关键追溯链路留空。
+
+### 关键改动点
+- 新增评估文档：
+  - `docs/自动生成成员补材料消息评估.md`
+- 同步任务状态：
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只新增评估文档和任务记录，不改动任何业务代码、接口语义、数据库结构或测试逻辑。
+- 当前结论是“后续阶段再做”，因此不会提升成员被动收到提醒的及时性；但它避免了把通知模板、渠道绑定、审计和失败重试这些尚未收口的复杂度，直接混入第一阶段主链路。
+
+### 修改文件
+- `docs/自动生成成员补材料消息评估.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 420 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“自动生成成员补材料消息”保守解释为“系统根据缺失材料快照自动生成可外发的提醒内容，并通过某个渠道主动发送给成员”，不把成员在 Web/CLI 主动查询到的缺失材料列表混同为该能力。
+- 本轮按当前代码状态保守判断：如果后续真的要做，应该先建立通知域模型和审计链路，再评估 Web 站内提醒、邮件或 Telegram 出站；不直接复用现有入站渠道实现旁路发送。
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
 ## 2026-04-29 05:32 - Evaluate CLI offline staging and sync
 
 ### 完成内容
