@@ -1,5 +1,61 @@
 # WORKLOG
 
+## 2026-04-28 11:30 - Add CLI missing materials query
+
+### 完成内容
+- 为 `src/trms_cli/cli.py` 新增独立 `missing-materials` 命令：
+  - 从已登录 session 读取 `base_url`、`member_id` 和 access token；
+  - 调用后端既有 `GET /api/tasks/{task_id}/missing-materials` 接口；
+  - 不再要求成员从综合 `status` 输出里手动筛缺失材料。
+- 固化命令输出契约：
+  - 文本模式按任务输出本人缺失材料数量和逐项列表；
+  - `--json` 模式输出 `schema_version`、`task_id`、`member_id`、`scope`、`count` 和结构化 `items`。
+- 新增 `tests/test_cli_missing_materials.py`，覆盖：
+  - 有缺失材料时的文本输出；
+  - 无缺失材料时的 JSON 输出；
+  - 未登录 session 时的错误输出。
+- 将 `TASKS.md` 中“增加 CLI 缺失材料查询能力”标记为已完成。
+
+### 修改文件
+- `src/trms_cli/cli.py`
+- `tests/test_cli_missing_materials.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 根因
+- 上一轮虽然已经实现了 `status` 命令，并在综合状态里包含缺失材料列表，但它的职责是聚合材料识别、校验、缺失项和费用确认四类信息。
+- 需求文档的 CLI 流程单独要求“成员通过 CLI 查询缺失材料、异常项和待确认费用”，因此当前 CLI 仍缺一个更聚焦的缺失材料查询入口：
+  - 成员只想补材料时，需要先阅读一整段综合状态输出，交互成本偏高；
+  - `status` 的 JSON 契约面向综合状态，调用方若只关心缺失材料，仍要额外拆解无关字段。
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_cli_missing_materials.py`
+    - 3 个 CLI 缺失材料命令测试通过
+  - `uv run pytest tests/test_cli_missing_materials.py tests/test_cli_status.py`
+    - 6 个 CLI 状态/缺失材料相关测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - pytest 194 个用例通过
+    - `cd web && npm run lint` 通过
+    - `cd web && npm test` 通过，18 个前端测试文件、50 个测试通过
+    - `cd web && npm run build` 通过
+    - `git diff --check` 通过
+
+### 说明
+- 本轮只处理“CLI 缺失材料查询能力”，没有提前实现下一项“CLI 分摊提交能力”。
+- 缺失材料命令直接复用后端已有 `/missing-materials` 只读接口，没有新增后端业务规则，也没有把 `status` 命令拆成新的后端聚合。
+- `./scripts/verify.sh` 期间 pytest 仍有 3 条既有 `DeprecationWarning`，来源于第三方栈内对 `HTTP_422_UNPROCESSABLE_ENTITY` 的使用，不是本轮新增问题。
+- 前端测试期间仍打印 Node `--localstorage-file` 既有警告，但 lint、测试和构建均通过，本轮未新增对此行为的依赖。
+
+### 假设
+- 本轮保守假设“CLI 缺失材料查询能力”的最小闭环是提供一个聚焦缺失项的独立命令，而不是继续扩展 `status` 的筛选参数：
+  - 先满足成员按任务快速查看“还缺什么”；
+  - 更复杂的筛选、按发票编号过滤或和异常项混合输出，留待后续独立任务再补。
+
+### 后续建议
+- 下一轮按 `TASKS.md` 顺序处理“增加 CLI 分摊提交能力”，优先复用现有分摊接口，避免在 CLI 复制金额合计等服务端业务规则。
+
 ## 2026-04-28 11:27 - Add CLI member status query
 
 ### 完成内容

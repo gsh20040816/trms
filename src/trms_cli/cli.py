@@ -136,6 +136,14 @@ class TaskStatusReport:
     expense_details: list[ExpenseConfirmationStatus]
 
 
+@dataclass(frozen=True)
+class VisibleMissingMaterialReport:
+    task_id: str
+    actor_id: str
+    scope: str
+    items: list[MissingMaterialStatus]
+
+
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL_SUCCESS = 2
@@ -362,6 +370,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status_parser.set_defaults(handler=run_status_command)
 
+    missing_materials_parser = subparsers.add_parser(
+        "missing-materials",
+        help="show member-specific missing supporting materials for a reimbursement task",
+    )
+    missing_materials_parser.add_argument(
+        "--task-id",
+        required=True,
+        help="target reimbursement task id",
+    )
+    missing_materials_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit machine-readable JSON output",
+    )
+    missing_materials_parser.set_defaults(handler=run_missing_materials_command)
+
     return parser
 
 
@@ -586,6 +611,46 @@ def run_status_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_missing_materials_command(args: argparse.Namespace) -> int:
+    try:
+        session = load_token_session()
+    except TokenStoreError as error:
+        raise CliError(str(error), code="login_required") from error
+
+    base_url = session.base_url.rstrip("/")
+    status_code, payload = fetch_json(
+        build_task_missing_materials_url(base_url, task_id=args.task_id, actor_id=session.member_id),
+        headers={"Authorization": f"Bearer {session.access_token}"},
+    )
+    if status_code != 200:
+        raise CliError(
+            f"task missing materials endpoint returned unexpected status {status_code}",
+            code="missing_materials_unexpected_status",
+        )
+
+    report = parse_visible_missing_material_report(payload)
+    if args.json_output:
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "missing-materials",
+                "data": {
+                    "base_url": base_url,
+                    "task_id": report.task_id,
+                    "member_id": report.actor_id,
+                    "scope": report.scope,
+                    "count": len(report.items),
+                    "items": [asdict(item) for item in report.items],
+                },
+            }
+        )
+        return 0
+
+    emit_missing_materials_text_result(report)
+    return 0
+
+
 def build_task_list_url(base_url: str, *, member_id: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     query_string = urlencode({"member_id": member_id})
@@ -616,6 +681,20 @@ def build_task_status_url(base_url: str, *, task_id: str, actor_id: str) -> str:
     if normalized_base_url.endswith("/api"):
         return f"{normalized_base_url}/tasks/{normalized_task_id}/member-status?{query_string}"
     return f"{normalized_base_url}/api/tasks/{normalized_task_id}/member-status?{query_string}"
+
+
+def build_task_missing_materials_url(base_url: str, *, task_id: str, actor_id: str) -> str:
+    normalized_base_url = base_url.rstrip("/")
+    normalized_task_id = task_id.strip()
+    normalized_actor_id = actor_id.strip()
+    if not normalized_task_id:
+        raise CliError("task id is required", code="task_id_required")
+    if not normalized_actor_id:
+        raise CliError("member id is required", code="member_binding_required")
+    query_string = urlencode({"actor_id": normalized_actor_id})
+    if normalized_base_url.endswith("/api"):
+        return f"{normalized_base_url}/tasks/{normalized_task_id}/missing-materials?{query_string}"
+    return f"{normalized_base_url}/api/tasks/{normalized_task_id}/missing-materials?{query_string}"
 
 
 def prepare_upload_files(
@@ -930,6 +1009,35 @@ def parse_task_status_report(payload: object) -> TaskStatusReport:
     )
 
 
+def parse_visible_missing_material_report(payload: object) -> VisibleMissingMaterialReport:
+    if not isinstance(payload, dict):
+        raise CliError(
+            "TRMS API returned invalid missing materials payload",
+            code="missing_materials_invalid_response",
+        )
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        raise CliError(
+            "TRMS API returned invalid missing materials payload",
+            code="missing_materials_invalid_response",
+        )
+
+    scope = payload.get("scope")
+    if scope not in {"task", "member"}:
+        raise CliError(
+            "TRMS API returned invalid missing materials payload",
+            code="missing_materials_invalid_response",
+        )
+
+    return VisibleMissingMaterialReport(
+        task_id=_require_non_empty_missing_material_field(payload, "task_id"),
+        actor_id=_require_non_empty_missing_material_field(payload, "actor_id"),
+        scope=scope,
+        items=[parse_missing_material_item(item) for item in items],
+    )
+
+
 def parse_task_status_counts(payload: dict[str, object]) -> TaskStatusCounts:
     return TaskStatusCounts(
         material_count=_require_int_status_field(payload, "material_count"),
@@ -977,13 +1085,20 @@ def parse_member_material_status(item: object) -> MemberMaterialStatus:
 
 
 def parse_missing_material_status(item: object) -> MissingMaterialStatus:
+    return parse_missing_material_item(item)
+
+
+def parse_missing_material_item(item: object) -> MissingMaterialStatus:
     if not isinstance(item, dict):
-        raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
+        raise CliError(
+            "TRMS API returned invalid missing materials payload",
+            code="missing_materials_invalid_response",
+        )
     return MissingMaterialStatus(
-        invoice_id=_require_non_empty_status_field(item, "invoice_id"),
-        invoice_number=_require_non_empty_status_field(item, "invoice_number"),
-        required_material_type=_require_non_empty_status_field(item, "required_material_type"),
-        message=_require_non_empty_status_field(item, "message"),
+        invoice_id=_require_non_empty_missing_material_field(item, "invoice_id"),
+        invoice_number=_require_non_empty_missing_material_field(item, "invoice_number"),
+        required_material_type=_require_non_empty_missing_material_field(item, "required_material_type"),
+        message=_require_non_empty_missing_material_field(item, "message"),
     )
 
 
@@ -1048,6 +1163,18 @@ def emit_status_text_result(report: TaskStatusReport) -> None:
         print("No related expense details.")
 
 
+def emit_missing_materials_text_result(report: VisibleMissingMaterialReport) -> None:
+    print(f"Missing materials for task {report.task_id} member {report.actor_id}")
+    print(f"Count: {len(report.items)}")
+    if report.items:
+        print("invoice_number\trequired_material_type\tmessage")
+        for item in report.items:
+            print(f"{item.invoice_number}\t{item.required_material_type}\t{item.message}")
+        return
+
+    print("No missing materials.")
+
+
 def _require_non_empty_task_field(item: dict[str, object], field_name: str) -> str:
     value = item.get(field_name)
     if not isinstance(value, str) or not value.strip():
@@ -1076,6 +1203,16 @@ def _optional_status_string(item: dict[str, object], field_name: str) -> str | N
         raise CliError("TRMS API returned invalid task status payload", code="task_status_invalid_response")
     normalized = value.strip()
     return normalized or None
+
+
+def _require_non_empty_missing_material_field(item: dict[str, object], field_name: str) -> str:
+    value = item.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise CliError(
+            f"TRMS API missing materials payload is missing a valid {field_name!r} field",
+            code="missing_materials_invalid_response",
+        )
+    return value.strip()
 
 
 def _require_int_status_field(item: dict[str, object], field_name: str) -> int:
