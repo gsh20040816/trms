@@ -4,6 +4,8 @@
 
 当前开发切片已具备后端、CLI 与 Web 前端的第一阶段主链路骨架，并提供基础用户名密码注册登录能力。
 
+生产部署基线已补齐到 `deploy/` 目录，包含 `Docker Compose`、后端/前端镜像构建文件、反向代理配置和 `.env.example`。具体启动顺序、迁移命令、健康检查、日志位置和首个管理员初始化步骤见 [docs/生产部署清单与Docker Compose基线.md](docs/生产部署清单与Docker%20Compose基线.md)。
+
 ## 本地验证
 
 ```bash
@@ -80,6 +82,7 @@ uv run python -m trms_backend --reload
 - `TRMS_STORAGE_S3_ENDPOINT`、`TRMS_STORAGE_S3_BUCKET`、`TRMS_STORAGE_S3_ACCESS_KEY_ID`、`TRMS_STORAGE_S3_SECRET_ACCESS_KEY` 为 `s3` 后端必填项；`TRMS_STORAGE_S3_REGION` 和 `TRMS_STORAGE_S3_KEY_PREFIX` 为可选项。
 - 对象存储凭据只允许通过后端环境变量或密钥管理注入，不入库、不返回前端，也不应写入日志。
 - 当前导出产物下载继续走后端接口读取存储内容，不暴露长期公开 URL；更细粒度的 bearer 下载鉴权仍待后续权限任务收口。
+- 当前仓库已补入 `psycopg[binary]` 依赖，`postgresql+psycopg://...` 连接串可直接用于 Compose 基线和共享环境。
 
 生产环境不会静默回退到开发默认值；当 `TRMS_ENV=production` 时，以上变量都必须显式提供，否则服务会在启动时直接报错。启动参数 `--host`、`--port` 可覆盖对应环境变量，例如：
 

@@ -1,5 +1,67 @@
 # WORKLOG
 
+## 2026-04-28 16:01 - Establish production deployment checklist and Docker Compose baseline
+
+### 完成内容
+- 补齐第一阶段部署资产：
+  - 新增根目录 `.env.example`，集中提供反向代理端口、PostgreSQL、MinIO、后端运行配置和 LLM Provider 占位变量；
+  - 新增 `deploy/docker-compose.yml`，提供 `api`、`worker`、`web`、`postgres`、`redis`、`minio`、`reverse-proxy` 以及 `migrate`、`minio-init` 一次性辅助服务；
+  - 新增 `deploy/Dockerfile.api`、`deploy/Dockerfile.web`、`deploy/web.nginx.conf`、`deploy/reverse-proxy.nginx.conf`，固化后端镜像、前端静态构建与统一入口代理配置。
+- 收口 PostgreSQL 运行依赖：
+  - `pyproject.toml` 增加 `psycopg[binary]`，使 README 和 Compose 基线里的 `postgresql+psycopg://...` 连接串在实际部署镜像中可用；
+  - 通过 `uv lock` 更新锁文件，避免部署时临时解析依赖。
+- 补部署文档与验证：
+  - 新增 `docs/生产部署清单与Docker Compose基线.md`，记录部署前检查、启动顺序、健康检查、日志位置、迁移命令、运行边界和首个管理员初始化方式；
+  - `README.md` 增加部署基线入口说明；
+  - `scripts/verify.sh` 增加 Docker Compose 配置自检，在本机存在 `docker compose` 时校验 `deploy/docker-compose.yml` 与 `.env.example`。
+- 更新任务记录：
+  - `TASKS.md` 将“建立生产部署清单和 Docker Compose 基线”标记为完成；
+  - `docs/第一阶段验收映射.md` 同步把部署差距表述收敛为“仍缺上线前演练”，不再声称完全没有部署基线。
+
+### 根因
+- 当前仓库虽然已经逐步收口迁移、对象存储、异步 worker 和生产注册策略，但仍缺少一套可直接落地的部署资产。
+- `TASKS.md` 的该项要求不仅是写说明，还要求提供可运行的 Compose 组合、环境变量模板和管理员初始化方式。
+- README 先前示例宣称支持 `postgresql+psycopg://...`，但依赖清单里没有 `psycopg`，这会让 PostgreSQL 部署基线在真正启动时失败。
+
+### 修改文件
+- `.env.example`
+- `TASKS.md`
+- `WORKLOG.md`
+- `README.md`
+- `docs/第一阶段验收映射.md`
+- `docs/生产部署清单与Docker Compose基线.md`
+- `deploy/Dockerfile.api`
+- `deploy/Dockerfile.web`
+- `deploy/docker-compose.yml`
+- `deploy/reverse-proxy.nginx.conf`
+- `deploy/web.nginx.conf`
+- `pyproject.toml`
+- `scripts/verify.sh`
+- `uv.lock`
+
+### 验证结果
+- 已通过：
+  - `uv lock`
+    - 锁文件已更新，新增 `psycopg`、`psycopg-binary` 与 `tzdata`
+  - `docker compose --env-file .env.example -f deploy/docker-compose.yml config`
+    - Compose 配置和环境变量占位可被成功解析
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 272 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 19 个测试文件、55 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守把 `redis` 纳入 Compose 基线，作为架构文档建议的 Broker / 缓存预留服务；本轮不伪装成后端已经切换到 Redis 队列。
+- 当前 MinIO bucket 初始化通过一次性 `minio-init` 容器完成，避免把“自动建 bucket”逻辑塞进业务代码路径。
+
 ## 2026-04-28 15:56 - Close production account bootstrap and registration policy
 
 ### 完成内容

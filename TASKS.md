@@ -748,7 +748,7 @@
     - 开发调试角色入口可通过配置关闭，生产构建或生产配置下不可见不可用
     - 测试覆盖生产模式越权注册失败
 
-- [ ] 建立生产部署清单和 Docker Compose 基线
+- [x] 建立生产部署清单和 Docker Compose 基线
   - Done when:
     - 提供可运行的 api、worker、web、postgres、redis、minio、reverse-proxy 组合部署基线或等价部署说明
     - 后端端口、前端端口、API base URL、数据库、对象存储、LLM base URL 和 LLM API key 均可通过环境变量配置

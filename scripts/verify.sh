@@ -100,6 +100,20 @@ run_node_checks() {
   )
 }
 
+run_deployment_checks() {
+  if [[ ! -f deploy/docker-compose.yml || ! -f .env.example ]]; then
+    return
+  fi
+
+  if ! have_cmd docker || ! docker compose version >/dev/null 2>&1; then
+    log "跳过 Docker Compose 检查：未找到 docker compose"
+    return
+  fi
+
+  log "运行 Docker Compose 配置检查"
+  docker compose --env-file .env.example -f deploy/docker-compose.yml config >/dev/null
+}
+
 run_rust_checks() {
   if ! have_cmd cargo; then
     log "跳过 Rust 检查：未找到 cargo"
@@ -172,6 +186,8 @@ if [[ -f web/package.json ]]; then
   recognized=1
   run_node_checks "web" "web 前端"
 fi
+
+run_deployment_checks
 
 if [[ -f Cargo.toml ]]; then
   recognized=1
