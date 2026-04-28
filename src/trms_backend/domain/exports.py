@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from enum import StrEnum
 from typing import Any, Protocol
 
+from PIL import Image, UnidentifiedImageError
 from pypdf import PdfReader
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -53,8 +54,8 @@ class TaskExportBoundary(BaseModel):
     note: str = Field(
         default=(
             "reimbursement summary/member details/invoice details/missing materials CSV export and "
-            "finance draft JSON export are available through async export jobs with persisted "
-            "artifacts; merged PDF planning/validation remains a placeholder"
+            "finance draft JSON export and merged PDF export are available through async export "
+            "jobs with persisted artifacts"
         )
     )
 
@@ -357,8 +358,8 @@ class MergedPdfExportPlan(BaseModel):
     ordered_items: list[MergedPdfPlanItem]
     note: str = Field(
         default=(
-            "phase-1 merged PDF remains a planning/validation placeholder; "
-            "generated summary/detail pages are reserved in order but not rendered yet"
+            "the preview reflects the real material merge order; the async export job will persist "
+            "a downloadable merged PDF artifact with the same source ordering"
         )
     )
 
@@ -965,39 +966,15 @@ def build_merged_pdf_export_plan(
         ),
     )
 
-    ordered_items = [
-        MergedPdfPlanItem(
-            sequence=1,
-            kind=MergedPdfPlanItemKind.REIMBURSEMENT_SUMMARY,
-            status=MergedPdfPlanItemStatus.PLACEHOLDER,
-            label="报销汇总表",
-            note="当前仅保留合并顺序占位，尚未渲染为 PDF 页面",
-        ),
-        MergedPdfPlanItem(
-            sequence=2,
-            kind=MergedPdfPlanItemKind.MEMBER_DETAILS,
-            status=MergedPdfPlanItemStatus.PLACEHOLDER,
-            label="成员报销明细表",
-            note="当前仅保留合并顺序占位，尚未渲染为 PDF 页面",
-        ),
-        MergedPdfPlanItem(
-            sequence=3,
-            kind=MergedPdfPlanItemKind.INVOICE_DETAILS,
-            status=MergedPdfPlanItemStatus.PLACEHOLDER,
-            label="发票明细表",
-            note="当前仅保留合并顺序占位，尚未渲染为 PDF 页面",
-        ),
-    ]
-
-    next_sequence = len(ordered_items) + 1
-    for material in ordered_materials:
+    ordered_items: list[MergedPdfPlanItem] = []
+    for index, material in enumerate(ordered_materials, start=1):
         _validate_merged_pdf_material(
             material,
             raw_content=material_bytes_by_id.get(material.id),
         )
         ordered_items.append(
             MergedPdfPlanItem(
-                sequence=next_sequence,
+                sequence=index,
                 kind=(
                     MergedPdfPlanItemKind.INVOICE_MATERIAL
                     if material.material_type is MaterialType.INVOICE
@@ -1010,7 +987,6 @@ def build_merged_pdf_export_plan(
                 original_filename=material.original_filename,
             )
         )
-        next_sequence += 1
 
     generated_at = generated_at or datetime.now(timezone.utc)
     return MergedPdfExportPlan(
@@ -1206,6 +1182,8 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
     TaskExportCapability(
         kind=ExportArtifactKind.MERGED_PDF,
         formats=[ExportArtifactFormat.PDF],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.PDF],
     ),
 ]
 
@@ -1254,24 +1232,48 @@ def _validate_merged_pdf_material(
     *,
     raw_content: bytes | None,
 ) -> None:
-    if material.content_type != "application/pdf":
-        raise MergedPdfSourceMaterialError(
-            material.id,
-            f"has unsupported content type {material.content_type or '<missing>'}",
-        )
     if raw_content is None:
         raise MergedPdfSourceMaterialError(material.id, "file content is missing from storage")
 
+    if material.content_type == "application/pdf":
+        _validate_pdf_merged_material(material.id, raw_content)
+        return
+    if material.content_type in {"image/jpeg", "image/png", "image/webp"}:
+        _validate_image_merged_material(material.id, raw_content)
+        return
+    raise MergedPdfSourceMaterialError(
+        material.id,
+        f"has unsupported content type {material.content_type or '<missing>'}",
+    )
+
+
+def _validate_pdf_merged_material(material_id: str, raw_content: bytes) -> None:
     try:
         reader = PdfReader(BytesIO(raw_content), strict=True)
         if reader.is_encrypted:
-            raise MergedPdfSourceMaterialError(material.id, "is encrypted")
+            raise MergedPdfSourceMaterialError(material_id, "is encrypted")
         if len(reader.pages) == 0:
-            raise MergedPdfSourceMaterialError(material.id, "contains no readable pages")
+            raise MergedPdfSourceMaterialError(material_id, "contains no readable pages")
     except MergedPdfSourceMaterialError:
         raise
     except Exception as error:
         raise MergedPdfSourceMaterialError(
-            material.id,
+            material_id,
+            f"is unreadable: {error}",
+        ) from error
+
+
+def _validate_image_merged_material(material_id: str, raw_content: bytes) -> None:
+    try:
+        with Image.open(BytesIO(raw_content)) as image:
+            image.load()
+    except UnidentifiedImageError as error:
+        raise MergedPdfSourceMaterialError(
+            material_id,
+            f"is unreadable: {error}",
+        ) from error
+    except Exception as error:
+        raise MergedPdfSourceMaterialError(
+            material_id,
             f"is unreadable: {error}",
         ) from error

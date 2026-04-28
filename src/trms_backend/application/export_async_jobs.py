@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from trms_backend.application.async_jobs import AsyncJobProcessor
+from trms_backend.application.merged_pdf_export import render_merged_pdf_bytes
 from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.export_audit import (
     SYSTEM_EXPORT_ACTOR_ID,
@@ -14,6 +15,7 @@ from trms_backend.domain.exports import (
     ExportArtifactFormat,
     ExportArtifactKind,
     StoredExportArtifactRecord,
+    MergedPdfSourceMaterialError,
     TaskExportFormatNotImplementedError,
     TaskExportJobRecord,
     TaskExportJobRepository,
@@ -21,6 +23,7 @@ from trms_backend.domain.exports import (
     build_finance_draft_export,
     build_invoice_details_export,
     build_member_details_export,
+    build_merged_pdf_export_plan,
     build_missing_materials_export,
     build_reimbursement_summary_export,
     build_task_export_version_snapshot,
@@ -176,6 +179,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
         invoices = self._invoice_repository.list_by_task(task.id)
         materials = self._material_repository.list_by_task(task.id)
         materials_by_id = {material.id: material for material in materials}
+        material_bytes_by_id: dict[str, bytes] = {}
         validations_by_invoice_id = {
             invoice.id: self._validation_repository.list_by_invoice(invoice.id)
             for invoice in invoices
@@ -271,6 +275,35 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode("utf-8"),
+            )
+
+        if export_job.kind is ExportArtifactKind.MERGED_PDF:
+            for material in materials:
+                try:
+                    material_bytes_by_id[material.id] = self._material_file_storage.read(
+                        storage_key=material.storage_key
+                    )
+                except FileNotFoundError as error:
+                    raise MergedPdfSourceMaterialError(
+                        material.id,
+                        "file content is missing from storage",
+                    ) from error
+            export_plan = build_merged_pdf_export_plan(
+                task,
+                actor_id=export_job.requested_by,
+                format=export_job.format,
+                materials=materials,
+                material_bytes_by_id=material_bytes_by_id,
+            )
+            return self._save_artifact(
+                task_id=task.id,
+                filename=export_plan.filename,
+                content_type="application/pdf",
+                content=render_merged_pdf_bytes(
+                    export_plan=export_plan,
+                    materials_by_id=materials_by_id,
+                    material_bytes_by_id=material_bytes_by_id,
+                ),
             )
 
         raise TaskExportFormatNotImplementedError(

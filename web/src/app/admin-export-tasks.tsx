@@ -53,7 +53,7 @@ const EXPORT_KIND_DESCRIPTIONS: Record<ExportArtifactKind, string> = {
   invoice_details: "列出发票号码、金额、费用类型及异常校验摘要。",
   missing_materials: "按成员和费用列出仍缺失的支付记录、比赛通知或行程材料。",
   finance_draft: "输出项目、报销人、发票及分摊摘要，供人工录入财务系统。",
-  merged_pdf: "校验并规划打印顺序；当前阶段仍是合并计划占位，不直接生成真实 PDF。",
+  merged_pdf: "校验材料并按系统默认顺序合并 PDF/图片，生成可下载的打印材料包。",
 };
 
 const EXPORT_FORMAT_LABELS: Record<ExportArtifactFormat, string> = {
@@ -108,7 +108,7 @@ function buildPreviewDescriptor(capability: TaskExportCapability) {
     return {
       available: true,
       buttonLabel: "查看 PDF 合并计划",
-      placeholderLabel: "PDF 计划占位",
+      placeholderLabel: "合并顺序预览",
     };
   }
 
@@ -129,7 +129,7 @@ function buildPreviewDescriptor(capability: TaskExportCapability) {
 
 function buildPreviewNote(kind: ExportArtifactKind) {
   if (kind === "merged_pdf") {
-    return "当前展示的是 PDF 合并顺序与可读性检查计划，不代表真实持久化下载产物。";
+    return "当前展示的是实际导出将采用的材料顺序与可读性检查结果；正式 PDF 请通过导出任务下载。";
   }
   if (kind === "finance_draft") {
     return "当前展示的是在线草稿预览，正式下载入口会在导出产物生成后提供。";
@@ -141,6 +141,25 @@ function stringifyStructuredPreview(payload: FinanceDraftExport | MergedPdfExpor
   return JSON.stringify(payload, null, 2);
 }
 
+function formatFileSize(sizeBytes: number) {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function AdminExportTasksPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
@@ -150,6 +169,7 @@ export function AdminExportTasksPage() {
   const [previewState, setPreviewState] = useState<PreviewState>({ status: "idle" });
   const [activeCreateKind, setActiveCreateKind] = useState<ExportArtifactKind | null>(null);
   const [activePreviewKind, setActivePreviewKind] = useState<ExportArtifactKind | null>(null);
+  const [activeDownloadJobId, setActiveDownloadJobId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +333,26 @@ export function AdminExportTasksPage() {
       });
     } finally {
       setActivePreviewKind(null);
+    }
+  }
+
+  async function handleDownload(jobId: string) {
+    if (!session) {
+      return;
+    }
+
+    setActionError(null);
+    setActionFeedback(null);
+    setActiveDownloadJobId(jobId);
+
+    try {
+      const downloaded = await trmsApi.downloadTaskExportArtifact(jobId, session.actorId);
+      triggerBrowserDownload(downloaded.blob, downloaded.filename ?? `${jobId}.bin`);
+      setActionFeedback(`导出文件 ${downloaded.filename ?? jobId} 已开始下载。`);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setActiveDownloadJobId(null);
     }
   }
 
@@ -510,7 +550,7 @@ export function AdminExportTasksPage() {
 
             {pageState.jobs.length === 0 ? (
               <p className="task-healthy-note">
-                当前还没有导出任务记录。创建任务后，这里会显示状态、失败原因和下载入口占位说明。
+                当前还没有导出任务记录。创建任务后，这里会显示状态、失败原因和可下载产物信息。
               </p>
             ) : (
               <div className="admin-review-record-list" aria-label="导出任务历史列表">
@@ -553,9 +593,30 @@ export function AdminExportTasksPage() {
                       </div>
                     ) : null}
 
-                    <p className="field-hint">
-                      当前先记录导出状态与时间；正式下载入口会在导出产物生成后提供。
-                    </p>
+                    {job.artifact ? (
+                      <>
+                        <div className="status-note">
+                          <p>
+                            导出产物：{job.artifact.filename} · {job.artifact.content_type ?? "未知类型"} ·{" "}
+                            {formatFileSize(job.artifact.size_bytes)}
+                          </p>
+                        </div>
+                        <div className="inline-actions export-action-row">
+                          <button
+                            className="route-link route-link-secondary"
+                            type="button"
+                            disabled={activeDownloadJobId === job.id}
+                            onClick={() => {
+                              void handleDownload(job.id);
+                            }}
+                          >
+                            {activeDownloadJobId === job.id ? "正在下载..." : "下载导出文件"}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="field-hint">当前任务尚无可下载产物；生成成功后这里会显示下载入口。</p>
+                    )}
                   </article>
                 ))}
               </div>

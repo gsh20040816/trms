@@ -66,7 +66,7 @@ function buildCapabilities(taskId: string, exportAllowed: boolean) {
       ? []
       : ["task must be ready_to_export or completed before real exports can be generated"],
     execution_mode: "async_worker",
-    note: "reimbursement summary/member details/invoice details/missing materials CSV export and finance draft JSON export are available through async export jobs with persisted artifacts; merged PDF planning/validation remains a placeholder",
+    note: "reimbursement summary/member details/invoice details/missing materials CSV export and finance draft JSON export and merged PDF export are available through async export jobs with persisted artifacts",
     supported_exports: [
       {
         kind: "reimbursement_summary",
@@ -101,8 +101,8 @@ function buildCapabilities(taskId: string, exportAllowed: boolean) {
       {
         kind: "merged_pdf",
         formats: ["pdf"],
-        implemented: false,
-        implemented_formats: [],
+        implemented: true,
+        implemented_formats: ["pdf"],
       },
     ],
   };
@@ -157,6 +157,32 @@ describe("admin export tasks page", () => {
             updated_at: "2026-04-28T09:05:00+08:00",
             started_at: "2026-04-28T09:01:00+08:00",
             finished_at: "2026-04-28T09:05:00+08:00",
+            retry_count: 0,
+            artifact: null,
+          },
+          {
+            id: "export-job-csv",
+            task_id: "TASK-EXPORT",
+            requested_by: "admin-1",
+            kind: "invoice_details",
+            format: "csv",
+            status: "succeeded",
+            parameters: {},
+            task_status_at_request: "ready_to_export",
+            task_data_version: "c".repeat(64),
+            is_latest_for_task: true,
+            failure_reason: null,
+            created_at: "2026-04-28T08:40:00+08:00",
+            updated_at: "2026-04-28T08:41:00+08:00",
+            started_at: "2026-04-28T08:40:10+08:00",
+            finished_at: "2026-04-28T08:41:00+08:00",
+            retry_count: 0,
+            artifact: {
+              filename: "TASK-EXPORT-invoice-details.csv",
+              content_type: "text/csv",
+              size_bytes: 321,
+              sha256: "d".repeat(64),
+            },
           },
         ]));
       }
@@ -185,6 +211,8 @@ describe("admin export tasks page", () => {
             updated_at: "2026-04-28T09:10:00+08:00",
             started_at: null,
             finished_at: null,
+            retry_count: 0,
+            artifact: null,
           },
           { status: 201 },
         ));
@@ -203,6 +231,7 @@ describe("admin export tasks page", () => {
 
     expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
     expect(await screen.findByText(/failed to read encrypted material PDF/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载导出文件" })).toBeInTheDocument();
 
     const summaryCard = screen.getByRole("heading", { name: "报销汇总表" }).closest("article");
     expect(summaryCard).not.toBeNull();
@@ -264,7 +293,7 @@ describe("admin export tasks page", () => {
     expect(summaryActions.getByRole("button", { name: "创建报销汇总表任务" })).toBeDisabled();
     expect(summaryActions.getByRole("button", { name: "查看在线预览" })).toBeDisabled();
     expect(
-      screen.getByText("当前还没有导出任务记录。创建任务后，这里会显示状态、失败原因和下载入口占位说明。"),
+      screen.getByText("当前还没有导出任务记录。创建任务后，这里会显示状态、失败原因和可下载产物信息。"),
     ).toBeInTheDocument();
   });
 });

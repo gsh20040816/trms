@@ -2,6 +2,7 @@ import csv
 from io import BytesIO, StringIO
 
 from fastapi.testclient import TestClient
+from PIL import Image
 from pypdf import PdfWriter
 
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
@@ -130,6 +131,7 @@ def create_invoice_with_splits(
     *,
     submitter_id: str,
     filename: str,
+    material_content: bytes | None = None,
     invoice_overrides: dict | None = None,
     split_items: list[dict] | None = None,
 ) -> str:
@@ -138,6 +140,7 @@ def create_invoice_with_splits(
         task_id,
         submitter_id=submitter_id,
         filename=filename,
+        content=material_content,
     )
     response = client.post(
         f"/api/materials/{material_id}/invoice",
@@ -179,6 +182,13 @@ def build_pdf_bytes(*, encrypted: bool = False) -> bytes:
     return buffer.getvalue()
 
 
+def build_png_bytes() -> bytes:
+    image = Image.new("RGB", (120, 80), (64, 128, 192))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)
@@ -200,8 +210,8 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["execution_mode"] == "async_worker"
     assert body["note"] == (
         "reimbursement summary/member details/invoice details/missing materials CSV export and "
-        "finance draft JSON export are available through async export jobs with persisted "
-        "artifacts; merged PDF planning/validation remains a placeholder"
+        "finance draft JSON export and merged PDF export are available through async export "
+        "jobs with persisted artifacts"
     )
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}
     assert set(supported_by_kind) == {
@@ -228,30 +238,8 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert supported_by_kind["finance_draft"]["implemented"] is True
     assert supported_by_kind["finance_draft"]["implemented_formats"] == ["json"]
     assert supported_by_kind["merged_pdf"]["formats"] == ["pdf"]
-    assert all(
-        item["implemented"] is False
-        for item in body["supported_exports"]
-        if item["kind"]
-        not in {
-            "reimbursement_summary",
-            "member_details",
-            "invoice_details",
-            "missing_materials",
-            "finance_draft",
-        }
-    )
-    assert all(
-        item["implemented_formats"] == []
-        for item in body["supported_exports"]
-        if item["kind"]
-        not in {
-            "reimbursement_summary",
-            "member_details",
-            "invoice_details",
-            "missing_materials",
-            "finance_draft",
-        }
-    )
+    assert supported_by_kind["merged_pdf"]["implemented"] is True
+    assert supported_by_kind["merged_pdf"]["implemented_formats"] == ["pdf"]
 
 
 def test_task_administrator_can_export_reimbursement_summary_csv(tmp_path):
@@ -814,21 +802,51 @@ def test_task_administrator_can_preview_merged_pdf_plan_in_default_order(tmp_pat
     assert body["format"] == "pdf"
     assert body["filename"] == f"{task_id}-merged-printing.pdf"
     assert [item["kind"] for item in body["ordered_items"]] == [
-        "reimbursement_summary",
-        "member_details",
-        "invoice_details",
         "invoice_material",
         "supporting_material",
     ]
-    assert [item["status"] for item in body["ordered_items"][:3]] == [
-        "placeholder",
-        "placeholder",
-        "placeholder",
+    assert all(item["status"] == "ready" for item in body["ordered_items"])
+    assert body["ordered_items"][0]["material_id"] == invoice_material_id
+    assert body["ordered_items"][0]["original_filename"] == "invoice.pdf"
+    assert body["ordered_items"][1]["material_id"] == supporting_material_id
+    assert body["ordered_items"][1]["original_filename"] == "notice.pdf"
+
+
+def test_merged_pdf_preview_accepts_supported_image_material(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    material_id = upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="order_screenshot",
+        filename="ticket.png",
+        content_type="image/png",
+        content=build_png_bytes(),
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/merged-pdf",
+        params={"actor_id": "admin-1", "format": "pdf"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ordered_items"] == [
+        {
+            "sequence": 1,
+            "kind": "supporting_material",
+            "status": "ready",
+            "label": "ticket.png",
+            "note": None,
+            "material_id": material_id,
+            "material_type": "order_screenshot",
+            "original_filename": "ticket.png",
+        }
     ]
-    assert body["ordered_items"][3]["material_id"] == invoice_material_id
-    assert body["ordered_items"][3]["original_filename"] == "invoice.pdf"
-    assert body["ordered_items"][4]["material_id"] == supporting_material_id
-    assert body["ordered_items"][4]["original_filename"] == "notice.pdf"
 
 
 def test_merged_pdf_preview_reports_encrypted_material_id(tmp_path):

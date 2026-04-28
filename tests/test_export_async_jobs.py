@@ -1,3 +1,5 @@
+from io import BytesIO
+
 from fastapi.testclient import TestClient
 
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
@@ -16,9 +18,16 @@ from trms_backend.infrastructure.repositories import (
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
+from pypdf import PdfReader
 
 from api_error_assertions import assert_api_error
-from test_exports_api import create_export_job, create_invoice_with_splits
+from test_exports_api import (
+    build_pdf_bytes,
+    build_png_bytes,
+    create_export_job,
+    create_invoice_with_splits,
+    upload_supporting_material,
+)
 from test_tasks_api import (
     admin_auth_headers,
     auth_headers,
@@ -285,10 +294,95 @@ def test_export_artifact_download_is_limited_to_responsible_administrator(tmp_pa
     assert anonymous_download.json()["detail"] == "invalid or missing bearer token"
 
 
-def test_export_async_processor_marks_unimplemented_job_failed(tmp_path):
+def test_export_async_processor_persists_real_merged_pdf_artifact(tmp_path):
     runtime_config = make_runtime_config(tmp_path)
     client = make_client(tmp_path, runtime_config=runtime_config)
     task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-a.pdf",
+        material_content=build_pdf_bytes(),
+        split_items=[{"member_id": "2250001", "amount_cents": 12345}],
+    )
+    upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="order_screenshot",
+        filename="ticket.png",
+        content_type="image/png",
+        content=build_png_bytes(),
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(
+        client,
+        task_id,
+        kind="merged_pdf",
+        format="pdf",
+    )
+    processor = build_processor(tmp_path, runtime_config)
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+
+    status_response = client.get(
+        f"/api/tasks/exports/{export_job['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert status_response.status_code == 200
+    status_body = status_response.json()
+    assert status_body["status"] == "succeeded"
+    assert status_body["failure_reason"] is None
+    assert status_body["artifact"]["filename"] == f"{task_id}-merged-printing.pdf"
+    assert status_body["artifact"]["content_type"] == "application/pdf"
+
+    artifact_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=admin_auth_headers(client),
+    )
+    assert artifact_download.status_code == 200
+    assert artifact_download.headers["content-type"].startswith("application/pdf")
+    assert (
+        artifact_download.headers["content-disposition"]
+        == f'attachment; filename="{task_id}-merged-printing.pdf"'
+    )
+    assert len(PdfReader(BytesIO(artifact_download.content)).pages) == 2
+
+    audit_logs = list_export_job_audit_logs(tmp_path, export_job_id=export_job["id"])
+
+    assert len(audit_logs) == 3
+    assert audit_logs[0].action == "create_task_export_job"
+    assert audit_logs[0].detail["kind"] == "merged_pdf"
+    assert audit_logs[0].detail["format"] == "pdf"
+    assert audit_logs[1].actor_id == "system:export-worker"
+    assert audit_logs[1].action == "complete_task_export_job"
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].request_id is None
+    assert audit_logs[1].detail["previous_status"] == "running"
+    assert audit_logs[1].detail["status"] == "succeeded"
+    assert audit_logs[1].detail["artifact"]["filename"] == f"{task_id}-merged-printing.pdf"
+    assert audit_logs[2].actor_id == "admin-1"
+    assert audit_logs[2].action == "download_task_export_artifact"
+    assert audit_logs[2].result is AuditLogResult.SUCCEEDED
+
+
+def test_export_async_processor_reports_specific_merged_pdf_failure_reason(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+    upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="competition_notice",
+        filename="broken.pdf",
+        content=b"%PDF-1.4 broken",
+    )
     update_task_row(tmp_path, task_id, status="ready_to_export")
     export_job = create_export_job(
         client,
@@ -308,33 +402,5 @@ def test_export_async_processor_marks_unimplemented_job_failed(tmp_path):
     )
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "failed"
-    assert status_response.json()["failure_reason"] == (
-        "export format pdf is not implemented yet for merged_pdf"
-    )
-
-    failed_download = client.get(
-        f"/api/tasks/exports/{export_job['id']}/artifact",
-        headers=admin_auth_headers(client),
-    )
-    assert failed_download.status_code == 409
-    assert failed_download.json()["detail"] == (
-        "export artifact is unavailable because the job failed: "
-        "export format pdf is not implemented yet for merged_pdf"
-    )
-
-    audit_logs = list_export_job_audit_logs(tmp_path, export_job_id=export_job["id"])
-
-    assert len(audit_logs) == 2
-    assert audit_logs[0].action == "create_task_export_job"
-    assert audit_logs[0].detail["kind"] == "merged_pdf"
-    assert audit_logs[0].detail["format"] == "pdf"
-    assert audit_logs[1].actor_id == "system:export-worker"
-    assert audit_logs[1].action == "fail_task_export_job"
-    assert audit_logs[1].result is AuditLogResult.FAILED
-    assert audit_logs[1].request_id is None
-    assert audit_logs[1].detail["previous_status"] == "running"
-    assert audit_logs[1].detail["status"] == "failed"
-    assert audit_logs[1].detail["failure_reason"] == (
-        "export format pdf is not implemented yet for merged_pdf"
-    )
-    assert audit_logs[1].detail["artifact"] is None
+    assert status_response.json()["failure_reason"].startswith("merged pdf source material ")
+    assert "is unreadable:" in status_response.json()["failure_reason"]

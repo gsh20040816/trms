@@ -1,4 +1,4 @@
-import { apiClient, getConfiguredApiAccessToken } from "./client";
+import { apiClient, type ApiDownloadedFile, getConfiguredApiAccessToken } from "./client";
 import type {
   ApiItemResponse,
   ApiListResponse,
@@ -59,7 +59,7 @@ function buildActorScopedQuery(actorId: string) {
 
 function buildActorScopedExportQuery(
   actorId: string,
-  format: "csv" | "json",
+  format: "csv" | "json" | "pdf",
 ) {
   return shouldUseBearerIdentity()
     ? buildQuery({ format })
@@ -362,7 +362,13 @@ export const trmsApi = {
 
   exportMergedPdfPlan(taskId: string, actorId: string) {
     return apiClient.request<MergedPdfExportPlan>(
-      `/tasks/${encodeSegment(taskId)}/exports/merged-pdf${buildActorScopedExportQuery(actorId, "json")}`,
+      `/tasks/${encodeSegment(taskId)}/exports/merged-pdf${buildActorScopedExportQuery(actorId, "pdf")}`,
     );
+  },
+
+  downloadTaskExportArtifact(exportJobId: string, actorId: string) {
+    return apiClient.download(
+      `/tasks/exports/${encodeSegment(exportJobId)}/artifact${buildActorScopedQuery(actorId)}`,
+    ) as Promise<ApiDownloadedFile>;
   },
 };

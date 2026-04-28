@@ -323,6 +323,13 @@ export type TaskExportJobRequest = {
   parameters?: Record<string, unknown>;
 };
 
+export type ExportArtifactRecord = {
+  filename: string;
+  content_type: string | null;
+  size_bytes: number;
+  sha256: string;
+};
+
 export type TaskExportJobRecord = {
   id: string;
   task_id: string;
@@ -334,6 +341,8 @@ export type TaskExportJobRecord = {
   task_status_at_request: TaskStatus | null;
   task_data_version: string | null;
   is_latest_for_task: boolean | null;
+  retry_count: number | null;
+  artifact: ExportArtifactRecord | null;
   failure_reason: string | null;
   created_at: ApiDateTime;
   updated_at: ApiDateTime;

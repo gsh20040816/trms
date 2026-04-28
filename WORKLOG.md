@@ -1,5 +1,69 @@
 # WORKLOG
 
+## 2026-04-29 01:35 - Implement real merged PDF export artifacts
+
+### 完成内容
+- 将 `merged_pdf` 从导出占位能力改为真实产物链路：
+  - 异步导出 worker 现在会读取任务内已归档材料，按系统默认顺序合并为真实 PDF，并把产物持久化到既有导出存储；
+  - 合并源支持可读 PDF 与 JPEG / PNG / WebP 图片，图片会先转换成 PDF 页面再进入统一合并流程；
+  - 导出任务状态接口继续只暴露脱敏后的 artifact 元数据，正式文件仍通过既有下载接口访问。
+- 收口 merged PDF 的错误暴露边界：
+  - 加密 PDF、损坏 PDF、损坏图片、存储缺文件和不支持的内容类型都会以 `merged pdf source material <material_id> ...` 的形式显式失败；
+  - 失败原因会进入导出任务状态和审计日志，不再以“未实现”占位失败或静默跳过材料。
+- 同步前端导出页与能力说明：
+  - 管理员导出页现在会显示真实 artifact 元数据和下载按钮；
+  - `merged_pdf` 能力说明、预览提示文案和导出历史空状态文案已改成“真实产物已可下载”的前提；
+  - 修复了前端 `merged_pdf` 预览错误把查询参数写成 `format=json` 的问题，现已按 `format=pdf` 请求真实排序预览。
+- 同步文档与任务台账：
+  - `TASKS.md` 已将“实现真实合并打印 PDF 导出”标记完成；
+  - `README.md` 与 `docs/第一阶段验收映射.md` 已同步去掉“真实合并 PDF 未实现”的过期描述；
+  - 新增 `Pillow` 依赖并更新 `uv.lock`，用于把图片材料转换为 PDF 页面。
+
+### 根因
+- `src/trms_backend/application/export_async_jobs.py` 之前只会为 CSV / JSON 导出生成真实 artifact，`merged_pdf` 会直接落到 `TaskExportFormatNotImplementedError`；
+- `src/trms_backend/domain/exports.py` 中 merged PDF 预览长期混入“报销汇总表 / 成员明细 / 发票明细”的 placeholder 页面，既没有真实文件渲染，也没有和实际导出产物建立一致性；
+- `web/src/app/admin-export-tasks.tsx` 与前端 API 类型仍停留在“显示占位说明、不展示 artifact、无下载入口”的阶段，导致即使后端补齐产物也无法在页面上闭环交付。
+
+### 修改文件
+- `pyproject.toml`
+- `uv.lock`
+- `src/trms_backend/application/export_async_jobs.py`
+- `src/trms_backend/application/merged_pdf_export.py`
+- `src/trms_backend/domain/exports.py`
+- `tests/test_exports_api.py`
+- `tests/test_export_async_jobs.py`
+- `web/src/lib/api/client.ts`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/app/admin-export-tasks.tsx`
+- `web/src/app/admin-export-tasks.test.tsx`
+- `README.md`
+- `docs/第一阶段验收映射.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_exports_api.py tests/test_export_async_jobs.py`
+    - 27 个测试通过
+  - `npm test -- --run admin-export-tasks.test.tsx`
+    - 2 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 340 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮对 merged PDF 采用保守支持边界：只合并当前仓库已允许上传且可稳定转换的 PDF / JPEG / PNG / WebP；`zip` 或其他不可打印类型继续显式失败，而不是尝试隐式降级。
+- merged PDF 现在只合并真实电子材料本体，不再把汇总表/明细表占位页混入打印包；这些结构化表格继续作为独立导出物存在，更符合需求文档中“表格导出”和“打印材料包”分离的边界。
+
 ## 2026-04-29 01:24 - Add VLM-based direct recognition for scanned PDFs and images
 
 ### 完成内容
