@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-29 05:32 - Evaluate CLI offline staging and sync
+
+### 完成内容
+- 新增 `docs/CLI离线暂存后同步评估.md`，明确“CLI 离线暂存后同步”不进入第一阶段实现范围，而是保留为后续阶段增强项。
+- 将 `TASKS.md` 中“评估 CLI 离线暂存后同步”标记为已完成。
+
+### 根因
+- 需求文档只把“CLI 离线暂存后同步”列为 Could have，且 Q-011 仍是未决问题，不是第一阶段 Must / Should 主链路。
+- 当前 CLI 代码仍是显式在线模型：`src/trms_cli/token_store.py` 只保存本地会话，`src/trms_cli/cli.py` 的 `submit` / `tasks` / `status` / `missing-materials` / `confirm-expense` 都依赖实时访问后端 API，没有本地离线队列或同步状态机。
+- 一旦引入离线暂存，就必须同时处理两类当前仓库尚未建立的边界：
+  - 数据安全：本地是否复制敏感材料副本、暂存元数据如何保护、同步成功后如何清理、是否扩大 token 泄漏面；
+  - 同步冲突：任务截止或关闭、成员身份变化、文件内容变化、重复材料、批量部分成功和重试结果收敛。
+- 这些复杂度明显超出“当前最小可验证任务”的合理范围，也不应在第一阶段优先于鉴权、审计和生产边界任务实现。
+
+### 关键改动点
+- 新增评估文档：
+  - `docs/CLI离线暂存后同步评估.md`
+- 同步任务状态：
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只新增评估文档和任务记录，不改动任何业务代码、接口语义、数据库结构或测试逻辑。
+- 当前结论是“后续阶段再做”，因此不会改善弱网场景下的 CLI 体验；但它避免了在第一阶段把本地敏感材料缓存、本地队列恢复和同步冲突处理混入现有在线提交主路径。
+
+### 修改文件
+- `docs/CLI离线暂存后同步评估.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 418 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- 本轮将“CLI 离线暂存后同步”保守解释为：成员在离线时先把材料及提交元数据存入本地待同步队列，联网后再统一发往后端；不把“shell 重试上传命令”或“操作系统断网后自动重发”混同为该能力。
+- 当前保守判断：如果后续真的要做，应该先单独设计本地队列和同步冲突模型，而不是直接给现有 `submit` 命令补一个隐式缓存开关。
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
 ## 2026-04-29 05:27 - Evaluate common competition templates
 
 ### 完成内容
