@@ -1,5 +1,56 @@
 # WORKLOG
 
+## 2026-04-29 04:24 - Add rule-layer validation test matrix
+
+### 完成内容
+- 新增领域层规则单测文件 `tests/test_invoice_validation_rules.py`，直接覆盖 `src/trms_backend/domain/invoice_validation.py` 的核心校验函数，不再依赖 API 链路间接断言。
+- 已补齐以下规则矩阵：
+  - 抬头/税号规则：覆盖通过、失败、待确认；
+  - 大额支付记录规则：覆盖支付记录必需规则的通过/失败，以及金额匹配规则的通过、失败、待确认；
+  - 附件完整性规则：覆盖比赛通知、航空行程单、航空舱位证明、网约车行程信息等规则的通过/失败，并为支持待确认的规则补齐待确认路径；
+  - 比赛范围规则：覆盖时间范围和地点范围的通过、失败、待确认；
+  - 重复发票规则：覆盖通过、失败。
+
+### 根因
+- 现有校验语义大多只在 `tests/test_invoices_api.py` 等 API 用例里间接验证，断言分散且依赖整条请求链，规则层一旦回归，定位会被接口行为和仓储细节噪声掩盖。
+- `TASKS.md` 的当前最小任务要求是补“规则层单元测试覆盖矩阵”，因此本轮不扩散到业务逻辑改造，而是把规则纯函数的状态矩阵直接锁住。
+
+### 关键改动点
+- 新增规则层测试：
+  - `tests/test_invoice_validation_rules.py`
+- 更新任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮未修改任何生产业务逻辑，只新增测试；如果后续规则语义调整，这些测试会先暴露不一致。
+- 重复发票规则当前域模型只定义了 `passed/failed`，不存在独立的 `pending` 语义；本轮按现有实现记录为“覆盖全部受支持状态”，未擅自扩展规则行为。
+- 比赛通知和航空行程单必需规则当前也只有“通过/失败/不适用”，待确认语义仍由更细粒度的舱位证明、网约车行程、时间范围、地点范围等规则承担。
+
+### 修改文件
+- `tests/test_invoice_validation_rules.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_invoice_validation_rules.py`
+    - 26 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 382 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - Web 测试期间仍打印 Node `--localstorage-file` 既有警告；
+  - `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认“每条规则覆盖通过、失败、待确认路径”应按规则实际支持的状态解释；对于重复发票、比赛通知、航空行程单这类当前不产生 `pending` 的规则，不在本轮擅自改动业务语义去制造待确认态。
+
 ## 2026-04-29 04:13 - Support multi-role account binding and switching
 
 ### 完成内容
