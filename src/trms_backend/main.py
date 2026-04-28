@@ -65,7 +65,10 @@ def create_app(
         allow_headers=["*"],
     )
     session_factory = build_session_factory(config.database_url)
-    init_database(session_factory)
+    init_database(
+        session_factory,
+        allow_schema_bootstrap=config.environment != "production",
+    )
     global_invoice_config_repository = SqlAlchemyGlobalInvoiceConfigRepository(session_factory)
     auth_repository = SqlAlchemyAuthRepository(session_factory)
     if global_invoice_config is not None:

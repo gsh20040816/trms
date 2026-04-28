@@ -40,6 +40,34 @@ run_python_checks() {
   # shellcheck disable=SC2086
   $python_cmd -m compileall src tests
 
+  if [[ -f alembic.ini ]]; then
+    local -a alembic_cmd=()
+
+    if have_cmd uv && [[ -f uv.lock ]]; then
+      alembic_cmd=(uv run alembic)
+    elif have_cmd python3 && python3 -m alembic --help >/dev/null 2>&1; then
+      alembic_cmd=(python3 -m alembic)
+    elif have_cmd python && python -m alembic --help >/dev/null 2>&1; then
+      alembic_cmd=(python -m alembic)
+    fi
+
+    if [[ "${#alembic_cmd[@]}" -gt 0 ]]; then
+      local migration_tmp_dir=""
+      local migration_database_url=""
+      migration_tmp_dir="$(mktemp -d)"
+      migration_database_url="sqlite:///${migration_tmp_dir}/verify-migrations.db"
+
+      log "运行 Alembic 迁移脚本验证"
+      DATABASE_URL="$migration_database_url" "${alembic_cmd[@]}" upgrade head
+      DATABASE_URL="$migration_database_url" "${alembic_cmd[@]}" downgrade base
+      DATABASE_URL="$migration_database_url" "${alembic_cmd[@]}" upgrade head
+
+      rm -rf "$migration_tmp_dir"
+    else
+      log "跳过 Alembic 检查：当前环境未安装 alembic"
+    fi
+  fi
+
   if [[ -d tests ]]; then
     if have_cmd uv && [[ -f uv.lock ]]; then
       log "运行 pytest"

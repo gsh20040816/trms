@@ -1,5 +1,78 @@
 # WORKLOG
 
+## 2026-04-28 15:29 - Productionize database migration baseline with Alembic
+
+### 完成内容
+- 新增 Alembic 基线迁移：
+  - 增加 `alembic.ini`、`alembic/env.py`、`alembic/script.py.mako` 和 `alembic/versions/20260428_01_baseline_schema.py`；
+  - 用 `20260428_01` 固化当前 SQLAlchemy schema 基线，覆盖现有表、索引和约束。
+- 更新 `src/trms_backend/infrastructure/database.py`：
+  - 新增 `build_alembic_config()`、`get_alembic_head_revisions()` 和 `ensure_database_schema_is_current()`；
+  - 新增 `DatabaseSchemaNotReadyError`，用于显式暴露“数据库未迁移到 Alembic head”；
+  - `init_database()` 现在区分“允许本地自举建表”和“只校验迁移状态”两条路径。
+- 更新 `src/trms_backend/main.py` 与 `src/trms_backend/__main__.py`：
+  - 开发/测试环境继续允许 `create_all` 自举；
+  - `TRMS_ENV=production` 下 API 与 worker 启动不再自动建表或自动演进 schema，必须先完成迁移。
+- 更新 `scripts/verify.sh`：
+  - 新增 Alembic 自检，使用临时 SQLite 数据库执行 `upgrade head -> downgrade base -> upgrade head`；
+  - 确保迁移脚本可执行，而不是只存在文件但从未跑过。
+- 更新文档：
+  - `README.md` 补充迁移、回滚、生产启动前先迁移以及旧本地库处理方式；
+  - `docs/数据库迁移策略说明.md` 从“暂不引入 Alembic”更新为“已引入 Alembic 基线并限制生产环境自动建表”；
+  - `docs/第一阶段验收映射.md` 同步数据库迁移差距描述。
+- 新增测试 `tests/test_database_migrations.py`：
+  - 覆盖本地 SQLite 自举建表；
+  - 覆盖生产路径拒绝未迁移库；
+  - 覆盖 Alembic `head` 数据库可被启动路径接受。
+- 更新 `TASKS.md`，将“生产化数据库迁移机制”标记为已完成。
+
+### 根因
+- 当前仓库虽然已经进入生产化相关任务，但数据库仍完全依赖应用启动期 `Base.metadata.create_all(...)`。
+- 该做法对共享环境有三个直接问题：
+  - schema 演进没有版本号和审计链，无法确认实例处于哪个结构版本；
+  - 启动期静默补表无法覆盖列调整、约束变更和回滚需求；
+  - 生产环境如果继续沿用 `create_all`，后续引入 Alembic 时旧库状态会更难确认和收口。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `README.md`
+- `docs/数据库迁移策略说明.md`
+- `docs/第一阶段验收映射.md`
+- `pyproject.toml`
+- `uv.lock`
+- `scripts/verify.sh`
+- `src/trms_backend/__main__.py`
+- `src/trms_backend/main.py`
+- `src/trms_backend/infrastructure/database.py`
+- `tests/test_database_migrations.py`
+- `alembic.ini`
+- `alembic/env.py`
+- `alembic/script.py.mako`
+- `alembic/versions/20260428_01_baseline_schema.py`
+
+### 验证结果
+- 已通过：
+  - `python3 -m compileall src tests alembic`
+    - 编译检查通过
+  - `uv run pytest tests/test_database_migrations.py tests/test_runtime_config.py tests/test_async_jobs.py`
+    - 19 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 263 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出相关测试里旧的 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮保守保留开发/测试环境的 `create_all` 自举能力，避免强行改动现有 pytest 和临时 SQLite 工作流；共享环境的 schema 管理边界则切换为 Alembic。
+- 对历史本地 SQLite 库，不默认提供自动迁移脚本；只有在人工确认 schema 与当前基线一致时才建议 `alembic stamp head`，否则优先备份后重建。
+
 ## 2026-04-28 15:40 - Implement async export worker consumption and artifact status query
 
 ### 完成内容

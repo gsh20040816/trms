@@ -18,6 +18,14 @@ uv run python -m trms_backend --reload
 DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run python -m trms_backend --reload
 ```
 
+数据库迁移边界：
+
+- 仓库已引入 Alembic 基线迁移，迁移入口为 `uv run alembic upgrade head`。
+- 开发和测试环境仍保留 `create_all` 自举能力，便于临时 SQLite 和 pytest 临时库快速启动。
+- `TRMS_ENV=production` 时，API 和 worker 启动不会再自动建表或自动演进 schema；必须先执行迁移，否则启动会显式失败。
+- 需要回滚时使用 `uv run alembic downgrade base` 或目标 revision；共享环境执行前应先备份数据库。
+- 旧的本地 `trms.db` 如果仍是历史 `create_all` 生成且不需要保留数据，优先删除后重新执行 `uv run alembic upgrade head`；若必须保留数据，应先人工确认 schema 与当前基线一致，再决定是否 `alembic stamp head`，不要在未核对结构时直接盖章。
+
 后端运行配置已统一收敛到环境变量：
 
 - `TRMS_ENV`：`development`、`test` 或 `production`，默认 `development`
@@ -64,6 +72,7 @@ TRMS_CORS_ALLOWED_ORIGINS=https://trms.example.edu \
 TRMS_PUBLIC_API_BASE_URL=https://trms.example.edu/api \
 TRMS_API_HOST=0.0.0.0 \
 TRMS_API_PORT=8000 \
+uv run alembic upgrade head && \
 uv run python -m trms_backend --host 0.0.0.0 --port 8000
 ```
 

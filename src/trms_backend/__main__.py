@@ -53,7 +53,10 @@ def run_api_command(argv: Sequence[str]) -> int:
 
 def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
     session_factory = build_session_factory(config.database_url)
-    init_database(session_factory)
+    init_database(
+        session_factory,
+        allow_schema_bootstrap=config.environment != "production",
+    )
     material_repository = SqlAlchemyMaterialRepository(session_factory)
     task_repository = SqlAlchemyTaskRepository(session_factory)
     invoice_repository = SqlAlchemyInvoiceRepository(session_factory)
