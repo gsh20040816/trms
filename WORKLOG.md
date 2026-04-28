@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-29 04:53 - Add backend main-flow E2E scaffold
+
+### 完成内容
+- 新增 `tests/test_main_flow_e2e.py`，用单个后端集成测试串起当前第一阶段主流程骨架：
+  - 管理员创建任务并开放提交通道；
+  - 成员通过 bearer 身份上传发票材料；
+  - 用 fake recognition result 驱动识别任务成功，不接真实 AI；
+  - 管理员录入发票并断言抬头、税号、重复发票等核心校验结果；
+  - 成员提交金额分摊并确认个人费用；
+  - 管理员查看复核摘要、推动任务进入 `reviewing` / `ready_to_export`，并验证导出门禁由阻塞变为放行。
+- 将 `TASKS.md` 中“建立主流程 E2E 测试骨架”标记为已完成。
+
+### 根因
+- 仓库此前只有 `web/src/app/main-flow-e2e-placeholder.test.tsx` 这一条前端路由级占位测试，能覆盖页面协作，但不能证明后端真实 API 主链路已经可从“创建任务”走到“导出门禁放行”。
+- 当前 P3 首个未完成任务要求的是可纳入 `./scripts/verify.sh` 的主流程 E2E 骨架，因此本轮补的是后端集成测试闭环，而不是继续扩展前端 mock 场景或引入真实外部依赖。
+
+### 关键改动点
+- 新增后端主流程 E2E 骨架测试：
+  - `tests/test_main_flow_e2e.py`
+- 更新任务与日志：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮未修改生产业务实现，只新增测试；如果后续任务状态流转、bearer 身份收口、识别任务结果落库、费用确认或导出门禁回归，这条主流程测试会首先暴露问题。
+- 本测试把“E2E 骨架”保守定义为仓库内可稳定运行的后端 API 集成链路，不引入真实 AI、Telegram、邮件或对象存储；真实外部依赖联调仍应留给后续“上线前主流程 E2E 演练并记录风险”任务。
+
+### 修改文件
+- `tests/test_main_flow_e2e.py`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_main_flow_e2e.py`
+    - 1 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+    - `pytest` 413 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 备注
+- `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量。
+- Web 测试期间仍打印 Node `--localstorage-file` 既有警告。
+- `vite build` 仍提示单个 chunk 超过 500 kB，这是仓库既有体积告警，本轮未新增构建失败。
+
+### 假设
+- 本轮默认“建立主流程 E2E 测试骨架”应在既有前端占位测试之外，再补一条后端真实 API 主链路；否则该任务与已完成的“建立前端主流程 E2E 占位”会出现职责重叠。
+
 ## 2026-04-29 04:45 - Add CLI argument parsing coverage
 
 ### 完成内容
