@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-28 18:52 - Record export job and download audit logs
+
+### 完成内容
+- 为导出任务链路补齐统一审计：
+  - 新增 `src/trms_backend/application/export_audit.py`，集中序列化导出任务创建、终态和产物下载三类审计明细；
+  - `src/trms_backend/api/exports.py` 的 `POST /api/tasks/{task_id}/exports` 在成功创建导出任务后写入 `create_task_export_job` 审计；
+  - `src/trms_backend/api/exports.py` 的 `GET /api/tasks/exports/{export_job_id}/artifact` 在成功下载导出产物后写入 `download_task_export_artifact` 审计；
+  - `src/trms_backend/application/export_async_jobs.py` 的 worker 在导出任务成功或失败收敛到终态时，分别写入 `complete_task_export_job` / `fail_task_export_job` 审计；
+  - `src/trms_backend/api/exports.py` 的手动状态更新接口也会在任务被显式置为 `succeeded` 或 `failed` 时复用同一终态审计辅助函数。
+- 补充导出审计回归测试：
+  - `tests/test_export_async_jobs.py` 断言创建、worker 成功、下载三类审计都会落库，且不暴露 `storage_key`；
+  - `tests/test_export_async_jobs.py` 断言未实现的 `merged_pdf` 导出任务失败时会写入包含导出类型和失败原因的失败审计；
+  - `tests/test_async_jobs.py` 跟进 `ExportAsyncJobProcessor` 新增的审计仓储依赖。
+
+### 根因
+- 导出能力虽然已经具备异步任务模型、状态查询和下载接口，但导出域仍未接入统一 `audit_logs`。
+- 如果继续保持现状，就无法回答“谁创建了哪类导出任务、worker 为什么失败、谁下载了最终导出产物”，不满足需求文档与架构文档对敏感导出操作可追溯的要求。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `src/trms_backend/__main__.py`
+- `src/trms_backend/api/exports.py`
+- `src/trms_backend/application/export_async_jobs.py`
+- `src/trms_backend/application/export_audit.py`
+- `src/trms_backend/main.py`
+- `tests/test_async_jobs.py`
+- `tests/test_export_async_jobs.py`
+
+### 验证结果
+- 已通过：
+  - `uv run pytest tests/test_export_async_jobs.py tests/test_async_jobs.py`
+    - 10 个测试通过
+  - `uv run pytest tests/test_exports_api.py -k 'export'`
+    - 21 个测试通过
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 临时 SQLite 迁移校验通过：`upgrade head -> downgrade base -> upgrade head`
+    - `pytest` 306 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 20 个测试文件、59 个测试通过
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出测试里的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 当前保守假设：导出审计对象统一记录为 `export_job`，以便围绕异步任务主键串联“创建 -> 终态 -> 下载”的完整链路；同步导出占位接口仍不额外写入审计，避免和异步导出任务重复记账。
+- 当前保守假设：审计中记录导出产物的文件名、类型、大小和哈希已足够满足追溯需求，因此不记录 `artifact_storage_key`、下载 URL 或任何长期访问凭证，避免泄露本地路径或存储实现细节。
+
 ## 2026-04-28 18:49 - Record split and confirmation audit logs
 
 ### 完成内容

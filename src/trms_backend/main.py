@@ -171,6 +171,7 @@ def create_app(
             validation_repository,
             split_repository,
             confirmation_repository,
+            audit_log_repository,
         )
     )
     app.include_router(

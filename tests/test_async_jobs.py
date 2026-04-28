@@ -6,6 +6,7 @@ import trms_backend.application.recognition_async_jobs as recognition_async_jobs
 from trms_backend.application.async_jobs import AsyncJobWorker, AsyncJobWorkerModeError
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_preparation import RecognitionTaskExecutionConflictError
+from trms_backend.domain.audit_logs import InMemoryAuditLogRepository
 from trms_backend.domain.exports import (
     StoredExportArtifactRecord,
     TaskExportJobRecord,
@@ -208,6 +209,7 @@ def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch
         validation_repository=object(),
         split_repository=object(),
         confirmation_repository=object(),
+        audit_log_repository=InMemoryAuditLogRepository(),
     )
     monkeypatch.setattr(
         processor,

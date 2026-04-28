@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 
 from trms_backend.application.async_jobs import AsyncJobProcessor
+from trms_backend.application.export_audit import (
+    SYSTEM_EXPORT_ACTOR_ID,
+    record_export_job_terminal_status_audit,
+)
+from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
     ExportArtifactFormat,
@@ -43,6 +48,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
         validation_repository: ValidationRepository,
         split_repository: ExpenseSplitRepository,
         confirmation_repository: ConfirmationRepository,
+        audit_log_repository: AuditLogRepository,
         batch_size: int = 10,
     ) -> None:
         self._task_repository = task_repository
@@ -53,6 +59,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
         self._validation_repository = validation_repository
         self._split_repository = split_repository
         self._confirmation_repository = confirmation_repository
+        self._audit_log_repository = audit_log_repository
         self._batch_size = batch_size
 
     def run_once(self) -> int:
@@ -87,22 +94,38 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                 processed_count += 1
                 continue
 
-            self._export_job_repository.update_status(
+            updated = self._export_job_repository.update_status(
                 claimed.id,
                 target_status=TaskExportJobStatus.SUCCEEDED,
                 artifact=artifact,
                 expected_current_status=TaskExportJobStatus.RUNNING,
             )
+            if updated is not None:
+                record_export_job_terminal_status_audit(
+                    self._audit_log_repository,
+                    actor_id=SYSTEM_EXPORT_ACTOR_ID,
+                    export_job=updated,
+                    previous_status=TaskExportJobStatus.RUNNING,
+                    request_id=None,
+                )
             processed_count += 1
         return processed_count
 
     def _fail_job(self, export_job_id: str, reason: str) -> None:
-        self._export_job_repository.update_status(
+        updated = self._export_job_repository.update_status(
             export_job_id,
             target_status=TaskExportJobStatus.FAILED,
             failure_reason=reason,
             expected_current_status=TaskExportJobStatus.RUNNING,
         )
+        if updated is not None:
+            record_export_job_terminal_status_audit(
+                self._audit_log_repository,
+                actor_id=SYSTEM_EXPORT_ACTOR_ID,
+                export_job=updated,
+                previous_status=TaskExportJobStatus.RUNNING,
+                request_id=None,
+            )
 
     def _build_current_export_snapshot(self, task: ReimbursementTask):
         invoices = self._invoice_repository.list_by_task(task.id)

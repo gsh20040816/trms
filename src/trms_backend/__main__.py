@@ -101,6 +101,7 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
                 validation_repository=validation_repository,
                 split_repository=split_repository,
                 confirmation_repository=confirmation_repository,
+                audit_log_repository=audit_log_repository,
             ),
         ),
     )

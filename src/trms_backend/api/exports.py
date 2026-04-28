@@ -1,15 +1,22 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
+from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.request_identity import (
     RequestIdentity,
     build_authenticated_request_identity_dependency,
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
+from trms_backend.application.export_audit import (
+    record_export_job_created_audit,
+    record_export_job_download_audit,
+    record_export_job_terminal_status_audit,
+)
+from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
@@ -93,6 +100,7 @@ def build_export_router(
     validation_repository: ValidationRepository,
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
+    audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["exports"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
@@ -508,6 +516,7 @@ def build_export_router(
     def create_export_job(
         task_id: str,
         payload: TaskExportJobRequestInput,
+        request: Request,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         task = task_repository.get(task_id)
@@ -526,6 +535,12 @@ def build_export_router(
                 payload=payload.to_domain(actor_id=resolved_actor_id),
                 snapshot=snapshot,
                 repository=export_job_repository,
+            )
+            record_export_job_created_audit(
+                audit_log_repository,
+                actor_id=resolved_actor_id,
+                export_job=export_job,
+                request_id=ensure_request_id(request),
             )
             return with_export_job_status_view(task, export_job)
         except ValidationError as error:
@@ -616,6 +631,7 @@ def build_export_router(
     @router.get("/exports/{export_job_id}/artifact")
     def download_export_job_artifact(
         export_job_id: str,
+        request: Request,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
         actor_id: Annotated[str | None, Query(min_length=1)] = None,
     ):
@@ -669,6 +685,12 @@ def build_export_router(
                 detail="export artifact file is missing from storage",
             ) from error
 
+        record_export_job_download_audit(
+            audit_log_repository,
+            actor_id=resolved_actor_id,
+            export_job=export_job,
+            request_id=ensure_request_id(request),
+        )
         return Response(
             content=content,
             media_type=export_job.artifact.content_type or "application/octet-stream",
@@ -681,6 +703,7 @@ def build_export_router(
     def update_export_job_status(
         export_job_id: str,
         payload: TaskExportJobStatusUpdateInput,
+        request: Request,
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         export_job = export_job_repository.get(export_job_id)
@@ -699,11 +722,19 @@ def build_export_router(
             field_name="actor_id",
         )
         try:
+            previous_status = export_job.status
             updated = update_task_export_job_status(
                 task,
                 export_job=export_job,
                 payload=payload.to_domain(actor_id=resolved_actor_id),
                 repository=export_job_repository,
+            )
+            record_export_job_terminal_status_audit(
+                audit_log_repository,
+                actor_id=resolved_actor_id,
+                export_job=updated,
+                previous_status=previous_status,
+                request_id=ensure_request_id(request),
             )
             return with_export_job_status_view(task, updated)
         except ValidationError as error:

@@ -1,8 +1,10 @@
 from fastapi.testclient import TestClient
 
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
+from trms_backend.domain.audit_logs import AuditLogResult
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
+    SqlAlchemyAuditLogRepository,
     SqlAlchemyConfirmationRepository,
     SqlAlchemyExportJobRepository,
     SqlAlchemyExpenseSplitRepository,
@@ -90,6 +92,17 @@ def build_processor(tmp_path, runtime_config) -> ExportAsyncJobProcessor:
         validation_repository=SqlAlchemyValidationRepository(session_factory),
         split_repository=SqlAlchemyExpenseSplitRepository(session_factory),
         confirmation_repository=SqlAlchemyConfirmationRepository(session_factory),
+        audit_log_repository=SqlAlchemyAuditLogRepository(session_factory),
+    )
+
+
+def list_export_job_audit_logs(tmp_path, *, export_job_id: str):
+    repository = SqlAlchemyAuditLogRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return repository.list_by_object(
+        object_type="export_job",
+        object_id=export_job_id,
     )
 
 
@@ -149,6 +162,31 @@ def test_export_async_processor_persists_artifact_and_exposes_download(tmp_path)
     )
     assert "expense_type,total_amount_cents" in download_response.text
     assert "grand_total" in download_response.text
+
+    audit_logs = list_export_job_audit_logs(tmp_path, export_job_id=export_job["id"])
+
+    assert len(audit_logs) == 3
+    assert audit_logs[0].actor_id == "admin-1"
+    assert audit_logs[0].action == "create_task_export_job"
+    assert audit_logs[0].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[0].task_id == task_id
+    assert audit_logs[0].request_id.startswith("req_")
+    assert audit_logs[0].detail["kind"] == "reimbursement_summary"
+    assert audit_logs[0].detail["format"] == "csv"
+    assert audit_logs[1].actor_id == "system:export-worker"
+    assert audit_logs[1].action == "complete_task_export_job"
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[1].request_id is None
+    assert audit_logs[1].detail["previous_status"] == "running"
+    assert audit_logs[1].detail["status"] == "succeeded"
+    assert audit_logs[1].detail["artifact"]["filename"] == f"{task_id}-reimbursement-summary.csv"
+    assert "storage_key" not in str(audit_logs[1].detail)
+    assert audit_logs[2].actor_id == "admin-1"
+    assert audit_logs[2].action == "download_task_export_artifact"
+    assert audit_logs[2].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[2].request_id.startswith("req_")
+    assert audit_logs[2].detail["artifact"]["filename"] == f"{task_id}-reimbursement-summary.csv"
+    assert "storage_key" not in str(audit_logs[2].detail)
 
 
 def test_export_artifact_download_reports_not_ready_and_rejects_non_admin(tmp_path):
@@ -285,3 +323,20 @@ def test_export_async_processor_marks_unimplemented_job_failed(tmp_path):
         "export artifact is unavailable because the job failed: "
         "export format pdf is not implemented yet for merged_pdf"
     )
+
+    audit_logs = list_export_job_audit_logs(tmp_path, export_job_id=export_job["id"])
+
+    assert len(audit_logs) == 2
+    assert audit_logs[0].action == "create_task_export_job"
+    assert audit_logs[0].detail["kind"] == "merged_pdf"
+    assert audit_logs[0].detail["format"] == "pdf"
+    assert audit_logs[1].actor_id == "system:export-worker"
+    assert audit_logs[1].action == "fail_task_export_job"
+    assert audit_logs[1].result is AuditLogResult.FAILED
+    assert audit_logs[1].request_id is None
+    assert audit_logs[1].detail["previous_status"] == "running"
+    assert audit_logs[1].detail["status"] == "failed"
+    assert audit_logs[1].detail["failure_reason"] == (
+        "export format pdf is not implemented yet for merged_pdf"
+    )
+    assert audit_logs[1].detail["artifact"] is None
