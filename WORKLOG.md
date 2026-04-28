@@ -1,5 +1,67 @@
 # WORKLOG
 
+## 2026-04-28 14:39 - Redesign web shell and role workbench information architecture
+
+### 完成内容
+- 更新 `web/src/app/pages.tsx` 与 `web/src/styles.css`：
+  - 用统一工作台壳层替换原先“首页大段边界说明”布局；
+  - 新增顶部导航、会话摘要、统一品牌区和五阶段流程条；
+  - 首页改成流程总览 + 角色入口 + 操作原则三段式结构，优先展示“当前阶段”“下一步动作”而不是静态说明。
+- 重做 `web/src/app/admin-task-list.tsx`：
+  - 管理员入口从普通列表改成工作台；
+  - 增加任务概览指标、异常优先级排序、推荐动作和复核快捷入口；
+  - 任务卡片直接暴露“先处理 Must 级失败校验 / 成员异议 / 识别异常 / 导出准备”等推进建议。
+- 重做 `web/src/app/member-task-list.tsx`：
+  - 成员入口改成按状态排序的任务工作台；
+  - 增加“开放提交 / 等待补充或确认 / 进入归档阶段”概览指标；
+  - 每个任务卡片直接给出推荐动作，并把上传、缺失材料、材料状态和费用确认入口收敛到同一卡片。
+- 更新前端测试：
+  - `web/src/app/App.test.tsx`
+  - `web/src/app/admin-task-list.test.tsx`
+  - `web/src/app/member-task-list.test.tsx`
+  使其覆盖新版首页、管理员工作台和成员工作台的关键文案与主操作入口。
+- 更新 `TASKS.md`，将“重构 Web 首页与角色工作台信息架构”标记为已完成。
+
+### 根因
+- 现有前端不是功能不够，而是首页、管理员入口和成员入口都在重复解释系统边界，缺少工作台视角。
+- 这导致两个直接问题：
+  - 视觉上表现为大量同质化卡片堆叠，缺少层级、节奏和重点；
+  - 交互上表现为用户先读说明再找入口，无法一眼判断“当前阶段是什么”“下一步该做什么”“哪些任务最急”。
+- 因此本轮没有继续堆更多页面，而是先重构共享壳层和两类角色首屏的信息架构，把前端主逻辑从“读说明”改为“看状态 -> 看异常 -> 进下一步”。
+
+### 修改文件
+- `TASKS.md`
+- `WORKLOG.md`
+- `web/src/app/App.test.tsx`
+- `web/src/app/admin-task-list.test.tsx`
+- `web/src/app/admin-task-list.tsx`
+- `web/src/app/member-task-list.test.tsx`
+- `web/src/app/member-task-list.tsx`
+- `web/src/app/pages.tsx`
+- `web/src/styles.css`
+
+### 验证结果
+- 已通过：
+  - `cd web && npm test -- src/app/App.test.tsx src/app/admin-task-list.test.tsx src/app/member-task-list.test.tsx`
+    - 3 个测试文件、11 个测试通过
+  - `cd web && npm run lint`
+  - `cd web && npm run build`
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - `pytest` 246 个用例通过
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过
+    - 前端测试共 18 个测试文件、52 个测试通过
+    - `git diff --check` 通过
+- 备注：
+  - `pytest` 期间仍有 3 条既有 `DeprecationWarning`，来源于导出相关测试路径中的旧 `HTTP_422_UNPROCESSABLE_ENTITY` 常量引用；
+  - 前端测试期间仍打印 Node `--localstorage-file` 既有警告。
+  以上均为仓库已有现象，本轮未新增相关行为。
+
+### 假设
+- 本轮只重构共享壳层、首页和管理员/成员两个角色工作台首屏，不顺手重写发票编辑、复核详情、导出等深层页面，避免把“前端变丑”问题扩散成无边界重写。
+- 本轮保守假设最优先的“工作逻辑”问题是信息架构和入口排序，而不是后端 API 语义变化；因此没有改动任何业务接口，也没有引入新依赖或组件库。
+- 本轮继续沿用现有 mock / bearer 会话边界；真实生产级权限收口仍应由后续权限任务处理，而不是在视觉改版中偷偷混入业务语义变更。
+
 ## 2026-04-28 13:55 - Integrate OpenAI-compatible structured LLM recognition
 
 ### 完成内容

@@ -87,6 +87,7 @@ describe("MemberTaskListPage", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "成员可提交任务" })).toBeInTheDocument();
+    expect(screen.getByLabelText("成员任务概览")).toBeInTheDocument();
     const taskList = screen.getByLabelText("成员可见任务列表");
     const taskCards = within(taskList).getAllByRole("article");
     expect(taskCards).toHaveLength(1);
@@ -96,6 +97,7 @@ describe("MemberTaskListPage", () => {
     }
     expect(within(taskCard).getByText("ICPC Xi'an Regional")).toBeInTheDocument();
     expect(within(taskCard).getAllByText("开放提交")).toHaveLength(2);
+    expect(within(taskCard).getByText("先上传或补齐材料")).toBeInTheDocument();
     expect(within(taskCard).getByRole("link", { name: "上传材料" })).toHaveAttribute(
       "href",
       "/member/materials/upload?taskId=TASK-OPEN",

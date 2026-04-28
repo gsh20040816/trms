@@ -163,8 +163,10 @@ describe("admin task list page", () => {
     renderAdminRoute();
 
     expect(await screen.findByRole("heading", { name: "管理员任务列表" })).toBeInTheDocument();
+    expect(screen.getByLabelText("管理员任务概览")).toBeInTheDocument();
     expect(screen.getByText("全国邀请赛")).toBeInTheDocument();
     expect(screen.getByText("区域赛报销")).toBeInTheDocument();
+    expect(screen.getByText("先处理 Must 级失败校验")).toBeInTheDocument();
 
     const alphaSummary = within(screen.getByLabelText("TASK-ALPHA 异常摘要"));
     expect(alphaSummary.getByText("Must 级失败校验")).toBeInTheDocument();

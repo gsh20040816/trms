@@ -30,12 +30,13 @@ describe("web app account auth", () => {
 
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole("heading", { name: "报销收集前端入口与账号登录已建立" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "登录后进入" })).toHaveLength(3);
-    expect(screen.getByText("管理员后台")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "账号登录与角色入口边界已固定" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "前端 API 类型与错误边界已建立" })).toBeInTheDocument();
-    expect(screen.getByText("统一解析 detail/message/字段校验错误，不在前端静默吞掉")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "把报销流程变成一条可推进的工作流" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "按阶段推进，不按页面迷路" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "查看该入口" })).toHaveLength(3);
+    expect(screen.getByRole("heading", { name: "管理员后台" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "当前前端先解决三件事" })).toBeInTheDocument();
+    expect(screen.getByText("先看下一步")).toBeInTheDocument();
+    expect(screen.getByText("先看异常")).toBeInTheDocument();
   });
 
   it("redirects unauthenticated users to the account login page", () => {
