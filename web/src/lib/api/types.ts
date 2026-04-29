@@ -78,6 +78,36 @@ export type AuthSessionResponse = {
   user: AuthenticatedUser;
 };
 
+export type GlobalInvoiceConfig = {
+  invoice_title: string;
+  tax_number: string;
+};
+
+export type RuntimeSummary = {
+  environment: string;
+  public_api_base_url: string;
+  async_job_mode: string;
+  file_storage_backend: string;
+  llm_provider_configured: boolean;
+  allow_admin_self_register: boolean;
+  bootstrap_admin_configured: boolean;
+  telegram_inbound_configured: boolean;
+  email_inbound_configured: boolean;
+};
+
+export type SystemUserCountSummary = {
+  member: number;
+  admin: number;
+  system_admin: number;
+};
+
+export type SystemDashboard = {
+  service_health: string;
+  global_invoice_config: GlobalInvoiceConfig | null;
+  runtime: RuntimeSummary;
+  user_counts: SystemUserCountSummary;
+};
+
 export type RegisterPayload = {
   username: string;
   password: string;

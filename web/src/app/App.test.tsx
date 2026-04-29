@@ -191,7 +191,8 @@ describe("web app account auth", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "系统管理员工作台" })).toBeInTheDocument();
-    expect(screen.getByText("这里集中处理账号、角色、全局配置和运行状态。普通报销任务入口不会显示技术诊断信息。")).toBeInTheDocument();
+    expect(screen.getByText("集中维护全局发票配置，并查看当前运行环境、异步模式和渠道开关等安全可见的系统状态。")).toBeInTheDocument();
+    expect(screen.getByText("当前系统管理员：赵系统管理员")).toBeInTheDocument();
   });
 
   it("shows only the current member workspace on the logged-in home page", () => {

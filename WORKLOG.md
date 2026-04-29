@@ -1,5 +1,61 @@
 # WORKLOG
 
+## 2026-04-29 16:36 - Make the system admin panel usable with real config and runtime data
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“让系统管理面板接入真实配置与巡检能力”。
+- 新增系统管理员专用后端接口：
+  - `GET /api/system/dashboard`
+  - `PUT /api/system/global-invoice-config`
+- `/system` 页面不再是静态占位卡片，现已可：
+  - 读取并保存全局发票抬头与税号配置
+  - 展示真实运行态摘要，包括环境、公开 API 基地址、异步任务模式、文件存储后端和渠道/LLM 配置开关
+  - 展示真实的成员/管理员/系统管理员账号计数
+- 新增前后端回归测试覆盖系统管理员访问、普通管理员阻断和配置保存路径。
+
+### 根因
+- 原 `web/src/app/system-admin-dashboard.tsx` 只有写死文案和写死统计数字，没有接任何真实后端能力，因此“系统管理面板”实际上不可用。
+- 后端此前也没有系统管理员专用的配置/巡检 API，导致前端即使补 UI，也无真实数据源可读写。
+
+### 关键改动点
+- 修改：
+  - `src/trms_backend/main.py`
+  - `web/src/lib/api/trms.ts`
+  - `web/src/lib/api/types.ts`
+  - `web/src/app/system-admin-dashboard.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+- 新增：
+  - `src/trms_backend/api/system.py`
+  - `tests/test_system_admin_api.py`
+  - `web/src/app/system-admin-dashboard.test.tsx`
+
+### 风险与影响面
+- 本轮只让系统管理员页面接入“全局发票配置 + 安全运行态摘要”，没有顺带实现用户列表管理、角色审批流或审计日志明细查询。
+- 运行态摘要刻意只返回布尔开关和安全字段，不返回 token、密钥或长期凭据原文。
+
+### 验证结果
+- 已通过定向后端回归：
+  - `uv run pytest tests/test_system_admin_api.py`
+- 已通过定向前端回归：
+  - `cd web && npm test -- App.test.tsx system-admin-dashboard.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：425 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、82 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 验证过程中修正了一处伴随回归：
+  - mock 多角色会话切到 `/system` 时此前只改 `role`，未同步 mock 的 `actorId` / `displayName` / `memberCode`；
+  - 本轮已在 `web/src/app/auth-store.ts` 一并修复，并更新 `web/src/app/App.test.tsx` 断言。
+
+### 假设
+- 当前“系统管理面板可用”的最小闭环定义为：系统管理员能够维护至少一项真实系统级配置，并能看到可验证的运行态摘要；用户管理和审计明细继续留给后续独立任务。
+
 ## 2026-04-29 16:22 - Migrate the admin split editor form to MUI TextField and Select
 
 ### 完成内容

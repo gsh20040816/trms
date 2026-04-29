@@ -10,6 +10,7 @@ import type {
   ExpenseSplitRecord,
   ExpenseSplitReplace,
   FinanceDraftExport,
+  GlobalInvoiceConfig,
   InvoiceRecord,
   LoginPayload,
   ManualInvoiceEntry,
@@ -26,6 +27,7 @@ import type {
   RegisterPayload,
   ReimbursementTask,
   RoleSwitchPayload,
+  SystemDashboard,
   TaskCreateInput,
   TaskExportBoundary,
   TaskExportJobRecord,
@@ -142,6 +144,17 @@ export const trmsApi = {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+    });
+  },
+
+  getSystemDashboard() {
+    return apiClient.request<SystemDashboard>("/system/dashboard");
+  },
+
+  updateGlobalInvoiceConfig(payload: GlobalInvoiceConfig) {
+    return apiClient.request<GlobalInvoiceConfig>("/system/global-invoice-config", {
+      method: "PUT",
+      body: payload,
     });
   },
 

@@ -22,6 +22,7 @@ from trms_backend.api.invoices import build_invoice_router
 from trms_backend.api.materials import build_material_router
 from trms_backend.api.recognitions import build_recognition_router
 from trms_backend.api.splits import build_split_router
+from trms_backend.api.system import build_system_router
 from trms_backend.api.telegram_materials import build_telegram_material_router
 from trms_backend.api.tasks import build_task_router
 from trms_backend.api.telegram_bindings import build_telegram_binding_router
@@ -163,6 +164,13 @@ def create_app(
                 if config.auth.bootstrap_admin_token is not None
                 else None
             ),
+        )
+    )
+    app.include_router(
+        build_system_router(
+            auth_repository,
+            global_invoice_config_repository,
+            config,
         )
     )
     app.include_router(

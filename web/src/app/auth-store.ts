@@ -251,9 +251,13 @@ export async function switchCurrentRole(role: UserRole) {
   }
 
   if (currentSession.isMock || !currentSession.accessToken) {
+    const roleRoute = getRoleRouteOrThrow(role);
     currentSession = {
       ...currentSession,
       role,
+      actorId: roleRoute.mockActorId,
+      displayName: roleRoute.mockDisplayName,
+      memberCode: roleRoute.mockMemberCode,
     };
     persistSession(currentSession);
     emitChange();
