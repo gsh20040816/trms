@@ -1,5 +1,61 @@
 # WORKLOG
 
+## 2026-04-29 12:11 - Migrate dashboard primitives to MUI Material 3 internals
+
+### 完成内容
+- 重写 `web/src/components/dashboard.tsx`，把 8 个公共 UI 原语全部从原生 HTML + `styles.css` 类名改为 MUI v7 内部实现，对外 API 完全保持向后兼容：
+  - `StatusBadge`：内部改用 MUI `<Chip>`，按 `tone` 映射颜色（neutral=outlined, info/warning/danger/success=filled）。
+  - `SectionCard`：内部改用 `<Card component="section" variant="outlined">`，标题区使用 Typography h6，描述区使用 body2 secondary。
+  - `PageHeader`：内部改用 `<Box component="section">` + Stack 响应式布局，标题用 Typography h3，保留原 `<h1>` 角色（`component="h1"`）。
+  - `StatCard`：内部改用 `<Card component="article" variant="outlined">`，保留 `<article>` 标签以兼容业务页内 `closest("article")` 查询。
+  - `EmptyState`：内部改用 dashed outlined Card。
+  - `ErrorMessage`：内部改用 `<Alert severity="error" variant="outlined" role="alert">` + `<AlertTitle>`，详情用 ul/li 列表。
+  - `RoleWorkspace`：内部改用 MUI Stack 控制纵向间距，仍保留 `.workspace-page` 类名以避免现有 CSS 选择器抖动。
+  - `TaskTable`：内部改用 MUI Table + TableHead + TableBody + TableContainer，caption 仍存在但通过 sr-only 样式视觉隐藏。
+- 30+ 业务页面（成员任务列表/工作台/状态/确认；管理员任务列表/详情/复核/分摊/导出/提醒等）一行不改，立即获得 M3 视觉：surface tonal、Card 圆角、Chip 状态色、Typography scale、统一 elevation。
+
+### 根因
+- 原 `dashboard.tsx` 是手写 HTML + 自造 CSS 类名（`.panel-card`/`.status-card`/`.stat-card`/`.status-badge-*`），与 Round 2 引入的 M3 主题严重脱节。
+- 一轮内重写所有调用方业务页（4500+ 行成员页 + 同等量级管理员页）不现实；按 AGENTS.md "不要一次性重写大块架构" 原则，更稳健的做法是改公共原语内部实现而保持对外 API 不变，让所有页面立即视觉对齐。
+- 此外，本轮明确把"重写成员单任务工作台（Tabs 化）"留给后续轮次，因为它涉及 1900+ 行业务交互且存在大量 `closest("article")` 等结构断言，需要单独一轮处理。
+
+### 关键改动点
+- 重写：
+  - `web/src/components/dashboard.tsx`：从基于 className + 原生 HTML 的实现改为 MUI 内部实现，对外 API 完全不变。
+- 任务调整：
+  - `TASKS.md` 在 P5 中新增并标记完成"让 dashboard 公共组件视觉对齐 MUI Material 3"子任务（视为 Round 6 系列的 6.2 实际完成项）；原 6.2"Tabs 化"工作台任务保留为后续轮次。
+
+### 风险与影响面
+- 业务行为无变化：所有 props、children、aria-label、heading 角色、`<article>` / `<section>` / `<table>` 标签都保持，30+ 业务页 + 21 测试文件 + 69 用例全部无修改通过。
+- 视觉对齐：当用户进入任意业务页面时（成员任务列表 / 单任务工作台 / 管理员任务详情等），KPI 卡、SectionCard、状态 Chip、错误 Alert 均自动呈 M3 风格。
+- bundle gzipped 略增（Alert/AlertTitle/Chip/Stack/Table 已在前序轮次引入；本轮没有新增组件）。
+- 现有 `styles.css` 中的 `.panel-card` / `.status-card` / `.stat-card` / `.empty-state` / `.error-card` / `.dashboard-table` 等类名虽不再驱动外观，但仍保留以兼容业务页内的辅助类（如 `.task-card`、`.member-confirmation-card`）。这些将在 Round 10 统一清理。
+
+### 修改文件
+- `web/src/components/dashboard.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 业务页内大量 `closest("article")` / `closest("section")` 断言要求 StatCard/SectionCard 等仍输出 `<article>` / `<section>` 元素；本轮通过 `component="article"` / `component="section"` 明确传递给 MUI Card 满足该要求。
+- `<table>` 仍由 MUI 渲染为合法 `<table>`，TableHead 与 TableBody 同样保留 `<thead>` / `<tbody>` 语义；测试中 `getByRole("table")` 与 `within(table).getByText(...)` 全部通过。
+- ErrorMessage 用 Alert 替换原 panel-card 错误卡，但仍保留 role="alert" 与 detail label/message 列表语义。
+
+### 备注
+- 这一轮是本批 P5 重写中"投入产出比"最高的一轮：30+ 业务页面全部一次性视觉升级，不必为每一页单独写 PR。
+- 后续 Round 6.2"Tabs 化"工作台仍保留为待办，将在更聚焦的轮次中处理。
+
 ## 2026-04-29 12:08 - Rewrite member task list with Material 3 visuals and split workbench rounds
 
 ### 完成内容

@@ -1194,6 +1194,13 @@
     - 列表项与详情仍保持现有业务行为，本轮不改后端接口
     - 现有 `member-invoice-workbench.test.tsx` 测试通过或同步更新
 
+- [x] 让 dashboard 公共组件视觉对齐 MUI Material 3
+  - Done when:
+    - `web/src/components/dashboard.tsx` 中 `PageHeader` / `SectionCard` / `StatCard` / `EmptyState` / `ErrorMessage` / `RoleWorkspace` / `TaskTable` / `StatusBadge` 内部全部改为基于 MUI v7 实现
+    - 对外 API（props 名、children、heading 角色、aria-label）保持不变，不破坏现有 30+ 个测试和业务页面
+    - 视觉与新 M3 主题对齐：surface、elevation、Chip 状态色、Card 圆角、Typography scale
+    - `npm run lint` / `npm test` / `npm run build` 全部通过
+
 - [ ] 重写成员材料上传交互（拖拽 Dialog + Snackbar）
   - Done when:
     - `/member/materials/upload` 改为 M3 拖拽上传卡 + 单文件状态显示

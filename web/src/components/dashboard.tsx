@@ -1,5 +1,18 @@
 import type { ReactNode } from "react";
 
+import Alert from "@mui/material/Alert";
+import AlertTitle from "@mui/material/AlertTitle";
+import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Chip, { type ChipProps } from "@mui/material/Chip";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import Typography from "@mui/material/Typography";
+
 type BadgeTone = "neutral" | "info" | "warning" | "danger" | "success";
 
 type PageHeaderProps = {
@@ -40,6 +53,14 @@ type TaskTableProps = {
   children: ReactNode;
 };
 
+const TONE_CHIP_COLOR: Record<BadgeTone, ChipProps["color"]> = {
+  neutral: "default",
+  info: "info",
+  warning: "warning",
+  danger: "error",
+  success: "success",
+};
+
 export function StatusBadge({
   tone = "neutral",
   children,
@@ -47,7 +68,17 @@ export function StatusBadge({
   tone?: BadgeTone;
   children: ReactNode;
 }) {
-  return <span className={`status-badge status-badge-${tone}`}>{children}</span>;
+  const color = TONE_CHIP_COLOR[tone];
+  const variant: ChipProps["variant"] = tone === "neutral" ? "outlined" : "filled";
+  return (
+    <Chip
+      size="small"
+      color={color}
+      variant={variant}
+      label={children}
+      sx={{ fontWeight: 700 }}
+    />
+  );
 }
 
 export function SectionCard({
@@ -62,98 +93,174 @@ export function SectionCard({
   children?: ReactNode;
 }) {
   return (
-    <section className="panel-card">
-      <div className="panel-card-header">
-        <div>
-          <h2>{title}</h2>
-          {description ? <p>{description}</p> : null}
-        </div>
-        {action ? <div className="panel-card-action">{action}</div> : null}
-      </div>
-      {children}
-    </section>
+    <Card component="section" variant="outlined">
+      <CardContent>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          alignItems={{ xs: "flex-start", sm: "flex-start" }}
+          justifyContent="space-between"
+          spacing={1.5}
+          sx={{ mb: children ? 2 : 0 }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography component="h2" variant="h6" sx={{ lineHeight: 1.25 }}>
+              {title}
+            </Typography>
+            {description ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                {description}
+              </Typography>
+            ) : null}
+          </Box>
+          {action ? <Box>{action}</Box> : null}
+        </Stack>
+        {children ? <Box>{children}</Box> : null}
+      </CardContent>
+    </Card>
   );
 }
 
 export function PageHeader({ eyebrow, title, description, meta, actions }: PageHeaderProps) {
   return (
-    <section className="page-header">
-      <div className="page-header-body">
-        {eyebrow ? <p className="page-header-eyebrow">{eyebrow}</p> : null}
-        <h1>{title}</h1>
-        <p>{description}</p>
-        {meta ? <p className="page-header-meta">{meta}</p> : null}
-      </div>
-      {actions ? <div className="page-header-actions">{actions}</div> : null}
-    </section>
+    <Box component="section" sx={{ mb: 1 }}>
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        alignItems={{ xs: "flex-start", md: "flex-end" }}
+        justifyContent="space-between"
+        spacing={2}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          {eyebrow ? (
+            <Typography variant="overline" color="text.secondary">
+              {eyebrow}
+            </Typography>
+          ) : null}
+          <Typography component="h1" variant="h3" sx={{ mt: eyebrow ? 0.5 : 0, mb: 1 }}>
+            {title}
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 720 }}>
+            {description}
+          </Typography>
+          {meta ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+              {meta}
+            </Typography>
+          ) : null}
+        </Box>
+        {actions ? <Box>{actions}</Box> : null}
+      </Stack>
+    </Box>
   );
 }
 
 export function StatCard({ label, value, description }: StatCardProps) {
   return (
-    <article className="stat-card">
-      <p className="stat-card-label">{label}</p>
-      <strong className="stat-card-value">{value}</strong>
-      <p className="stat-card-description">{description}</p>
-    </article>
+    <Card component="article" variant="outlined" sx={{ height: "100%" }}>
+      <CardContent>
+        <Typography variant="overline" color="text.secondary" component="p">
+          {label}
+        </Typography>
+        <Typography component="strong" variant="h4" sx={{ display: "block", my: 0.5, fontWeight: 600, lineHeight: 1.1 }}>
+          {value}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" component="p">
+          {description}
+        </Typography>
+      </CardContent>
+    </Card>
   );
 }
 
 export function EmptyState({ title, description, action }: EmptyStateProps) {
   return (
-    <section className="empty-state">
-      <div>
-        <h2>{title}</h2>
-        <p>{description}</p>
-      </div>
-      {action ? <div className="empty-state-action">{action}</div> : null}
-    </section>
+    <Card
+      component="section"
+      variant="outlined"
+      sx={{
+        borderStyle: "dashed",
+      }}
+    >
+      <CardContent>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          alignItems={{ xs: "flex-start", sm: "center" }}
+          justifyContent="space-between"
+          spacing={2}
+        >
+          <Box>
+            <Typography component="h2" variant="h6">
+              {title}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {description}
+            </Typography>
+          </Box>
+          {action ? <Box>{action}</Box> : null}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
 export function ErrorMessage({ title, message, details = [] }: ErrorMessageProps) {
   return (
-    <section className="panel-card error-card" role="alert" aria-live="polite">
-      <div className="panel-card-header">
-        <div>
-          <h2>{title}</h2>
-          <p>{message}</p>
-        </div>
-        <StatusBadge tone="danger">需要处理</StatusBadge>
-      </div>
+    <Alert
+      severity="error"
+      variant="outlined"
+      role="alert"
+      sx={{ alignItems: "flex-start" }}
+    >
+      <AlertTitle component="h2" sx={{ fontWeight: 700, fontSize: "1.05rem" }}>
+        {title}
+      </AlertTitle>
+      <Typography variant="body2" sx={{ mb: details.length > 0 ? 1.5 : 0 }}>
+        {message}
+      </Typography>
       {details.length > 0 ? (
-        <ul className="error-detail-list">
+        <Box component="ul" sx={{ m: 0, pl: 2.5, display: "grid", gap: 0.5 }}>
           {details.map((detail) => (
-            <li key={`${detail.label}:${detail.message}`}>
-              <strong>{detail.label}</strong>
-              <span>{detail.message}</span>
-            </li>
+            <Box component="li" key={`${detail.label}:${detail.message}`} sx={{ display: "block" }}>
+              <Typography component="strong" variant="body2" sx={{ fontWeight: 700, mr: 1 }}>
+                {detail.label}
+              </Typography>
+              <Typography component="span" variant="body2">
+                {detail.message}
+              </Typography>
+            </Box>
           ))}
-        </ul>
+        </Box>
       ) : null}
-    </section>
+    </Alert>
   );
 }
 
 export function RoleWorkspace({ header, summary, children }: RoleWorkspaceProps) {
   return (
-    <div className="workspace-page">
+    <Stack className="workspace-page" spacing={2.5}>
       {header}
       {summary}
       {children}
-    </div>
+    </Stack>
   );
 }
 
 export function TaskTable({ caption, header, children }: TaskTableProps) {
   return (
-    <div className="table-shell">
-      <table className="dashboard-table">
-        <caption className="sr-only">{caption}</caption>
-        <thead>{header}</thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
+    <TableContainer
+      component={Box}
+      sx={{
+        borderRadius: 2,
+        border: 1,
+        borderColor: "divider",
+      }}
+    >
+      <Table aria-label={caption} size="small">
+        <Box component="caption" sx={{ position: "absolute", width: 1, height: 1, p: 0, m: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}>
+          {caption}
+        </Box>
+        <TableHead>{header}</TableHead>
+        <TableBody>{children}</TableBody>
+      </Table>
+    </TableContainer>
   );
 }
-
