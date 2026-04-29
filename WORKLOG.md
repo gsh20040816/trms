@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-04-29 14:31 - Fix member workbench recognition blocking states from UX test
+
+### 完成内容
+- 修复成员工作台把识别阻塞状态错误展示为“暂无识别记录 / 当前无明显异常”的问题：
+  - 识别任务仍处于 `pending` 时，发票卡片会明确显示“识别处理中”，并在待处理事项中提示“等待系统完成识别”；
+  - 识别失败原因为 `llm_provider_not_configured` 或 `structured_recognition_not_configured` 时，前端不再给泛化失败文案，而是明确提示“当前环境未配置识别服务”；
+  - 顶部“待处理事项”摘要现在会把识别排队、识别失败/待确认、校验异常、缺失材料和待确认费用一起计入，不再过早报绿。
+- 新增前端回归测试：
+  - 识别任务仍在排队时，工作台必须显示阻塞态与等待说明；
+  - 识别服务未配置时，工作台必须显示明确的环境阻塞说明。
+- `TASKS.md` 中“按 UX 实测收口成员工作台识别阻塞提示”已标记完成。
+
+### 根因
+- 成员工作台详细卡片使用的是 `/materials/:id/recognition-tasks` 返回的 `latest_effective` 结果，但该字段按设计不会包含仍为 `pending` 的识别任务。
+- 因此前端在“已有 pending 识别任务但尚无 latest effective 结果”时，把真实状态误读成“暂无识别记录”。
+- 同时，顶部待处理事项没有把 `recognition_pending_count` 计入，导致只要还没形成失败校验或缺失材料，就可能错误显示“当前无明显异常”。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/member-invoice-workbench.tsx`
+  - `web/src/app/member-invoice-workbench.test.tsx`
+  - `web/src/lib/ui-text.ts`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只改成员工作台前端状态表达，不改后端识别执行、队列调度或发票生成逻辑。
+- `describeRecognitionFailure()` 新增了对“识别服务未配置”的专门文案，会影响其他复用该函数的前端页面；当前这是有意的统一修正。
+- 识别排队中现在会被视为“仍待处理”而不是“异常”，因此待处理徽标文案从纯异常数改成了更宽泛的待处理项计数。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、74 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 本轮只解决“状态表达错了”的 UX 阻塞，不等同于真正补齐识别服务配置、异步 worker 编排或识别成功后的发票生成链路。
+- UX 报告中的共享发票为空、附件未归属等问题仍需后续独立轮次继续处理。
+
 ## 2026-04-29 14:16 - Run real-data UX browser test and patch low-risk blockers
 
 ### 完成内容

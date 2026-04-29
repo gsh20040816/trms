@@ -203,6 +203,15 @@ export function describeRecognitionFailure(failure: RecognitionFailureDetail | n
     return "系统暂时无法识别该材料，请补充更清晰的文件或稍后重试。";
   }
 
+  if (
+    failure.stage === "ai"
+    && (
+      failure.reason === "llm_provider_not_configured"
+      || failure.reason === "structured_recognition_not_configured"
+    )
+  ) {
+    return "当前环境未配置识别服务，系统暂时不能自动生成发票结构化结果；请联系管理员配置识别服务或改为人工补录。";
+  }
   if (failure.stage === "ocr") {
     return "图片内容未能成功识别，请上传更清晰的图片或手动补充信息。";
   }

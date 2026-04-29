@@ -816,6 +816,251 @@ describe("MemberInvoiceWorkbenchPage", () => {
     );
   });
 
+  it("shows pending recognition as a blocking state instead of pretending nothing happened", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-PENDING",
+            status: "open",
+            competition_name: "ICPC Pending Recognition",
+            competition_location: "南京",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-PENDING/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-PENDING",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 1,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 1,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-PENDING-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "pending.pdf",
+              material_status: "assigned",
+              recognition_status: "pending",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: null,
+              invoice_number: null,
+              validation_status: "not_applicable",
+              validation_messages: [],
+              created_at: "2026-04-28T14:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-PENDING/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/materials/MAT-PENDING-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: null,
+          items: [
+            {
+              id: "REC-PENDING-001",
+              material_id: "MAT-PENDING-001",
+              status: "pending",
+              is_final_fact: false,
+              failure: null,
+              raw_response: null,
+              recognized_fields: {},
+              manual_corrections: [],
+              created_at: "2026-04-28T14:00:10+08:00",
+              updated_at: "2026-04-28T14:00:10+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-PENDING",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in pending recognition workbench test: ${url}`);
+    });
+
+    renderWorkbenchRoute("/member/invoices/workbench?taskId=TASK-PENDING");
+
+    expect(await screen.findByText("1 项仍待处理")).toBeInTheDocument();
+    expect(screen.getByText("等待系统完成识别")).toBeInTheDocument();
+    expect(screen.queryByText("当前无明显异常")).not.toBeInTheDocument();
+
+    const workbenchList = await screen.findByLabelText("成员发票工作台列表");
+    const card = within(workbenchList).getByRole("heading", { name: "pending.pdf" }).closest("article");
+    if (!card) {
+      throw new Error("expected pending recognition card");
+    }
+
+    expect(within(card).getByText("识别状态")).toBeInTheDocument();
+    expect(within(card).getByText("识别处理中")).toBeInTheDocument();
+    expect(
+      within(card).getByText("系统正在处理该材料识别；识别完成前，暂时还不能生成完整发票字段、分摊与确认上下文。"),
+    ).toBeInTheDocument();
+  });
+
+  it("explains when recognition service is not configured instead of only showing a generic failure", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-DISABLED",
+            status: "open",
+            competition_name: "ICPC Disabled Recognition",
+            competition_location: "上海",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-DISABLED/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-DISABLED",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 1,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 1,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-DISABLED-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "disabled.pdf",
+              material_status: "assigned",
+              recognition_status: "failed",
+              recognition_failure_stage: "ai",
+              recognition_failure_reason: "llm_provider_not_configured",
+              invoice_id: null,
+              invoice_number: null,
+              validation_status: "not_applicable",
+              validation_messages: [],
+              created_at: "2026-04-28T15:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-DISABLED/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/materials/MAT-DISABLED-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: {
+            id: "REC-DISABLED-001",
+            material_id: "MAT-DISABLED-001",
+            status: "failed",
+            is_final_fact: false,
+            failure: {
+              stage: "ai",
+              reason: "llm_provider_not_configured",
+            },
+            raw_response: {},
+            recognized_fields: {},
+            manual_corrections: [],
+            created_at: "2026-04-28T15:00:10+08:00",
+            updated_at: "2026-04-28T15:00:10+08:00",
+          },
+          items: [],
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-DISABLED",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in disabled recognition workbench test: ${url}`);
+    });
+
+    renderWorkbenchRoute("/member/invoices/workbench?taskId=TASK-DISABLED");
+
+    const workbenchList = await screen.findByLabelText("成员发票工作台列表");
+    const card = within(workbenchList).getByRole("heading", { name: "disabled.pdf" }).closest("article");
+    if (!card) {
+      throw new Error("expected disabled recognition card");
+    }
+
+    expect(
+      within(card).getByText("当前环境未配置识别服务，系统暂时不能自动生成发票结构化结果；请联系管理员配置识别服务或改为人工补录。"),
+    ).toBeInTheDocument();
+  });
+
   it("allows members to update material type from the workbench and refreshes the task summary", async () => {
     let currentMaterialType = "other_attachment";
 

@@ -24,8 +24,10 @@ import type {
   MaterialBatchUploadResponse,
   MaterialRecord,
   MaterialType,
+  RecognitionFailureDetail,
   RecognitionFieldResult,
   RecognitionTaskRecord,
+  RecognitionTaskStatus,
   ReimbursementTask,
   TaskMemberMaterialStatusItem,
   TaskMemberStatusReport,
@@ -354,8 +356,36 @@ function renderRecognitionSource(field: RecognitionFieldResult | null) {
   return "OCR 识别";
 }
 
+function getRecognitionStatus(item: WorkbenchInvoiceItem): RecognitionTaskStatus | null {
+  return item.recognition?.status ?? item.material.recognition_status ?? null;
+}
+
+function getRecognitionFailure(item: WorkbenchInvoiceItem): RecognitionFailureDetail | null {
+  if (item.recognition?.failure) {
+    return item.recognition.failure;
+  }
+  if (item.material.recognition_failure_stage && item.material.recognition_failure_reason) {
+    return {
+      stage: item.material.recognition_failure_stage,
+      reason: item.material.recognition_failure_reason,
+    };
+  }
+  return null;
+}
+
 function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStatusReport): PendingAction[] {
   const actions: PendingAction[] = [];
+
+  if (report.counts.recognition_pending_count > 0) {
+    actions.push({
+      id: "recognition-pending",
+      title: "等待系统完成识别",
+      detail: `当前有 ${report.counts.recognition_pending_count} 份材料仍在识别排队或尚未执行；在结果出来前，分摊与确认不会自然闭合。`,
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices"),
+      tone: "info",
+      label: "查看当前状态",
+    });
+  }
 
   if (report.counts.recognition_failed_count > 0 || report.counts.recognition_needs_confirmation_count > 0) {
     actions.push({
@@ -417,11 +447,16 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
 
 function collectAbnormalReasons(item: WorkbenchInvoiceItem) {
   const reasons: string[] = [];
+  const recognitionStatus = getRecognitionStatus(item);
+  const recognitionFailure = getRecognitionFailure(item);
 
-  if (item.recognition?.status === "failed") {
-    reasons.push(describeRecognitionFailure(item.recognition.failure));
+  if (recognitionStatus === "pending") {
+    reasons.push("系统正在处理该材料识别；识别完成前，暂时还不能生成完整发票字段、分摊与确认上下文。");
   }
-  if (item.recognition?.status === "needs_confirmation") {
+  if (recognitionStatus === "failed") {
+    reasons.push(describeRecognitionFailure(recognitionFailure));
+  }
+  if (recognitionStatus === "needs_confirmation") {
     reasons.push("识别结果里仍有待确认字段，请优先核对关键发票信息。");
   }
   for (const validation of item.validations) {
@@ -484,12 +519,16 @@ function buildSummaryStats(task: ReimbursementTask, report: TaskMemberStatusRepo
     {
       label: "待处理事项",
       value: (
-        report.counts.recognition_failed_count
+        report.counts.recognition_pending_count
+        + report.counts.recognition_failed_count
         + report.counts.recognition_needs_confirmation_count
         + report.counts.validation_failed_count
+        + report.counts.validation_pending_count
         + report.counts.missing_material_count
+        + report.counts.pending_confirmation_count
+        + report.counts.missing_confirmation_count
       ),
-      description: "优先处理识别异常、失败校验和缺失材料。",
+      description: "包括识别排队、人工确认、校验异常、缺失材料和待确认费用。",
     },
     {
       label: "本人费用",
@@ -806,6 +845,7 @@ export function MemberInvoiceWorkbenchPage() {
     }
     return workbenchState.items.reduce((count, item) => count + collectAbnormalReasons(item).length, 0);
   }, [workbenchState]);
+  const pendingActionCount = pendingActions.filter((action) => action.id !== "done").length;
 
   async function handleMaterialTypeSave(materialId: string) {
     if (!session) {
@@ -1203,8 +1243,8 @@ export function MemberInvoiceWorkbenchPage() {
           title="待处理事项"
           description="先处理最会阻塞后续复核的事项，再回看发票细节。"
           action={(
-            <StatusBadge tone={abnormalCount > 0 ? "warning" : "success"}>
-              {abnormalCount > 0 ? `${abnormalCount} 条异常提示` : "当前无明显异常"}
+            <StatusBadge tone={pendingActionCount > 0 ? (abnormalCount > 0 ? "warning" : "info") : "success"}>
+              {pendingActionCount > 0 ? `${pendingActionCount} 项仍待处理` : "当前无明显异常"}
             </StatusBadge>
           )}
         >
@@ -1578,7 +1618,7 @@ export function MemberInvoiceWorkbenchPage() {
                   </div>
                   <div>
                     <dt>识别状态</dt>
-                    <dd>{item.recognition ? formatRecognitionStatus(item.recognition.status) : "暂无识别记录"}</dd>
+                    <dd>{getRecognitionStatus(item) ? formatRecognitionStatus(getRecognitionStatus(item)!) : "暂无识别记录"}</dd>
                   </div>
                   <div>
                     <dt>校验状态</dt>
