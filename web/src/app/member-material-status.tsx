@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { StatusBadge } from "../components/dashboard";
+import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExpenseType,
@@ -405,21 +407,17 @@ function summarizeValidations(
 
 export function MemberMaterialStatusPage() {
   const session = useAuthSession();
+  const { showError, showSuccess } = useSnackbar();
   const [searchParams] = useSearchParams();
   const preferredTaskId = searchParams.get("taskId");
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [materialState, setMaterialState] = useState<SelectedTaskMaterialState>({ status: "idle" });
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [activeEditorMaterialId, setActiveEditorMaterialId] = useState<string | null>(null);
   const [editorFormState, setEditorFormState] = useState<ManualInvoiceFormState | null>(null);
   const [editorErrors, setEditorErrors] = useState<ManualInvoiceFormErrors>({});
-  const [actionError, setActionError] = useState<unknown>(null);
-  const [actionFeedback, setActionFeedback] = useState<{
-    materialId: string;
-    kind: "recognition_retry" | "invoice_saved";
-    message: string;
-  } | null>(null);
   const [retryingMaterialId, setRetryingMaterialId] = useState<string | null>(null);
   const [savingMaterialId, setSavingMaterialId] = useState<string | null>(null);
 
@@ -559,6 +557,7 @@ export function MemberMaterialStatusPage() {
   const visibleTasks = taskState.status === "ready" ? taskState.visibleTasks : [];
   const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
   const readyItems = materialState.status === "ready" ? materialState.items : [];
+  const selectedItem = readyItems.find((item) => item.material.id === selectedMaterialId) ?? readyItems[0] ?? null;
   const totalMissingTips = readyItems.reduce(
     (count, item) => count + item.missingMaterialTips.length,
     0,
@@ -581,8 +580,6 @@ export function MemberMaterialStatusPage() {
     setActiveEditorMaterialId(item.material.id);
     setEditorFormState(buildManualInvoiceFormState(item, allowedExpenseTypes));
     setEditorErrors({});
-    setActionError(null);
-    setActionFeedback(null);
   }
 
   function closeManualEditor() {
@@ -593,8 +590,6 @@ export function MemberMaterialStatusPage() {
 
   function resetLocalActionState() {
     closeManualEditor();
-    setActionError(null);
-    setActionFeedback(null);
   }
 
   function updateEditorField<Key extends keyof ManualInvoiceFormState>(
@@ -621,20 +616,14 @@ export function MemberMaterialStatusPage() {
   }
 
   async function handleRetryRecognition(item: MemberMaterialStatusItem) {
-    setActionError(null);
-    setActionFeedback(null);
     setRetryingMaterialId(item.material.id);
     try {
       const created = await trmsApi.createRecognitionTask(item.material.id);
       await trmsApi.executeRecognitionTask(created.item.id);
-      setActionFeedback({
-        materialId: item.material.id,
-        kind: "recognition_retry",
-        message: "已重新发起识别并刷新当前材料状态。",
-      });
+      showSuccess("已重新发起识别并刷新当前材料状态。");
       setRefreshNonce((current) => current + 1);
     } catch (error) {
-      setActionError(error);
+      showError(error instanceof Error ? error.message : "重新识别失败，请稍后重试。");
     } finally {
       setRetryingMaterialId(null);
     }
@@ -651,8 +640,6 @@ export function MemberMaterialStatusPage() {
 
     const nextErrors = validateManualInvoiceForm(editorFormState, allowedExpenseTypes);
     setEditorErrors(nextErrors);
-    setActionError(null);
-    setActionFeedback(null);
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
@@ -675,15 +662,11 @@ export function MemberMaterialStatusPage() {
         amount_cents: amountCents,
         expense_type: editorFormState.expenseType,
       });
-      setActionFeedback({
-        materialId: item.material.id,
-        kind: "invoice_saved",
-        message: `已保存发票 ${response.invoice.invoice_number}，并重新刷新校验结果。`,
-      });
+      showSuccess(`已保存发票 ${response.invoice.invoice_number}，并重新刷新校验结果。`);
       closeManualEditor();
       setRefreshNonce((current) => current + 1);
     } catch (error) {
-      setActionError(error);
+      showError(error instanceof Error ? error.message : "保存发票信息失败，请稍后重试。");
     } finally {
       setSavingMaterialId(null);
     }
@@ -802,7 +785,6 @@ export function MemberMaterialStatusPage() {
       ) : null}
 
       {selectedTask && materialState.status === "error" ? <ApiErrorNotice error={materialState.error} /> : null}
-      {actionError ? <ApiErrorNotice error={actionError} /> : null}
 
       {selectedTask && materialState.status === "ready" && materialState.items.length === 0 ? (
         <section className="status-card">
@@ -821,6 +803,7 @@ export function MemberMaterialStatusPage() {
               item.invoice,
               item.validations,
             );
+            const isSelected = selectedItem?.material.id === item.material.id;
 
             return (
               <article key={item.material.id} className="task-card member-status-card">
@@ -853,239 +836,296 @@ export function MemberMaterialStatusPage() {
 
                 <section className="member-status-section">
                   <div className="member-status-section-header">
-                    <h4>识别状态</h4>
-                    <span className={`status-chip member-status-chip member-status-chip-${recognitionSummary.tone}`}>
-                      {recognitionSummary.title}
-                    </span>
+                    <h4>当前摘要</h4>
+                    <StatusBadge tone={isSelected ? "info" : "neutral"}>
+                      {isSelected ? "当前查看" : "可查看详情"}
+                    </StatusBadge>
                   </div>
                   <ul className="member-status-detail-list">
-                    {recognitionSummary.details.map((detail) => (
-                      <li key={detail}>{detail}</li>
-                    ))}
+                    <li>{recognitionSummary.title}</li>
+                    <li>{validationSummary.title}</li>
+                    <li>{item.missingMaterialTips.length > 0 ? `缺失材料 ${item.missingMaterialTips.length} 条` : "当前无缺失材料提示"}</li>
                   </ul>
                   <div className="inline-actions">
                     <button
                       className="route-link route-link-secondary"
                       type="button"
-                      disabled={retryingMaterialId === item.material.id}
                       onClick={() => {
-                        void handleRetryRecognition(item);
+                        resetLocalActionState();
+                        setSelectedMaterialId(item.material.id);
                       }}
                     >
-                      {retryingMaterialId === item.material.id
-                        ? "重新识别中..."
-                        : item.recognition
-                          ? "运行重新识别"
-                          : "开始识别"}
+                      {isSelected ? "查看当前详情" : "查看详情"}
                     </button>
-                    {actionFeedback?.materialId === item.material.id
-                      && actionFeedback.kind === "recognition_retry" ? (
-                        <span className="status-chip member-status-chip-succeeded">
-                          {actionFeedback.message}
-                        </span>
-                      ) : null}
                   </div>
-                </section>
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>校验状态</h4>
-                    <span className={`status-chip member-status-chip member-status-chip-${validationSummary.tone}`}>
-                      {validationSummary.title}
-                    </span>
-                  </div>
-                  <ul className="member-status-detail-list">
-                    {validationSummary.details.map((detail) => (
-                      <li key={detail}>{detail}</li>
-                    ))}
-                  </ul>
-                  {validationSummary.abnormalValidations.length > 0 ? (
-                    <ul className="member-status-message-list" aria-label={`${item.material.id} 校验异常列表`}>
-                      {validationSummary.abnormalValidations.map((validation) => (
-                        <li key={validation.id}>
-                          <strong>{formatValidationRule(validation.rule_code)}</strong>
-                          <span>{validation.message}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-
-                {item.material.material_type === "invoice" ? (
-                  <section className="member-status-section">
-                    <div className="member-status-section-header">
-                      <h4>人工填写信息</h4>
-                      <span className="status-chip">
-                        {item.invoice ? "可直接更正已录入发票" : "识别不准时可自行补录"}
-                      </span>
-                    </div>
-                    <p className="task-healthy-note">
-                      录入后会刷新当前发票的校验结果；这一步由材料提交人自己完成，不再要求管理员代填。
-                    </p>
-                    <div className="inline-actions">
-                      <button
-                        className="route-link"
-                        type="button"
-                        onClick={() => {
-                          if (activeEditorMaterialId === item.material.id) {
-                            closeManualEditor();
-                            return;
-                          }
-                          openManualEditor(item);
-                        }}
-                      >
-                        {activeEditorMaterialId === item.material.id ? "收起人工填写" : "人工填写发票信息"}
-                      </button>
-                      {actionFeedback?.materialId === item.material.id
-                        && actionFeedback.kind === "invoice_saved" ? (
-                          <span className="status-chip member-status-chip-succeeded">
-                            {actionFeedback.message}
-                          </span>
-                        ) : null}
-                    </div>
-                    {activeEditorMaterialId === item.material.id && editorFormState ? (
-                      <form
-                        className="form-grid"
-                        aria-label={`${item.material.id} 发票人工填写表单`}
-                        onSubmit={(event) => {
-                          void handleManualInvoiceSubmit(event, item);
-                        }}
-                      >
-                        <label className="field-stack">
-                          <span>发票号码</span>
-                          <input
-                            value={editorFormState.invoiceNumber}
-                            onChange={(event) => {
-                              updateEditorField("invoiceNumber", event.target.value);
-                            }}
-                          />
-                          {editorErrors.invoiceNumber ? <span className="field-error">{editorErrors.invoiceNumber}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>开票日期</span>
-                          <input
-                            type="date"
-                            value={editorFormState.issueDate}
-                            onChange={(event) => {
-                              updateEditorField("issueDate", event.target.value);
-                            }}
-                          />
-                        </label>
-                        <label className="field-stack">
-                          <span>交易时间</span>
-                          <input
-                            type="datetime-local"
-                            value={editorFormState.transactionTime}
-                            onChange={(event) => {
-                              updateEditorField("transactionTime", event.target.value);
-                            }}
-                          />
-                        </label>
-                        <label className="field-stack">
-                          <span>发票抬头</span>
-                          <input
-                            value={editorFormState.buyerName}
-                            onChange={(event) => {
-                              updateEditorField("buyerName", event.target.value);
-                            }}
-                          />
-                          {editorErrors.buyerName ? <span className="field-error">{editorErrors.buyerName}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>税号</span>
-                          <input
-                            value={editorFormState.taxNumber}
-                            onChange={(event) => {
-                              updateEditorField("taxNumber", event.target.value);
-                            }}
-                          />
-                          {editorErrors.taxNumber ? <span className="field-error">{editorErrors.taxNumber}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>销售方名称</span>
-                          <input
-                            value={editorFormState.sellerName}
-                            onChange={(event) => {
-                              updateEditorField("sellerName", event.target.value);
-                            }}
-                          />
-                        </label>
-                        <label className="field-stack">
-                          <span>金额（元）</span>
-                          <input
-                            inputMode="decimal"
-                            value={editorFormState.amountYuan}
-                            onChange={(event) => {
-                              updateEditorField("amountYuan", event.target.value);
-                            }}
-                          />
-                          {editorErrors.amountYuan ? <span className="field-error">{editorErrors.amountYuan}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>费用类型</span>
-                          <select
-                            value={editorFormState.expenseType}
-                            onChange={(event) => {
-                              updateEditorField("expenseType", event.target.value as ExpenseType);
-                            }}
-                          >
-                            {allowedExpenseTypes.map((expenseType) => (
-                              <option key={expenseType} value={expenseType}>
-                                {formatExpenseType(expenseType)}
-                              </option>
-                            ))}
-                          </select>
-                          {editorErrors.expenseType ? <span className="field-error">{editorErrors.expenseType}</span> : null}
-                        </label>
-                        <div className="form-actions">
-                          <button
-                            className="route-link"
-                            disabled={savingMaterialId === item.material.id}
-                            type="submit"
-                          >
-                            {savingMaterialId === item.material.id ? "保存中..." : "保存发票信息"}
-                          </button>
-                          <button
-                            className="route-link route-link-secondary"
-                            type="button"
-                            onClick={() => {
-                              closeManualEditor();
-                            }}
-                          >
-                            取消
-                          </button>
-                        </div>
-                      </form>
-                    ) : null}
-                  </section>
-                ) : null}
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>缺失材料提示</h4>
-                    <span className="status-chip">
-                      {item.missingMaterialTips.length > 0
-                        ? `${item.missingMaterialTips.length} 条缺失提示`
-                        : "当前无缺失提示"}
-                    </span>
-                  </div>
-                  {item.missingMaterialTips.length > 0 ? (
-                    <ul className="member-status-message-list" aria-label={`${item.material.id} 缺失材料提示列表`}>
-                      {item.missingMaterialTips.map((tip) => (
-                        <li key={`${tip.ruleCode}:${tip.requiredMaterialType}`}>
-                          <strong>{formatMaterialType(tip.requiredMaterialType)}</strong>
-                          <span>{tip.message}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="task-healthy-note">当前材料关联的发票没有命中可直接归类为“缺失材料”的失败规则。</p>
-                  )}
                 </section>
               </article>
             );
           })}
         </section>
+      ) : null}
+
+      {selectedTask && materialState.status === "ready" && selectedItem ? (
+        (() => {
+          const item = selectedItem;
+          const recognitionSummary = summarizeRecognition(item.recognition);
+          const validationSummary = summarizeValidations(
+            item.material.material_type,
+            item.invoice,
+            item.validations,
+          );
+
+          return (
+            <article className="task-card member-status-card" aria-label="当前材料详情">
+              <div className="task-card-header">
+                <div>
+                  <p className="task-card-id">当前材料详情 / 材料编号 {item.material.id}</p>
+                  <h3>{item.material.original_filename}</h3>
+                </div>
+                <span className="status-chip">{formatMaterialType(item.material.material_type)}</span>
+              </div>
+
+              <dl className="task-meta-grid member-status-meta-grid">
+                <div>
+                  <dt>提交时间</dt>
+                  <dd>{formatDateTime(item.material.created_at)}</dd>
+                </div>
+                <div>
+                  <dt>提交渠道</dt>
+                  <dd>{formatSubmissionChannel(item.material.channel)}</dd>
+                </div>
+                <div>
+                  <dt>重复文件</dt>
+                  <dd>{item.material.duplicate_of ? `与 ${item.material.duplicate_of} 重复` : "未标记重复"}</dd>
+                </div>
+                <div>
+                  <dt>关联发票</dt>
+                  <dd>{item.invoice ? item.invoice.invoice_number : "暂无发票记录"}</dd>
+                </div>
+              </dl>
+
+              <section className="member-status-section">
+                <div className="member-status-section-header">
+                  <h4>识别状态</h4>
+                  <span className={`status-chip member-status-chip member-status-chip-${recognitionSummary.tone}`}>
+                    {recognitionSummary.title}
+                  </span>
+                </div>
+                <ul className="member-status-detail-list">
+                  {recognitionSummary.details.map((detail) => (
+                    <li key={detail}>{detail}</li>
+                  ))}
+                </ul>
+                <div className="inline-actions">
+                  <button
+                    className="route-link route-link-secondary"
+                    type="button"
+                    disabled={retryingMaterialId === item.material.id}
+                    onClick={() => {
+                      void handleRetryRecognition(item);
+                    }}
+                  >
+                    {retryingMaterialId === item.material.id
+                      ? "重新识别中..."
+                      : item.recognition
+                        ? "运行重新识别"
+                        : "开始识别"}
+                  </button>
+                </div>
+              </section>
+
+              <section className="member-status-section">
+                <div className="member-status-section-header">
+                  <h4>校验状态</h4>
+                  <span className={`status-chip member-status-chip member-status-chip-${validationSummary.tone}`}>
+                    {validationSummary.title}
+                  </span>
+                </div>
+                <ul className="member-status-detail-list">
+                  {validationSummary.details.map((detail) => (
+                    <li key={detail}>{detail}</li>
+                  ))}
+                </ul>
+                {validationSummary.abnormalValidations.length > 0 ? (
+                  <ul className="member-status-message-list" aria-label={`${item.material.id} 校验异常列表`}>
+                    {validationSummary.abnormalValidations.map((validation) => (
+                      <li key={validation.id}>
+                        <strong>{formatValidationRule(validation.rule_code)}</strong>
+                        <span>{validation.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+
+              {item.material.material_type === "invoice" ? (
+                <section className="member-status-section">
+                  <div className="member-status-section-header">
+                    <h4>人工填写信息</h4>
+                    <span className="status-chip">
+                      {item.invoice ? "可直接更正已录入发票" : "识别不准时可自行补录"}
+                    </span>
+                  </div>
+                  <p className="task-healthy-note">
+                    录入后会刷新当前发票的校验结果；这一步由材料提交人自己完成，不再要求管理员代填。
+                  </p>
+                  <div className="inline-actions">
+                    <button
+                      className="route-link"
+                      type="button"
+                      onClick={() => {
+                        if (activeEditorMaterialId === item.material.id) {
+                          closeManualEditor();
+                          return;
+                        }
+                        openManualEditor(item);
+                      }}
+                    >
+                      {activeEditorMaterialId === item.material.id ? "收起人工填写" : "人工填写发票信息"}
+                    </button>
+                  </div>
+                  {activeEditorMaterialId === item.material.id && editorFormState ? (
+                    <form
+                      className="form-grid"
+                      aria-label={`${item.material.id} 发票人工填写表单`}
+                      onSubmit={(event) => {
+                        void handleManualInvoiceSubmit(event, item);
+                      }}
+                    >
+                      <label className="field-stack">
+                        <span>发票号码</span>
+                        <input
+                          value={editorFormState.invoiceNumber}
+                          onChange={(event) => {
+                            updateEditorField("invoiceNumber", event.target.value);
+                          }}
+                        />
+                        {editorErrors.invoiceNumber ? <span className="field-error">{editorErrors.invoiceNumber}</span> : null}
+                      </label>
+                      <label className="field-stack">
+                        <span>开票日期</span>
+                        <input
+                          type="date"
+                          value={editorFormState.issueDate}
+                          onChange={(event) => {
+                            updateEditorField("issueDate", event.target.value);
+                          }}
+                        />
+                      </label>
+                      <label className="field-stack">
+                        <span>交易时间</span>
+                        <input
+                          type="datetime-local"
+                          value={editorFormState.transactionTime}
+                          onChange={(event) => {
+                            updateEditorField("transactionTime", event.target.value);
+                          }}
+                        />
+                      </label>
+                      <label className="field-stack">
+                        <span>发票抬头</span>
+                        <input
+                          value={editorFormState.buyerName}
+                          onChange={(event) => {
+                            updateEditorField("buyerName", event.target.value);
+                          }}
+                        />
+                        {editorErrors.buyerName ? <span className="field-error">{editorErrors.buyerName}</span> : null}
+                      </label>
+                      <label className="field-stack">
+                        <span>税号</span>
+                        <input
+                          value={editorFormState.taxNumber}
+                          onChange={(event) => {
+                            updateEditorField("taxNumber", event.target.value);
+                          }}
+                        />
+                        {editorErrors.taxNumber ? <span className="field-error">{editorErrors.taxNumber}</span> : null}
+                      </label>
+                      <label className="field-stack">
+                        <span>销售方名称</span>
+                        <input
+                          value={editorFormState.sellerName}
+                          onChange={(event) => {
+                            updateEditorField("sellerName", event.target.value);
+                          }}
+                        />
+                      </label>
+                      <label className="field-stack">
+                        <span>金额（元）</span>
+                        <input
+                          inputMode="decimal"
+                          value={editorFormState.amountYuan}
+                          onChange={(event) => {
+                            updateEditorField("amountYuan", event.target.value);
+                          }}
+                        />
+                        {editorErrors.amountYuan ? <span className="field-error">{editorErrors.amountYuan}</span> : null}
+                      </label>
+                      <label className="field-stack">
+                        <span>费用类型</span>
+                        <select
+                          value={editorFormState.expenseType}
+                          onChange={(event) => {
+                            updateEditorField("expenseType", event.target.value as ExpenseType);
+                          }}
+                        >
+                          {allowedExpenseTypes.map((expenseType) => (
+                            <option key={expenseType} value={expenseType}>
+                              {formatExpenseType(expenseType)}
+                            </option>
+                          ))}
+                        </select>
+                        {editorErrors.expenseType ? <span className="field-error">{editorErrors.expenseType}</span> : null}
+                      </label>
+                      <div className="form-actions">
+                        <button
+                          className="route-link"
+                          disabled={savingMaterialId === item.material.id}
+                          type="submit"
+                        >
+                          {savingMaterialId === item.material.id ? "保存中..." : "保存发票信息"}
+                        </button>
+                        <button
+                          className="route-link route-link-secondary"
+                          type="button"
+                          onClick={() => {
+                            closeManualEditor();
+                          }}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </form>
+                  ) : null}
+                </section>
+              ) : null}
+
+              <section className="member-status-section">
+                <div className="member-status-section-header">
+                  <h4>缺失材料提示</h4>
+                  <span className="status-chip">
+                    {item.missingMaterialTips.length > 0
+                      ? `${item.missingMaterialTips.length} 条缺失提示`
+                      : "当前无缺失提示"}
+                  </span>
+                </div>
+                {item.missingMaterialTips.length > 0 ? (
+                  <ul className="member-status-message-list" aria-label={`${item.material.id} 缺失材料提示列表`}>
+                    {item.missingMaterialTips.map((tip) => (
+                      <li key={`${tip.ruleCode}:${tip.requiredMaterialType}`}>
+                        <strong>{formatMaterialType(tip.requiredMaterialType)}</strong>
+                        <span>{tip.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="task-healthy-note">当前材料关联的发票没有命中可直接归类为“缺失材料”的失败规则。</p>
+                )}
+              </section>
+            </article>
+          );
+        })()
       ) : null}
     </div>
   );

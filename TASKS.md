@@ -1208,7 +1208,7 @@
     - 上传结果保留逐文件结果显示
     - `member-material-upload.test.tsx` 测试通过
 
-- [ ] 重写成员材料状态页（M3 列表 + 详情视图）
+- [x] 重写成员材料状态页（M3 列表 + 详情视图）
   - Done when:
     - `/member/materials/status` 改为 M3 列表 + 详情或 Card 网格视图
     - 识别状态、校验异常、缺失材料用统一 Chip 颜色表达

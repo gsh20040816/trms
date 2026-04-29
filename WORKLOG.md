@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-29 12:56 - Convert member material status page to list-detail workspace
+
+### 完成内容
+- 将 `web/src/app/member-material-status.tsx` 从“每份材料完整卡片纵向平铺”改为“摘要列表 + 当前详情”结构：
+  - 上方 `成员材料状态列表` 现在只负责列出本人材料摘要、识别/校验摘要和缺失材料数量；
+  - 下方新增 `aria-label="当前材料详情"` 的详情面板，集中展示当前选中材料的识别、校验、人工填写和缺失材料信息。
+- 保持默认选中首个材料，并支持在摘要列表中切换当前查看对象。
+- 将“运行重新识别”和“保存发票信息”的结果反馈从页内状态 chip / 错误卡片改为全局 Snackbar，即时提示成功或失败。
+- 保留现有人工填写表单、识别重跑、缺失材料提示和工作台跳转逻辑，不改后端接口。
+- 同步更新 `web/src/app/member-material-status.test.tsx`：
+  - 先校验摘要列表只显示本人材料；
+  - 再校验默认详情面板内容；
+  - 最后切换到附件材料，确认详情面板跟随切换。
+- `TASKS.md` 中“重写成员材料状态页（M3 列表 + 详情视图）”已标记完成。
+
+### 根因
+- 原页面把每份材料的全部信息都一次性展开，材料稍多时会形成长页面，用户需要在多个同构卡片间自己扫描“哪一张有问题、当前正在看哪一张”。
+- 这与原型文档要求的“先在列表筛选，再在同页查看详情”的审查模式不一致，因此本轮优先收口为单页列表-详情结构。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/member-material-status.tsx`
+  - `web/src/app/member-material-status.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮仍保留原生表单和既有 className；后续“业务表单整体迁移到 MUI”任务会继续处理视觉和控件层。
+- 识别重跑/保存发票的反馈由局部 chip 变为 Snackbar，减少详情区噪音，但用户仍能立即获知动作结果。
+- 详情区当前默认回落到列表首项；若后续需要深链接到某个材料，可在再后续轮次增加 query/hash 同步。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：420 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 当前详情面板放在列表下方而不是右侧分栏，仍满足“列表 + 详情视图”目标；后续如果页面信息继续扩张，再评估桌面端左右分栏。
+- 由于当前页面只服务成员本人材料，摘要列表中不重复展示全部异常细节，把细节留给详情面板更利于扫描。
+
 ## 2026-04-29 12:49 - Rework member upload page with FileDropZone and snackbar feedback
 
 ### 完成内容

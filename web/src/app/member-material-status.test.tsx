@@ -281,29 +281,38 @@ describe("MemberMaterialStatusPage", () => {
     expect(statusCards).toHaveLength(2);
     expect(screen.queryByText("other.pdf")).not.toBeInTheDocument();
 
-    const invoiceCard = within(statusCards[0] ?? document.body).getByText("ticket.pdf").closest("article");
-    if (!invoiceCard) {
-      throw new Error("expected invoice status card");
+    const invoiceSummaryCard = within(statusCards[0] ?? document.body).getByText("ticket.pdf").closest("article");
+    if (!invoiceSummaryCard) {
+      throw new Error("expected invoice status summary card");
     }
-    expect(within(invoiceCard).getByText("待确认字段：购买方名称")).toBeInTheDocument();
-    expect(within(invoiceCard).getByText("存在 1 条失败校验")).toBeInTheDocument();
-    expect(within(invoiceCard).getByLabelText("MAT-SELF-INV 缺失材料提示列表")).toHaveTextContent(
+    expect(within(invoiceSummaryCard).getByText("识别待确认")).toBeInTheDocument();
+    expect(within(invoiceSummaryCard).getByText("存在 1 条失败校验")).toBeInTheDocument();
+
+    let detailPanel = screen.getByLabelText("当前材料详情");
+    expect(within(detailPanel).getByText("待确认字段：购买方名称")).toBeInTheDocument();
+    expect(within(detailPanel).getByText("存在 1 条失败校验")).toBeInTheDocument();
+    expect(within(detailPanel).getByLabelText("MAT-SELF-INV 缺失材料提示列表")).toHaveTextContent(
       "发票金额达到阈值，缺少支付记录",
     );
-    expect(within(invoiceCard).getByLabelText("MAT-SELF-INV 缺失材料提示列表")).toHaveTextContent("支付记录");
-    expect(within(invoiceCard).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
-    fireEvent.click(within(invoiceCard).getByRole("button", { name: "人工填写发票信息" }));
+    expect(within(detailPanel).getByLabelText("MAT-SELF-INV 缺失材料提示列表")).toHaveTextContent("支付记录");
+    expect(within(detailPanel).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
+    fireEvent.click(within(detailPanel).getByRole("button", { name: "人工填写发票信息" }));
     expect(
-      within(invoiceCard).getByRole("form", { name: "MAT-SELF-INV 发票人工填写表单" }),
+      within(detailPanel).getByRole("form", { name: "MAT-SELF-INV 发票人工填写表单" }),
     ).toBeInTheDocument();
 
-    const attachmentCard = within(statusCards[1] ?? document.body).getByText("pay.png").closest("article");
-    if (!attachmentCard) {
-      throw new Error("expected attachment status card");
+    const attachmentSummaryCard = within(statusCards[1] ?? document.body).getByText("pay.png").closest("article");
+    if (!attachmentSummaryCard) {
+      throw new Error("expected attachment status summary card");
     }
-    expect(within(attachmentCard).getByText("识别排队中")).toBeInTheDocument();
-    expect(within(attachmentCard).getByText("当前材料暂无独立发票校验")).toBeInTheDocument();
-    expect(within(attachmentCard).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
+    expect(within(attachmentSummaryCard).getByText("识别排队中")).toBeInTheDocument();
+    expect(within(attachmentSummaryCard).getByText("当前材料暂无独立发票校验")).toBeInTheDocument();
+    fireEvent.click(within(attachmentSummaryCard).getByRole("button", { name: "查看详情" }));
+    detailPanel = screen.getByLabelText("当前材料详情");
+    expect(within(detailPanel).getByText("pay.png")).toBeInTheDocument();
+    expect(within(detailPanel).getByText("识别排队中")).toBeInTheDocument();
+    expect(within(detailPanel).getByText("当前材料暂无独立发票校验")).toBeInTheDocument();
+    expect(within(detailPanel).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
 
     expect(screen.getByLabelText("材料状态摘要")).toHaveTextContent("本人材料 2 份");
     expect(fetchSpy).toHaveBeenCalledTimes(6);
