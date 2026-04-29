@@ -25,6 +25,18 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+function buildEmptySupportingMaterialLinkageResponse(url: string) {
+  const matched = url.match(/^\/api\/tasks\/([^/]+)\/supporting-material-linkage(?:\?actor_id=([^&]+))?$/);
+  if (!matched) {
+    return null;
+  }
+  return {
+    task_id: decodeURIComponent(matched[1] ?? ""),
+    actor_id: matched[2] ?? "2250001",
+    items: [],
+  };
+}
+
 function parseRequestJsonBody(init?: RequestInit): Record<string, unknown> {
   if (typeof init?.body !== "string") {
     throw new Error("Expected request body to be a JSON string.");
@@ -351,6 +363,10 @@ describe("frontend main flow e2e placeholder", () => {
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
+      const emptySupportingMaterialLinkageResponse = buildEmptySupportingMaterialLinkageResponse(url);
+      if (emptySupportingMaterialLinkageResponse) {
+        return Promise.resolve(jsonResponse(emptySupportingMaterialLinkageResponse));
+      }
 
       if (url === "/api/tasks" && init?.method === "POST") {
         workflowState.taskCreated = true;

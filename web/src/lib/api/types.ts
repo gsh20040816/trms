@@ -629,6 +629,33 @@ export type TaskSharedInvoiceReport = {
   items: TaskSharedInvoiceItem[];
 };
 
+export type PendingSupportingMaterialLinkageReason =
+  | "no_candidate"
+  | "multiple_candidates";
+
+export type PendingSupportingMaterialLinkageCandidateInvoiceSummary = {
+  invoice_id: string;
+  invoice_number: string;
+  amount_cents: number;
+  expense_type: ExpenseType;
+};
+
+export type PendingSupportingMaterialLinkageItem = {
+  material_id: string;
+  submitter_id: string;
+  material_type: MaterialType;
+  original_filename: string;
+  pending_reason: PendingSupportingMaterialLinkageReason;
+  candidate_invoices: PendingSupportingMaterialLinkageCandidateInvoiceSummary[];
+  created_at: ApiDateTime;
+};
+
+export type TaskSupportingMaterialLinkageReport = {
+  task_id: string;
+  actor_id: string;
+  items: PendingSupportingMaterialLinkageItem[];
+};
+
 export type OverdueConfirmationList = {
   task_id: string;
   administrator_id: string;

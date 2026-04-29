@@ -23,6 +23,7 @@ import type {
   MergedPdfExportPlan,
   VisibleMissingMaterialList,
   OverdueConfirmationList,
+  TaskSupportingMaterialLinkageReport,
   RecognitionTaskExecuteResponse,
   RecognitionTaskList,
   RegisterPayload,
@@ -215,6 +216,12 @@ export const trmsApi = {
   getTaskSharedInvoices(taskId: string, actorId: string) {
     return apiClient.request<TaskSharedInvoiceReport>(
       `/tasks/${encodeSegment(taskId)}/shared-invoices${buildActorScopedQuery(actorId)}`,
+    );
+  },
+
+  getTaskSupportingMaterialLinkage(taskId: string, actorId: string) {
+    return apiClient.request<TaskSupportingMaterialLinkageReport>(
+      `/tasks/${encodeSegment(taskId)}/supporting-material-linkage${buildActorScopedQuery(actorId)}`,
     );
   },
 

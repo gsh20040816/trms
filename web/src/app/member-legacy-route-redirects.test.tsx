@@ -24,6 +24,18 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+function buildEmptySupportingMaterialLinkageResponse(url: string) {
+  const matched = url.match(/^\/api\/tasks\/([^/]+)\/supporting-material-linkage(?:\?actor_id=([^&]+))?$/);
+  if (!matched) {
+    return null;
+  }
+  return {
+    task_id: decodeURIComponent(matched[1] ?? ""),
+    actor_id: matched[2] ?? "2250001",
+    items: [],
+  };
+}
+
 function renderLegacyRoute(entry: string) {
   const router = createMemoryRouter(routes, {
     initialEntries: [entry],
@@ -43,6 +55,10 @@ describe("member legacy routes", () => {
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
       const url = resolveRequestUrl(input);
+      const emptySupportingMaterialLinkageResponse = buildEmptySupportingMaterialLinkageResponse(url);
+      if (emptySupportingMaterialLinkageResponse) {
+        return Promise.resolve(jsonResponse(emptySupportingMaterialLinkageResponse));
+      }
 
       if (url === "/api/tasks") {
         return Promise.resolve(jsonResponse([

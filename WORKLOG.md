@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-04-30 01:03 - Show pending supporting-material linkage in member workbench
+
+### 完成内容
+- 完成任务“在成员工作台展示待关联辅助材料与处理入口”。
+- 调整前端类型与 API 调用：
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 新增待关联辅助材料摘要类型
+  - [trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts) 新增 `getTaskSupportingMaterialLinkage(...)`
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 工作台加载时并行读取 `supporting-material-linkage`
+  - 在发票页新增“待关联辅助材料”区块
+  - 显式区分：
+    - 已绑定附件
+    - 缺失材料
+    - 待关联辅助材料
+  - 对 `no_candidate` 场景给出“去上传区补录或补传发票”的入口
+  - 对 `multiple_candidates` 场景展示候选发票摘要，并提供“查看候选发票”按钮，能直接切到对应发票卡片
+  - 顶部待处理事项摘要也会把待关联辅助材料计入显式提醒，而不是让它继续静默悬空
+- 调整测试 [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)：
+  - 为所有现有工作台测试补齐默认空待关联响应
+  - 新增待关联面板测试，覆盖：
+    - `no_candidate`
+    - `multiple_candidates`
+    - “查看候选发票”跳转到对应发票详情
+
+### 根因
+- 后端已经能识别“待关联辅助材料”，但成员工作台之前只展示：
+  - 已绑定附件
+  - 缺失材料
+- 这会把“材料已经上传，但还没安全归票”的状态压扁成不可见状态，成员只能看到：
+  - 为什么缺失材料还没消失却不知道原因
+  - 已上传的辅助材料到底卡在“没发票”还是“多候选不敢自动绑”也看不出来
+
+### 当前展示边界
+- 工作台现在只负责解释和导航，不负责直接完成人工绑定。
+- 也就是说，本轮提供的是：
+  - 清晰状态
+  - 候选摘要
+  - 跳回候选发票或上传区的入口
+- 还没有提供：
+  - 成员端直接手动把某份辅助材料绑定到某张发票的写操作
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx`
+    - 1 个测试文件、14 个用例通过
+- 已通过前端构建：
+  - `cd web && npm run build`
+- 仓库级验证待本轮记录更新后统一执行 `./scripts/verify.sh`。
+
 ## 2026-04-30 00:46 - Add pending supporting-material linkage summary API
 
 ### 完成内容

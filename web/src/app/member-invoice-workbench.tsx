@@ -33,6 +33,7 @@ import type {
   MaterialBatchUploadResponse,
   MaterialRecord,
   MaterialType,
+  PendingSupportingMaterialLinkageItem,
   RecognitionFailureDetail,
   RecognitionFieldResult,
   RecognitionTaskRecord,
@@ -71,6 +72,7 @@ type SelectedTaskWorkbenchState =
     task: ReimbursementTask;
     report: TaskMemberStatusReport;
     items: WorkbenchInvoiceItem[];
+    pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[];
     sharedInvoices: TaskSharedInvoiceItem[];
   };
 
@@ -565,6 +567,25 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
   return actions;
 }
 
+function summarizePendingActionsWithLinkage(
+  task: ReimbursementTask,
+  report: TaskMemberStatusReport,
+  pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[],
+) {
+  const actions = summarizePendingActions(task, report);
+  if (pendingSupportingMaterialLinkageItems.length > 0) {
+    actions.unshift({
+      id: "supporting-material-linkage",
+      title: "处理待关联辅助材料",
+      detail: `当前有 ${pendingSupportingMaterialLinkageItems.length} 份辅助材料还没归到发票；这些材料不会自动算作已补齐附件。`,
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-pending-linkage"),
+      tone: "warning",
+      label: "查看待关联列表",
+    });
+  }
+  return actions;
+}
+
 function collectAbnormalReasons(item: WorkbenchInvoiceItem) {
   const reasons: string[] = [];
   const recognitionStatus = getRecognitionStatus(item);
@@ -679,6 +700,15 @@ function formatSupportingMaterialSummary(item: TaskSharedInvoiceItem) {
   return item.supporting_materials
     .map((material) => `${formatMaterialType(material.material_type)} ${material.count} 份`)
     .join(" / ");
+}
+
+function formatPendingSupportingMaterialLinkageReason(
+  reason: PendingSupportingMaterialLinkageItem["pending_reason"],
+) {
+  if (reason === "no_candidate") {
+    return "当前没有可安全匹配的候选发票";
+  }
+  return "当前存在多张候选发票，系统不会自动绑定";
 }
 
 function buildAllowedExpenseTypes(task: ReimbursementTask): ExpenseType[] {
@@ -995,9 +1025,10 @@ export function MemberInvoiceWorkbenchPage() {
       setWorkbenchState({ status: "loading", task });
 
       try {
-        const [report, sharedInvoicesReport, invoicesResponse] = await Promise.all([
+        const [report, sharedInvoicesReport, pendingSupportingMaterialLinkageReport, invoicesResponse] = await Promise.all([
           trmsApi.getTaskMemberStatus(task.id, session!.actorId),
           trmsApi.getTaskSharedInvoices(task.id, session!.actorId),
+          trmsApi.getTaskSupportingMaterialLinkage(task.id, session!.actorId),
           trmsApi.listTaskInvoices(task.id),
         ]);
         const invoices = invoicesResponse.items;
@@ -1050,6 +1081,7 @@ export function MemberInvoiceWorkbenchPage() {
           task,
           report,
           items,
+          pendingSupportingMaterialLinkageItems: pendingSupportingMaterialLinkageReport.items,
           sharedInvoices: [...sharedInvoicesReport.items].sort(
             (left, right) => right.updated_at.localeCompare(left.updated_at),
           ),
@@ -1094,9 +1126,16 @@ export function MemberInvoiceWorkbenchPage() {
   const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
   const summaryStats = workbenchState.status === "ready" ? buildSummaryStats(workbenchState.task, workbenchState.report) : [];
   const pendingActions = workbenchState.status === "ready"
-    ? summarizePendingActions(workbenchState.task, workbenchState.report)
+    ? summarizePendingActionsWithLinkage(
+      workbenchState.task,
+      workbenchState.report,
+      workbenchState.pendingSupportingMaterialLinkageItems,
+    )
     : [];
   const missingMaterials = workbenchState.status === "ready" ? workbenchState.report.missing_materials : [];
+  const pendingSupportingMaterialLinkageItems = workbenchState.status === "ready"
+    ? workbenchState.pendingSupportingMaterialLinkageItems
+    : [];
   const sharedInvoices = useMemo(() => (
     workbenchState.status === "ready"
       ? workbenchState.sharedInvoices.filter((item) => item.submitter_id !== actorId)
@@ -1138,6 +1177,29 @@ export function MemberInvoiceWorkbenchPage() {
     return workbenchState.items.reduce((count, item) => count + collectAbnormalReasons(item).length, 0);
   }, [workbenchState]);
   const pendingActionCount = pendingActions.filter((action) => action.id !== "done").length;
+
+  function handlePendingSupportingMaterialCandidateSelect(invoiceId: string) {
+    if (workbenchState.status !== "ready") {
+      return;
+    }
+    const ownMatch = workbenchState.items.find((item) => item.invoice?.id === invoiceId);
+    if (ownMatch) {
+      setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+        kind: "own",
+        materialId: ownMatch.material.material_id,
+      }));
+      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-invoices"));
+      return;
+    }
+    const sharedMatch = sharedInvoices.find((item) => item.invoice_id === invoiceId);
+    if (sharedMatch) {
+      setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+        kind: "shared",
+        invoiceId: sharedMatch.invoice_id,
+      }));
+      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-invoices"));
+    }
+  }
 
   async function handleMaterialTypeSave(materialId: string) {
     if (!session) {
@@ -2596,7 +2658,7 @@ export function MemberInvoiceWorkbenchPage() {
         </div>
       ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 && sharedInvoices.length === 0 ? (
+      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 && sharedInvoices.length === 0 && pendingSupportingMaterialLinkageItems.length === 0 ? (
         <EmptyState
           title="当前任务下还没有可查看的发票"
           description="先上传本人发票材料，或者等待任务内其他成员产生可共享查看的发票摘要。"
@@ -2608,7 +2670,7 @@ export function MemberInvoiceWorkbenchPage() {
         />
       ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" && (workbenchState.items.length > 0 || sharedInvoices.length > 0) ? (
+      {workbenchState.status === "ready" && activeTab === "invoices" && (workbenchState.items.length > 0 || sharedInvoices.length > 0 || pendingSupportingMaterialLinkageItems.length > 0) ? (
         <section id="member-workbench-invoices" className="admin-review-workspace">
           <article className="status-card admin-task-detail-panel admin-review-list-panel">
             <div className="admin-form-header">
@@ -2623,6 +2685,68 @@ export function MemberInvoiceWorkbenchPage() {
             <p className="field-hint">
               左侧固定选择当前发票，右侧保持完整上下文和操作区，避免在长列表里上下滚动寻找同一张票据。
             </p>
+
+            {pendingSupportingMaterialLinkageItems.length > 0 ? (
+              <section
+                id="member-workbench-pending-linkage"
+                className="member-status-section"
+                aria-label="待关联辅助材料列表"
+              >
+                <div className="member-status-section-header">
+                  <div>
+                    <h4>待关联辅助材料</h4>
+                    <p className="field-hint">
+                      这些材料还没有安全归到某张发票，因此不会算作已补齐附件；这里会明确告诉你为什么没自动关联，以及下一步该看哪张票。
+                    </p>
+                  </div>
+                  <StatusBadge tone="warning">{pendingSupportingMaterialLinkageItems.length} 份</StatusBadge>
+                </div>
+                <ul className="member-status-message-list">
+                  {pendingSupportingMaterialLinkageItems.map((item) => (
+                    <li key={item.material_id}>
+                      <strong>{formatMaterialType(item.material_type)} / {item.original_filename}</strong>
+                      <span>{formatPendingSupportingMaterialLinkageReason(item.pending_reason)}</span>
+                      {item.candidate_invoices.length > 0 ? (
+                        <span>
+                          候选发票：
+                          {item.candidate_invoices.map((candidate) => (
+                            `${candidate.invoice_number}（${formatExpenseType(candidate.expense_type)} / ${formatCurrencyFromCents(candidate.amount_cents)}）`
+                          )).join("；")}
+                        </span>
+                      ) : (
+                        <span>当前没有候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。</span>
+                      )}
+                      <span>上传时间：{formatDateTime(item.created_at)}</span>
+                      <div className="inline-actions">
+                        {item.pending_reason === "no_candidate" ? (
+                          <Button
+                            component={Link}
+                            variant="outlined"
+                            size="small"
+                            to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}
+                          >
+                            去上传区补录或补传发票
+                          </Button>
+                        ) : null}
+                        {item.candidate_invoices.map((candidate) => (
+                          <Button
+                            key={`${item.material_id}:${candidate.invoice_id}`}
+                            type="button"
+                            variant="outlined"
+                            size="small"
+                            onClick={() => {
+                              handlePendingSupportingMaterialCandidateSelect(candidate.invoice_id);
+                            }}
+                          >
+                            查看候选发票 {candidate.invoice_number}
+                          </Button>
+                        ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
 
             {workbenchState.items.length > 0 ? (
               <ul className="invoice-material-list" aria-label="本人发票选择列表">
