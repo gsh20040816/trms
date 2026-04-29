@@ -394,6 +394,69 @@ def test_deepseek_compatible_recognition_client_accepts_direct_field_object():
     assert result.recognized_fields["invoice_number"].value == "INV-002"
 
 
+def test_deepseek_compatible_recognition_client_normalizes_textual_confidence_and_chinese_labels():
+    provider_config = build_provider_config().model_copy(
+        update={"base_url": "https://api.deepseek.com"}
+    )
+    client = OpenAiCompatibleRecognitionClient(
+        provider_config,
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": json.dumps(
+                                        {
+                                            "output": {
+                                                "invoice_number": {
+                                                    "value": "25112000000125800852",
+                                                    "confidence": "high",
+                                                },
+                                                "amount_cents": {
+                                                    "value": 50000,
+                                                    "confidence": "high",
+                                                },
+                                                "buyer_name": {
+                                                    "value": "同济大学",
+                                                    "confidence": "high",
+                                                },
+                                                "tax_number": {
+                                                    "value": "12100000425006125J",
+                                                    "confidence": "high",
+                                                },
+                                                "expense_type": {
+                                                    "value": "培训费",
+                                                    "confidence": "high",
+                                                },
+                                                "material_type": {
+                                                    "value": "电子发票",
+                                                    "confidence": "high",
+                                                },
+                                            }
+                                        },
+                                        ensure_ascii=False,
+                                    )
+                                }
+                            }
+                        ]
+                    },
+                )
+            ),
+            base_url="https://api.deepseek.com",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert result.recognized_fields["invoice_number"].confidence == 0.95
+    assert result.recognized_fields["amount_cents"].confidence == 0.95
+    assert result.recognized_fields["material_type"].value == "invoice"
+    assert "expense_type" not in result.recognized_fields
+
+
 def test_openai_compatible_recognition_client_rejects_non_json_content():
     client = OpenAiCompatibleRecognitionClient(
         build_provider_config(),

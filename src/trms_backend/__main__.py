@@ -36,6 +36,14 @@ from trms_backend.runtime_config import (
 LOGGER = logging.getLogger("trms_backend.worker")
 
 
+def configure_worker_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        force=False,
+    )
+
+
 def run_api_command(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description="Run the TRMS backend API server.")
     parser.add_argument("--host", help="Override TRMS_API_HOST for this process.")
@@ -134,6 +142,7 @@ def run_worker_command(argv: Sequence[str]) -> int:
     )
     args = parser.parse_args(list(argv))
 
+    configure_worker_logging()
     config = load_runtime_config(env=load_runtime_environment_variables())
     worker = build_async_job_worker(config)
     LOGGER.info(

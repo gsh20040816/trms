@@ -22,6 +22,47 @@ from trms_backend.runtime_config import LLMProviderConfig
 
 LOW_CONFIDENCE_THRESHOLD = 0.8
 PROMPT_VERSION = "trms-recognition-v2"
+_CONFIDENCE_TEXT_TO_FLOAT = {
+    "high": 0.95,
+    "medium": 0.7,
+    "low": 0.4,
+    "高": 0.95,
+    "中": 0.7,
+    "低": 0.4,
+}
+_MATERIAL_TYPE_ALIASES = {
+    "发票": "invoice",
+    "电子发票": "invoice",
+    "普通发票": "invoice",
+    "增值税电子普通发票": "invoice",
+    "增值税普通发票": "invoice",
+    "支付记录": "payment_record",
+    "付款记录": "payment_record",
+    "比赛通知": "competition_notice",
+    "通知": "competition_notice",
+    "行程单": "itinerary",
+    "订单截图": "order_screenshot",
+    "订单": "order_screenshot",
+    "其他附件": "other_attachment",
+}
+_EXPENSE_TYPE_ALIASES = {
+    "参赛费": "registration",
+    "报名费": "registration",
+    "会务费": "registration",
+    "火车票": "railway",
+    "高铁票": "railway",
+    "动车票": "railway",
+    "飞机票": "airfare",
+    "机票": "airfare",
+    "航空费": "airfare",
+    "市内交通": "local_transport",
+    "打车费": "local_transport",
+    "网约车": "local_transport",
+    "住宿费": "hotel",
+    "酒店费": "hotel",
+    "房费": "hotel",
+    "其他": "other",
+}
 
 
 class RecognitionInputSource(StrEnum):
@@ -527,9 +568,77 @@ def _normalize_llm_response_payload(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return payload
     if "output" in payload:
+        output = payload.get("output")
+        if isinstance(output, dict):
+            return {
+                **payload,
+                "output": _normalize_output_fields(output),
+            }
         return payload
 
     known_output_fields = set(RecognitionStructuredOutput.model_fields.keys())
     if payload and set(payload.keys()).issubset(known_output_fields):
-        return {"output": payload}
+        return {"output": _normalize_output_fields(payload)}
     return payload
+
+
+def _normalize_output_fields(output: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for field_name, field_value in output.items():
+        if not isinstance(field_value, dict):
+            normalized[field_name] = field_value
+            continue
+
+        next_field_value = dict(field_value)
+        normalized_confidence = _normalize_confidence_value(next_field_value.get("confidence"))
+        if normalized_confidence is not None:
+            next_field_value["confidence"] = normalized_confidence
+
+        if field_name == "material_type":
+            normalized_material_type = _normalize_material_type_value(next_field_value.get("value"))
+            if normalized_material_type is None:
+                continue
+            next_field_value["value"] = normalized_material_type
+
+        if field_name == "expense_type":
+            normalized_expense_type = _normalize_expense_type_value(next_field_value.get("value"))
+            if normalized_expense_type is None:
+                continue
+            next_field_value["value"] = normalized_expense_type
+
+        normalized[field_name] = next_field_value
+    return normalized
+
+
+def _normalize_confidence_value(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _CONFIDENCE_TEXT_TO_FLOAT:
+            return _CONFIDENCE_TEXT_TO_FLOAT[normalized]
+        try:
+            return float(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_material_type_value(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in MaterialType._value2member_map_:
+        return normalized
+    return _MATERIAL_TYPE_ALIASES.get(value.strip())
+
+
+def _normalize_expense_type_value(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in ExpenseType._value2member_map_:
+        return normalized
+    return _EXPENSE_TYPE_ALIASES.get(value.strip())

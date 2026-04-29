@@ -55,6 +55,14 @@
     - 该入口不放宽为修改他人材料或直接写入任意识别结果
     - 前端测试覆盖本人可操作、非本人不可操作和重新识别反馈三类路径
 
+## 临时任务 - 2026-04-29 运行时修复
+
+- [x] 修复 worker 日志不可见与 DeepSeek 识别结果规范化
+  - Done when:
+    - `uv run python -m trms_backend worker` 启动后能直接看到 worker 启动/轮询日志
+    - DeepSeek 返回 `confidence: "high"`、中文 `material_type`、非枚举 `expense_type` 时，不会让整次识别无条件失败
+    - 测试覆盖 worker 日志初始化与 DeepSeek 风格输出规范化
+
 ## P0 - 框架、盘点与基础设施
 
 - [x] 搭建 Codex 自动化工作框架

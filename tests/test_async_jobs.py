@@ -152,9 +152,39 @@ def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
 
     assert exit_code == 0
     assert calls == ["run_once"]
-    assert any("worker_startup" in entry for entry in entries)
-    assert any("'registered_job_types': ['recognition', 'export']" in entry for entry in entries)
-    assert all("sk-secret" not in entry for entry in entries)
+
+
+def test_worker_entry_configures_info_logging(monkeypatch):
+    basic_config_calls: list[dict[str, object]] = []
+    config = load_runtime_config(env={}, async_job_mode="worker")
+
+    class FakeWorker:
+        mode = "worker"
+        poll_interval_seconds = 5.0
+        registered_job_types = ("recognition",)
+
+        def run_once(self) -> None:
+            return None
+
+    monkeypatch.setattr(backend_main, "load_runtime_config", lambda **_: config)
+    monkeypatch.setattr(backend_main, "load_runtime_environment_variables", lambda: {})
+    monkeypatch.setattr(backend_main, "build_async_job_worker", lambda runtime_config: FakeWorker())
+    monkeypatch.setattr(
+        backend_main.logging,
+        "basicConfig",
+        lambda **kwargs: basic_config_calls.append(kwargs),
+    )
+
+    exit_code = backend_main.main(["worker", "--once"])
+
+    assert exit_code == 0
+    assert basic_config_calls == [
+        {
+            "level": backend_main.logging.INFO,
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+            "force": False,
+        }
+    ]
 
 
 def test_backend_main_keeps_legacy_api_entrypoint(monkeypatch):

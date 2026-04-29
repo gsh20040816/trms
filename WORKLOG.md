@@ -1,5 +1,71 @@
 # WORKLOG
 
+## 2026-04-29 20:11 - Fix invisible worker logs and DeepSeek recognition normalization in runtime
+
+### 完成内容
+- 完成新增临时任务“修复 worker 日志不可见与 DeepSeek 识别结果规范化”。
+- 调整 [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py)：
+  - 在 `worker` 入口显式调用 `logging.basicConfig(...)`
+  - 使 `worker_startup`、`worker_poll_start`、`worker_poll_complete`、`worker_idle_wait` 等 INFO 日志在真实终端默认可见
+- 调整 [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - 在 LLM JSON 结果进入 Pydantic schema 前增加保守规范化：
+    - `confidence: "high" / "medium" / "low"` 规范成数值
+    - `material_type: "电子发票" / "发票"` 等中文标签规范成 `invoice` 等 TRMS 枚举
+    - 非法或无法安全映射的 `expense_type` 字段直接丢弃，而不是让整次识别失败
+  - 这样像当前真实 DeepSeek 返回的：
+    - `"confidence": "high"`
+    - `"material_type": "电子发票"`
+    - `"expense_type": "培训费"`
+    不会再因为格式噪声把整次任务打成 `llm_output_invalid`
+- 调整测试：
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+    - 新增 worker 入口日志初始化测试
+  - [tests/test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)
+    - 新增 DeepSeek 风格 `"high"` 置信度与中文 material type 规范化测试
+
+### 根因
+- `worker` 日志问题的根因很直接：虽然代码里已经写了 `LOGGER.info(...)`，但 `python -m trms_backend worker` 入口没有配置 logging，默认根 logger 不会输出 INFO。
+- “前端点击重新识别没有识别”的真实根因不是没执行，而是识别任务已经执行并失败：
+  - 当前库里最近的 recognition task 均是 `failed`
+  - `failure_detail` 是 `{"stage": "ai", "reason": "llm_output_invalid"}`
+  - `raw_response` 显示 DeepSeek 返回了语义接近正确但格式不合法的内容，例如：
+    - `confidence: "high"`
+    - `material_type: "电子发票"`
+    - `expense_type: "培训费"`
+- 也就是说，问题不是 worker 完全没跑，而是：
+  - 你看不到 worker 日志
+  - 模型输出里存在可保守规范化的格式噪声，导致结果在 schema 校验前被整单打失败
+
+### 关键改动点
+- 没有放宽最终 schema 约束，也没有把任意脏输出都吞掉。
+- 只对“明显可安全规范化”的值做映射：
+  - 文本置信度等级 -> 数字
+  - 中文发票类型别名 -> TRMS `material_type` 枚举
+- 对 `expense_type` 这类存在业务歧义、又超出当前枚举的值，采用“丢弃字段、不让整次识别失败”的保守策略，而不是擅自猜成错误枚举。
+
+### 风险与影响面
+- 这次规范化会让一部分原本 `llm_output_invalid` 的结果进入“部分字段成功、部分字段缺失”的状态，后续仍需成员/管理员补录 `expense_type` 等缺失字段。
+- 当前只修了最常见的 DeepSeek 输出噪声；如果后续模型继续返回别的非 schema 值，仍可能触发 `llm_output_invalid`，但现在至少能从 worker 日志和 `raw_response` 更快定位。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_llm.py tests/test_async_jobs.py`
+    - 22 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：443 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 真实库静态检查结论：
+  - 当前 `trms.db` 中没有 `pending` recognition/export 任务
+  - 最近 7 条 recognition task 全部已执行并失败，失败原因统一为 `ai / llm_output_invalid`
+  - 失败 `raw_response` 已明确暴露出 DeepSeek 当前返回的 `"high"` / `"电子发票"` / `"培训费"` 等非 schema 值
+
 ## 2026-04-29 20:11 - Add structured startup and polling logs for async worker
 
 ### 完成内容
