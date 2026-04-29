@@ -50,7 +50,7 @@ describe("ApiClient", () => {
       status: 422,
       summary: {
         title: "操作未完成",
-        message: "当前操作未完成，请检查填写内容后重试。",
+        message: "提交信息有误，请检查以下字段。",
         fieldIssues: [
           {
             label: "成员名单第 1 项",
@@ -76,6 +76,60 @@ describe("ApiClient", () => {
       message: "task not found",
       summary: {
         detailLines: [],
+        message: "任务不存在或已被删除。",
+      },
+    });
+  });
+
+  it("prefers backend detail over generic top-level message when both are present", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        message: "request conflicts with current resource state",
+        detail: "username already exists: member1",
+      }), {
+        status: 409,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    await expect(client.request("/auth/register", {
+      method: "POST",
+      body: {
+        username: "member1",
+        password: "correct-password",
+      },
+    })).rejects.toMatchObject({
+      status: 409,
+      summary: {
+        message: "用户名已存在：member1。",
+      },
+    });
+  });
+
+  it("does not collapse specific forbidden detail into a generic permission error", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        message: "actor is not allowed to perform this action",
+        detail: "actor is not allowed to manage material reminders for this task",
+      }), {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    await expect(client.request("/tasks/TASK-1/material-reminders", {
+      method: "POST",
+      body: {
+        member_id: "2250002",
+      },
+    })).rejects.toMatchObject({
+      status: 403,
+      summary: {
+        message: "actor is not allowed to manage material reminders for this task",
       },
     });
   });

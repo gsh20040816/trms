@@ -1380,3 +1380,72 @@
     - 排查并删除 `.workflow-*`、`.kpi-*`、`.dashboard-grid`、`.workspace-meta-grid`、`.task-insight*`、`.task-stage-line`、`.anomaly-chip*`、`.task-workflow*` 等当前 .tsx 中未被引用的死类
     - 保留仍被业务页 `<article className="task-card">` 等引用的辅助类
     - `npm run lint` / `npm run build` / `npm test` 全部通过
+
+## 临时任务 - 2026-04-29 当前系统 review 收口
+
+- [x] 修正前端通用 API 错误解析，优先展示后端真实失败原因
+  - Done when:
+    - `web/src/lib/api/errors.ts` 与 `web/src/lib/ui-text.ts` 不再把大多数 `4xx` 统一折叠成“当前操作未完成，请检查填写内容后重试”
+    - 登录/注册、任务表单、上传、分摊、确认等页面能展示后端 `detail`、`message` 与字段级校验信息
+    - 前端测试覆盖登录失败、`409` 冲突、`403` 越权、`422` 字段校验至少四类路径
+
+- [x] 收口成员专项上传页剩余非 M3 表单与操作控件
+  - Done when:
+    - `web/src/app/member-material-upload.tsx` 中任务选择、材料类型、提交按钮、结果状态标签与链接入口全部切换为 MUI / Material 3 组件
+    - 页面不再依赖 `route-link`、原生 `select`、手写 `status-chip`
+    - 相关测试同步更新
+
+- [x] 重构成员发票工作台为“左侧发票列表 + 右侧详情面板”
+  - Done when:
+    - `web/src/app/member-invoice-workbench.tsx` 的发票 Tab 不再把全部发票详情纵向铺满
+    - 左侧可选择当前任务下的本人发票/共享发票，右侧在单一上下文中展示识别、补录、分摊、附件和下一步动作
+    - 桌面端主要操作尽量无需整页滚动；移动端保留可用降级布局
+    - 前端测试覆盖发票切换、详情刷新和关键操作入口
+
+- [ ] 收口成员发票工作台剩余非 M3 表单与状态控件
+  - Done when:
+    - `member-invoice-workbench.tsx` 中材料类型、手动补录、分摊编辑、确认原因等原生 `input` / `select` / `textarea` / `button` 改为 MUI 表单与操作组件
+    - 旧 `route-link` / `button-*` / `status-chip` 类不再承担核心交互
+    - 相关测试同步更新
+
+- [ ] 收口成员材料状态页与费用确认页剩余非 M3 控件
+  - Done when:
+    - `member-material-status.tsx` 与 `member-expense-confirmation.tsx` 中残余原生表单、按钮、状态标签与链接动作统一替换为 MUI 组件
+    - 页面只保留必要布局辅助类，不再依赖 legacy 操作样式类
+    - 相关测试同步更新
+
+- [ ] 收口管理员复核、导出与提醒页剩余非 M3 控件
+  - Done when:
+    - `admin-review-overview.tsx`、`admin-export-tasks.tsx`、`admin-corrections-reminders.tsx` 中残余 `route-link`、手写 `status-chip`、原生表单控件替换为 MUI 组件
+    - 复核列表/详情联动结构保持不变，但视觉、状态与操作反馈统一到 Material 3
+    - 相关测试同步更新
+
+- [ ] 收口管理员任务列表/详情/发票录入/分摊编辑剩余非 M3 控件
+  - Done when:
+    - `admin-task-list.tsx`、`admin-task-detail.tsx`、`admin-invoice-editor.tsx`、`admin-split-editor.tsx` 的残余 legacy 按钮、状态标签、原生输入完全切换为 MUI
+    - 页面仅保留必要布局辅助类，不再依赖 `.button-*`、`.route-link`、`.status-chip` 等旧交互样式
+    - 相关测试同步更新
+
+- [ ] 补齐上传后识别调度闭环，消除 `in_process` / worker 语义错位
+  - Done when:
+    - `TRMS_ASYNC_JOB_MODE=in_process` 时，材料上传或显式重试能在请求内触发识别执行，而不是只停留在 `pending`
+    - `TRMS_ASYNC_JOB_MODE=worker` 时，接口与前端明确提示“已入队等待 worker 消费”，不把排队误显示成系统异常
+    - 测试覆盖 `in_process` 自动执行、`worker` 排队等待和无 worker 场景提示
+
+- [ ] 强化发票识别提示词与失败可诊断信息
+  - Done when:
+    - `recognition_llm.py` 的 system / user prompt 明确覆盖中文电子发票/纸票常见字段、金额单位、税号/抬头/时间抽取规则和“缺失不瞎猜”边界
+    - 识别失败时保留足够的安全可审计上下文，便于区分“提示词未抽出字段”“模型输出不合法”“文件准备阶段失败”
+    - 测试覆盖中文发票样例、字段缺失样例和非法 JSON / schema 失败样例
+
+- [ ] 为独立 worker 增加启动、轮询与任务结果结构化日志
+  - Done when:
+    - `uv run python -m trms_backend worker` 启动时输出运行模式、轮询间隔、已注册处理器和关键配置摘要（脱敏）
+    - 每轮轮询、任务成功、任务失败、空闲等待都输出结构化日志，能定位 recognition/export job id、material/task id、failure reason
+    - worker 日志不泄露 token / API key，相关测试覆盖日志脱敏和关键事件
+
+- [x] 稳定 `main-flow-e2e-placeholder` 全量前端回归测试时序
+  - Done when:
+    - `cd web && npm test` 全量运行时，`src/app/main-flow-e2e-placeholder.test.tsx` 不再因默认 `5000ms` 超时而偶发失败
+    - 已确认根因是测试本身时序/等待策略问题还是页面实现性能问题，而不是只靠盲目放大超时时间掩盖
+    - `./scripts/verify.sh` 可稳定通过至少一次

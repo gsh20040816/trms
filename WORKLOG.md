@@ -1,5 +1,332 @@
 # WORKLOG
 
+## 2026-04-29 18:49 - Rebuild member invoice workbench into list-detail workspace
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“重构成员发票工作台为左侧发票列表 + 右侧详情面板”。
+- 调整 [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 发票 Tab 从“所有票据纵向平铺”改为“两栏工作区”
+  - 左侧新增本人发票选择列表与共享发票选择列表
+  - 右侧固定渲染当前选中票据的完整上下文，包括：
+    - 识别字段
+    - 材料类型更正
+    - 手动补录 / 重新识别
+    - 分摊与确认状态
+    - 附件与缺失项
+    - 下一步动作
+  - 共享发票改为与本人发票共用同一选择/详情工作区，但仍保持只读边界
+  - 选中项根据当前 hash 与可见数据推导，不再依赖额外同步 effect 触发二次渲染
+- 同步更新前端测试：
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [web/src/app/member-legacy-route-redirects.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-legacy-route-redirects.test.tsx)
+  - 适配新布局下的选择器作用域、重复文案和空态文案变化
+
+### 根因
+- 旧工作台在 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 的发票 Tab 中直接 `map` 渲染全部本人发票卡片，并把共享发票再单独放在页面底部。
+- 这样会导致：
+  - 同一张票据的信息与操作被埋在长滚动页面里
+  - 切换票据只能靠上下滚动，不是显式选择
+  - 本人发票与共享发票上下文被拆成两个远距离区域
+
+### 关键改动点
+- 用“左侧选择 + 右侧详情”的方式收口票据上下文。
+- 保留现有业务逻辑和大部分旧表单/状态文案，不把这轮任务扩散成“M3 控件整体迁移”。
+- 为避免右侧初始空白闪烁，选中项由当前数据直接推导，不靠 effect 内部 `setState` 再补一帧。
+
+### 风险与影响面
+- 本轮改变了成员工作台发票区的信息架构，因此大量前端测试断言需要从“页面唯一元素”改成“当前详情面板内断言”。
+- 当前仍保留一批 legacy `button` / `select` / `status-chip`，这是下一项独立任务“收口成员发票工作台剩余非 M3 表单与状态控件”的范围，本轮不顺带处理。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- src/app/member-invoice-workbench.test.tsx src/app/member-legacy-route-redirects.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+    - 3 个文件、17 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/app/member-invoice-workbench.tsx src/app/member-invoice-workbench.test.tsx src/app/member-legacy-route-redirects.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+- 已通过前端 build：
+  - `cd web && npm run build`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
+### 假设
+- 本轮将“左侧发票列表 + 右侧详情面板”限定为桌面主交互骨架重构；移动端采用同一 DOM 顺序下的自然降级布局，不额外做独立移动端导航组件。
+
+## 2026-04-29 18:34 - Stabilize main-flow-e2e-placeholder under full frontend test run
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“稳定 `main-flow-e2e-placeholder` 全量前端回归测试时序”。
+- 调整 [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)：
+  - 将成员端“上传材料”和“费用确认”两段路径从旧二级入口改为直达 `/member/invoices/workbench` 的 hash 入口，减少额外重定向和无意义页面装配
+  - 为这条跨多页面、跨多角色的占位 E2E 单测单独设置 `15_000ms` 超时，而不是修改全局前端测试超时
+  - 保留原测试目标不变：仍覆盖创建任务、开放任务、成员上传、管理员录票、管理员分摊、成员确认、管理员复核、导出门禁
+- 同步清理：
+  - `TASKS.md` 将该任务标记完成
+  - `BLOCKERS.md` 清除当前阻塞
+  - `WORKLOG.md` 记录本轮根因与验证结果
+
+### 根因
+- 根因不是功能代码错误，而是测试本身属于“跨多页面主流程占位 E2E”，在一次用例里连续执行：
+  - 多次 `cleanup() + renderRoute()`
+  - 多角色切换
+  - 多个依赖异步 fetch 的页面装配
+- 单独跑时该测试约 5.39s，放进全量 `vitest run` 时会在默认 `5000ms` 门限附近抖动超时。
+- 因此问题属于：
+  - 测试路径过长、接近默认超时上限
+  - 成员端旧路由重定向增加了额外装配成本
+  - 全量运行下的资源竞争放大了上述边缘时序
+
+### 关键改动点
+- 本轮不是“盲目提高全局超时”，而是：
+  - 先减少测试中的不必要重定向路径
+  - 再只对这条长流程占位 E2E 单测设置局部超时
+- 这样其他前端单测仍保留默认超时约束，不会因为一个慢测试放松整套回归门槛。
+
+### 风险与影响面
+- 这条测试仍然是占位 E2E，运行时间在前端测试中依然偏长；后续若工作台继续变重，仍可能需要进一步拆分或重构测试结构。
+- 当前做法保留了主流程覆盖，但没有把这条大测试拆成多条更细粒度用例；这是出于“先解除 `verify` 阻塞”的最小修复。
+
+### 验证结果
+- 已通过定向测试：
+  - `cd web && npm test -- src/app/main-flow-e2e-placeholder.test.tsx`
+    - 1 个文件、1 个用例通过
+- 已通过全量前端测试：
+  - `cd web && npm test`
+    - 23 个文件、89 个用例全部通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
+### 假设
+- 本轮将“修复 verify 阻塞”限定为：稳定当前已记录的 flaky 前端占位 E2E，不顺带拆重整条主流程测试架构，也不顺带处理 `--localstorage-file` warning 或 chunk 体积告警。
+
+## 2026-04-29 18:28 - Migrate member upload page remaining controls to Material 3
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“收口成员专项上传页剩余非 M3 表单与操作控件”。
+- 重写 [web/src/app/member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx) 的渲染层：
+  - 页头改为 `RoleWorkspace + PageHeader`
+  - 上传表单改为 `SectionCard + TextField(select) + Button`
+  - 结果状态标签改为 `StatusBadge`
+  - 成功结果列表改为 MUI `Card`
+  - 返回入口改为 MUI `Button` 链接，不再依赖 `route-link`
+- 保持不变的边界：
+  - 上传 API、表单校验、`FileDropZone`、逐文件成功/失败结果和 Snackbar 反馈逻辑不变
+- 同步更新测试 [web/src/app/member-material-upload.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.test.tsx)：
+  - “目标任务”断言从原生表单查询切到 MUI `combobox`
+  - 其余主流程、超限拦截和后端拒绝路径继续保留
+
+### 根因
+- 这个页面虽然已经接入了 `FileDropZone`，但任务选择、材料类型、提交按钮、入口链接和结果状态仍然停留在原生 `select`、legacy `route-link`、手写 `status-chip`。
+- 这会让成员上传页成为当前成员端最明显的“半迁移”页面，和现有 Material 3 骨架不一致。
+
+### 关键改动点
+- 用 MUI 组件接管原生交互控件，但不顺带改上传业务流程。
+- 页面不再依赖：
+  - `route-link`
+  - 原生 `select`
+  - 手写 `status-chip`
+
+### 风险与影响面
+- 本轮主要风险在于 MUI `Select` 的测试查询语义与原生控件不同，已通过测试调整收口。
+- 页面结果区域从旧的 class-based 卡片切到 MUI `Card`，但保留了相同的文本信息和 aria-label，避免影响业务可见性。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- src/app/member-material-upload.test.tsx`
+    - 1 个文件、4 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/app/member-material-upload.tsx src/app/member-material-upload.test.tsx`
+- 已通过前端 build：
+  - `cd web && npm run build`
+- 本轮未再次单独记录新的 `./scripts/verify.sh` 结果；仓库级验证最新状态仍与上一轮一致，继续被 [BLOCKERS.md](/home/gsh/workspace/TRMS/BLOCKERS.md:5) 中已记录的前端 flaky 测试阻塞。
+
+### 假设
+- 本轮将“剩余非 M3 控件”限定为：任务选择、材料类型、提交按钮、结果状态和页面跳转入口；不顺带改造 `FileDropZone` 本身、后端错误协议或上传结果数据模型。
+
+## 2026-04-29 18:24 - Fix frontend API error parsing to preserve backend detail
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“修正前端通用 API 错误解析，优先展示后端真实失败原因”。
+- 调整前端公共错误解析：
+  - 修改 [web/src/lib/api/errors.ts](/home/gsh/workspace/TRMS/web/src/lib/api/errors.ts)：
+    - 标准错误载荷优先读取后端 `detail`，不再先被顶层泛化 `message` 截断
+    - 字段级 `422` 错误不再落回“当前操作未完成…”泛化提示，改为“提交信息有误，请检查以下字段。”
+  - 修改 [web/src/lib/ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts)：
+    - 删除“大多数 `4xx` 一律返回统一提示”的兜底策略
+    - 为登录失败、用户名冲突、上传关闭、分摊总额不一致、任务状态流转限制、成员不在任务内、费用类型不允许等高频后端错误增加具体文案映射
+    - 未命中已知翻译规则的 `4xx` 保留后端真实 `detail`，不再强行改写成统一提示
+- 同步更新前端测试：
+  - [web/src/lib/api/client.test.ts](/home/gsh/workspace/TRMS/web/src/lib/api/client.test.ts)
+  - [web/src/components/ApiErrorNotice.test.tsx](/home/gsh/workspace/TRMS/web/src/components/ApiErrorNotice.test.tsx)
+  - [web/src/app/App.test.tsx](/home/gsh/workspace/TRMS/web/src/app/App.test.tsx)
+  - [web/src/app/member-material-upload.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.test.tsx)
+  - [web/src/app/member-expense-confirmation.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.test.tsx)
+  - [web/src/app/admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx)
+  - [web/src/app/admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx)
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - [web/src/app/admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)
+  - [web/src/app/admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)
+- 本轮修改文件：
+  - `web/src/lib/api/errors.ts`
+  - `web/src/lib/ui-text.ts`
+  - `web/src/lib/api/client.test.ts`
+  - `web/src/components/ApiErrorNotice.test.tsx`
+  - `web/src/app/App.test.tsx`
+  - `web/src/app/member-material-upload.test.tsx`
+  - `web/src/app/admin-task-create.test.tsx`
+  - `web/src/app/admin-split-editor.test.tsx`
+  - `web/src/app/admin-task-detail.test.tsx`
+  - `web/src/app/admin-corrections-reminders.test.tsx`
+  - `web/src/app/admin-invoice-editor.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 根因
+- 前端原先有两层错误信息丢失：
+  - [web/src/lib/api/errors.ts](/home/gsh/workspace/TRMS/web/src/lib/api/errors.ts) 先读顶层 `message`，而标准后端错误响应通常是“`message` 泛化、`detail` 具体”，导致更关键的 `detail` 被吞掉。
+  - [web/src/lib/ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts) 又把大多数 `4xx` 兜底改写成“当前操作未完成，请检查填写内容后重试。”，进一步抹平登录失败、权限失败、任务状态冲突和字段校验的真实原因。
+
+### 关键改动点
+- 优先级调整为：
+  - 真实 `detail`
+  - 字段级校验明细
+  - 顶层 `message`
+  - 最后才是状态码 fallback
+- 对高频后端错误做面向用户的中文化映射，但对未知 `4xx` 保留原始 `detail`，避免再次过度泛化。
+
+### 风险与影响面
+- 本轮会改变多个页面已有错误文案，因此所有依赖旧泛化提示的前端断言都需要同步更新。
+- 对未显式列入映射表的后端 `4xx`，当前策略是“保留原始 detail”；这比继续泛化更接近真实原因，但部分页面仍可能出现英文业务错误文案，后续可按高频场景继续补中文映射。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- src/lib/api/client.test.ts src/components/ApiErrorNotice.test.tsx src/app/App.test.tsx src/app/member-material-upload.test.tsx src/app/admin-task-create.test.tsx src/app/admin-split-editor.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-corrections-reminders.test.tsx src/app/admin-invoice-editor.test.tsx src/app/member-expense-confirmation.test.tsx`
+    - 10 个文件、45 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/lib/ui-text.ts src/lib/api/errors.ts src/lib/api/client.test.ts src/components/ApiErrorNotice.test.tsx src/app/App.test.tsx src/app/member-material-upload.test.tsx src/app/admin-task-create.test.tsx src/app/admin-split-editor.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-corrections-reminders.test.tsx src/app/admin-invoice-editor.test.tsx`
+- 已通过前端 build：
+  - `cd web && npm run build`
+- 已按仓库要求运行整仓验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test` 仍失败于已知阻塞：`src/app/main-flow-e2e-placeholder.test.tsx` 在全量运行时默认 `5000ms` 超时
+- 结论：
+  - 本轮相关改动的定向测试、lint、build 均通过；
+  - 仓库级 `verify.sh` 仍被 [BLOCKERS.md](/home/gsh/workspace/TRMS/BLOCKERS.md:5) 中已有的 flaky 前端测试阻塞，因此本轮不能声称整仓验证通过，也不执行 commit。
+
+### 假设
+- 本轮将“优先展示真实错误原因”实现为：
+  - 已知高频错误尽量中文化；
+  - 未知业务 `4xx` 至少保留原始后端 `detail`；
+  - 不在本轮顺带重写所有后端错误码语义或新增完整的前端 i18n 体系。
+
+## 2026-04-29 18:35 - Review current system and add follow-up tasks
+
+### 完成内容
+- 按仓库规范完成本轮 review 前置阅读：
+  - `AGENTS.md`
+  - `TASKS.md`
+  - `WORKLOG.md`
+  - `BLOCKERS.md`
+  - `README.md`
+  - `docs/同济大学ACM竞赛报销收集系统需求分析文档_V0.2.md`
+  - `docs/同济大学ACM竞赛报销收集系统架构设计与技术选型文档_V0.1.md`
+  - `docs/UI原型图对照与交互规范补充.md`
+  - `docs/Material3前端落地方案评估.md`
+- 对用户指出的五类问题完成静态代码 review，并把需要落实的修改拆分写入 `TASKS.md` 新增章节“临时任务 - 2026-04-29 当前系统 review 收口”。
+- 本轮未改业务代码，仅更新：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 根因
+- 前端错误提示被公共映射层过度收口：
+  - [web/src/lib/ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts:224) 会把大多数 `4xx` 统一映射成泛化中文提示。
+  - [web/src/lib/api/errors.ts](/home/gsh/workspace/TRMS/web/src/lib/api/errors.ts:139) 在汇总错误时直接消费上述映射，导致后端已返回的 `detail` / `message` 细节被吞掉。
+- Material 3 迁移并未完成，仍有大量页面依赖 legacy class 和原生表单控件：
+  - [web/src/app/member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx:314)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx:1887)
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx:645)
+  - 以及 `admin-export-tasks.tsx`、`admin-corrections-reminders.tsx`、`member-material-status.tsx`、`member-expense-confirmation.tsx`、`admin-task-list.tsx`、`admin-task-detail.tsx`、`admin-invoice-editor.tsx`、`admin-split-editor.tsx` 中残余的 `route-link` / `button-*` / `status-chip` / 原生输入控件。
+- 成员发票工作台当前把所有发票详情纵向平铺，天然导致长滚动页面：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx:1887) 开始直接 `map` 渲染整批发票卡片，而不是“列表选择 + 详情联动”。
+- “手动上传发票不识别”当前更像识别调度闭环缺口，而不是先验可归咎于提示词：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py:25) 默认把开发/测试环境设为 `in_process`。
+  - 但 [src/trms_backend/application/material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/material_submission.py:259) 上传后只创建 `pending` 识别任务占位，没有在 `in_process` 模式下自动执行。
+  - [tests/test_main_flow_e2e.py](/home/gsh/workspace/TRMS/tests/test_main_flow_e2e.py:306) 也需要测试代码手工构造 `RecognitionAsyncJobProcessor` 再 `run_once()`，进一步证明当前主链路并不会自动跑识别。
+- 提示词本身也偏弱，只给了通用 JSON 约束，没有针对中文发票场景的字段抽取指引：
+  - [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py:346)
+- worker 可观测性明显不足：
+  - [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py:125) 的 worker 入口只有参数解析和 `run_forever()`，没有启动日志。
+  - [src/trms_backend/application/async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/async_jobs.py:67) 的轮询循环没有任何日志输出。
+  - 当前仓库除了 API 错误处理外，worker/异步处理链基本没有结构化日志埋点。
+
+### 关键改动点
+- 在 `TASKS.md` 新增 10 个 review 后续任务，覆盖：
+  - 前端真实错误原因展示
+  - 剩余非 M3 页面/控件收口
+  - 成员发票工作台左侧列表 + 右侧详情改造
+  - 识别调度闭环修复
+  - 发票识别提示词强化
+  - worker 启动/轮询/结果日志
+
+### 风险与影响面
+- 本轮只是 review 结论落账，没有直接修复线上行为，因此上述问题当前仍然存在。
+- “上传后不识别”我已确认存在调度语义错位，但未实际结合你的本地 `.env` 和真实 worker 进程复现，因此还不能排除同时叠加了 LLM 配置、文件内容或提示词质量问题。
+- Material 3 收口任务已按页面拆分，但其中“成员发票工作台布局重构”影响面最大，后续实现时需要同步回归桌面端、移动端和现有 workbench 测试。
+
+### 验证结果
+- 已完成静态 review 证据核对，引用代码与测试如下：
+  - [web/src/lib/ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts:224)
+  - [web/src/lib/api/errors.ts](/home/gsh/workspace/TRMS/web/src/lib/api/errors.ts:139)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx:1887)
+  - [src/trms_backend/application/material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/material_submission.py:259)
+  - [tests/test_main_flow_e2e.py](/home/gsh/workspace/TRMS/tests/test_main_flow_e2e.py:306)
+  - [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py:346)
+  - [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py:125)
+  - [src/trms_backend/application/async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/async_jobs.py:67)
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test` 未通过：`src/app/main-flow-e2e-placeholder.test.tsx` 在全量运行时命中默认 `5000ms` 超时
+- 已做附加排查：
+  - `cd web && npm test -- src/app/main-flow-e2e-placeholder.test.tsx`
+    - 单独运行通过
+- 结论：
+  - 当前 `verify.sh` 失败点属于前端现有 flaky 测试，而不是本轮文档改动引入的业务回归；
+  - 已将该问题写入 `TASKS.md` 与 `BLOCKERS.md`，本轮不能声称整仓验证通过。
+
+### 假设
+- 本轮把“写入 tasks”解释为：基于静态 review 明确列出需要修改的最小任务，而不是立即实现其中任一业务修复。
+
 ## 2026-04-29 17:40 - Shrink unused styles.css selectors
 
 ### 完成内容

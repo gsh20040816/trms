@@ -18,7 +18,7 @@ describe("ApiErrorNotice", () => {
 
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(screen.getByText("操作未完成")).toBeInTheDocument();
-    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(screen.getByText("提交信息有误，请检查以下字段。")).toBeInTheDocument();
     expect(screen.getByText("费用类别第 2 项")).toBeInTheDocument();
     expect(screen.getByText("所选费用类别暂不支持。")).toBeInTheDocument();
   });

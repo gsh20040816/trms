@@ -129,7 +129,7 @@ describe("member legacy routes", () => {
     const statusRouter = renderLegacyRoute("/member/materials/status?taskId=TASK-OPEN");
 
     expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
-    expect(await screen.findByText("当前任务下还没有本人已上传发票")).toBeInTheDocument();
+    expect(await screen.findByText("当前任务下还没有可查看的发票")).toBeInTheDocument();
     expect(statusRouter.state.location.pathname).toBe("/member/invoices/workbench");
     expect(statusRouter.state.location.hash).toBe("#member-workbench-invoices");
 

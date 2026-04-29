@@ -120,17 +120,17 @@ export function extractApiErrorMessage(payload: unknown) {
     return null;
   }
 
-  if (typeof payload.message === "string" && payload.message.length > 0) {
-    return payload.message;
-  }
-
   const directDetail = detailText(payload.detail);
   if (directDetail !== null) {
     return directDetail;
   }
 
   if (normalizeFieldIssues(payload.detail).length > 0) {
-    return "请求参数不合法";
+    return null;
+  }
+
+  if (typeof payload.message === "string" && payload.message.length > 0) {
+    return payload.message;
   }
 
   return null;
@@ -138,7 +138,11 @@ export function extractApiErrorMessage(payload: unknown) {
 
 export function summarizeApiError(status: number, payload: unknown): ApiErrorSummary {
   const fieldIssues = isRecord(payload) ? normalizeFieldIssues(payload.detail) : [];
-  const rawMessage = extractApiErrorMessage(payload) ?? fallbackMessage(status);
+  const rawMessage = extractApiErrorMessage(payload) ?? (
+    fieldIssues.length > 0
+      ? "提交信息有误，请检查以下字段。"
+      : fallbackMessage(status)
+  );
   const message = mapBackendMessage(rawMessage, status);
   const detailLines = (() => {
     return [];

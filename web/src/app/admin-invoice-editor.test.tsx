@@ -486,6 +486,6 @@ describe("admin invoice editor page", () => {
     fireEvent.click(await screen.findByRole("button", { name: "保存发票字段" }));
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
-    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(screen.getByText("当前发票费用类型“铁路交通”不在任务允许范围内；当前任务只允许：住宿费。")).toBeInTheDocument();
   });
 });

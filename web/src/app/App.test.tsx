@@ -259,7 +259,7 @@ describe("web app account auth", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "以系统管理员进入" }));
 
-    expect((await screen.findAllByText("当前操作未完成，请检查填写内容后重试。")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("用户名或密码错误。")).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "账号登录与注册" })).toBeInTheDocument();
   });
 

@@ -532,6 +532,6 @@ describe("admin split editor page", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
-    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(screen.getByText("分摊金额合计必须等于发票金额。")).toBeInTheDocument();
   });
 });

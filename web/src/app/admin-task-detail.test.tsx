@@ -371,6 +371,6 @@ describe("admin task detail page", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
-    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(screen.getByText("导出完成前，任务不能切换为已完成。")).toBeInTheDocument();
   });
 });

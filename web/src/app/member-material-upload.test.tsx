@@ -134,7 +134,7 @@ describe("MemberMaterialUploadPage", () => {
     renderMemberUploadRoute("/member/materials/upload?taskId=TASK-OPEN");
 
     expect(await screen.findByRole("heading", { name: "成员材料上传" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("目标任务")).toHaveValue("TASK-OPEN");
+    expect(await screen.findByRole("combobox", { name: "目标任务" })).toHaveTextContent("ICPC Xi'an Regional（TASK-OPEN）");
     expect(screen.getByRole("link", { name: "返回当前任务工作台" })).toHaveAttribute(
       "href",
       "/member/invoices/workbench?taskId=TASK-OPEN",
@@ -359,7 +359,7 @@ describe("MemberMaterialUploadPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
 
-    expect(await screen.findByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(await screen.findByText("当前任务未开放材料上传。")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "上传结果" })).not.toBeInTheDocument();
   });
 });

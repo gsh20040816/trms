@@ -1,10 +1,25 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
 
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import LinearProgress from "@mui/material/LinearProgress";
+import MenuItem from "@mui/material/MenuItem";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
 import { ApiError } from "../lib/api/client";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import {
+  EmptyState,
+  PageHeader,
+  RoleWorkspace,
+  SectionCard,
+  StatusBadge,
+} from "../components/dashboard";
 import { FileDropZone } from "../components/FileDropZone";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
@@ -141,6 +156,23 @@ function formatDateTime(value: string) {
 function formatMaterialType(materialType: MaterialType) {
   const matched = MATERIAL_TYPE_OPTIONS.find((option) => option.value === materialType);
   return matched?.label ?? materialType;
+}
+
+function buildUploadResultTone(status: MaterialBatchUploadResponse["status"]) {
+  if (status === "failed") {
+    return "warning" as const;
+  }
+  return "success" as const;
+}
+
+function formatUploadResultStatus(status: MaterialBatchUploadResponse["status"]) {
+  if (status === "success") {
+    return "全部成功";
+  }
+  if (status === "partial_success") {
+    return "部分成功";
+  }
+  return "全部失败";
 }
 
 function validateUploadForm(
@@ -311,131 +343,127 @@ export function MemberMaterialUploadPage() {
       : null;
 
   return (
-    <div className="page-stack">
-      <section className="status-card auth-panel">
-        <p className="eyebrow">材料提交</p>
-        <h2>成员材料上传</h2>
-        <p>
-          当前页是单任务发票工作台下的专项上传入口，用于补充发票或附件材料。
-        </p>
-        <div className="inline-actions">
-          <Link
-            className="route-link"
-            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
-          >
-            返回当前任务工作台
-          </Link>
-          <Link className="route-link route-link-secondary" to="/member">
-            返回成员任务列表
-          </Link>
-          {selectedTask ? (
-            <Link
-              className="route-link route-link-secondary"
-              to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
-            >
-              查看当前任务材料状态
-            </Link>
-          ) : null}
-          <span className="status-chip">当前可见任务 {visibleTaskCount} 个</span>
-        </div>
-      </section>
-
+    <RoleWorkspace
+      header={(
+        <PageHeader
+          eyebrow="材料提交"
+          title="成员材料上传"
+          description="当前页是单任务发票工作台下的专项上传入口，用于补充发票或附件材料。"
+          actions={(
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+              <StatusBadge tone="info">当前可见任务 {visibleTaskCount} 个</StatusBadge>
+              <Button
+                component={RouterLink}
+                to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+                variant="contained"
+              >
+                返回当前任务工作台
+              </Button>
+              <Button component={RouterLink} to="/member" variant="outlined">
+                返回成员任务列表
+              </Button>
+              {selectedTask ? (
+                <Button
+                  component={RouterLink}
+                  to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
+                  variant="outlined"
+                >
+                  查看当前任务材料状态
+                </Button>
+              ) : null}
+            </Stack>
+          )}
+        />
+      )}
+    >
       {pageState.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">材料提交</p>
-          <h2>正在加载可上传任务</h2>
-          <p>正在读取当前成员可访问的任务，并筛选仍开放提交的上传目标。</p>
-        </section>
+        <SectionCard title="正在加载可上传任务" description="正在读取当前成员可访问的任务，并筛选仍开放提交的上传目标。" />
       ) : null}
 
       {pageState.status === "error" ? <ApiErrorNotice error={pageState.error} /> : null}
 
       {pageState.status === "ready" && uploadableTasks.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">暂无开放任务</p>
-          <h2>当前没有可上传的开放任务</h2>
-          <p>
-            你当前可见的任务共有 {pageState.visibleTasks.length} 个，但目前都不在收集阶段。
-          </p>
-          <p className="status-note">
-            如需补交，请先由管理员重新开放任务或新建新的报销收集任务。
-          </p>
-        </section>
+        <EmptyState
+          title="当前没有可上传的开放任务"
+          description={`你当前可见的任务共有 ${pageState.visibleTasks.length} 个，但目前都不在收集阶段。如需补交，请先由管理员重新开放任务或新建新的报销收集任务。`}
+        />
       ) : null}
 
       {pageState.status === "ready" && uploadableTasks.length > 0 ? (
-        <form
-          className="page-stack"
+        <Box
+          component="form"
           onSubmit={(event) => {
             void handleSubmit(event);
           }}
           noValidate
         >
-          <section className="status-card auth-panel">
-            <div className="admin-form-header">
-              <div>
-                <p className="eyebrow">上传表单</p>
-                <h2>选择任务并上传文件</h2>
-              </div>
-              <span className="status-chip">开放任务 {uploadableTasks.length} 个</span>
-            </div>
-            <div className="admin-form-grid">
-              <label className="field-stack">
-                <span>目标任务</span>
-                <select
+          <SectionCard
+            title="选择任务并上传文件"
+            description="上传结果会显式展示材料编号、重复状态和逐文件失败原因，不把部分失败伪装成全部成功。"
+            action={<StatusBadge tone="info">开放任务 {uploadableTasks.length} 个</StatusBadge>}
+          >
+            <Stack spacing={2.5}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr))" },
+                  gap: 2,
+                }}
+              >
+                <TextField
+                  select
+                  label="目标任务"
                   aria-label="目标任务"
                   name="task-id"
                   value={formState.taskId}
                   onChange={(event) => {
                     updateField("taskId", event.target.value);
                   }}
+                  error={Boolean(validationErrors.taskId)}
+                  helperText={validationErrors.taskId ?? "只列出当前成员可见且仍开放提交的任务。"}
+                  fullWidth
                 >
                   {uploadableTasks.map((task) => (
-                    <option key={task.id} value={task.id}>
+                    <MenuItem key={task.id} value={task.id}>
                       {task.competition_name}（{task.id}）
-                    </option>
+                    </MenuItem>
                   ))}
-                </select>
-                {validationErrors.taskId ? (
-                  <span className="field-error">{validationErrors.taskId}</span>
-                ) : (
-                  <span className="field-hint">只列出当前成员可见且仍开放提交的任务。</span>
-                )}
-              </label>
+                </TextField>
 
-              <label className="field-stack">
-                <span>提交方式</span>
-                <select name="channel" value={WEB_CHANNEL} disabled>
-                  <option value={WEB_CHANNEL}>网页提交</option>
-                </select>
-                <span className="field-hint">当前页面默认按网页提交记录。</span>
-              </label>
+                <TextField
+                  label="提交方式"
+                  name="channel"
+                  value="网页提交"
+                  disabled
+                  helperText="当前页面默认按网页提交记录。"
+                  fullWidth
+                />
 
-              <label className="field-stack">
-                <span>材料类型</span>
-                <select
+                <TextField
+                  select
+                  label="材料类型"
                   aria-label="材料类型"
                   name="material-type"
                   value={formState.materialType}
                   onChange={(event) => {
                     updateField("materialType", event.target.value as MaterialType);
                   }}
+                  error={Boolean(validationErrors.materialType)}
+                  helperText={validationErrors.materialType ?? "请选择最接近的材料类型，便于后续整理和复核。"}
+                  fullWidth
                 >
                   {MATERIAL_TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
+                    <MenuItem key={option.value} value={option.value}>
                       {option.label}
-                    </option>
+                    </MenuItem>
                   ))}
-                </select>
-                {validationErrors.materialType ? (
-                  <span className="field-error">{validationErrors.materialType}</span>
-                ) : (
-                  <span className="field-hint">请选择最接近的材料类型，便于后续整理和复核。</span>
-                )}
-              </label>
+                </TextField>
+              </Box>
 
-              <div className="field-stack">
-                <span>上传文件</span>
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  上传文件
+                </Typography>
                 <FileDropZone
                   files={formState.files}
                   onChange={(files) => {
@@ -448,113 +476,158 @@ export function MemberMaterialUploadPage() {
                   hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会分别提示每个文件的结果。"
                 />
                 {validationErrors.files ? (
-                  <span className="field-error">{validationErrors.files}</span>
+                  <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                    {validationErrors.files}
+                  </Typography>
                 ) : null}
-              </div>
-            </div>
+              </Box>
 
-            {isSubmitting ? <LinearProgress aria-label="材料上传进度" /> : null}
+              {isSubmitting ? <LinearProgress aria-label="材料上传进度" /> : null}
 
-            {selectedTask ? (
-              <dl className="task-meta-grid member-upload-meta-grid" aria-label="当前选中任务摘要">
-                <div>
-                  <dt>比赛名称</dt>
-                  <dd>{selectedTask.competition_name}</dd>
-                </div>
-                <div>
-                  <dt>任务编号</dt>
-                  <dd>{selectedTask.id}</dd>
-                </div>
-                <div>
-                  <dt>任务状态</dt>
-                  <dd>{formatTaskStatus(selectedTask.status)}</dd>
-                </div>
-                <div>
-                  <dt>截止时间</dt>
-                  <dd>{formatDateTime(selectedTask.deadline)}</dd>
-                </div>
-              </dl>
-            ) : null}
-            <div className="admin-form-footer">
-              <p className="field-hint">
-                上传结果会显式展示材料编号、重复状态和逐文件失败原因，不把部分失败伪装成全部成功。
-              </p>
-              <button className="route-link" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "正在上传..." : "上传材料"}
-              </button>
-            </div>
-          </section>
-        </form>
+              {selectedTask ? (
+                <Box
+                  component="dl"
+                  aria-label="当前选中任务摘要"
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" },
+                    gap: 2,
+                    m: 0,
+                    "& dt": {
+                      color: "text.secondary",
+                      fontSize: "0.875rem",
+                      marginBottom: 0.5,
+                    },
+                    "& dd": {
+                      margin: 0,
+                      fontWeight: 600,
+                    },
+                  }}
+                >
+                  <Box component="div">
+                    <Typography component="dt">比赛名称</Typography>
+                    <Typography component="dd">{selectedTask.competition_name}</Typography>
+                  </Box>
+                  <Box component="div">
+                    <Typography component="dt">任务编号</Typography>
+                    <Typography component="dd">{selectedTask.id}</Typography>
+                  </Box>
+                  <Box component="div">
+                    <Typography component="dt">任务状态</Typography>
+                    <Typography component="dd">{formatTaskStatus(selectedTask.status)}</Typography>
+                  </Box>
+                  <Box component="div">
+                    <Typography component="dt">截止时间</Typography>
+                    <Typography component="dd">{formatDateTime(selectedTask.deadline)}</Typography>
+                  </Box>
+                </Box>
+              ) : null}
+
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                alignItems={{ xs: "stretch", sm: "center" }}
+                justifyContent="space-between"
+              >
+                <Typography variant="body2" color="text.secondary">
+                  上传完成后会立即给出成功、部分成功或失败反馈。
+                </Typography>
+                <Button type="submit" variant="contained" disabled={isSubmitting}>
+                  {isSubmitting ? "正在上传..." : "上传材料"}
+                </Button>
+              </Stack>
+            </Stack>
+          </SectionCard>
+        </Box>
       ) : null}
 
       {uploadResult ? (
-        <section className="status-card auth-panel">
-          <div className="admin-form-header">
-            <div>
-              <p className="eyebrow">上传结果</p>
-              <h2>上传结果</h2>
-            </div>
-            <span className={`status-chip upload-status-chip upload-status-${uploadResult.status}`}>
-              {uploadResult.status === "success"
-                ? "全部成功"
-                : uploadResult.status === "partial_success"
-                  ? "部分成功"
-                  : "全部失败"}
-            </span>
-          </div>
+        <SectionCard
+          title="上传结果"
+          action={<StatusBadge tone={buildUploadResultTone(uploadResult.status)}>{formatUploadResultStatus(uploadResult.status)}</StatusBadge>}
+        >
+          <Stack spacing={2}>
+            {uploadResult.items.length > 0 ? (
+              <Stack spacing={2} aria-label="上传成功材料列表">
+                {uploadResult.items.map((item) => (
+                  <Card key={item.id} variant="outlined">
+                    <CardContent>
+                      <Stack spacing={1.5}>
+                        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
+                          <Box>
+                            <Typography variant="overline" color="text.secondary">
+                              材料编号 {item.id}
+                            </Typography>
+                            <Typography variant="h6">{item.original_filename}</Typography>
+                          </Box>
+                          <StatusBadge tone="info">{formatMaterialType(item.material_type)}</StatusBadge>
+                        </Stack>
+                        <Box
+                          component="dl"
+                          sx={{
+                            display: "grid",
+                            gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" },
+                            gap: 1.5,
+                            m: 0,
+                            "& dt": {
+                              color: "text.secondary",
+                              fontSize: "0.875rem",
+                              marginBottom: 0.25,
+                            },
+                            "& dd": {
+                              margin: 0,
+                            },
+                          }}
+                        >
+                          <Box component="div">
+                            <Typography component="dt">提交渠道</Typography>
+                            <Typography component="dd">{item.channel}</Typography>
+                          </Box>
+                          <Box component="div">
+                            <Typography component="dt">重复状态</Typography>
+                            <Typography component="dd">
+                              {item.duplicate_of ? `与材料 ${item.duplicate_of} 重复` : "未检测到重复"}
+                            </Typography>
+                          </Box>
+                          <Box component="div">
+                            <Typography component="dt">提交人</Typography>
+                            <Typography component="dd">{item.submitter_id ?? "未分配"}</Typography>
+                          </Box>
+                          <Box component="div">
+                            <Typography component="dt">文件大小</Typography>
+                            <Typography component="dd">{item.size_bytes} bytes</Typography>
+                          </Box>
+                        </Box>
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Stack>
+            ) : (
+              <Typography color="text.secondary">本次上传没有成功写入任何材料记录。</Typography>
+            )}
 
-          {uploadResult.items.length > 0 ? (
-            <div className="task-card-grid" aria-label="上传成功材料列表">
-              {uploadResult.items.map((item) => (
-                <article key={item.id} className="task-card">
-                  <div className="task-card-header">
-                    <div>
-                      <p className="task-card-id">材料编号 {item.id}</p>
-                      <h3>{item.original_filename}</h3>
-                    </div>
-                    <span className="status-chip">{formatMaterialType(item.material_type)}</span>
-                  </div>
-                  <dl className="task-meta-grid">
-                    <div>
-                      <dt>提交渠道</dt>
-                      <dd>{item.channel}</dd>
-                    </div>
-                    <div>
-                      <dt>重复状态</dt>
-                      <dd>
-                        {item.duplicate_of
-                          ? `与材料 ${item.duplicate_of} 重复`
-                          : "未检测到重复"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>提交人</dt>
-                      <dd>{item.submitter_id ?? "未分配"}</dd>
-                    </div>
-                    <div>
-                      <dt>文件大小</dt>
-                      <dd>{item.size_bytes} bytes</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p>本次上传没有成功写入任何材料记录。</p>
-          )}
-
-          {uploadResult.failures && uploadResult.failures.length > 0 ? (
-            <ul className="upload-failure-list" aria-label="上传失败列表">
-              {uploadResult.failures.map((failure) => (
-                <li key={`${failure.original_filename ?? "unknown"}:${failure.error_code}:${failure.detail}`}>
-                  <strong>{failure.original_filename || "未命名文件"}</strong>
-                  <span>{failure.detail}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
+            {uploadResult.failures && uploadResult.failures.length > 0 ? (
+              <Box component="ul" aria-label="上传失败列表" sx={{ m: 0, pl: 2.5, display: "grid", gap: 1 }}>
+                {uploadResult.failures.map((failure) => (
+                  <Box
+                    component="li"
+                    key={`${failure.original_filename ?? "unknown"}:${failure.error_code}:${failure.detail}`}
+                    sx={{ display: "grid", gap: 0.5 }}
+                  >
+                    <Typography component="strong" variant="body2">
+                      {failure.original_filename || "未命名文件"}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {failure.detail}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            ) : null}
+          </Stack>
+        </SectionCard>
       ) : null}
-    </div>
+    </RoleWorkspace>
   );
 }

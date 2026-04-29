@@ -143,6 +143,10 @@ type MaterialActionFeedback = {
   message: string;
 };
 
+type InvoiceWorkbenchSelection =
+  | { kind: "own"; materialId: string }
+  | { kind: "shared"; invoiceId: string };
+
 const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
   { value: "invoice", label: "发票" },
   { value: "payment_record", label: "支付记录" },
@@ -807,6 +811,83 @@ function isSplitStaleError(error: unknown) {
   return error instanceof ApiError && error.status === 404 && error.message === "split not found";
 }
 
+function buildInvoiceWorkbenchSelectionKey(selection: InvoiceWorkbenchSelection) {
+  return selection.kind === "own"
+    ? `own:${selection.materialId}`
+    : `shared:${selection.invoiceId}`;
+}
+
+function parseInvoiceWorkbenchAnchorTarget(hash: string) {
+  const prefix = "#workbench-invoice-";
+  if (!hash.startsWith(prefix)) {
+    return null;
+  }
+  return decodeURIComponent(hash.slice(prefix.length));
+}
+
+function pickInvoiceWorkbenchSelection(
+  items: WorkbenchInvoiceItem[],
+  sharedInvoices: TaskSharedInvoiceItem[],
+  anchorTarget: string | null,
+  currentSelectionKey: string | null,
+): InvoiceWorkbenchSelection | null {
+  if (anchorTarget) {
+    const ownMatch = items.find((item) => item.invoice?.id === anchorTarget || item.material.material_id === anchorTarget);
+    if (ownMatch) {
+      return {
+        kind: "own",
+        materialId: ownMatch.material.material_id,
+      };
+    }
+    const sharedMatch = sharedInvoices.find((item) => item.invoice_id === anchorTarget);
+    if (sharedMatch) {
+      return {
+        kind: "shared",
+        invoiceId: sharedMatch.invoice_id,
+      };
+    }
+  }
+
+  if (currentSelectionKey) {
+    if (currentSelectionKey.startsWith("own:")) {
+      const materialId = currentSelectionKey.slice("own:".length);
+      if (items.some((item) => item.material.material_id === materialId)) {
+        return {
+          kind: "own",
+          materialId,
+        };
+      }
+    }
+    if (currentSelectionKey.startsWith("shared:")) {
+      const invoiceId = currentSelectionKey.slice("shared:".length);
+      if (sharedInvoices.some((item) => item.invoice_id === invoiceId)) {
+        return {
+          kind: "shared",
+          invoiceId,
+        };
+      }
+    }
+  }
+
+  const firstOwnItem = items[0];
+  if (firstOwnItem) {
+    return {
+      kind: "own",
+      materialId: firstOwnItem.material.material_id,
+    };
+  }
+
+  const firstSharedInvoice = sharedInvoices[0];
+  if (firstSharedInvoice) {
+    return {
+      kind: "shared",
+      invoiceId: firstSharedInvoice.invoice_id,
+    };
+  }
+
+  return null;
+}
+
 export function MemberInvoiceWorkbenchPage() {
   const session = useAuthSession();
   const { showError, showSuccess, showWarning } = useSnackbar();
@@ -816,8 +897,12 @@ export function MemberInvoiceWorkbenchPage() {
   const navigate = useNavigate();
   const preferredTaskId = searchParams.get("taskId");
   const activeTab = resolveWorkbenchTab(location.hash);
+  const preferredInvoiceAnchorTarget = activeTab === "invoices"
+    ? parseInvoiceWorkbenchAnchorTarget(location.hash)
+    : null;
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [selectedInvoiceWorkbenchKey, setSelectedInvoiceWorkbenchKey] = useState<string | null>(null);
   const [workbenchState, setWorkbenchState] = useState<SelectedTaskWorkbenchState>({ status: "idle" });
   const [materialTypeDrafts, setMaterialTypeDrafts] = useState<Record<string, MaterialType>>({});
   const [materialTypeErrors, setMaterialTypeErrors] = useState<Record<string, string>>({});
@@ -865,6 +950,7 @@ export function MemberInvoiceWorkbenchPage() {
     setStaleConfirmationSplitId(null);
     setDisputeReasons({});
     setDisputeErrors({});
+    setSelectedInvoiceWorkbenchKey(null);
   }
 
   useEffect(() => {
@@ -1012,9 +1098,33 @@ export function MemberInvoiceWorkbenchPage() {
     ? summarizePendingActions(workbenchState.task, workbenchState.report)
     : [];
   const missingMaterials = workbenchState.status === "ready" ? workbenchState.report.missing_materials : [];
-  const sharedInvoices = workbenchState.status === "ready"
-    ? workbenchState.sharedInvoices.filter((item) => item.submitter_id !== actorId)
-    : [];
+  const sharedInvoices = useMemo(() => (
+    workbenchState.status === "ready"
+      ? workbenchState.sharedInvoices.filter((item) => item.submitter_id !== actorId)
+      : []
+  ), [actorId, workbenchState]);
+  const resolvedInvoiceWorkbenchSelection = workbenchState.status === "ready" && activeTab === "invoices"
+    ? pickInvoiceWorkbenchSelection(
+      workbenchState.items,
+      sharedInvoices,
+      preferredInvoiceAnchorTarget,
+      selectedInvoiceWorkbenchKey,
+    )
+    : null;
+  const resolvedInvoiceWorkbenchKey = resolvedInvoiceWorkbenchSelection
+    ? buildInvoiceWorkbenchSelectionKey(resolvedInvoiceWorkbenchSelection)
+    : null;
+  const selectedOwnWorkbenchItem = workbenchState.status === "ready" && resolvedInvoiceWorkbenchSelection?.kind === "own"
+    ? workbenchState.items.find((item) => item.material.material_id === resolvedInvoiceWorkbenchSelection.materialId) ?? null
+    : null;
+  const selectedSharedWorkbenchInvoice = resolvedInvoiceWorkbenchSelection?.kind === "shared"
+    ? sharedInvoices.find((item) => item.invoice_id === resolvedInvoiceWorkbenchSelection.invoiceId) ?? null
+    : null;
+  const selectedInvoiceDetailAnchorId = selectedOwnWorkbenchItem?.invoice?.id
+    ? `workbench-invoice-${selectedOwnWorkbenchItem.invoice.id}`
+    : selectedSharedWorkbenchInvoice
+      ? `workbench-invoice-${selectedSharedWorkbenchInvoice.invoice_id}`
+      : undefined;
   const taskAllowedExpenseTypes = workbenchState.status === "ready"
     ? buildAllowedExpenseTypes(workbenchState.task)
     : [];
@@ -1459,6 +1569,635 @@ export function MemberInvoiceWorkbenchPage() {
     void navigate(buildWorkbenchTabAnchor(selectedTaskId, nextTab));
   }
 
+  function renderSelectedOwnWorkbenchItem(item: WorkbenchInvoiceItem) {
+    const abnormalReasons = collectAbnormalReasons(item);
+    const invoice = item.invoice;
+    const task = workbenchState.status === "ready" ? workbenchState.task : null;
+    const splitDraftRows = invoice && session
+      ? (splitDrafts[invoice.id] ?? buildSplitDraftRows(item, session.actorId))
+      : [];
+    const isManualEditorOpen = activeManualEditorMaterialId === item.material.material_id;
+    const isSavingManualInvoice = savingManualInvoiceMaterialId === item.material.material_id;
+    const scopedRecognitionRetryFeedback = recognitionRetryFeedback?.materialId === item.material.material_id
+      ? recognitionRetryFeedback
+      : null;
+    const scopedManualInvoiceSaveFeedback = manualInvoiceSaveFeedback?.materialId === item.material.material_id
+      ? manualInvoiceSaveFeedback
+      : null;
+    const recognitionActionLabel = getRecognitionStatus(item) ? "运行重新识别" : "开始识别";
+
+    return (
+      <>
+        <div className="member-status-section-header">
+          <div>
+            <p className="task-card-id">
+              {formatMaterialType(item.material.material_type)} / {item.material.material_id}
+            </p>
+            <h2>{item.invoice?.invoice_number ?? item.material.original_filename}</h2>
+          </div>
+          <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>
+            {abnormalReasons.length > 0 ? "需处理" : "状态稳定"}
+          </StatusBadge>
+        </div>
+
+        <dl className="task-meta-grid member-status-meta-grid">
+          <div>
+            <dt>原始文件</dt>
+            <dd>{item.material.original_filename}</dd>
+          </div>
+          <div>
+            <dt>上传时间</dt>
+            <dd>{formatDateTime(item.material.created_at)}</dd>
+          </div>
+          <div>
+            <dt>识别状态</dt>
+            <dd>{getRecognitionStatus(item) ? formatRecognitionStatus(getRecognitionStatus(item)!) : "暂无识别记录"}</dd>
+          </div>
+          <div>
+            <dt>校验状态</dt>
+            <dd>{formatValidationStatus(item.material.validation_status)}</dd>
+          </div>
+        </dl>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>材料类型</h4>
+            <span className="status-chip">可自助更正</span>
+          </div>
+          <div className="admin-form-grid">
+            <label className="field-stack">
+              <span>当前材料类型</span>
+              <select
+                aria-label={`${item.material.material_id} 材料类型`}
+                value={materialTypeDrafts[item.material.material_id] ?? item.material.material_type}
+                onChange={(event) => {
+                  const nextMaterialType = event.target.value as MaterialType;
+                  setMaterialTypeDrafts((current) => ({
+                    ...current,
+                    [item.material.material_id]: nextMaterialType,
+                  }));
+                }}
+                disabled={updatingMaterialId === item.material.material_id}
+              >
+                {MATERIAL_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="field-stack">
+              <span>操作</span>
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => {
+                  void handleMaterialTypeSave(item.material.material_id);
+                }}
+                disabled={
+                  updatingMaterialId === item.material.material_id
+                  || (materialTypeDrafts[item.material.material_id] ?? item.material.material_type)
+                    === item.material.material_type
+                }
+              >
+                {updatingMaterialId === item.material.material_id ? "保存中..." : "保存材料类型"}
+              </button>
+            </div>
+          </div>
+          <p className="field-hint">
+            仅收集中任务允许成员修改本人材料类型；若该材料已经形成发票主记录或存在不兼容关联，系统会明确拒绝。
+          </p>
+          {materialTypeErrors[item.material.material_id] ? (
+            <p className="field-error field-error-block">{materialTypeErrors[item.material.material_id]}</p>
+          ) : null}
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>待处理事项</h4>
+            <span className="status-chip">{abnormalReasons.length} 条</span>
+          </div>
+          {abnormalReasons.length > 0 ? (
+            <ul className="member-status-message-list" aria-label={`${item.material.material_id} 异常原因列表`}>
+              {abnormalReasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="field-hint">当前发票没有新的识别、校验或确认异常。</p>
+          )}
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>识别字段与当前值</h4>
+            <span className="status-chip">
+              {item.recognition ? renderRecognitionSource(getRecognitionFieldValue(item.recognition, "invoice_number")) : "暂无识别"}
+            </span>
+          </div>
+          <ul className="member-status-message-list" aria-label={`${item.material.material_id} 发票字段列表`}>
+            {FIELD_ORDER.map((fieldName) => {
+              const recognitionField = getRecognitionFieldValue(item.recognition, fieldName);
+              const manualValue = getInvoiceFieldValue(item.invoice, fieldName);
+              const recognitionText = formatFieldValue(fieldName, recognitionField?.value ?? null);
+              const manualText = formatFieldValue(fieldName, manualValue);
+              const isCorrected = recognitionField !== null && manualText !== recognitionText;
+              return (
+                <li key={fieldName}>
+                  <strong>{FIELD_LABELS[fieldName]}</strong>
+                  <span>识别值：{recognitionText}</span>
+                  <span>当前值：{manualText}</span>
+                  <span>
+                    {recognitionField
+                      ? `${renderRecognitionSource(recognitionField)} / ${recognitionField.status === "needs_confirmation" ? "待确认" : "已识别"}`
+                      : "暂无识别结果"}
+                  </span>
+                  {isCorrected ? <span>状态：已人工更正</span> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>手动补录与重新识别</h4>
+            <span className="status-chip">仅本人材料可操作</span>
+          </div>
+          <p className="field-hint">
+            这里的人工补录只会更新当前发票字段并保留更正痕迹；重新识别会新建一次识别任务，不会让成员直接写入任意识别原始结果。
+          </p>
+          <div className="inline-actions">
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={retryingRecognitionMaterialId === item.material.material_id}
+              onClick={() => {
+                void handleRecognitionRetry(item);
+              }}
+            >
+              {retryingRecognitionMaterialId === item.material.material_id ? "重新识别中..." : recognitionActionLabel}
+            </button>
+            {item.material.material_type === "invoice" ? (
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => {
+                  if (task) {
+                    handleManualEditorToggle(item, task);
+                  }
+                }}
+              >
+                {isManualEditorOpen ? "收起手动补录" : "手动填写或更正发票"}
+              </button>
+            ) : null}
+          </div>
+          {scopedRecognitionRetryFeedback ? (
+            scopedRecognitionRetryFeedback.tone === "error" ? (
+              <p className="field-error field-error-block">{scopedRecognitionRetryFeedback.message}</p>
+            ) : (
+              <p className="field-hint">{scopedRecognitionRetryFeedback.message}</p>
+            )
+          ) : null}
+          {item.material.material_type !== "invoice" ? (
+            <p className="field-hint">
+              当前材料不是发票类型，因此这里只提供重新识别入口；如需补录发票字段，请先确认材料类型是否应更正为发票。
+            </p>
+          ) : null}
+          {scopedManualInvoiceSaveFeedback ? (
+            <p className="field-hint">
+              已保存发票 {scopedManualInvoiceSaveFeedback.invoiceNumber}；当前共有 {scopedManualInvoiceSaveFeedback.validationCount} 条校验结果，其中失败 {scopedManualInvoiceSaveFeedback.failedValidationCount} 条、待确认 {scopedManualInvoiceSaveFeedback.pendingValidationCount} 条。
+            </p>
+          ) : null}
+          {isManualEditorOpen && manualInvoiceFormState && item.material.material_type === "invoice" && task ? (
+            <form
+              className="page-stack"
+              aria-label={`${item.material.material_id} 发票手动补录表单`}
+              onSubmit={(event) => {
+                void handleManualInvoiceSubmit(event, item, task);
+              }}
+            >
+              <div className="admin-form-grid">
+                <label className="field-stack">
+                  <span>发票号码</span>
+                  <input
+                    aria-label={`${item.material.material_id} 发票号码`}
+                    value={manualInvoiceFormState.invoiceNumber}
+                    onChange={(event) => {
+                      updateManualInvoiceField("invoiceNumber", event.target.value);
+                    }}
+                  />
+                  {manualInvoiceErrors.invoiceNumber ? <span className="field-error">{manualInvoiceErrors.invoiceNumber}</span> : null}
+                </label>
+                <label className="field-stack">
+                  <span>开票日期</span>
+                  <input
+                    aria-label={`${item.material.material_id} 开票日期`}
+                    type="date"
+                    value={manualInvoiceFormState.issueDate}
+                    onChange={(event) => {
+                      updateManualInvoiceField("issueDate", event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>交易时间</span>
+                  <input
+                    aria-label={`${item.material.material_id} 交易时间`}
+                    type="datetime-local"
+                    value={manualInvoiceFormState.transactionTime}
+                    onChange={(event) => {
+                      updateManualInvoiceField("transactionTime", event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>金额（元）</span>
+                  <input
+                    aria-label={`${item.material.material_id} 金额`}
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="例如 123.45"
+                    value={manualInvoiceFormState.amountYuan}
+                    onChange={(event) => {
+                      updateManualInvoiceField("amountYuan", event.target.value);
+                    }}
+                  />
+                  {manualInvoiceErrors.amountYuan ? <span className="field-error">{manualInvoiceErrors.amountYuan}</span> : null}
+                </label>
+                <label className="field-stack">
+                  <span>发票抬头</span>
+                  <input
+                    aria-label={`${item.material.material_id} 发票抬头`}
+                    value={manualInvoiceFormState.buyerName}
+                    onChange={(event) => {
+                      updateManualInvoiceField("buyerName", event.target.value);
+                    }}
+                  />
+                  {manualInvoiceErrors.buyerName ? <span className="field-error">{manualInvoiceErrors.buyerName}</span> : null}
+                </label>
+                <label className="field-stack">
+                  <span>税号</span>
+                  <input
+                    aria-label={`${item.material.material_id} 税号`}
+                    value={manualInvoiceFormState.taxNumber}
+                    onChange={(event) => {
+                      updateManualInvoiceField("taxNumber", event.target.value);
+                    }}
+                  />
+                  {manualInvoiceErrors.taxNumber ? <span className="field-error">{manualInvoiceErrors.taxNumber}</span> : null}
+                </label>
+                <label className="field-stack">
+                  <span>销售方名称</span>
+                  <input
+                    aria-label={`${item.material.material_id} 销售方名称`}
+                    value={manualInvoiceFormState.sellerName}
+                    onChange={(event) => {
+                      updateManualInvoiceField("sellerName", event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>费用类型</span>
+                  <select
+                    aria-label={`${item.material.material_id} 费用类型`}
+                    value={manualInvoiceFormState.expenseType}
+                    onChange={(event) => {
+                      updateManualInvoiceField("expenseType", event.target.value as ExpenseType);
+                    }}
+                  >
+                    {taskAllowedExpenseTypes.map((expenseType) => (
+                      <option key={expenseType} value={expenseType}>
+                        {formatExpenseType(expenseType)}
+                      </option>
+                    ))}
+                  </select>
+                  {manualInvoiceErrors.expenseType ? <span className="field-error">{manualInvoiceErrors.expenseType}</span> : null}
+                </label>
+              </div>
+              {manualInvoiceSubmitError ? (
+                <p className="field-error field-error-block">{manualInvoiceSubmitError}</p>
+              ) : null}
+              <div className="inline-actions">
+                <button className="button button-secondary" type="submit" disabled={isSavingManualInvoice}>
+                  {isSavingManualInvoice ? "保存中..." : "保存发票字段"}
+                </button>
+              </div>
+            </form>
+          ) : null}
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>当前分摊方案与确认状态</h4>
+            <span className="status-chip">{item.splits.length} 条分摊</span>
+          </div>
+          {invoice && task ? (
+            <>
+              <div className="member-status-section-header">
+                <h5>调整分配对象与备注</h5>
+                <span className="status-chip">
+                  {task.status === "open" ? "当前可编辑" : `当前${formatTaskStatus(task.status)}，不可编辑`}
+                </span>
+              </div>
+              {splitDraftRows.map((draft, index) => (
+                <div key={draft.key} className="admin-form-grid">
+                  <label className="field-stack">
+                    <span>分配对象 {index + 1}</span>
+                    <select
+                      aria-label={`${invoice.id} 分摊行 ${index + 1} 成员`}
+                      value={draft.member_id}
+                      onChange={(event) => {
+                        updateSplitDraft(invoice.id, draft.key, {
+                          member_id: event.target.value,
+                        });
+                      }}
+                      disabled={
+                        task.status !== "open"
+                        || updatingSplitInvoiceId === invoice.id
+                      }
+                    >
+                      {task.member_ids.map((memberId) => (
+                        <option key={memberId} value={memberId}>
+                          {formatMemberLabel(memberId)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field-stack">
+                    <span>金额（元）</span>
+                    <input
+                      aria-label={`${invoice.id} 分摊行 ${index + 1} 金额`}
+                      type="text"
+                      inputMode="decimal"
+                      value={draft.amount_yuan}
+                      onChange={(event) => {
+                        updateSplitDraft(invoice.id, draft.key, {
+                          amount_yuan: event.target.value,
+                        });
+                      }}
+                      disabled={
+                        task.status !== "open"
+                        || updatingSplitInvoiceId === invoice.id
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>备注</span>
+                    <input
+                      aria-label={`${invoice.id} 分摊行 ${index + 1} 备注`}
+                      type="text"
+                      value={draft.note}
+                      onChange={(event) => {
+                        updateSplitDraft(invoice.id, draft.key, {
+                          note: event.target.value,
+                        });
+                      }}
+                      disabled={
+                        task.status !== "open"
+                        || updatingSplitInvoiceId === invoice.id
+                      }
+                    />
+                  </label>
+                  <div className="field-stack">
+                    <span>操作</span>
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      onClick={() => {
+                        removeSplitDraft(invoice.id, draft.key);
+                      }}
+                      disabled={
+                        task.status !== "open"
+                        || updatingSplitInvoiceId === invoice.id
+                        || splitDraftRows.length <= 1
+                      }
+                    >
+                      移除
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div className="inline-actions">
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => {
+                    addSplitDraft(invoice.id, task.member_ids);
+                  }}
+                  disabled={
+                    task.status !== "open"
+                    || updatingSplitInvoiceId === invoice.id
+                  }
+                >
+                  新增分摊对象
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => {
+                    void handleSplitSave(item);
+                  }}
+                  disabled={
+                    task.status !== "open"
+                    || updatingSplitInvoiceId === invoice.id
+                    || (
+                      item.splits.length > 0
+                      && session !== null
+                      && !haveSplitDraftsChanged(
+                        item,
+                        splitDraftRows,
+                        session.actorId,
+                      )
+                    )
+                  }
+                >
+                  {updatingSplitInvoiceId === invoice.id ? "保存中..." : "保存分摊方案"}
+                </button>
+              </div>
+              <p className="field-hint">
+                {(() => {
+                  const summary = summarizeSplitDrafts(splitDraftRows);
+                  if (summary.hasInvalidAmount) {
+                    return "请使用最多两位小数的金额格式；保存后，受影响成员需要重新确认费用。";
+                  }
+                  return `当前分摊合计 ${formatCurrencyFromCents(summary.totalCents)}，发票金额 ${formatCurrencyFromCents(invoice.amount_cents)}。保存后，受影响成员需要重新确认费用。`;
+                })()}
+              </p>
+              {splitErrors[invoice.id] ? (
+                <p className="field-error field-error-block">{splitErrors[invoice.id]}</p>
+              ) : null}
+            </>
+          ) : (
+            <p className="field-hint">当前材料还没有形成发票主记录，暂时无法调整金额分配对象。</p>
+          )}
+          {item.splits.length > 0 ? (
+            <>
+              <p className="field-hint">以下为当前已保存的分摊与确认状态。</p>
+              <ul className="member-status-message-list" aria-label={`${item.material.material_id} 分摊列表`}>
+                {item.splits.map((split) => {
+                  const confirmation = item.confirmations.find((entry) => entry.split_id === split.id) ?? null;
+                  return (
+                    <li key={split.id}>
+                      <strong>{formatMemberLabel(split.member_id)}</strong>
+                      <span>分摊金额：{formatCurrencyFromCents(split.amount_cents)}</span>
+                      <span>备注：{split.note ?? "无"}</span>
+                      <span>确认状态：{confirmation ? formatConfirmationStatus(confirmation.status) : "待确认"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ) : invoice ? (
+            <p className="field-hint">当前还没有已保存的分摊记录，保存后会在这里显示最新确认状态。</p>
+          ) : null}
+          {item.relatedExpenseDetails.length > 0 && task ? (
+            <p className="field-hint">
+              当前发票已有 {item.relatedExpenseDetails.length} 条与你相关的费用明细，可直接在本页的
+              <Link
+                className="route-link route-link-secondary"
+                to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations")}
+              >
+                费用确认区
+              </Link>
+              提交确认或异议。
+            </p>
+          ) : null}
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>关联附件与缺失项</h4>
+            <span className="status-chip">
+              附件 {item.supportingMaterials.length} 份 / 缺失 {item.missingMaterials.length} 项
+            </span>
+          </div>
+          {item.supportingMaterials.length > 0 ? (
+            <ul className="member-status-message-list">
+              {item.supportingMaterials.map((material) => (
+                <li key={material.id}>
+                  <strong>{formatMaterialType(material.material_type)} / {material.original_filename}</strong>
+                  <span>上传时间：{formatDateTime(material.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="field-hint">当前这张发票还没有已关联的辅助材料。</p>
+          )}
+          {item.missingMaterials.length > 0 ? (
+            <ul className="member-status-message-list" aria-label={`${item.material.material_id} 缺失材料列表`}>
+              {item.missingMaterials.map((missingMaterial) => (
+                <li key={`${missingMaterial.invoice_id}:${missingMaterial.required_material_type}:${missingMaterial.source_rule_code}`}>
+                  <strong>{formatMaterialType(missingMaterial.required_material_type)}</strong>
+                  <span>{missingMaterial.message}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>下一步动作</h4>
+            <span className="status-chip">优先留在当前工作台</span>
+          </div>
+          <div className="inline-actions">
+            {task ? (
+              <>
+                <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-upload")}>
+                  去上传区补材料
+                </Link>
+                <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations")}>
+                  去确认区处理
+                </Link>
+                <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices")}>
+                  回到当前发票列表
+                </Link>
+              </>
+            ) : null}
+          </div>
+        </section>
+      </>
+    );
+  }
+
+  function renderSelectedSharedWorkbenchInvoice(item: TaskSharedInvoiceItem) {
+    return (
+      <>
+        <div className="member-status-section-header">
+          <div>
+            <p className="task-card-id">共享摘要 / {item.invoice_id}</p>
+            <h2>{item.invoice_number}</h2>
+          </div>
+          <StatusBadge tone="info">{formatExpenseType(item.expense_type)}</StatusBadge>
+        </div>
+
+        <dl className="task-meta-grid member-status-meta-grid">
+          <div>
+            <dt>上传成员</dt>
+            <dd>{item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}</dd>
+          </div>
+          <div>
+            <dt>发票金额</dt>
+            <dd>{formatCurrencyFromCents(item.amount_cents)}</dd>
+          </div>
+          <div>
+            <dt>开票日期</dt>
+            <dd>{item.issue_date ?? "未填写"}</dd>
+          </div>
+          <div>
+            <dt>最近更新</dt>
+            <dd>{formatDateTime(item.updated_at)}</dd>
+          </div>
+        </dl>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>基础元数据</h4>
+            <span className="status-chip">只读摘要</span>
+          </div>
+          <ul className="member-status-message-list">
+            <li>
+              <strong>发票抬头</strong>
+              <span>{item.buyer_name}</span>
+            </li>
+            <li>
+              <strong>销售方</strong>
+              <span>{item.seller_name ?? "未填写"}</span>
+            </li>
+          </ul>
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>当前分摊去向</h4>
+            <span className="status-chip">{item.splits.length} 条</span>
+          </div>
+          {item.splits.length > 0 ? (
+            <ul className="member-status-message-list">
+              {item.splits.map((split) => (
+                <li key={`${item.invoice_id}:${split.member_id}`}>
+                  <strong>{formatMemberLabel(split.member_id)}</strong>
+                  <span>{formatCurrencyFromCents(split.amount_cents)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="field-hint">当前还没有已保存的分摊方案。</p>
+          )}
+        </section>
+
+        <section className="member-status-section">
+          <div className="member-status-section-header">
+            <h4>必要附件摘要</h4>
+            <span className="status-chip">{item.supporting_materials.length} 类</span>
+          </div>
+          <p className="field-hint">{formatSupportingMaterialSummary(item)}</p>
+        </section>
+      </>
+    );
+  }
+
   if (!session || session.role !== "member") {
     return null;
   }
@@ -1871,10 +2610,10 @@ export function MemberInvoiceWorkbenchPage() {
         </div>
       ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 ? (
+      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 && sharedInvoices.length === 0 ? (
         <EmptyState
-          title="当前任务下还没有本人已上传发票"
-          description="先上传发票材料，系统识别和费用确认才会在这里形成完整工作台。"
+          title="当前任务下还没有可查看的发票"
+          description="先上传本人发票材料，或者等待任务内其他成员产生可共享查看的发票摘要。"
           action={(
             <Link className="button button-primary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
               去上传区
@@ -1883,555 +2622,150 @@ export function MemberInvoiceWorkbenchPage() {
         />
       ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length > 0 ? (
-        <section id="member-workbench-invoices" className="member-status-list" aria-label="成员发票工作台列表">
-          {workbenchState.items.map((item) => {
-            const abnormalReasons = collectAbnormalReasons(item);
-            const invoice = item.invoice;
-            const splitDraftRows = invoice
-              ? (splitDrafts[invoice.id] ?? buildSplitDraftRows(item, session.actorId))
-              : [];
-            const isManualEditorOpen = activeManualEditorMaterialId === item.material.material_id;
-            const isSavingManualInvoice = savingManualInvoiceMaterialId === item.material.material_id;
-            const scopedRecognitionRetryFeedback = recognitionRetryFeedback?.materialId === item.material.material_id
-              ? recognitionRetryFeedback
-              : null;
-            const scopedManualInvoiceSaveFeedback = manualInvoiceSaveFeedback?.materialId === item.material.material_id
-              ? manualInvoiceSaveFeedback
-              : null;
-            const recognitionActionLabel = getRecognitionStatus(item) ? "运行重新识别" : "开始识别";
+      {workbenchState.status === "ready" && activeTab === "invoices" && (workbenchState.items.length > 0 || sharedInvoices.length > 0) ? (
+        <section id="member-workbench-invoices" className="admin-review-workspace">
+          <article className="status-card admin-task-detail-panel admin-review-list-panel">
+            <div className="admin-form-header">
+              <div>
+                <p className="eyebrow">Invoice Queue</p>
+                <h2>选择当前要处理的发票</h2>
+              </div>
+              <span className="status-chip">
+                本人 {workbenchState.items.length} 张 / 共享 {sharedInvoices.length} 张
+              </span>
+            </div>
+            <p className="field-hint">
+              左侧固定选择当前发票，右侧保持完整上下文和操作区，避免在长列表里上下滚动寻找同一张票据。
+            </p>
 
-            return (
-              <article
-                key={item.material.material_id}
-                id={invoice ? `workbench-invoice-${invoice.id}` : undefined}
-                className="task-card member-status-card"
-              >
-                <div className="member-status-section-header">
-                  <div>
-                    <p className="task-card-id">
-                      {formatMaterialType(item.material.material_type)} / {item.material.material_id}
-                    </p>
-                    <h2>{item.invoice?.invoice_number ?? item.material.original_filename}</h2>
-                  </div>
-                  <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>
-                    {abnormalReasons.length > 0 ? "需处理" : "状态稳定"}
-                  </StatusBadge>
-                </div>
-
-                <dl className="task-meta-grid member-status-meta-grid">
-                  <div>
-                    <dt>原始文件</dt>
-                    <dd>{item.material.original_filename}</dd>
-                  </div>
-                  <div>
-                    <dt>上传时间</dt>
-                    <dd>{formatDateTime(item.material.created_at)}</dd>
-                  </div>
-                  <div>
-                    <dt>识别状态</dt>
-                    <dd>{getRecognitionStatus(item) ? formatRecognitionStatus(getRecognitionStatus(item)!) : "暂无识别记录"}</dd>
-                  </div>
-                  <div>
-                    <dt>校验状态</dt>
-                    <dd>{formatValidationStatus(item.material.validation_status)}</dd>
-                  </div>
-                </dl>
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>材料类型</h4>
-                    <span className="status-chip">可自助更正</span>
-                  </div>
-                  <div className="admin-form-grid">
-                    <label className="field-stack">
-                      <span>当前材料类型</span>
-                      <select
-                        aria-label={`${item.material.material_id} 材料类型`}
-                        value={materialTypeDrafts[item.material.material_id] ?? item.material.material_type}
-                        onChange={(event) => {
-                          const nextMaterialType = event.target.value as MaterialType;
-                          setMaterialTypeDrafts((current) => ({
-                            ...current,
-                            [item.material.material_id]: nextMaterialType,
+            {workbenchState.items.length > 0 ? (
+              <ul className="invoice-material-list" aria-label="本人发票选择列表">
+                {workbenchState.items.map((item) => {
+                  const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
+                    kind: "own",
+                    materialId: item.material.material_id,
+                  });
+                  const abnormalReasons = collectAbnormalReasons(item);
+                  return (
+                    <li key={item.material.material_id}>
+                      <button
+                        type="button"
+                        className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
+                        onClick={() => {
+                          setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+                            kind: "own",
+                            materialId: item.material.material_id,
                           }));
                         }}
-                        disabled={updatingMaterialId === item.material.material_id}
                       >
-                        {MATERIAL_TYPE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="field-stack">
-                      <span>操作</span>
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={() => {
-                          void handleMaterialTypeSave(item.material.material_id);
-                        }}
-                        disabled={
-                          updatingMaterialId === item.material.material_id
-                          || (materialTypeDrafts[item.material.material_id] ?? item.material.material_type)
-                            === item.material.material_type
-                        }
-                      >
-                        {updatingMaterialId === item.material.material_id ? "保存中..." : "保存材料类型"}
-                      </button>
-                    </div>
-                  </div>
-                  <p className="field-hint">
-                    仅收集中任务允许成员修改本人材料类型；若该材料已经形成发票主记录或存在不兼容关联，系统会明确拒绝。
-                  </p>
-                  {materialTypeErrors[item.material.material_id] ? (
-                    <p className="field-error field-error-block">{materialTypeErrors[item.material.material_id]}</p>
-                  ) : null}
-                </section>
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>待处理事项</h4>
-                    <span className="status-chip">{abnormalReasons.length} 条</span>
-                  </div>
-                  {abnormalReasons.length > 0 ? (
-                    <ul className="member-status-message-list" aria-label={`${item.material.material_id} 异常原因列表`}>
-                      {abnormalReasons.map((reason) => (
-                        <li key={reason}>{reason}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="field-hint">当前发票没有新的识别、校验或确认异常。</p>
-                  )}
-                </section>
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>识别字段与当前值</h4>
-                    <span className="status-chip">
-                      {item.recognition ? renderRecognitionSource(getRecognitionFieldValue(item.recognition, "invoice_number")) : "暂无识别"}
-                    </span>
-                  </div>
-                  <ul className="member-status-message-list" aria-label={`${item.material.material_id} 发票字段列表`}>
-                    {FIELD_ORDER.map((fieldName) => {
-                      const recognitionField = getRecognitionFieldValue(item.recognition, fieldName);
-                      const manualValue = getInvoiceFieldValue(item.invoice, fieldName);
-                      const recognitionText = formatFieldValue(fieldName, recognitionField?.value ?? null);
-                      const manualText = formatFieldValue(fieldName, manualValue);
-                      const isCorrected = recognitionField !== null && manualText !== recognitionText;
-                      return (
-                        <li key={fieldName}>
-                          <strong>{FIELD_LABELS[fieldName]}</strong>
-                          <span>识别值：{recognitionText}</span>
-                          <span>当前值：{manualText}</span>
-                          <span>
-                            {recognitionField
-                              ? `${renderRecognitionSource(recognitionField)} / ${recognitionField.status === "needs_confirmation" ? "待确认" : "已识别"}`
-                              : "暂无识别结果"}
-                          </span>
-                          {isCorrected ? <span>状态：已人工更正</span> : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>手动补录与重新识别</h4>
-                    <span className="status-chip">仅本人材料可操作</span>
-                  </div>
-                  <p className="field-hint">
-                    这里的人工补录只会更新当前发票字段并保留更正痕迹；重新识别会新建一次识别任务，不会让成员直接写入任意识别原始结果。
-                  </p>
-                  <div className="inline-actions">
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      disabled={retryingRecognitionMaterialId === item.material.material_id}
-                      onClick={() => {
-                        void handleRecognitionRetry(item);
-                      }}
-                    >
-                      {retryingRecognitionMaterialId === item.material.material_id ? "重新识别中..." : recognitionActionLabel}
-                    </button>
-                    {item.material.material_type === "invoice" ? (
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={() => {
-                          handleManualEditorToggle(item, workbenchState.task);
-                        }}
-                      >
-                        {isManualEditorOpen ? "收起手动补录" : "手动填写或更正发票"}
-                      </button>
-                    ) : null}
-                  </div>
-                  {scopedRecognitionRetryFeedback ? (
-                    scopedRecognitionRetryFeedback.tone === "error" ? (
-                      <p className="field-error field-error-block">{scopedRecognitionRetryFeedback.message}</p>
-                    ) : (
-                      <p className="field-hint">{scopedRecognitionRetryFeedback.message}</p>
-                    )
-                  ) : null}
-                  {item.material.material_type !== "invoice" ? (
-                    <p className="field-hint">
-                      当前材料不是发票类型，因此这里只提供重新识别入口；如需补录发票字段，请先确认材料类型是否应更正为发票。
-                    </p>
-                  ) : null}
-                  {scopedManualInvoiceSaveFeedback ? (
-                    <p className="field-hint">
-                      已保存发票 {scopedManualInvoiceSaveFeedback.invoiceNumber}；当前共有 {scopedManualInvoiceSaveFeedback.validationCount} 条校验结果，其中失败 {scopedManualInvoiceSaveFeedback.failedValidationCount} 条、待确认 {scopedManualInvoiceSaveFeedback.pendingValidationCount} 条。
-                    </p>
-                  ) : null}
-                  {isManualEditorOpen && manualInvoiceFormState && item.material.material_type === "invoice" ? (
-                    <form
-                      className="page-stack"
-                      aria-label={`${item.material.material_id} 发票手动补录表单`}
-                      onSubmit={(event) => {
-                        void handleManualInvoiceSubmit(event, item, workbenchState.task);
-                      }}
-                    >
-                      <div className="admin-form-grid">
-                        <label className="field-stack">
-                          <span>发票号码</span>
-                          <input
-                            aria-label={`${item.material.material_id} 发票号码`}
-                            value={manualInvoiceFormState.invoiceNumber}
-                            onChange={(event) => {
-                              updateManualInvoiceField("invoiceNumber", event.target.value);
-                            }}
-                          />
-                          {manualInvoiceErrors.invoiceNumber ? <span className="field-error">{manualInvoiceErrors.invoiceNumber}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>开票日期</span>
-                          <input
-                            aria-label={`${item.material.material_id} 开票日期`}
-                            type="date"
-                            value={manualInvoiceFormState.issueDate}
-                            onChange={(event) => {
-                              updateManualInvoiceField("issueDate", event.target.value);
-                            }}
-                          />
-                        </label>
-                        <label className="field-stack">
-                          <span>交易时间</span>
-                          <input
-                            aria-label={`${item.material.material_id} 交易时间`}
-                            type="datetime-local"
-                            value={manualInvoiceFormState.transactionTime}
-                            onChange={(event) => {
-                              updateManualInvoiceField("transactionTime", event.target.value);
-                            }}
-                          />
-                        </label>
-                        <label className="field-stack">
-                          <span>金额（元）</span>
-                          <input
-                            aria-label={`${item.material.material_id} 金额`}
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="例如 123.45"
-                            value={manualInvoiceFormState.amountYuan}
-                            onChange={(event) => {
-                              updateManualInvoiceField("amountYuan", event.target.value);
-                            }}
-                          />
-                          {manualInvoiceErrors.amountYuan ? <span className="field-error">{manualInvoiceErrors.amountYuan}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>发票抬头</span>
-                          <input
-                            aria-label={`${item.material.material_id} 发票抬头`}
-                            value={manualInvoiceFormState.buyerName}
-                            onChange={(event) => {
-                              updateManualInvoiceField("buyerName", event.target.value);
-                            }}
-                          />
-                          {manualInvoiceErrors.buyerName ? <span className="field-error">{manualInvoiceErrors.buyerName}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>税号</span>
-                          <input
-                            aria-label={`${item.material.material_id} 税号`}
-                            value={manualInvoiceFormState.taxNumber}
-                            onChange={(event) => {
-                              updateManualInvoiceField("taxNumber", event.target.value);
-                            }}
-                          />
-                          {manualInvoiceErrors.taxNumber ? <span className="field-error">{manualInvoiceErrors.taxNumber}</span> : null}
-                        </label>
-                        <label className="field-stack">
-                          <span>销售方名称</span>
-                          <input
-                            aria-label={`${item.material.material_id} 销售方名称`}
-                            value={manualInvoiceFormState.sellerName}
-                            onChange={(event) => {
-                              updateManualInvoiceField("sellerName", event.target.value);
-                            }}
-                          />
-                        </label>
-                        <label className="field-stack">
-                          <span>费用类型</span>
-                          <select
-                            aria-label={`${item.material.material_id} 费用类型`}
-                            value={manualInvoiceFormState.expenseType}
-                            onChange={(event) => {
-                              updateManualInvoiceField("expenseType", event.target.value as ExpenseType);
-                            }}
-                          >
-                            {taskAllowedExpenseTypes.map((expenseType) => (
-                              <option key={expenseType} value={expenseType}>
-                                {formatExpenseType(expenseType)}
-                              </option>
-                            ))}
-                          </select>
-                          {manualInvoiceErrors.expenseType ? <span className="field-error">{manualInvoiceErrors.expenseType}</span> : null}
-                        </label>
-                      </div>
-                      {manualInvoiceSubmitError ? (
-                        <p className="field-error field-error-block">{manualInvoiceSubmitError}</p>
-                      ) : null}
-                      <div className="inline-actions">
-                        <button className="button button-secondary" type="submit" disabled={isSavingManualInvoice}>
-                          {isSavingManualInvoice ? "保存中..." : "保存发票字段"}
-                        </button>
-                      </div>
-                    </form>
-                  ) : null}
-                </section>
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>当前分摊方案与确认状态</h4>
-                    <span className="status-chip">{item.splits.length} 条分摊</span>
-                  </div>
-                  {invoice ? (
-                    <>
-                      <div className="member-status-section-header">
-                        <h5>调整分配对象与备注</h5>
-                        <span className="status-chip">
-                          {workbenchState.task.status === "open" ? "当前可编辑" : `当前${formatTaskStatus(workbenchState.task.status)}，不可编辑`}
-                        </span>
-                      </div>
-                      {splitDraftRows.map((draft, index) => (
-                        <div key={draft.key} className="admin-form-grid">
-                          <label className="field-stack">
-                            <span>分配对象 {index + 1}</span>
-                            <select
-                              aria-label={`${invoice.id} 分摊行 ${index + 1} 成员`}
-                              value={draft.member_id}
-                              onChange={(event) => {
-                                updateSplitDraft(invoice.id, draft.key, {
-                                  member_id: event.target.value,
-                                });
-                              }}
-                              disabled={
-                                workbenchState.task.status !== "open"
-                                || updatingSplitInvoiceId === invoice.id
-                              }
-                            >
-                              {workbenchState.task.member_ids.map((memberId) => (
-                                <option key={memberId} value={memberId}>
-                                  {formatMemberLabel(memberId)}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="field-stack">
-                            <span>金额（元）</span>
-                            <input
-                              aria-label={`${invoice.id} 分摊行 ${index + 1} 金额`}
-                              type="text"
-                              inputMode="decimal"
-                              value={draft.amount_yuan}
-                              onChange={(event) => {
-                                updateSplitDraft(invoice.id, draft.key, {
-                                  amount_yuan: event.target.value,
-                                });
-                              }}
-                              disabled={
-                                workbenchState.task.status !== "open"
-                                || updatingSplitInvoiceId === invoice.id
-                              }
-                            />
-                          </label>
-                          <label className="field-stack">
-                            <span>备注</span>
-                            <input
-                              aria-label={`${invoice.id} 分摊行 ${index + 1} 备注`}
-                              type="text"
-                              value={draft.note}
-                              onChange={(event) => {
-                                updateSplitDraft(invoice.id, draft.key, {
-                                  note: event.target.value,
-                                });
-                              }}
-                              disabled={
-                                workbenchState.task.status !== "open"
-                                || updatingSplitInvoiceId === invoice.id
-                              }
-                            />
-                          </label>
-                          <div className="field-stack">
-                            <span>操作</span>
-                            <button
-                              type="button"
-                              className="button button-secondary"
-                              onClick={() => {
-                                removeSplitDraft(invoice.id, draft.key);
-                              }}
-                              disabled={
-                                workbenchState.task.status !== "open"
-                                || updatingSplitInvoiceId === invoice.id
-                                || splitDraftRows.length <= 1
-                              }
-                            >
-                              移除
-                            </button>
+                        <div className="task-card-header">
+                          <div>
+                            <p className="task-card-id">本人发票 / {item.material.material_id}</p>
+                            <h3>{item.invoice?.invoice_number ?? item.material.original_filename}</h3>
                           </div>
+                          <span className="status-chip">
+                            {abnormalReasons.length > 0 ? `${abnormalReasons.length} 条待处理` : "状态稳定"}
+                          </span>
                         </div>
-                      ))}
-                      <div className="inline-actions">
+                        <dl className="task-meta-grid invoice-editor-summary-grid">
+                          <div>
+                            <dt>识别状态</dt>
+                            <dd>{getRecognitionStatus(item) ? formatRecognitionStatus(getRecognitionStatus(item)!) : "暂无识别"}</dd>
+                          </div>
+                          <div>
+                            <dt>校验状态</dt>
+                            <dd>{formatValidationStatus(item.material.validation_status)}</dd>
+                          </div>
+                          <div>
+                            <dt>分摊记录</dt>
+                            <dd>{item.splits.length > 0 ? `${item.splits.length} 条` : "待分摊"}</dd>
+                          </div>
+                          <div>
+                            <dt>附件 / 缺失</dt>
+                            <dd>{item.supportingMaterials.length} / {item.missingMaterials.length}</dd>
+                          </div>
+                        </dl>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+
+            {sharedInvoices.length > 0 ? (
+              <>
+                <div className="member-status-section-header">
+                  <h4>任务内其他成员已上传发票</h4>
+                  <span className="status-chip">{sharedInvoices.length} 张</span>
+                </div>
+                <p className="field-hint">
+                  这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。
+                </p>
+                <ul className="invoice-material-list" aria-label="共享发票选择列表">
+                  {sharedInvoices.map((item) => {
+                    const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
+                      kind: "shared",
+                      invoiceId: item.invoice_id,
+                    });
+                    return (
+                      <li key={item.invoice_id}>
                         <button
                           type="button"
-                          className="button button-secondary"
+                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
                           onClick={() => {
-                            addSplitDraft(invoice.id, workbenchState.task.member_ids);
+                            setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+                              kind: "shared",
+                              invoiceId: item.invoice_id,
+                            }));
                           }}
-                          disabled={
-                            workbenchState.task.status !== "open"
-                            || updatingSplitInvoiceId === invoice.id
-                          }
                         >
-                          新增分摊对象
+                          <div className="task-card-header">
+                            <div>
+                              <p className="task-card-id">共享摘要 / {item.invoice_id}</p>
+                              <h3>{item.invoice_number}</h3>
+                            </div>
+                            <span className="status-chip">{formatExpenseType(item.expense_type)}</span>
+                          </div>
+                          <dl className="task-meta-grid invoice-editor-summary-grid">
+                            <div>
+                              <dt>上传成员</dt>
+                              <dd>{item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}</dd>
+                            </div>
+                            <div>
+                              <dt>发票金额</dt>
+                              <dd>{formatCurrencyFromCents(item.amount_cents)}</dd>
+                            </div>
+                            <div>
+                              <dt>分摊记录</dt>
+                              <dd>{item.splits.length} 条</dd>
+                            </div>
+                            <div>
+                              <dt>附件摘要</dt>
+                              <dd>{formatSupportingMaterialSummary(item)}</dd>
+                            </div>
+                          </dl>
                         </button>
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => {
-                            void handleSplitSave(item);
-                          }}
-                          disabled={
-                            workbenchState.task.status !== "open"
-                            || updatingSplitInvoiceId === invoice.id
-                            || (
-                              item.splits.length > 0
-                              && !haveSplitDraftsChanged(
-                                item,
-                                splitDraftRows,
-                                session.actorId,
-                              )
-                            )
-                          }
-                        >
-                          {updatingSplitInvoiceId === invoice.id ? "保存中..." : "保存分摊方案"}
-                        </button>
-                      </div>
-                      <p className="field-hint">
-                        {(() => {
-                          const summary = summarizeSplitDrafts(splitDraftRows);
-                          if (summary.hasInvalidAmount) {
-                            return "请使用最多两位小数的金额格式；保存后，受影响成员需要重新确认费用。";
-                          }
-                          return `当前分摊合计 ${formatCurrencyFromCents(summary.totalCents)}，发票金额 ${formatCurrencyFromCents(invoice.amount_cents)}。保存后，受影响成员需要重新确认费用。`;
-                        })()}
-                      </p>
-                      {splitErrors[invoice.id] ? (
-                        <p className="field-error field-error-block">{splitErrors[invoice.id]}</p>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="field-hint">当前材料还没有形成发票主记录，暂时无法调整金额分配对象。</p>
-                  )}
-                  {item.splits.length > 0 ? (
-                    <>
-                      <p className="field-hint">以下为当前已保存的分摊与确认状态。</p>
-                      <ul className="member-status-message-list" aria-label={`${item.material.material_id} 分摊列表`}>
-                        {item.splits.map((split) => {
-                          const confirmation = item.confirmations.find((entry) => entry.split_id === split.id) ?? null;
-                          return (
-                            <li key={split.id}>
-                              <strong>{formatMemberLabel(split.member_id)}</strong>
-                              <span>分摊金额：{formatCurrencyFromCents(split.amount_cents)}</span>
-                              <span>备注：{split.note ?? "无"}</span>
-                              <span>确认状态：{confirmation ? formatConfirmationStatus(confirmation.status) : "待确认"}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </>
-                  ) : invoice ? (
-                    <p className="field-hint">当前还没有已保存的分摊记录，保存后会在这里显示最新确认状态。</p>
-                  ) : null}
-                  {item.relatedExpenseDetails.length > 0 ? (
-                    <p className="field-hint">
-                      当前发票已有 {item.relatedExpenseDetails.length} 条与你相关的费用明细，可直接在本页的
-                      <Link
-                        className="route-link route-link-secondary"
-                        to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-confirmations")}
-                      >
-                        费用确认区
-                      </Link>
-                      提交确认或异议。
-                    </p>
-                  ) : null}
-                </section>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : null}
+          </article>
 
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>关联附件与缺失项</h4>
-                    <span className="status-chip">
-                      附件 {item.supportingMaterials.length} 份 / 缺失 {item.missingMaterials.length} 项
-                    </span>
-                  </div>
-                  {item.supportingMaterials.length > 0 ? (
-                    <ul className="member-status-message-list">
-                      {item.supportingMaterials.map((material) => (
-                        <li key={material.id}>
-                          <strong>{formatMaterialType(material.material_type)} / {material.original_filename}</strong>
-                          <span>上传时间：{formatDateTime(material.created_at)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="field-hint">当前这张发票还没有已关联的辅助材料。</p>
-                  )}
-                  {item.missingMaterials.length > 0 ? (
-                    <ul className="member-status-message-list" aria-label={`${item.material.material_id} 缺失材料列表`}>
-                      {item.missingMaterials.map((missingMaterial) => (
-                        <li key={`${missingMaterial.invoice_id}:${missingMaterial.required_material_type}:${missingMaterial.source_rule_code}`}>
-                          <strong>{formatMaterialType(missingMaterial.required_material_type)}</strong>
-                          <span>{missingMaterial.message}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-
-                <section className="member-status-section">
-                  <div className="member-status-section-header">
-                    <h4>下一步动作</h4>
-                    <span className="status-chip">优先留在当前工作台</span>
-                  </div>
-                  <div className="inline-actions">
-                    <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
-                      跳到上传区
-                    </Link>
-                    <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-invoices")}>
-                      回到发票详情
-                    </Link>
-                    <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-confirmations")}>
-                      跳到确认区
-                    </Link>
-                  </div>
-                </section>
-              </article>
-            );
-          })}
+          <article
+            className="status-card admin-form-card admin-review-detail-panel"
+            id={selectedInvoiceDetailAnchorId}
+            aria-label="成员发票工作台列表"
+          >
+            {selectedOwnWorkbenchItem ? (
+              renderSelectedOwnWorkbenchItem(selectedOwnWorkbenchItem)
+            ) : selectedSharedWorkbenchInvoice ? (
+              renderSelectedSharedWorkbenchInvoice(selectedSharedWorkbenchInvoice)
+            ) : (
+              <p className="field-hint">当前任务下还没有可展示的发票详情。</p>
+            )}
+          </article>
         </section>
       ) : null}
 
@@ -2490,98 +2824,6 @@ export function MemberInvoiceWorkbenchPage() {
         </section>
       ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" ? (
-        <SectionCard
-          title="任务内其他成员已上传发票"
-          description="这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。"
-          action={(
-            <StatusBadge tone="info">
-              {sharedInvoices.length} 张
-            </StatusBadge>
-          )}
-        >
-          {sharedInvoices.length > 0 ? (
-            <section className="member-status-list" aria-label="任务内共享发票摘要列表">
-              {sharedInvoices.map((item) => (
-                <article key={item.invoice_id} className="task-card member-status-card">
-                  <div className="member-status-section-header">
-                    <div>
-                      <p className="task-card-id">共享摘要 / {item.invoice_id}</p>
-                      <h2>{item.invoice_number}</h2>
-                    </div>
-                    <StatusBadge tone="info">{formatExpenseType(item.expense_type)}</StatusBadge>
-                  </div>
-
-                  <dl className="task-meta-grid member-status-meta-grid">
-                    <div>
-                      <dt>上传成员</dt>
-                      <dd>{item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}</dd>
-                    </div>
-                    <div>
-                      <dt>发票金额</dt>
-                      <dd>{formatCurrencyFromCents(item.amount_cents)}</dd>
-                    </div>
-                    <div>
-                      <dt>开票日期</dt>
-                      <dd>{item.issue_date ?? "未填写"}</dd>
-                    </div>
-                    <div>
-                      <dt>最近更新</dt>
-                      <dd>{formatDateTime(item.updated_at)}</dd>
-                    </div>
-                  </dl>
-
-                  <section className="member-status-section">
-                    <div className="member-status-section-header">
-                      <h4>基础元数据</h4>
-                      <span className="status-chip">只读摘要</span>
-                    </div>
-                    <ul className="member-status-message-list">
-                      <li>
-                        <strong>发票抬头</strong>
-                        <span>{item.buyer_name}</span>
-                      </li>
-                      <li>
-                        <strong>销售方</strong>
-                        <span>{item.seller_name ?? "未填写"}</span>
-                      </li>
-                    </ul>
-                  </section>
-
-                  <section className="member-status-section">
-                    <div className="member-status-section-header">
-                      <h4>当前分摊去向</h4>
-                      <span className="status-chip">{item.splits.length} 条</span>
-                    </div>
-                    {item.splits.length > 0 ? (
-                      <ul className="member-status-message-list">
-                        {item.splits.map((split) => (
-                          <li key={`${item.invoice_id}:${split.member_id}`}>
-                            <strong>{formatMemberLabel(split.member_id)}</strong>
-                            <span>{formatCurrencyFromCents(split.amount_cents)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="field-hint">当前还没有已保存的分摊方案。</p>
-                    )}
-                  </section>
-
-                  <section className="member-status-section">
-                    <div className="member-status-section-header">
-                      <h4>必要附件摘要</h4>
-                      <span className="status-chip">{item.supporting_materials.length} 类</span>
-                    </div>
-                    <p className="field-hint">{formatSupportingMaterialSummary(item)}</p>
-                  </section>
-                </article>
-              ))}
-            </section>
-          ) : (
-            <p className="field-hint">当前任务里还没有其他成员上传可共享查看的发票摘要。</p>
-          )}
-        </SectionCard>
-      ) : null}
     </RoleWorkspace>
   );
 }

@@ -232,6 +232,6 @@ describe("admin task create page", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
-    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(screen.getByText("任务缺少发票配置字段：invoice_title, tax_number。")).toBeInTheDocument();
   });
 });

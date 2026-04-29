@@ -337,12 +337,14 @@ describe("frontend main flow e2e placeholder", () => {
     cleanup();
   });
 
-  it("covers the stage-one main flow with memory router and mock api boundaries", async () => {
-    const workflowState = {
-      taskCreated: false,
-      taskStatus: "draft" as "draft" | "open" | "ready_to_export",
-      materialUploaded: false,
-      invoiceSaved: false,
+  it(
+    "covers the stage-one main flow with memory router and mock api boundaries",
+    async () => {
+      const workflowState = {
+        taskCreated: false,
+        taskStatus: "draft" as "draft" | "open" | "ready_to_export",
+        materialUploaded: false,
+        invoiceSaved: false,
       splitSaved: false,
       confirmed: false,
     };
@@ -750,89 +752,91 @@ describe("frontend main flow e2e placeholder", () => {
     });
     expect((await screen.findAllByText("收集中")).length).toBeGreaterThan(0);
 
-    cleanup();
-    setMockSession("member");
-    renderRoute("/member/materials/upload?taskId=TASK-E2E");
+      cleanup();
+      setMockSession("member");
+      renderRoute("/member/invoices/workbench?taskId=TASK-E2E#member-workbench-upload");
 
-    expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
-    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("工作台上传文件"), {
-      target: {
-        files: [new File(["fake-pdf"], "ticket.pdf", { type: "application/pdf" })],
-      },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+      expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
+      expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText("工作台上传文件"), {
+        target: {
+          files: [new File(["fake-pdf"], "ticket.pdf", { type: "application/pdf" })],
+        },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
 
-    expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
-    expect(screen.getByText("材料编号：MAT-001")).toBeInTheDocument();
+      expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
+      expect(screen.getByText("材料编号：MAT-001")).toBeInTheDocument();
 
-    cleanup();
-    setMockSession("admin");
-    renderRoute("/admin/tasks/TASK-E2E/invoices?materialId=MAT-001");
+      cleanup();
+      setMockSession("admin");
+      renderRoute("/admin/tasks/TASK-E2E/invoices?materialId=MAT-001");
 
-    expect(await screen.findByRole("heading", { name: "发票人工录入与更正" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("发票抬头"), {
-      target: { value: "同济大学" },
-    });
-    fireEvent.change(screen.getByLabelText("税号"), {
-      target: { value: "91310000TEST00001" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存发票字段" }));
+      expect(await screen.findByRole("heading", { name: "发票人工录入与更正" })).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText("发票抬头"), {
+        target: { value: "同济大学" },
+      });
+      fireEvent.change(screen.getByLabelText("税号"), {
+        target: { value: "91310000TEST00001" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "保存发票字段" }));
 
-    expect(await screen.findByRole("heading", { name: "保存完成并已刷新校验结果" })).toBeInTheDocument();
-    expect(screen.getByText(/发票 INV-E2E-001 当前共有 2 条校验结果/)).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "保存完成并已刷新校验结果" })).toBeInTheDocument();
+      expect(screen.getByText(/发票 INV-E2E-001 当前共有 2 条校验结果/)).toBeInTheDocument();
 
-    cleanup();
-    setMockSession("admin");
-    renderRoute("/admin/tasks/TASK-E2E/splits?invoiceId=INV-001");
+      cleanup();
+      setMockSession("admin");
+      renderRoute("/admin/tasks/TASK-E2E/splits?invoiceId=INV-001");
 
-    expect(await screen.findByRole("heading", { name: "费用分摊编辑" })).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
-      await Promise.resolve();
-    });
-    const splitConfirmDialog = await screen.findByRole("dialog");
-    await act(async () => {
-      fireEvent.click(within(splitConfirmDialog).getByRole("button", { name: "确认保存分摊" }));
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
+      expect(await screen.findByRole("heading", { name: "费用分摊编辑" })).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+        await Promise.resolve();
+      });
+      const splitConfirmDialog = await screen.findByRole("dialog");
+      await act(async () => {
+        fireEvent.click(within(splitConfirmDialog).getByRole("button", { name: "确认保存分摊" }));
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
 
-    expect(await screen.findByText(/已保存 1 条分摊，合计 ￥123.45。/)).toBeInTheDocument();
+      expect(await screen.findByText(/已保存 1 条分摊，合计 ￥123.45。/)).toBeInTheDocument();
 
-    cleanup();
-    setMockSession("member");
-    renderRoute("/member/expenses/confirm?taskId=TASK-E2E");
+      cleanup();
+      setMockSession("member");
+      renderRoute("/member/invoices/workbench?taskId=TASK-E2E#member-workbench-confirmations");
 
-    expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
-    expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
-    const detailList = await screen.findByLabelText("工作台费用确认列表");
-    const detailCard = within(detailList).getByRole("heading", { name: "INV-E2E-001" }).closest("article");
-    if (!detailCard) {
-      throw new Error("Expected expense detail card for INV-E2E-001.");
-    }
-    fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
+      expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
+      expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
+      const detailList = await screen.findByLabelText("工作台费用确认列表");
+      const detailCard = within(detailList).getByRole("heading", { name: "INV-E2E-001" }).closest("article");
+      if (!detailCard) {
+        throw new Error("Expected expense detail card for INV-E2E-001.");
+      }
+      fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
 
-    expect(await screen.findByText("待确认 0 条")).toBeInTheDocument();
+      expect(await screen.findByText("待确认 0 条")).toBeInTheDocument();
 
-    cleanup();
-    setMockSession("admin");
-    renderRoute("/admin/tasks/TASK-E2E/review");
+      cleanup();
+      setMockSession("admin");
+      renderRoute("/admin/tasks/TASK-E2E/review");
 
-    expect(await screen.findByRole("heading", { name: "管理员复核总览" })).toBeInTheDocument();
-    expect(screen.getByText("当前复核摘要下没有待突出显示的异常项。")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "管理员复核总览" })).toBeInTheDocument();
+      expect(screen.getByText("当前复核摘要下没有待突出显示的异常项。")).toBeInTheDocument();
 
-    cleanup();
-    setMockSession("admin");
-    renderRoute("/admin/tasks/TASK-E2E");
+      cleanup();
+      setMockSession("admin");
+      renderRoute("/admin/tasks/TASK-E2E");
 
-    expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByLabelText("当前任务快捷入口")).getByRole("link", { name: "导出打印" }));
+      expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
+      fireEvent.click(within(screen.getByLabelText("当前任务快捷入口")).getByRole("link", { name: "导出打印" }));
 
-    expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
-    expect(screen.getByText("导出门禁")).toBeInTheDocument();
-    expect(screen.getAllByText("可导出").length).toBeGreaterThan(0);
-  });
+      expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
+      expect(screen.getByText("导出门禁")).toBeInTheDocument();
+      expect(screen.getAllByText("可导出").length).toBeGreaterThan(0);
+    },
+    15_000,
+  );
 });

@@ -222,16 +222,55 @@ export function describeRecognitionFailure(failure: RecognitionFailureDetail | n
 }
 
 export function mapBackendMessage(message: string, status = 0) {
-  const normalized = message.trim().toLowerCase();
+  const trimmed = message.trim();
+  const normalized = trimmed.toLowerCase();
 
   if (status === 0 || normalized.includes("network") || normalized.includes("fetch failed")) {
     return "网络连接异常，请检查网络后重试。";
   }
-  if (normalized.includes("permission denied") || normalized.includes("forbidden")) {
-    return "你没有权限处理此内容，如需访问请联系管理员。";
+  if (normalized === "invalid or missing bearer token") {
+    return "登录状态无效或已过期，请重新登录后再试。";
   }
-  if (normalized.includes("not found")) {
-    return "请求的内容不存在或已被移除，请刷新页面后重试。";
+  if (normalized === "invalid username or password") {
+    return "用户名或密码错误。";
+  }
+  const duplicateUsernameMatch = /^username already exists:\s*(.+)$/i.exec(trimmed);
+  if (duplicateUsernameMatch) {
+    return `用户名已存在：${duplicateUsernameMatch[1]}。`;
+  }
+  const missingInvoiceConfigMatch = /^missing invoice configuration fields:\s*(.+)$/i.exec(trimmed);
+  if (missingInvoiceConfigMatch) {
+    return `任务缺少发票配置字段：${missingInvoiceConfigMatch[1]}。`;
+  }
+  const selfServiceRoleDisabledMatch = /^self-service registration for role '([^']+)' is disabled$/i.exec(trimmed);
+  if (selfServiceRoleDisabledMatch) {
+    const roleKey = selfServiceRoleDisabledMatch[1];
+    const roleLabel = ROLE_LABELS[roleKey as UserRole] ?? roleKey;
+    return `当前环境不允许自助注册${roleLabel}账号。`;
+  }
+  const roleNotAssignedMatch = /^role '([^']+)' is not assigned to this account$/i.exec(trimmed);
+  if (roleNotAssignedMatch) {
+    const roleKey = roleNotAssignedMatch[1];
+    const roleLabel = ROLE_LABELS[roleKey as UserRole] ?? roleKey;
+    return `当前账号未分配${roleLabel}身份。`;
+  }
+  if (normalized === "task not found") {
+    return "任务不存在或已被删除。";
+  }
+  if (normalized === "material not found") {
+    return "材料不存在或已被删除。";
+  }
+  if (normalized === "invoice not found") {
+    return "发票不存在或已被删除。";
+  }
+  if (normalized === "split not found") {
+    return "分摊记录不存在或已被删除。";
+  }
+  if (normalized === "recognition task not found") {
+    return "识别任务不存在或已失效。";
+  }
+  if (normalized === "export job not found") {
+    return "导出任务不存在或已失效。";
   }
   if (normalized.includes("temporarily unavailable") || normalized.includes("service unavailable")) {
     return "系统暂时不可用，请稍后再试。";
@@ -241,6 +280,41 @@ export function mapBackendMessage(message: string, status = 0) {
   }
   if (normalized.includes("payload is too large") || normalized.includes("content too large")) {
     return "上传文件过大，请缩小到页面允许的大小后重试。";
+  }
+  if (normalized === "task is not open for material submission" || normalized === "material upload window is closed") {
+    return "当前任务未开放材料上传。";
+  }
+  if (normalized === "split amount total must equal invoice amount") {
+    return "分摊金额合计必须等于发票金额。";
+  }
+  if (normalized === "member can only confirm own split") {
+    return "成员只能确认自己的分摊记录。";
+  }
+  if (normalized === "proxy confirmation is not allowed") {
+    return "当前不允许代他人确认费用。";
+  }
+  if (normalized === "only the material submitter can update material type") {
+    return "只有材料提交人可以修改材料类型。";
+  }
+  if (normalized === "members can only update material type while the task is open") {
+    return "只有在任务开放提交期间，成员才能修改材料类型。";
+  }
+  const memberNotInTaskMatch = /^member\s+(.+)\s+is not part of this task$/i.exec(trimmed);
+  if (memberNotInTaskMatch) {
+    return `成员 ${memberNotInTaskMatch[1]} 不在当前任务成员名单中。`;
+  }
+  const invoiceExpenseTypeMismatchMatch = /^invoice expense type\s+(.+)\s+is not allowed for task;\s+allowed fee categories:\s+(.+)$/i.exec(trimmed);
+  if (invoiceExpenseTypeMismatchMatch) {
+    const [, rawExpenseType = "", rawAllowedExpenseTypes = ""] = invoiceExpenseTypeMismatchMatch;
+    const currentExpenseType = formatExpenseType(rawExpenseType.trim());
+    const allowedExpenseTypes = rawAllowedExpenseTypes
+      .split(",")
+      .map((item) => formatExpenseType(item.trim()))
+      .join("、");
+    return `当前发票费用类型“${currentExpenseType}”不在任务允许范围内；当前任务只允许：${allowedExpenseTypes}。`;
+  }
+  if (normalized === "task cannot transition to completed before export completion is recorded") {
+    return "导出完成前，任务不能切换为已完成。";
   }
   if (normalized.includes("ready_to_export") || normalized.includes("可导出")) {
     return "当前任务还没完成导出前置条件，请先处理缺失材料、复核或状态推进。";
@@ -258,8 +332,5 @@ export function mapBackendMessage(message: string, status = 0) {
   if (status >= 500) {
     return "系统暂时无法完成该操作，请稍后重试。";
   }
-  if (status >= 400) {
-    return "当前操作未完成，请检查填写内容后重试。";
-  }
-  return message;
+  return trimmed;
 }
