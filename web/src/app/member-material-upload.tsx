@@ -6,6 +6,7 @@ import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { FileDropZone } from "../components/FileDropZone";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
+import { findOversizedFile, MAX_UPLOAD_FILE_BYTES } from "../lib/upload-validation";
 import type {
   MaterialBatchUploadResponse,
   MaterialRecord,
@@ -154,6 +155,11 @@ function validateUploadForm(
   }
   if (formState.files.length === 0) {
     errors.files = "至少选择一个要上传的文件。";
+  } else {
+    const oversizedFile = findOversizedFile(formState.files);
+    if (oversizedFile) {
+      errors.files = `文件 ${oversizedFile.name} 超过 ${Math.floor(MAX_UPLOAD_FILE_BYTES / 1024 / 1024)}MB，请压缩或拆分后再上传。`;
+    }
   }
 
   return errors;

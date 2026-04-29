@@ -45,6 +45,7 @@ import {
   formatValidationRule,
   formatValidationStatus,
 } from "../lib/ui-text";
+import { findOversizedFile, MAX_UPLOAD_FILE_BYTES } from "../lib/upload-validation";
 import { useAuthSession } from "./auth-store";
 
 type VisibleTaskState =
@@ -575,6 +576,11 @@ function validateWorkbenchUploadForm(
   }
   if (formState.files.length === 0) {
     errors.files = "至少选择一个要上传的文件。";
+  } else {
+    const oversizedFile = findOversizedFile(formState.files);
+    if (oversizedFile) {
+      errors.files = `文件 ${oversizedFile.name} 超过 ${Math.floor(MAX_UPLOAD_FILE_BYTES / 1024 / 1024)}MB，请压缩或拆分后再上传。`;
+    }
   }
 
   return errors;

@@ -251,6 +251,55 @@ describe("MemberMaterialUploadPage", () => {
     expect(screen.queryByRole("button", { name: "上传材料" })).not.toBeInTheDocument();
   });
 
+  it("blocks oversized files before sending the upload request", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      throw new Error(`Unexpected fetch URL in oversized upload test: ${url}`);
+    });
+
+    renderMemberUploadRoute("/member/materials/upload?taskId=TASK-OPEN");
+
+    await screen.findByRole("heading", { name: "成员材料上传" });
+
+    const fileInput = screen.getByLabelText("上传文件");
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File([new Uint8Array(10 * 1024 * 1024 + 1)], "oversized.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
+
+    expect(await screen.findByText("文件 oversized.pdf 超过 10MB，请压缩或拆分后再上传。")).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("shows backend errors when material upload is rejected", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);

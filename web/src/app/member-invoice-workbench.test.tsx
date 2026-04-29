@@ -1831,6 +1831,94 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByText("支付记录 / MAT-UP-001")).toBeInTheDocument();
   });
 
+  it("blocks oversized files in the workbench upload area before sending the request", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: 0,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unexpected fetch URL in workbench oversized upload test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("工作台上传文件"), {
+      target: {
+        files: [
+          new File([new Uint8Array(10 * 1024 * 1024 + 1)], "oversized.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+
+    expect(await screen.findByText("文件 oversized.pdf 超过 10MB，请压缩或拆分后再上传。")).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+  });
+
   it("submits confirmations directly from the workbench and refreshes current statuses", async () => {
     let confirmationStatus: "pending" | "confirmed" = "pending";
 

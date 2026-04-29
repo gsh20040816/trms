@@ -1,5 +1,91 @@
 # WORKLOG
 
+## 2026-04-29 14:35 - Make reminder recording boundary explicit near the submit action
+
+### 完成内容
+- 收口管理员补材料提醒表单的边界文案：
+  - 按钮文案从“记录补材料提醒”改为“保存内部提醒记录”；
+  - 按钮附近显式提示“这里只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。”；
+  - 成功反馈改为“已保存对成员 X 的内部提醒记录；系统不会自动发送消息。”，避免管理员误判成真实通知已发出。
+- 前端测试同步更新按钮文案、说明文案和成功反馈断言。
+- `TASKS.md` 中“按 UX 实测强调补材料提醒只保存内部记录”已标记完成。
+
+### 根因
+- 原页面虽然在输入框下方写了“当前只记录管理员提醒内容与时间，不接入真实短信、邮件或 Telegram 发送”，但提示位置离提交动作较远，也不足以阻止管理员把“记录成功”误读成“通知已发送”。
+- UX 报告指出这类边界必须贴近按钮和提交结果本身表达，否则属于高概率误操作。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/admin-corrections-reminders.tsx`
+  - `web/src/app/admin-corrections-reminders.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只改前端文案，不改提醒记录 API、审计逻辑或未来真实通知接入边界。
+- 已存在的“提醒记录”业务语义更清晰了，但仍不等同于实现通知模块；后续若真的接入通知渠道，按钮和成功反馈需要再区分“仅记录”与“记录并发送”两种动作。
+
+### 验证结果
+- 与下一轮“上传前文件体积预检查”一起通过同一次 `./scripts/verify.sh` 全量验证，结果如下：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、76 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 这轮仍把“提醒”视为内部记录能力，不默认未来一定接入站内、邮件或 Telegram 通知。
+
+## 2026-04-29 14:36 - Precheck oversized uploads before sending member material requests
+
+### 完成内容
+- 为两个成员上传入口补充前端体积预检查：
+  - `web/src/app/member-material-upload.tsx`
+  - `web/src/app/member-invoice-workbench.tsx`
+- 现在如果用户选择了超过 10MB 的文件，页面会在提交前直接报错：
+  - `文件 <name> 超过 10MB，请压缩或拆分后再上传。`
+- 新增共享上传校验工具：
+  - `web/src/lib/upload-validation.ts`
+- 新增前端回归测试：
+  - 专项上传页会在提交前拦截超大文件；
+  - 工作台上传区会在提交前拦截超大文件。
+- `TASKS.md` 中“按 UX 实测增加上传前文件体积预检查”已标记完成。
+
+### 根因
+- UX 实测虽然已经把后端 413 映射成了明确的“上传文件过大”提示，但那仍然发生在用户点击提交并等待一次请求往返之后。
+- 既然页面已经明确写了“单文件最大 10MB”，更合理的行为是在前端提交前就执行同一条规则，避免用户把一个本地就能判断失败的文件继续发给后端。
+
+### 关键改动点
+- 新增：
+  - `web/src/lib/upload-validation.ts`
+- 修改：
+  - `web/src/app/member-material-upload.tsx`
+  - `web/src/app/member-material-upload.test.tsx`
+  - `web/src/app/member-invoice-workbench.tsx`
+  - `web/src/app/member-invoice-workbench.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只补前端预检查，不改后端真正执行的文件大小限制；后端仍保留最终兜底。
+- 目前前端与文案共用固定 10MB 阈值，后续如果后端配置化了上传大小限制，应把这里再收敛成同一配置来源，避免双端阈值漂移。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、76 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 当前上传大小上限以现有前端/后端共同使用的 10MB 约定为准，本轮没有引入新的后端配置项去动态下发限制。
+- 这轮只处理“体积过大”的本地可判定失败；文件内容格式、重复文件、服务端权限等校验仍由后端继续负责。
+
 ## 2026-04-29 14:33 - Clarify task member input semantics on admin create form
 
 ### 完成内容

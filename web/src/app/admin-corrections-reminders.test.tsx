@@ -268,6 +268,7 @@ describe("AdminCorrectionsRemindersPage", () => {
     renderCorrectionsRoute();
 
     expect(await screen.findByRole("heading", { name: "管理员人工更正与补材料提醒" })).toBeInTheDocument();
+    expect(screen.getByText("这里只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "更正识别字段与金额" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
@@ -290,9 +291,9 @@ describe("AdminCorrectionsRemindersPage", () => {
     fireEvent.change(screen.getByLabelText("提醒内容"), {
       target: { value: "请补充比赛通知，并在补交后重新确认金额。" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "记录补材料提醒" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
 
-    expect(await screen.findByText("已记录对成员 2250002 的补材料提醒。")).toBeInTheDocument();
+    expect(await screen.findByText("已保存对成员 2250002 的内部提醒记录；系统不会自动发送消息。")).toBeInTheDocument();
     const updatedReminderList = within(screen.getByLabelText("补材料提醒列表"));
     expect(updatedReminderList.getByText("请补充比赛通知，并在补交后重新确认金额。")).toBeInTheDocument();
   });
@@ -333,7 +334,7 @@ describe("AdminCorrectionsRemindersPage", () => {
     fireEvent.change(screen.getByLabelText("提醒内容"), {
       target: { value: "请补交材料。" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "记录补材料提醒" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
     expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();

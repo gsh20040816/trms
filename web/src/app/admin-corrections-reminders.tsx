@@ -295,7 +295,7 @@ export function AdminCorrectionsRemindersPage() {
       });
       setContent("");
       setFormErrors({});
-      setSubmitFeedback(`已记录对成员 ${reminder.member_id} 的补材料提醒。`);
+      setSubmitFeedback(`已保存对成员 ${reminder.member_id} 的内部提醒记录；系统不会自动发送消息。`);
     } catch (error) {
       setSubmitError(error);
     } finally {
@@ -526,9 +526,9 @@ export function AdminCorrectionsRemindersPage() {
               </div>
 
               <div className="admin-form-footer">
-                <p className="field-hint">提醒内容会按原文存档，后续审计与通知接入可复用这条记录。</p>
+                <p className="field-hint">这里只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。</p>
                 <button className="route-link" type="submit" disabled={isSubmitting || visibleTask.member_ids.length === 0}>
-                  {isSubmitting ? "记录中..." : "记录补材料提醒"}
+                  {isSubmitting ? "保存中..." : "保存内部提醒记录"}
                 </button>
               </div>
             </form>
