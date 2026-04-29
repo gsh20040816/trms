@@ -3258,7 +3258,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
       expect(screen.queryByRole("heading", { name: "待关联辅助材料" })).not.toBeInTheDocument();
     });
 
-    expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
+    expect(await screen.findByText("支付记录 / pay.png")).toBeInTheDocument();
   });
 
   it("shows a clear failure message when attaching a pending supporting material fails", async () => {

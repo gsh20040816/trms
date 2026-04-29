@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-30 01:13 - Restructure member workbench around ready and blocked invoices
+
+### 完成内容
+- 完成任务“将成员工作台默认结构调整为待办、可提交发票和问题发票”。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 将成员工作台发票视图从“完整发票长列表 + 详情并列”重排为“批量区 + 可提交发票 + 问题发票分组 + 详情后置”；
+  - 新增可提交发票区，优先展示当前结构已经闭合、可直接纳入批量提交的发票；
+  - 新增问题发票分组，按“识别中 / 识别失败或待确认 / 附件待关联 / 缺失材料 / 分摊未完成 / 确认未完成”展示主要阻塞原因；
+  - 保留详情处理能力，但把完整详情放到分组之后，避免成员默认先陷入长详情列表。
+- 新增测试 [member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)：
+  - 覆盖可提交区空态；
+  - 覆盖可提交发票展示；
+  - 覆盖问题发票按主阻塞原因分组；
+  - 覆盖点击不同卡片后详情区切换。
+
+### 根因
+- 成员工作台此前虽然已经有待处理事项摘要、批量提交区和待关联提示，但发票主视图仍默认要求用户先浏览完整发票详情长列表。
+- 结果是成员需要自己判断“哪张票已经能交、哪张票为什么还不能交”，页面没有把系统已有的识别、附件、分摊和确认状态收口成直接可执行的信息架构。
+
+### 保守假设
+- 本轮把“分摊未完成”收敛为：当发票已经存在分摊记录且金额合计不等于发票总额时，才归入该问题分组。
+- 也就是说，仅因为当前没有分摊记录，不自动视为 blocker；否则会把现有可正常提交的单人发票误判成问题发票。若后续产品要求“所有发票必须先显式建立分摊记录”，应作为独立任务调整后端与前端口径。
+
+### 影响范围
+- 仅修改成员工作台前端结构和对应前端测试。
+- 不改动后端聚合接口、提交/撤回 API、附件关联权限、数据库 schema 或管理员页面。
+
+### 验证结果
+- 已通过定向前端验证：
+  - `cd web && npm test -- member-invoice-workbench-layout.test.tsx member-invoice-workbench.test.tsx member-invoice-workbench-submission.test.tsx`
+    - 23 个用例通过
+  - `cd web && npm run lint`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 470 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 01:00 - Add candidate invoice attachment action in member workbench
 
 ### 完成内容
