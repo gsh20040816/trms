@@ -1180,14 +1180,46 @@
 
   > 实现说明：当前阶段成员首页 KPI 与全部任务表已经在 `/member` 任务列表页（Round 6 范围）；管理员首页同样位于 `/admin` 任务列表（已存在）。本轮 `/` 总览页只负责把"未登录"和"已登录后选择工作台"的体验改为 M3 任务驱动卡片视图，不重复实现 KPI 数据计算；KPI 重写在对应角色任务列表轮次完成。
 
-- [ ] 重写成员端任务列表与单任务工作台
+- [x] 重写成员端任务列表（M3 Material 视觉）
   - Done when:
-    - 任务列表改为 M3 Cards 网格，移动端可用
-    - 单任务工作台 `/member/invoices/workbench` 改为带 Tabs 的单页（发票 / 缺失材料 / 费用确认）
-    - 上传通过 M3 FAB 触发 Dialog（含拖拽、进度、单文件结果）
-    - 操作反馈统一走 Snackbar
-    - 旧的 `/member/materials/upload` `status` `missing` `expenses/confirm` 改为重定向到工作台对应 tab
-    - 相关测试更新或重写
+    - 任务列表 `/member` 改为 MUI v7 Stack + KPI Card 网格 + Card 包裹的 MUI Table，移动端可用
+    - 状态使用 MUI Chip 颜色映射，下一步动作和"进入工作台"按钮保持现有路由语义不变
+    - 加载、空态、错误三种状态都有清晰的 M3 视觉
+    - `member-task-list.test.tsx` 全部通过，断言语义不弱化
+
+- [ ] 重写成员单任务工作台（Tabs 化）
+  - Done when:
+    - `/member/invoices/workbench` 主体框架改为 M3 Tabs（发票 / 缺失材料 / 费用确认）
+    - 顶部展示任务上下文卡（比赛名、状态、截止时间、当前成员），并支持任务切换
+    - 列表项与详情仍保持现有业务行为，本轮不改后端接口
+    - 现有 `member-invoice-workbench.test.tsx` 测试通过或同步更新
+
+- [ ] 重写成员材料上传交互（拖拽 Dialog + Snackbar）
+  - Done when:
+    - `/member/materials/upload` 改为 M3 拖拽上传卡 + 单文件状态显示
+    - 上传成功/失败反馈通过 Snackbar 推送，不再用页面级红色卡片
+    - 上传结果保留逐文件结果显示
+    - `member-material-upload.test.tsx` 测试通过
+
+- [ ] 重写成员材料状态页（M3 列表 + 详情视图）
+  - Done when:
+    - `/member/materials/status` 改为 M3 列表 + 详情或 Card 网格视图
+    - 识别状态、校验异常、缺失材料用统一 Chip 颜色表达
+    - 重新识别和状态刷新动作走 Snackbar 反馈
+    - `member-material-status.test.tsx` 测试通过
+
+- [ ] 重写成员费用确认页与缺失材料页
+  - Done when:
+    - `/member/expenses/confirm` 改为 M3 表单 + Stepper 或分卡组织
+    - `/member/materials/missing` 改为 M3 列表
+    - 确认与异议提交走 Snackbar 反馈
+    - 相关测试通过
+
+- [ ] 收口成员端旧二级路由为工作台跳转
+  - Done when:
+    - `/member/materials/upload` `status` `missing` `expenses/confirm` 在工作台 Tabs 完成后改为重定向到 `/member/invoices/workbench` 对应 tab
+    - 不破坏现有外部链接（旧 URL 仍可访问，自动跳转）
+    - 相关测试更新
 
 - [ ] 重写管理员任务详情：列表+详情联动
   - Done when:

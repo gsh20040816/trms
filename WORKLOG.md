@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-04-29 12:08 - Rewrite member task list with Material 3 visuals and split workbench rounds
+
+### 完成内容
+- 重写 `web/src/app/member-task-list.tsx`：
+  - 顶部 hero 改为 Stack + 标题/描述/当前成员副文案 + "进入发票工作台" Contained Button（带 OpenInNewIcon）。
+  - "成员任务概览" 改为 4 张 outlined `<Card>` 网格（StatTile 子组件）：我参与的任务 / 正在收集 / 待补充或确认 / 已进入归档；每张含 overline + 大数字 + Avatar 角色着色 + 业务描述。
+  - 任务列表改为 `<Card>` 包裹的 MUI `<Table>`（aria-label="成员任务列表"），状态用 MUI `<Chip>` 颜色映射（info/warning/success/default），操作列用 `<Button variant="contained">` + `<Button variant="outlined">` 组合。
+  - 加载态用 `<CircularProgress>` + 简短文案，错误态保留 `ApiErrorNotice`，空态用 `<Alert severity="info">` 替换 EmptyState。
+  - 移动端 grid 自动单列，Stack 自动竖向。
+- 拆分 P5 第六条任务：
+  - 原"重写成员端任务列表与单任务工作台"任务范围太大（涉及任务列表 + 1900 行工作台 + 上传/状态/缺失/确认 4 段共 4500+ 行），按 AGENTS.md "任务过大先拆分" 原则，拆成 6 条独立子任务：
+    1. 重写成员端任务列表（M3 Material 视觉）— 本轮完成
+    2. 重写成员单任务工作台（Tabs 化）
+    3. 重写成员材料上传交互（拖拽 Dialog + Snackbar）
+    4. 重写成员材料状态页（M3 列表 + 详情视图）
+    5. 重写成员费用确认页与缺失材料页
+    6. 收口成员端旧二级路由为工作台跳转
+- 第一条已标记 `[x]`，其余 5 条留作后续轮次。
+
+### 根因
+- 旧任务列表使用自造 `RoleWorkspace` + `PageHeader` + `StatCard` + `SectionCard` + `TaskTable` 组合，与 Round 5 重写的首页风格脱节，且依赖 1700+ 行 `styles.css` 中的旧 token。
+- 用户在 P5 计划中要求成员端从"4 段拆分页面"收口为"单任务闭环"，但单任务工作台代码 1951 行；按规则一轮内不能整体重写。本轮先做最易完成的任务列表 M3 化，并把剩余工作明确拆到后续轮次。
+
+### 关键改动点
+- 重写：
+  - `web/src/app/member-task-list.tsx`：从 231 行重写为基于 MUI 的 320 行版本。
+- 任务拆分：
+  - `TASKS.md` 第六条 P5 任务拆为 6 条子任务，第一条标记完成。
+
+### 风险与影响面
+- 业务路由全部保持不变：
+  - 列表 `/member` 仍渲染同样的 ReimbursementTask；
+  - "进入发票工作台" → `/member/invoices/workbench`；
+  - 每行"进入工作台" → `/member/invoices/workbench?taskId=XXX`；
+  - 每行下一步按钮按 `task.status` 路由到 upload/missing/confirm/status，与旧版完全一致。
+- `member-task-list.test.tsx` 全部 2 条用例无修改通过，因为关键 accessible name（heading "我的报销任务"、aria-label "成员任务概览"、table caption "成员任务列表"、link "进入发票工作台"/"进入工作台"/"提交材料"、文本 "ICPC Xi'an Regional"/"收集中"/"当前没有可见报销任务"）全部保留。
+- bundle gzipped 与上一轮持平（多了 Table/TableHead/TableRow/TableCell/TableContainer/CircularProgress 也已经在前序 MUI 引入中）。
+
+### 修改文件
+- `web/src/app/member-task-list.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 任务列表的"操作"列保留两个按钮（进入工作台 + 直接下一步动作），与现有测试断言一致；不删除"提交材料"等下一步快捷链接。
+- 状态 Chip 颜色映射 open=info / reviewing|closed=warning / ready_to_export|completed=success / draft=default outlined。
+
+### 备注
+- 后续 5 条子任务将依次推进；单任务工作台 1900 行的重写会作为单独一轮，且优先采用"在不动业务调用的前提下替换骨架与 UI 元素"的方式，再拆出更细的视觉与交互优化任务。
+
 ## 2026-04-29 12:01 - Rewrite home page with task-driven Material 3 layout
 
 ### 完成内容

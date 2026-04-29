@@ -1,7 +1,26 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link as RouterLink } from "react-router-dom";
 
-import { EmptyState, PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge, TaskTable } from "../components/dashboard";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+
+import Alert from "@mui/material/Alert";
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
+
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type { ReimbursementTask, TaskStatus } from "../lib/api/types";
@@ -47,17 +66,17 @@ function getTaskSortPriority(status: TaskStatus) {
   }
 }
 
-function buildStatusTone(status: TaskStatus) {
+function buildStatusChipColor(status: TaskStatus): "default" | "info" | "warning" | "success" {
   if (status === "open") {
-    return "info" as const;
+    return "info";
   }
   if (status === "reviewing" || status === "closed") {
-    return "warning" as const;
+    return "warning";
   }
   if (status === "ready_to_export" || status === "completed") {
-    return "success" as const;
+    return "success";
   }
-  return "neutral" as const;
+  return "default";
 }
 
 function buildWorkbenchLink(task: ReimbursementTask) {
@@ -75,6 +94,49 @@ function buildDirectActionLink(task: ReimbursementTask) {
     return `/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`;
   }
   return `/member/materials/status?taskId=${encodeURIComponent(task.id)}`;
+}
+
+function StatTile({
+  label,
+  value,
+  description,
+  accent,
+}: {
+  label: string;
+  value: number | string;
+  description: string;
+  accent: "primary" | "info" | "warning" | "success";
+}) {
+  return (
+    <Card variant="outlined" sx={{ height: "100%" }}>
+      <CardContent>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+          <Typography variant="overline" color="text.secondary">
+            {label}
+          </Typography>
+          <Avatar
+            variant="rounded"
+            sx={{
+              width: 32,
+              height: 32,
+              bgcolor: `${accent}.main`,
+              color: `${accent}.contrastText`,
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {typeof value === "number" ? value : value.slice(0, 1)}
+          </Avatar>
+        </Stack>
+        <Typography variant="h4" sx={{ mb: 0.5, lineHeight: 1.1 }}>
+          {value}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {description}
+        </Typography>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function MemberTaskListPage() {
@@ -142,90 +204,177 @@ export function MemberTaskListPage() {
   };
 
   return (
-    <RoleWorkspace
-      header={(
-        <PageHeader
-          eyebrow="成员工作台"
-          title="我的报销任务"
-          description="先看我参与的任务，再优先进入单任务发票工作台处理上传、补材料和费用确认。"
-          meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
-          actions={(
-            <div className="page-actions">
-              <Link className="button button-primary" to="/member/invoices/workbench">
-                进入发票工作台
-              </Link>
-            </div>
-          )}
+    <Stack spacing={3}>
+      <Box>
+        <Typography variant="overline" color="text.secondary">
+          成员工作台
+        </Typography>
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          alignItems={{ xs: "flex-start", md: "flex-end" }}
+          justifyContent="space-between"
+          spacing={2}
+          sx={{ mt: 0.5 }}
+        >
+          <Box>
+            <Typography component="h1" variant="h3">
+              我的报销任务
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mt: 1, maxWidth: 720 }}>
+              先看我参与的任务，再进入单任务发票工作台处理上传、补材料和费用确认。
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+              当前成员：{session.displayName}
+              {session.memberCode ? `（${session.memberCode}）` : ""}
+            </Typography>
+          </Box>
+          <Button
+            component={RouterLink}
+            to="/member/invoices/workbench"
+            variant="contained"
+            size="large"
+            endIcon={<OpenInNewIcon />}
+          >
+            进入发票工作台
+          </Button>
+        </Stack>
+      </Box>
+
+      <Box
+        aria-label="成员任务概览"
+        sx={{
+          display: "grid",
+          gap: 2,
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", md: "repeat(4, minmax(0, 1fr))" },
+        }}
+      >
+        <StatTile
+          label="我参与的任务"
+          value={dashboardStats.total}
+          description="当前你可以查看或处理的全部报销任务。"
+          accent="primary"
         />
-      )}
-      summary={(
-        <section className="stat-grid" aria-label="成员任务概览">
-          <StatCard label="我参与的任务" value={dashboardStats.total} description="当前你可以查看或处理的全部报销任务。" />
-          <StatCard label="正在收集" value={dashboardStats.openCount} description="优先在截止前提交或补充材料。" />
-          <StatCard label="待补充或确认" value={dashboardStats.reviewCount} description="需要查看材料状态或确认费用的任务。" />
-          <StatCard label="已进入归档" value={dashboardStats.archivedCount} description="主要用于查询结果和回看记录。" />
-        </section>
-      )}
-    >
+        <StatTile
+          label="正在收集"
+          value={dashboardStats.openCount}
+          description="优先在截止前提交或补充材料。"
+          accent="info"
+        />
+        <StatTile
+          label="待补充或确认"
+          value={dashboardStats.reviewCount}
+          description="需要查看材料状态或确认费用的任务。"
+          accent="warning"
+        />
+        <StatTile
+          label="已进入归档"
+          value={dashboardStats.archivedCount}
+          description="主要用于查询结果和回看记录。"
+          accent="success"
+        />
+      </Box>
+
       {state.status === "loading" ? (
-        <SectionCard title="正在加载成员可见任务" description="正在读取你参与的报销任务，请稍候。" />
+        <Card>
+          <CardContent>
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <CircularProgress size={20} />
+              <Box>
+                <Typography variant="subtitle1">正在加载成员可见任务</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  正在读取你参与的报销任务，请稍候。
+                </Typography>
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
       ) : null}
 
       {state.status === "error" ? <ApiErrorNotice error={state.error} /> : null}
 
       {state.status === "ready" && sortedVisibleTasks.length === 0 ? (
-        <EmptyState
-          title="当前没有可见报销任务"
-          description="管理员创建并发布包含你的报销任务后，会在这里显示。"
-        />
+        <Alert severity="info" sx={{ alignItems: "flex-start" }}>
+          <Typography variant="subtitle1" component="div" sx={{ fontWeight: 700 }}>
+            当前没有可见报销任务
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.5 }}>
+            管理员创建并发布包含你的报销任务后，会在这里显示。
+          </Typography>
+        </Alert>
       ) : null}
 
       {state.status === "ready" && sortedVisibleTasks.length > 0 ? (
-        <SectionCard
-          title="任务列表"
-          description="优先从这里进入单任务发票工作台；如需跳过汇总页，也可以直接执行当前下一步。"
-          action={<StatusBadge tone="info">共 {sortedVisibleTasks.length} 条</StatusBadge>}
-        >
-          <TaskTable
-            caption="成员任务列表"
-            header={(
-              <tr>
-                <th>任务名称</th>
-                <th>当前状态</th>
-                <th>截止时间</th>
-                <th>下一步</th>
-                <th>操作</th>
-              </tr>
-            )}
-          >
-            {sortedVisibleTasks.map((task) => (
-              <tr key={task.id}>
-                <td>
-                  <div className="table-primary">
-                    <strong>{task.competition_name}</strong>
-                    <span>{task.competition_location}</span>
-                  </div>
-                </td>
-                <td>
-                  <StatusBadge tone={buildStatusTone(task.status)}>{formatTaskStatus(task.status)}</StatusBadge>
-                </td>
-                <td>{formatDateTime(task.deadline)}</td>
-                <td>{NEXT_ACTIONS[task.status]}</td>
-                <td>
-                  <div className="table-actions">
-                    <Link className="button button-primary button-small" to={buildWorkbenchLink(task)}>
-                      进入工作台
-                    </Link>
-                    <Link className="button button-secondary button-small" to={buildDirectActionLink(task)}>
-                      {NEXT_ACTIONS[task.status]}
-                    </Link>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </TaskTable>
-        </SectionCard>
+        <Card>
+          <CardContent>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+              <Box>
+                <Typography variant="h6">任务列表</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  优先从这里进入单任务发票工作台；如需跳过汇总页，也可以直接执行当前下一步。
+                </Typography>
+              </Box>
+              <Chip color="info" size="small" label={`共 ${sortedVisibleTasks.length} 条`} />
+            </Stack>
+            <TableContainer>
+              <Table aria-label="成员任务列表" size="small">
+                <caption className="sr-only">成员任务列表</caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>任务名称</TableCell>
+                    <TableCell>当前状态</TableCell>
+                    <TableCell>截止时间</TableCell>
+                    <TableCell>下一步</TableCell>
+                    <TableCell align="right">操作</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {sortedVisibleTasks.map((task) => (
+                    <TableRow key={task.id} hover>
+                      <TableCell>
+                        <Typography variant="subtitle2">{task.competition_name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {task.competition_location}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          color={buildStatusChipColor(task.status)}
+                          label={formatTaskStatus(task.status)}
+                          variant={buildStatusChipColor(task.status) === "default" ? "outlined" : "filled"}
+                        />
+                      </TableCell>
+                      <TableCell>{formatDateTime(task.deadline)}</TableCell>
+                      <TableCell>{NEXT_ACTIONS[task.status]}</TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={1} justifyContent="flex-end" useFlexGap flexWrap="wrap">
+                          <Button
+                            component={RouterLink}
+                            to={buildWorkbenchLink(task)}
+                            variant="contained"
+                            size="small"
+                            endIcon={<ArrowForwardIcon />}
+                          >
+                            进入工作台
+                          </Button>
+                          <Button
+                            component={RouterLink}
+                            to={buildDirectActionLink(task)}
+                            variant="outlined"
+                            size="small"
+                          >
+                            {NEXT_ACTIONS[task.status]}
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </CardContent>
+        </Card>
       ) : null}
-    </RoleWorkspace>
+    </Stack>
   );
 }
