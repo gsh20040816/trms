@@ -1300,7 +1300,7 @@
     - 成员名单行与费用类别选择改为更贴近 M3 的输入控件，并统一通过 `helperText` / `error` 表达校验
     - 相关测试同步更新
 
-- [ ] 迁移管理员发票录入表单到 MUI TextField / Select
+- [x] 迁移管理员发票录入表单到 MUI TextField / Select
   - Done when:
     - `web/src/app/admin-invoice-editor.tsx` 中发票编辑表单改用 MUI `TextField` / `Select`
     - 校验错误不再依赖自造 `.field-error`

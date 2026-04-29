@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
+import MenuItem from "@mui/material/MenuItem";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
@@ -1044,108 +1046,105 @@ export function AdminInvoiceEditorPage() {
                       }}
                     >
                       <div className="admin-form-grid">
-                        <label className="field-stack">
-                          <span>发票号码</span>
-                          <input
-                            name="invoice-number"
-                            value={formState.invoiceNumber}
-                            onChange={(event) => {
-                              updateField("invoiceNumber", event.target.value);
-                            }}
-                          />
-                          {formErrors.invoiceNumber ? <span className="field-error">{formErrors.invoiceNumber}</span> : null}
-                        </label>
-
-                        <label className="field-stack">
-                          <span>开票日期</span>
-                          <input
-                            type="date"
-                            name="issue-date"
-                            value={formState.issueDate}
-                            onChange={(event) => {
-                              updateField("issueDate", event.target.value);
-                            }}
-                          />
-                        </label>
-
-                        <label className="field-stack">
-                          <span>交易时间</span>
-                          <input
-                            type="datetime-local"
-                            name="transaction-time"
-                            value={formState.transactionTime}
-                            onChange={(event) => {
-                              updateField("transactionTime", event.target.value);
-                            }}
-                          />
-                        </label>
-
-                        <label className="field-stack">
-                          <span>金额（元）</span>
-                          <input
-                            name="amount-yuan"
-                            inputMode="decimal"
-                            placeholder="例如 123.45"
-                            value={formState.amountYuan}
-                            onChange={(event) => {
-                              updateField("amountYuan", event.target.value);
-                            }}
-                          />
-                          {formErrors.amountYuan ? <span className="field-error">{formErrors.amountYuan}</span> : null}
-                        </label>
-
-                        <label className="field-stack">
-                          <span>发票抬头</span>
-                          <input
-                            name="buyer-name"
-                            value={formState.buyerName}
-                            onChange={(event) => {
-                              updateField("buyerName", event.target.value);
-                            }}
-                          />
-                          {formErrors.buyerName ? <span className="field-error">{formErrors.buyerName}</span> : null}
-                        </label>
-
-                        <label className="field-stack">
-                          <span>税号</span>
-                          <input
-                            name="tax-number"
-                            value={formState.taxNumber}
-                            onChange={(event) => {
-                              updateField("taxNumber", event.target.value);
-                            }}
-                          />
-                          {formErrors.taxNumber ? <span className="field-error">{formErrors.taxNumber}</span> : null}
-                        </label>
-
-                        <label className="field-stack">
-                          <span>销售方名称</span>
-                          <input
-                            name="seller-name"
-                            value={formState.sellerName}
-                            onChange={(event) => {
-                              updateField("sellerName", event.target.value);
-                            }}
-                          />
-                        </label>
-
-                        <label className="field-stack">
-                          <span>费用类型</span>
-                          <select
-                            name="expense-type"
-                            value={formState.expenseType}
-                            onChange={(event) => {
-                              updateField("expenseType", event.target.value as ExpenseType);
-                            }}
-                          >
-                            {allowedExpenseTypes.map((expenseType) => (
-                              <option key={expenseType} value={expenseType}>
-                                {formatExpenseType(expenseType)}
-                              </option>
-                            ))}
-                          </select>
-                          {formErrors.expenseType ? <span className="field-error">{formErrors.expenseType}</span> : null}
-                        </label>
+                        <TextField
+                          label="发票号码"
+                          name="invoice-number"
+                          value={formState.invoiceNumber}
+                          onChange={(event) => {
+                            updateField("invoiceNumber", event.target.value);
+                          }}
+                          error={Boolean(formErrors.invoiceNumber)}
+                          helperText={formErrors.invoiceNumber}
+                          fullWidth
+                        />
+                        <TextField
+                          label="开票日期"
+                          type="date"
+                          name="issue-date"
+                          value={formState.issueDate}
+                          onChange={(event) => {
+                            updateField("issueDate", event.target.value);
+                          }}
+                          fullWidth
+                          slotProps={{ inputLabel: { shrink: true } }}
+                        />
+                        <TextField
+                          label="交易时间"
+                          type="datetime-local"
+                          name="transaction-time"
+                          value={formState.transactionTime}
+                          onChange={(event) => {
+                            updateField("transactionTime", event.target.value);
+                          }}
+                          fullWidth
+                          slotProps={{ inputLabel: { shrink: true } }}
+                        />
+                        <TextField
+                          label="金额（元）"
+                          name="amount-yuan"
+                          value={formState.amountYuan}
+                          onChange={(event) => {
+                            updateField("amountYuan", event.target.value);
+                          }}
+                          error={Boolean(formErrors.amountYuan)}
+                          helperText={formErrors.amountYuan}
+                          fullWidth
+                          slotProps={{
+                            htmlInput: {
+                              inputMode: "decimal",
+                              placeholder: "例如 123.45",
+                            },
+                          }}
+                        />
+                        <TextField
+                          label="发票抬头"
+                          name="buyer-name"
+                          value={formState.buyerName}
+                          onChange={(event) => {
+                            updateField("buyerName", event.target.value);
+                          }}
+                          error={Boolean(formErrors.buyerName)}
+                          helperText={formErrors.buyerName}
+                          fullWidth
+                        />
+                        <TextField
+                          label="税号"
+                          name="tax-number"
+                          value={formState.taxNumber}
+                          onChange={(event) => {
+                            updateField("taxNumber", event.target.value);
+                          }}
+                          error={Boolean(formErrors.taxNumber)}
+                          helperText={formErrors.taxNumber}
+                          fullWidth
+                        />
+                        <TextField
+                          label="销售方名称"
+                          name="seller-name"
+                          value={formState.sellerName}
+                          onChange={(event) => {
+                            updateField("sellerName", event.target.value);
+                          }}
+                          fullWidth
+                        />
+                        <TextField
+                          select
+                          label="费用类型"
+                          name="expense-type"
+                          value={formState.expenseType}
+                          onChange={(event) => {
+                            updateField("expenseType", event.target.value as ExpenseType);
+                          }}
+                          error={Boolean(formErrors.expenseType)}
+                          helperText={formErrors.expenseType}
+                          fullWidth
+                        >
+                          {allowedExpenseTypes.map((expenseType) => (
+                            <MenuItem key={expenseType} value={expenseType}>
+                              {formatExpenseType(expenseType)}
+                            </MenuItem>
+                          ))}
+                        </TextField>
                       </div>
 
                       <div className="admin-form-footer">

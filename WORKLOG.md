@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-29 16:05 - Migrate the admin invoice editor form to MUI TextField and Select
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“迁移管理员发票录入表单到 MUI TextField / Select”。
+- 将 [web/src/app/admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 中发票编辑表单的原生 `input` / `select` 替换为 MUI 表单控件：
+  - 发票号码、开票日期、交易时间、金额、抬头、税号、销售方名称改为 `TextField`
+  - 费用类型改为 `TextField select` + `MenuItem`
+  - 字段校验错误统一通过 `error` / `helperText` 展示，不再输出自造 `.field-error`
+- 同步更新前端测试 [web/src/app/admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)，新增“必填字段为空时阻止提交并显示 helperText”覆盖。
+- `TASKS.md` 中该任务已标记完成。
+
+### 根因
+- 管理员发票录入页虽然已经收口了列表 + 详情和右侧 Tabs，但最核心的录入动作仍使用原生表单控件，和同批次已迁移到 Material 3 的任务创建页不一致。
+- 校验提示仍依赖手写 `.field-error` 标签，导致本轮“表单迁移到 MUI 体系”的目标没有在管理员录入页真正落地。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/admin-invoice-editor.tsx`
+  - `web/src/app/admin-invoice-editor.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只改管理员发票录入页的表单控件和对应测试，不改后端发票写入 API、校验规则、Tabs 结构或列表-详情联动逻辑。
+- 保存按钮、表单布局和字段语义保持原样；本轮没有顺带迁移管理员分摊编辑页、成员侧发票编辑页或其他仍使用原生控件的页面。
+
+### 验证结果
+- 已通过相关前端回归：
+  - `cd web && npm test -- admin-invoice-editor.test.tsx`
+  - `cd web && npm test -- main-flow-e2e-placeholder.test.tsx admin-invoice-editor.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：421 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：22 文件、79 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 中仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警；
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning；
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功。
+
+### 假设
+- 本轮保守沿用页面现有的保存按钮和卡片布局，只把字段输入与错误展示迁移到 MUI 体系；不把“表单迁移”扩展为整页骨架重写。
+
 ## 2026-04-29 15:57 - Migrate the admin task creation form to Material 3 form controls
 
 ### 完成内容

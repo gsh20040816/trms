@@ -419,6 +419,46 @@ describe("admin invoice editor page", () => {
     expect(validationList.getByText("税号不匹配")).toBeInTheDocument();
   });
 
+  it("shows validation helper text and does not submit when required fields are empty", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-ALPHA") {
+        return Promise.resolve(jsonResponse(buildTask()));
+      }
+      if (url === "/api/tasks/TASK-ALPHA/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReviewSummary()));
+      }
+      if (url === "/api/materials/MAT-INV-1/invoice" && init?.method === "POST") {
+        throw new Error("Expected validation to prevent the invoice submit request.");
+      }
+
+      throw new Error(`Unhandled fetch URL in admin invoice editor validation test: ${url}`);
+    });
+
+    renderAdminInvoiceEditorRoute();
+
+    fireEvent.change(await screen.findByLabelText("发票号码"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("发票抬头"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("税号"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("金额（元）"), {
+      target: { value: "" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存发票字段" }));
+
+    expect(await screen.findByText("发票号码不能为空。")).toBeInTheDocument();
+    expect(screen.getByText("发票抬头不能为空。")).toBeInTheDocument();
+    expect(screen.getByText("税号不能为空。")).toBeInTheDocument();
+    expect(screen.getByText("请输入大于 0 的金额，单位为元。")).toBeInTheDocument();
+  });
+
   it("shows an error notice when the backend rejects the invoice update", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
