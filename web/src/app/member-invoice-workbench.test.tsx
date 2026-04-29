@@ -1810,6 +1810,11 @@ describe("MemberInvoiceWorkbenchPage", () => {
     act(() => {
       resolveUpload?.(jsonResponse({
         status: "success",
+        recognition_dispatch: {
+          mode: "worker",
+          status: "queued",
+          message: "识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。",
+        },
         items: [
           {
             id: "MAT-UP-001",
@@ -1836,7 +1841,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
     });
 
     expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
-    expect(await screen.findByText("上传成功：1 个文件已归档到当前任务。")).toBeInTheDocument();
+    expect(await screen.findByText((content) => content.includes("上传成功：1 个文件已归档到当前任务。"))).toBeInTheDocument();
+    expect(screen.getByText("识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。")).toBeInTheDocument();
     expect(screen.getByText("材料编号：MAT-UP-001")).toBeInTheDocument();
     expect(await screen.findByText("支付记录 / MAT-UP-001")).toBeInTheDocument();
   });

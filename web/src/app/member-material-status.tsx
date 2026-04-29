@@ -448,7 +448,7 @@ function buildValidationBadgeTone(
 
 export function MemberMaterialStatusPage() {
   const session = useAuthSession();
-  const { showError, showSuccess } = useSnackbar();
+  const { showError, showSuccess, showWarning } = useSnackbar();
   const [searchParams] = useSearchParams();
   const preferredTaskId = searchParams.get("taskId");
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
@@ -682,8 +682,12 @@ export function MemberMaterialStatusPage() {
     setRetryingMaterialId(item.material.id);
     try {
       const created = await trmsApi.createRecognitionTask(item.material.id);
-      await trmsApi.executeRecognitionTask(created.item.id);
-      showSuccess("已重新发起识别并刷新当前材料状态。");
+      const executed = await trmsApi.executeRecognitionTask(created.item.id);
+      if (executed.dispatch?.status === "queued") {
+        showWarning(executed.dispatch.message);
+      } else {
+        showSuccess(executed.dispatch?.message ?? "已重新发起识别并刷新当前材料状态。");
+      }
       setRefreshNonce((current) => current + 1);
     } catch (error) {
       showError(error instanceof Error ? error.message : "重新识别失败，请稍后重试。");

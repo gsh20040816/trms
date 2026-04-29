@@ -144,7 +144,7 @@ type ManualInvoiceSaveFeedback = {
 
 type MaterialActionFeedback = {
   materialId: string;
-  tone: "success" | "error";
+  tone: "success" | "warning" | "error";
   message: string;
 };
 
@@ -1282,11 +1282,11 @@ export function MemberInvoiceWorkbenchPage() {
     setRecognitionRetryFeedback(null);
     try {
       const created = await trmsApi.createRecognitionTask(item.material.material_id);
-      await trmsApi.executeRecognitionTask(created.item.id);
+      const executed = await trmsApi.executeRecognitionTask(created.item.id);
       setRecognitionRetryFeedback({
         materialId: item.material.material_id,
-        tone: "success",
-        message: "已发起重新识别，工作台正在刷新最新状态。",
+        tone: executed.dispatch?.status === "queued" ? "warning" : "success",
+        message: executed.dispatch?.message ?? "已发起重新识别，工作台正在刷新最新状态。",
       });
       setWorkbenchReloadVersion((current) => current + 1);
     } catch (error) {
@@ -1359,11 +1359,16 @@ export function MemberInvoiceWorkbenchPage() {
       if (response.items.length > 0) {
         setWorkbenchReloadVersion((current) => current + 1);
       }
+      const dispatchMessage = response.recognition_dispatch?.message;
       if (response.status === "success") {
-        showSuccess(`上传成功：${response.items.length} 个文件已归档到当前任务。`);
+        showSuccess(dispatchMessage
+          ? `上传成功：${response.items.length} 个文件已归档到当前任务。${dispatchMessage}`
+          : `上传成功：${response.items.length} 个文件已归档到当前任务。`);
       } else {
         const failureCount = response.failures?.length ?? 0;
-        showWarning(`上传完成：${response.items.length} 个成功，${failureCount} 个失败。`);
+        showWarning(dispatchMessage
+          ? `上传完成：${response.items.length} 个成功，${failureCount} 个失败。${dispatchMessage}`
+          : `上传完成：${response.items.length} 个成功，${failureCount} 个失败。`);
       }
     } catch (error) {
       const failedBatch = extractFailedBatchUploadResponse(error);
@@ -2424,6 +2429,9 @@ export function MemberInvoiceWorkbenchPage() {
             </StatusBadge>
           )}
         >
+          {uploadResult.recognition_dispatch ? (
+            <p className="field-hint">{uploadResult.recognition_dispatch.message}</p>
+          ) : null}
           {uploadResult.items.length > 0 ? (
             <ul className="member-status-message-list" aria-label="工作台上传成功列表">
               {uploadResult.items.map((item) => (

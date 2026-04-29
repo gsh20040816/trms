@@ -1426,7 +1426,7 @@
     - 页面仅保留必要布局辅助类，不再依赖 `.button-*`、`.route-link`、`.status-chip` 等旧交互样式
     - 相关测试同步更新
 
-- [ ] 补齐上传后识别调度闭环，消除 `in_process` / worker 语义错位
+- [x] 补齐上传后识别调度闭环，消除 `in_process` / worker 语义错位
   - Done when:
     - `TRMS_ASYNC_JOB_MODE=in_process` 时，材料上传或显式重试能在请求内触发识别执行，而不是只停留在 `pending`
     - `TRMS_ASYNC_JOB_MODE=worker` 时，接口与前端明确提示“已入队等待 worker 消费”，不把排队误显示成系统异常

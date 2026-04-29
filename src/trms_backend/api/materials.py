@@ -34,6 +34,12 @@ from trms_backend.application.material_submission import (
     MaterialSubmissionTaskNotFoundError,
     MaterialSubmissionTaskNotOpenError,
 )
+from trms_backend.application.recognition_preparation import (
+    RecognitionMaterialNotFoundError,
+    RecognitionPreparationService,
+    RecognitionTaskExecutionConflictError,
+    RecognitionTaskExecutionNotFoundError,
+)
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
@@ -44,6 +50,7 @@ from trms_backend.domain.materials import (
     SubmissionChannel,
 )
 from trms_backend.domain.recognitions import RecognitionTaskRepository
+from trms_backend.runtime_config import AsyncJobMode
 from trms_backend.domain.tasks import (
     TaskRepository,
     TaskSubmissionDeadlinePassedError,
@@ -69,9 +76,11 @@ def build_material_router(
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
     material_submission_service: MaterialSubmissionService,
+    recognition_preparation_service: RecognitionPreparationService,
     material_deletion_service: MaterialDeletionService,
     material_type_update_service: MaterialTypeUpdateService,
     audit_log_repository: AuditLogRepository,
+    async_job_mode: AsyncJobMode,
     metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["materials"])
@@ -80,6 +89,57 @@ def build_material_router(
         auth_repository
     )
     metrics = metrics_collector or NoOpMetricsCollector()
+
+    def dispatch_recognition_tasks_for_uploaded_materials(
+        *,
+        material_ids: list[str],
+        actor_id: str,
+        request_id: str,
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        recognition_status_by_material_id = {
+            material_id: "pending"
+            for material_id in material_ids
+        }
+        if async_job_mode == "worker":
+            return recognition_status_by_material_id, {
+                "mode": "worker",
+                "status": "queued",
+                "message": "识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。",
+            }
+
+        for material_id in material_ids:
+            recognition_tasks = recognition_task_repository.list_by_material(material_id)
+            if not recognition_tasks:
+                continue
+            latest_task = recognition_tasks[-1]
+            try:
+                updated = recognition_preparation_service.execute(
+                    latest_task.id,
+                    actor_id=actor_id,
+                    request_id=request_id,
+                )
+            except (
+                RecognitionTaskExecutionNotFoundError,
+                RecognitionTaskExecutionConflictError,
+                RecognitionMaterialNotFoundError,
+            ):
+                continue
+            refresh_validations_for_material(
+                updated.material_id,
+                task_repository=task_repository,
+                material_repository=material_repository,
+                invoice_repository=invoice_repository,
+                validation_repository=validation_repository,
+                recognition_task_repository=recognition_task_repository,
+                metrics_collector=metrics,
+            )
+            recognition_status_by_material_id[material_id] = updated.status.value
+
+        return recognition_status_by_material_id, {
+            "mode": "in_process",
+            "status": "executed",
+            "message": "识别已在当前请求内执行；如结果仍待确认，请继续补录或复核关键字段。",
+        }
 
     @router.post("/api/tasks/{task_id}/materials", status_code=status.HTTP_201_CREATED)
     async def submit_materials(
@@ -125,7 +185,26 @@ def build_material_router(
                 detail=str(error),
             ) from error
 
-        return build_batch_response(result, file_count=len(uploaded_files))
+        recognition_status_by_material_id, recognition_dispatch = dispatch_recognition_tasks_for_uploaded_materials(
+            material_ids=[record.id for record in result.records],
+            actor_id=resolved_submitter_id,
+            request_id=ensure_request_id(request),
+        )
+        encoded_items = [
+            {
+                **item.model_dump(mode="json"),
+                "recognition_status": recognition_status_by_material_id.get(item.id, "pending"),
+            }
+            for item in result.records
+        ]
+        return build_batch_response(
+            result,
+            file_count=len(uploaded_files),
+            extra_body={
+                "items": encoded_items,
+                "recognition_dispatch": recognition_dispatch,
+            },
+        )
 
     @router.post("/api/materials/pending-assignment", status_code=status.HTTP_201_CREATED)
     async def submit_pending_assignment_materials(
@@ -149,7 +228,29 @@ def build_material_router(
             submitter_id_hint=submitter_id_hint,
             request_id=ensure_request_id(request),
         )
-        return build_batch_response(result, file_count=len(uploaded_files))
+        recognition_status_by_material_id, recognition_dispatch = dispatch_recognition_tasks_for_uploaded_materials(
+            material_ids=[record.id for record in result.records],
+            actor_id=_build_pending_assignment_actor_id(
+                channel=channel,
+                submitter_id_hint=submitter_id_hint,
+            ),
+            request_id=ensure_request_id(request),
+        )
+        encoded_items = [
+            {
+                **item.model_dump(mode="json"),
+                "recognition_status": recognition_status_by_material_id.get(item.id, "pending"),
+            }
+            for item in result.records
+        ]
+        return build_batch_response(
+            result,
+            file_count=len(uploaded_files),
+            extra_body={
+                "items": encoded_items,
+                "recognition_dispatch": recognition_dispatch,
+            },
+        )
 
     @router.post("/api/materials/{material_id}/claim")
     def claim_pending_assignment_material(

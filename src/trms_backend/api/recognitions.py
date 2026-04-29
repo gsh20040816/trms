@@ -26,11 +26,13 @@ from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import (
     RecognitionTaskCreate,
     RecognitionTaskRepository,
+    RecognitionTaskStatus,
     RecognitionTaskStatusTransitionError,
     RecognitionTaskStatusUpdate,
     ensure_recognition_task_can_transition,
 )
 from trms_backend.domain.tasks import TaskRepository
+from trms_backend.runtime_config import AsyncJobMode
 
 
 def build_recognition_router(
@@ -42,6 +44,7 @@ def build_recognition_router(
     recognition_task_repository: RecognitionTaskRepository,
     recognition_preparation_service: RecognitionPreparationService,
     audit_log_repository: AuditLogRepository,
+    async_job_mode: AsyncJobMode,
     metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["recognitions"])
@@ -242,6 +245,23 @@ def build_recognition_router(
             material_id=task.material_id,
             forbidden_detail="actor is not allowed to retry recognition tasks for this material",
         )
+        if task.status is not RecognitionTaskStatus.PENDING:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "recognition task can only execute from pending status: "
+                    f"{recognition_task_id} is {task.status.value}"
+                ),
+            )
+        if async_job_mode == "worker":
+            return {
+                "item": task,
+                "dispatch": {
+                    "mode": "worker",
+                    "status": "queued",
+                    "message": "识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。",
+                },
+            }
         try:
             updated = recognition_preparation_service.execute(
                 recognition_task_id,
@@ -273,6 +293,13 @@ def build_recognition_router(
             recognition_task_repository=recognition_task_repository,
             metrics_collector=metrics,
         )
-        return {"item": updated}
+        return {
+            "item": updated,
+            "dispatch": {
+                "mode": "in_process",
+                "status": "executed",
+                "message": "识别已在当前请求内执行；如结果仍待确认，请继续补录或复核关键字段。",
+            },
+        }
 
     return router

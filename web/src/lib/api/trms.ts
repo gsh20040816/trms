@@ -23,6 +23,7 @@ import type {
   MergedPdfExportPlan,
   VisibleMissingMaterialList,
   OverdueConfirmationList,
+  RecognitionTaskExecuteResponse,
   RecognitionTaskList,
   RegisterPayload,
   ReimbursementTask,
@@ -277,7 +278,7 @@ export const trmsApi = {
   },
 
   executeRecognitionTask(recognitionTaskId: string) {
-    return apiClient.request<ApiItemResponse<RecognitionTaskList["items"][number]>>(
+    return apiClient.request<RecognitionTaskExecuteResponse>(
       `/recognition-tasks/${encodeSegment(recognitionTaskId)}/execute`,
       {
         method: "POST",

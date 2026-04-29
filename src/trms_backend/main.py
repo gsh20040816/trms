@@ -213,9 +213,11 @@ def create_app(
             validation_repository,
             recognition_task_repository,
             material_submission_service,
+            recognition_preparation_service,
             material_deletion_service,
             material_type_update_service,
             audit_log_repository,
+            config.async_jobs.mode,
             app.state.metrics_collector,
         )
     )
@@ -249,6 +251,7 @@ def create_app(
             recognition_task_repository,
             recognition_preparation_service,
             audit_log_repository,
+            config.async_jobs.mode,
             app.state.metrics_collector,
         )
     )

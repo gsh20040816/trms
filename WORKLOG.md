@@ -1,5 +1,83 @@
 # WORKLOG
 
+## 2026-04-29 19:42 - Close recognition dispatch loop for in-process and worker modes
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“补齐上传后识别调度闭环，消除 `in_process` / worker 语义错位”。
+- 调整后端上传接口 [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)：
+  - 上传成功后根据 `TRMS_ASYNC_JOB_MODE` 决定是请求内直接执行识别，还是仅保留 `pending` 并返回排队提示
+  - API 响应新增 `recognition_dispatch` 元数据，并给每个上传成功项补充 `recognition_status`
+  - `pending-assignment` 上传同样走相同调度语义，不再只创建占位任务
+- 调整显式重试接口 [src/trms_backend/api/recognitions.py](/home/gsh/workspace/TRMS/src/trms_backend/api/recognitions.py)：
+  - `in_process` 下继续同步执行识别
+  - `worker` 下返回“已入队等待 worker 消费”的明确提示，不再伪装成已经执行
+- 调整前端与 CLI 消费：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - [web/src/app/member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  - [web/src/app/member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx)
+  - [src/trms_cli/cli.py](/home/gsh/workspace/TRMS/src/trms_cli/cli.py)
+  - 成员上传结果与重新识别入口现在会直接展示“请求内已执行”或“已入队等待 worker”提示
+  - CLI 上传摘要不再强制写死 `recognition_status="pending"`，而是优先读取服务端返回
+- 为避免本轮改动把大量与异步模式无关的测试误绑到 `test -> in_process` 默认值，补充并收敛了多组测试夹具到显式 `worker` 模式：
+  - [tests/test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py)
+  - [tests/test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)
+  - [tests/test_expense_disputes_api.py](/home/gsh/workspace/TRMS/tests/test_expense_disputes_api.py)
+  - [tests/test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)
+  - [tests/test_metrics.py](/home/gsh/workspace/TRMS/tests/test_metrics.py)
+  - [tests/test_recognition_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_recognition_tasks_api.py)
+  - [tests/test_task_member_status_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_status_api.py)
+  - [tests/test_task_review_summary_api.py](/home/gsh/workspace/TRMS/tests/test_task_review_summary_api.py)
+  - [tests/test_material_upload_integration.py](/home/gsh/workspace/TRMS/tests/test_material_upload_integration.py)
+- 新增/更新测试：
+  - [tests/test_recognition_execution_api.py](/home/gsh/workspace/TRMS/tests/test_recognition_execution_api.py)
+  - [tests/test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py)
+  - [web/src/app/member-material-upload.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.test.tsx)
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+
+### 根因
+- 原实现把“创建识别任务”和“真正执行识别”拆成了两个动作，但上传接口只做前者，导致：
+  - `in_process` 模式下，上传后识别仍停在 `pending`，与模式语义不符
+  - 前端为了补洞，显式重试一律调用 `/execute`，又让 `worker` 模式偷偷变成同步执行，和后台 worker 模式边界相冲突
+- 本质问题不是识别失败，而是“何时执行识别”的调度责任没有和运行模式绑定。
+
+### 关键改动点
+- 上传接口现在显式承担“根据运行模式调度识别”的责任。
+- `/execute` 接口不再无视运行模式；它在 `worker` 下只做入队确认，在 `in_process` 下才做同步执行。
+- 为减少影响面，没有改 Recognition worker 本身的消费逻辑；仍由现有 `RecognitionAsyncJobProcessor` 消费 `pending` 队列。
+- 大量旧测试默认依赖“上传后先只有 pending 占位任务”，这和本轮新语义冲突，但这些测试本身并不关心 `in_process` 行为，因此统一改成显式 `worker` 模式更符合其真实测试目标。
+
+### 风险与影响面
+- 上传响应新增了 `recognition_dispatch` 和逐项 `recognition_status`，前端与 CLI 已同步消费；若有仓库外调用方直接依赖旧 payload，需要额外关注兼容性。
+- `worker` 模式下前端现在会明确显示排队提示，但不会主动检测“worker 进程根本没启动”；当前只做到“不要误报系统异常”，没有做到 worker 存活探测。
+
+### 验证结果
+- 已通过后端定向回归：
+  - `uv run pytest tests/test_recognition_execution_api.py tests/test_materials_api.py tests/test_main_flow_e2e.py tests/test_cli_submit.py`
+    - 59 个用例通过
+  - `uv run pytest tests/test_expense_disputes_api.py tests/test_exports_api.py tests/test_invoices_api.py tests/test_material_upload_integration.py tests/test_metrics.py tests/test_recognition_tasks_api.py tests/test_task_member_status_api.py tests/test_task_review_summary_api.py tests/test_tasks_api.py`
+    - 129 个用例通过
+- 已通过前端定向回归：
+  - `cd web && npm test -- src/app/member-material-upload.test.tsx src/app/member-invoice-workbench.test.tsx src/app/member-material-status.test.tsx`
+    - 3 个文件、20 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/app/member-material-upload.tsx src/app/member-material-upload.test.tsx src/app/member-invoice-workbench.tsx src/app/member-invoice-workbench.test.tsx src/app/member-material-status.tsx src/app/member-material-status.test.tsx src/lib/api/types.ts src/lib/api/trms.ts`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：435 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
 ## 2026-04-29 19:30 - Migrate remaining admin task/detail/invoice/split controls to Material 3
 
 ### 完成内容

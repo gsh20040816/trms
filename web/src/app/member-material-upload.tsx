@@ -313,11 +313,16 @@ export function MemberMaterialUploadPage() {
       const response = await trmsApi.submitTaskMaterials(formState.taskId, requestBody);
       setUploadResult(response);
       resetSelectedFiles();
+      const dispatchMessage = response.recognition_dispatch?.message;
       if (response.status === "success") {
-        showSuccess(`上传成功：${response.items.length} 个文件已归档到当前任务。`);
+        showSuccess(dispatchMessage
+          ? `上传成功：${response.items.length} 个文件已归档到当前任务。${dispatchMessage}`
+          : `上传成功：${response.items.length} 个文件已归档到当前任务。`);
       } else {
         const failureCount = response.failures?.length ?? 0;
-        showWarning(`上传完成：${response.items.length} 个成功，${failureCount} 个失败。`);
+        showWarning(dispatchMessage
+          ? `上传完成：${response.items.length} 个成功，${failureCount} 个失败。${dispatchMessage}`
+          : `上传完成：${response.items.length} 个成功，${failureCount} 个失败。`);
       }
     } catch (error) {
       const failedBatch = extractFailedBatchUploadResponse(error);
@@ -547,6 +552,11 @@ export function MemberMaterialUploadPage() {
           action={<StatusBadge tone={buildUploadResultTone(uploadResult.status)}>{formatUploadResultStatus(uploadResult.status)}</StatusBadge>}
         >
           <Stack spacing={2}>
+            {uploadResult.recognition_dispatch ? (
+              <Typography variant="body2" color="text.secondary">
+                {uploadResult.recognition_dispatch.message}
+              </Typography>
+            ) : null}
             {uploadResult.items.length > 0 ? (
               <Stack spacing={2} aria-label="上传成功材料列表">
                 {uploadResult.items.map((item) => (

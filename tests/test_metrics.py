@@ -3,15 +3,26 @@ from fastapi.testclient import TestClient
 from trms_backend.application.metrics import InMemoryMetricsCollector
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
+from trms_backend.runtime_config import load_runtime_config
 
 from test_invoices_api import valid_invoice_payload
 from test_tasks_api import admin_auth_headers, create_task, update_task_row
 
 
 def make_client(tmp_path, metrics_collector: InMemoryMetricsCollector) -> TestClient:
+    runtime_config = load_runtime_config(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path}/test.db",
+        material_storage_dir=tmp_path / "material-storage",
+        cors_allowed_origins="http://127.0.0.1:5173",
+        public_api_base_url="http://127.0.0.1:8000/api",
+        api_host="127.0.0.1",
+        api_port=8000,
+        async_job_mode="worker",
+    )
     return TestClient(
         create_app(
-            f"sqlite:///{tmp_path}/test.db",
+            runtime_config=runtime_config,
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
             metrics_collector=metrics_collector,
         )

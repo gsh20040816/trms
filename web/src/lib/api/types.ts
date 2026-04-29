@@ -213,10 +213,21 @@ export type MaterialUploadFailure = {
   detail: string;
 };
 
+export type RecognitionDispatchInfo = {
+  mode: "in_process" | "worker";
+  status: "executed" | "queued";
+  message: string;
+};
+
+export type MaterialUploadSummary = MaterialRecord & {
+  recognition_status?: RecognitionTaskStatus | null;
+};
+
 export type MaterialBatchUploadResponse = {
   status: "success" | "partial_success" | "failed";
-  items: MaterialRecord[];
+  items: MaterialUploadSummary[];
   failures?: MaterialUploadFailure[];
+  recognition_dispatch?: RecognitionDispatchInfo;
 };
 
 export type RecognitionFieldResult = {
@@ -260,6 +271,10 @@ export type RecognitionTaskRecord = {
 export type RecognitionTaskList = {
   latest_effective: RecognitionTaskRecord | null;
   items: RecognitionTaskRecord[];
+};
+
+export type RecognitionTaskExecuteResponse = ApiItemResponse<RecognitionTaskRecord> & {
+  dispatch?: RecognitionDispatchInfo;
 };
 
 export type InvoiceRecord = {

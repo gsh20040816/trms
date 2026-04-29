@@ -1255,7 +1255,7 @@ def parse_material_upload_summary(item: object) -> MaterialUploadSummary:
         material_type=_require_non_empty_material_field(item, "material_type"),
         original_filename=_require_non_empty_material_field(item, "original_filename"),
         status=_require_non_empty_material_field(item, "status"),
-        recognition_status="pending",
+        recognition_status=_optional_status_string(item, "recognition_status") or "pending",
     )
 
 

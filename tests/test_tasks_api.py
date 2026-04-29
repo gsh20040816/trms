@@ -7,16 +7,27 @@ from trms_backend.infrastructure.database import build_session_factory, session_
 from trms_backend.infrastructure.models import TaskRow
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
+from trms_backend.runtime_config import load_runtime_config
 
 from api_error_assertions import assert_api_error
 
 
 def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = None):
+    runtime_config = load_runtime_config(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path}/test.db",
+        material_storage_dir=tmp_path / "material-storage",
+        cors_allowed_origins="http://127.0.0.1:5173",
+        public_api_base_url="http://127.0.0.1:8000/api",
+        api_host="127.0.0.1",
+        api_port=8000,
+        async_job_mode="worker",
+    )
     return TestClient(
         create_app(
-            f"sqlite:///{tmp_path}/test.db",
-            global_invoice_config,
-            LocalMaterialFileStorage(tmp_path / "material-storage"),
+            runtime_config=runtime_config,
+            global_invoice_config=global_invoice_config,
+            material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
         )
     )
 

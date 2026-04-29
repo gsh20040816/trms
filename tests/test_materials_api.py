@@ -62,19 +62,17 @@ def get_material_record(tmp_path, material_id: str):
     return repository.get(material_id)
 
 
-def assert_single_pending_recognition_task(client: TestClient, material_id: str) -> None:
+def assert_single_completed_recognition_task(client: TestClient, material_id: str) -> None:
     response = client.get(f"/api/materials/{material_id}/recognition-tasks")
 
     assert response.status_code == 200
     body = response.json()
     items = body["items"]
-    assert body["latest_effective"] is None
     assert len(items) == 1
     assert items[0]["material_id"] == material_id
-    assert items[0]["status"] == "pending"
+    assert items[0]["status"] in {"failed", "needs_confirmation", "succeeded"}
+    assert body["latest_effective"]["id"] == items[0]["id"]
     assert items[0]["is_final_fact"] is False
-    assert items[0]["failure"] is None
-    assert items[0]["raw_response"] is None
     assert items[0]["recognized_fields"] == {}
 
 
@@ -105,7 +103,8 @@ def test_submit_material_to_open_task(tmp_path):
     assert material["original_filename"] == "ticket.pdf"
     assert material["size_bytes"] == len(b"fake-pdf-content")
     assert material["duplicate_of"] is None
-    assert_single_pending_recognition_task(client, material["id"])
+    assert response.json()["recognition_dispatch"]["status"] == "executed"
+    assert_single_completed_recognition_task(client, material["id"])
 
     audit_logs = list_material_audit_logs(tmp_path, material["id"])
     assert len(audit_logs) == 1
@@ -148,7 +147,8 @@ def test_submit_pending_assignment_material_without_resolved_identity(tmp_path):
     assert material["submitter_id_hint"] is None
     assert material["channel"] == "telegram"
     assert material["storage_key"].startswith("_pending_assignment/")
-    assert_single_pending_recognition_task(client, material["id"])
+    assert response.json()["recognition_dispatch"]["status"] == "executed"
+    assert_single_completed_recognition_task(client, material["id"])
 
 
 def test_pending_assignment_material_stays_hidden_from_task_material_list(tmp_path):

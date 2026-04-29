@@ -21,6 +21,7 @@ def make_client(tmp_path) -> TestClient:
             "DATABASE_URL": f"sqlite:///{tmp_path}/test.db",
             "TRMS_AUTH_TELEGRAM_INBOUND_TOKEN": TRUSTED_TELEGRAM_TOKEN,
             "TRMS_AUTH_EMAIL_INBOUND_TOKEN": TRUSTED_EMAIL_TOKEN,
+            "TRMS_ASYNC_JOB_MODE": "worker",
         }
     )
     return TestClient(

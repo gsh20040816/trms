@@ -63,7 +63,7 @@ def make_client(tmp_path, *, runtime_config=None, recognition_llm_client=None):
     )
 
 
-def make_llm_runtime_config(tmp_path):
+def make_llm_runtime_config(tmp_path, *, async_job_mode: str = "in_process"):
     return load_runtime_config(
         environment="test",
         database_url=f"sqlite:///{tmp_path}/test.db",
@@ -72,6 +72,7 @@ def make_llm_runtime_config(tmp_path):
         public_api_base_url="http://127.0.0.1:8000/api",
         api_host="127.0.0.1",
         api_port=8000,
+        async_job_mode=async_job_mode,
         llm_api_key="sk-test",
         llm_model="gpt-4.1-mini",
     )
@@ -111,7 +112,16 @@ def upload_material(
 def latest_recognition_task_id(client: TestClient, material_id: str) -> str:
     response = client.get(f"/api/materials/{material_id}/recognition-tasks")
     assert response.status_code == 200
-    return response.json()["items"][-1]["id"]
+    latest_item = response.json()["items"][-1]
+    if latest_item["status"] == "pending":
+        return latest_item["id"]
+
+    retry_response = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
+    assert retry_response.status_code == 201
+    return retry_response.json()["item"]["id"]
 
 
 def member_auth_headers(client: TestClient) -> dict[str, str]:
@@ -230,6 +240,109 @@ def test_execute_recognition_task_extracts_pdf_text_into_preparation_payload(tmp
     }
 
 
+def test_submit_material_executes_recognition_immediately_in_in_process_mode(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "invoice_number": RecognitionFieldResult(
+                    value="AUTO-001",
+                    source="ai",
+                    confidence=0.99,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path, async_job_mode="in_process"),
+        recognition_llm_client=fake_llm,
+    )
+    sample_path = tmp_path / "auto-execute.pdf"
+    sample_path.write_bytes(build_text_pdf_bytes())
+    task_id = create_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": (sample_path.name, sample_path.read_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["recognition_dispatch"] == {
+      "mode": "in_process",
+      "status": "executed",
+      "message": "识别已在当前请求内执行；如结果仍待确认，请继续补录或复核关键字段。",
+    }
+    material_id = body["items"][0]["id"]
+    assert body["items"][0]["recognition_status"] == "succeeded"
+
+    listing = client.get(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
+    assert listing.status_code == 200
+    assert listing.json()["latest_effective"]["status"] == "succeeded"
+    assert fake_llm.calls[0]["material_id"] == material_id
+
+
+def test_submit_material_returns_queued_dispatch_in_worker_mode(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "invoice_number": RecognitionFieldResult(
+                    value="WORKER-001",
+                    source="ai",
+                    confidence=0.99,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path, async_job_mode="worker"),
+        recognition_llm_client=fake_llm,
+    )
+    sample_path = tmp_path / "queued.pdf"
+    sample_path.write_bytes(build_text_pdf_bytes())
+    task_id = create_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": (sample_path.name, sample_path.read_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["recognition_dispatch"] == {
+      "mode": "worker",
+      "status": "queued",
+      "message": "识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。",
+    }
+    material_id = body["items"][0]["id"]
+    assert body["items"][0]["recognition_status"] == "pending"
+    assert fake_llm.calls == []
+
+    listing = client.get(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
+    assert listing.status_code == 200
+    assert listing.json()["latest_effective"] is None
+    assert listing.json()["items"][0]["status"] == "pending"
+
+
 def test_execute_recognition_task_requires_bearer_and_allows_submitter_retry(tmp_path):
     client = make_client(tmp_path)
     sample_path = tmp_path / "text-invoice.pdf"
@@ -253,6 +366,51 @@ def test_execute_recognition_task_requires_bearer_and_allows_submitter_retry(tmp
         headers=member_auth_headers(client),
     )
     assert allowed_response.status_code == 200
+
+
+def test_execute_recognition_task_returns_queued_dispatch_in_worker_mode(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "invoice_number": RecognitionFieldResult(
+                    value="WORKER-RETRY-001",
+                    source="ai",
+                    confidence=0.99,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path, async_job_mode="worker"),
+        recognition_llm_client=fake_llm,
+    )
+    sample_path = tmp_path / "worker-retry.pdf"
+    sample_path.write_bytes(build_text_pdf_bytes())
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename=sample_path.name,
+        content=sample_path.read_bytes(),
+        content_type="application/pdf",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "pending"
+    assert response.json()["dispatch"] == {
+      "mode": "worker",
+      "status": "queued",
+      "message": "识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。",
+    }
+    assert fake_llm.calls == []
 
 
 def test_member_cannot_execute_other_members_recognition_task(tmp_path):
