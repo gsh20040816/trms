@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import Box from "@mui/material/Box";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader } from "../components/dashboard";
@@ -59,6 +62,8 @@ type ReviewAnomalyItem = {
   count: number;
   tone: "failed" | "pending";
 };
+
+type ReviewDetailTab = "preview" | "recognition" | "validation" | "actions";
 
 type ReviewMaterialDetailItem = {
   materialItem: TaskReviewSummaryMaterialItem;
@@ -264,6 +269,7 @@ export function AdminReviewOverviewPage() {
   const [state, setState] = useState<ReviewPageState>({ status: "loading" });
   const [selectedMaterialId, setSelectedMaterialId] = useState("");
   const [previewState, setPreviewState] = useState<ReviewPreviewState>({ status: "idle" });
+  const [detailTab, setDetailTab] = useState<ReviewDetailTab>("preview");
 
   useEffect(() => {
     let cancelled = false;
@@ -767,251 +773,278 @@ export function AdminReviewOverviewPage() {
                     </div>
                   </div>
 
-                  <section className="admin-review-subsection">
-                    <h4>原始票据预览</h4>
-                    {previewState.status === "loading" ? (
-                      <p className="field-hint">正在拉取原始材料内容，请稍候。</p>
-                    ) : null}
-                    {previewState.status === "unsupported" ? (
-                      <p className="field-hint">
-                        当前材料类型为 {previewState.contentType ?? "未知"}，暂不支持内联预览，请通过材料列表继续判断是否需要更正归属或附件类型。
-                      </p>
-                    ) : null}
-                    {previewState.status === "error" ? <ApiErrorNotice error={previewState.error} /> : null}
-                    {previewState.status === "ready" ? (
-                      <div className="admin-review-preview-shell">
-                        {previewState.contentType.startsWith("image/") ? (
-                          <img
-                            className="admin-review-preview-image"
-                            src={previewState.url}
-                            alt={`${selectedMaterial.original_filename} 预览`}
-                          />
-                        ) : (
-                          <object
-                            className="admin-review-preview-frame"
-                            data={previewState.url}
-                            type={previewState.contentType}
-                            aria-label="原始票据 PDF 预览"
-                          >
-                            <p className="field-hint">当前环境无法直接显示 PDF 预览，但材料内容已成功加载。</p>
-                          </object>
-                        )}
-                      </div>
-                    ) : null}
-                  </section>
+                  <Box sx={{ mt: 3, borderBottom: 1, borderColor: "divider" }}>
+                    <Tabs
+                      value={detailTab}
+                      onChange={(_, value: ReviewDetailTab) => {
+                        setDetailTab(value);
+                      }}
+                      aria-label="当前材料详情标签页"
+                      variant="scrollable"
+                      allowScrollButtonsMobile
+                    >
+                      <Tab label="附件预览" value="preview" />
+                      <Tab label="识别字段" value="recognition" />
+                      <Tab label="校验异常" value="validation" />
+                      <Tab label="处理动作" value="actions" />
+                    </Tabs>
+                  </Box>
 
-                  <section className="admin-review-subsection">
-                    <h4>识别字段与来源</h4>
-                    {selectedRecognition ? (
-                      <>
-                        <ul className="admin-review-list">
-                          <li>
-                            <strong>最近识别状态</strong>
-                            <span>{formatRecognitionStatus(selectedRecognition.status)}</span>
-                          </li>
-                          {selectedRecognition.failure ? (
-                            <li>
-                              <strong>识别提示</strong>
-                              <span>{describeRecognitionFailure(selectedRecognition.failure)}</span>
-                            </li>
-                          ) : null}
-                          <li>
-                            <strong>低置信度字段数</strong>
-                            <span>
-                              {
-                                recognitionEntries.filter(([, field]) => field.status === "needs_confirmation").length
-                              }
-                            </span>
-                          </li>
-                        </ul>
-                        {recognitionEntries.length > 0 ? (
-                          <div className="recognition-field-grid">
-                            {recognitionEntries.map(([fieldName, field]) => (
-                              <article key={fieldName} className="recognition-field-card">
-                                <h4>{formatFieldLabel(fieldName)}</h4>
-                                <p className="recognition-field-value">{describeRecognitionFieldValue(field.value)}</p>
-                                <dl className="task-meta-grid admin-review-detail-field-grid">
-                                  <div>
-                                    <dt>来源</dt>
-                                    <dd>{field.source}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>置信度</dt>
-                                    <dd>{Math.round(field.confidence * 100)}%</dd>
-                                  </div>
-                                  <div>
-                                    <dt>状态</dt>
-                                    <dd>{field.status === "needs_confirmation" ? "待人工确认" : "可直接采用"}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>更新时间</dt>
-                                    <dd>{field.updated_at ? formatDateTime(field.updated_at) : "暂无"}</dd>
-                                  </div>
-                                </dl>
-                              </article>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="field-hint">当前识别结果还没有可展示的结构化字段。</p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="field-hint">当前材料尚无识别任务结果。</p>
-                    )}
-                  </section>
-
-                  <section className="admin-review-subsection">
-                    <h4>当前票据与校验异常</h4>
-                    {selectedInvoice ? (
-                      <>
-                        <div className="task-meta-grid admin-review-meta-grid admin-review-detail-grid">
-                          <div>
-                            <dt>发票号码</dt>
-                            <dd>{selectedInvoice.invoice.invoice_number}</dd>
-                          </div>
-                          <div>
-                            <dt>金额</dt>
-                            <dd>{formatCurrencyFromCents(selectedInvoice.invoice.amount_cents)}</dd>
-                          </div>
-                          <div>
-                            <dt>抬头 / 税号</dt>
-                            <dd>{selectedInvoice.invoice.buyer_name} / {selectedInvoice.invoice.tax_number}</dd>
-                          </div>
-                          <div>
-                            <dt>交易时间</dt>
-                            <dd>
-                              {selectedInvoice.invoice.transaction_time
-                                ? formatDateTime(selectedInvoice.invoice.transaction_time)
-                                : selectedInvoice.invoice.issue_date ?? "未录入"}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>支持附件数</dt>
-                            <dd>{selectedInvoice.supporting_material_ids.length}</dd>
-                          </div>
-                          <div>
-                            <dt>异常校验数</dt>
-                            <dd>{selectedValidations.length}</dd>
-                          </div>
+                  {detailTab === "preview" ? (
+                    <section className="admin-review-subsection">
+                      <h4>原始票据预览</h4>
+                      {previewState.status === "loading" ? (
+                        <p className="field-hint">正在拉取原始材料内容，请稍候。</p>
+                      ) : null}
+                      {previewState.status === "unsupported" ? (
+                        <p className="field-hint">
+                          当前材料类型为 {previewState.contentType ?? "未知"}，暂不支持内联预览，请通过材料列表继续判断是否需要更正归属或附件类型。
+                        </p>
+                      ) : null}
+                      {previewState.status === "error" ? <ApiErrorNotice error={previewState.error} /> : null}
+                      {previewState.status === "ready" ? (
+                        <div className="admin-review-preview-shell">
+                          {previewState.contentType.startsWith("image/") ? (
+                            <img
+                              className="admin-review-preview-image"
+                              src={previewState.url}
+                              alt={`${selectedMaterial.original_filename} 预览`}
+                            />
+                          ) : (
+                            <object
+                              className="admin-review-preview-frame"
+                              data={previewState.url}
+                              type={previewState.contentType}
+                              aria-label="原始票据 PDF 预览"
+                            >
+                              <p className="field-hint">当前环境无法直接显示 PDF 预览，但材料内容已成功加载。</p>
+                            </object>
+                          )}
                         </div>
-                        {selectedInvoice.validations.length > 0 ? (
-                          <ul className="admin-review-list" aria-label="当前材料校验列表">
-                            {selectedValidations.length > 0
-                              ? selectedValidations.map((validation) => (
-                                  <li key={validation.id}>
-                                    <strong>
-                                      {formatValidationSeverity(validation.severity)} / {formatValidationRule(validation.rule_code)}
-                                    </strong>
-                                    <span className={`status-chip ${buildValidationBadgeClass(validation)}`}>
-                                      {formatValidationStatus(validation.status)}
-                                    </span>
-                                    <span>{validation.message}</span>
-                                  </li>
-                                ))
-                              : (
-                                <li>
-                                  <strong>当前发票暂无异常校验</strong>
-                                  <span>所有已生成规则结果均为通过或不适用。</span>
-                                </li>
-                              )}
-                          </ul>
-                        ) : (
-                          <p className="field-hint">当前发票还没有校验结果。</p>
-                        )}
-                      </>
-                    ) : selectedMaterial.material_type === "invoice" ? (
-                      <p className="field-hint">
-                        这份发票材料还没有人工确认后的发票记录。先检查左侧预览和识别字段，再进入发票录入页补录或更正金额、抬头和税号。
-                      </p>
-                    ) : relatedInvoices.length > 0 ? (
-                      <ul className="admin-review-list" aria-label="关联发票摘要列表">
-                        {relatedInvoices.map((invoiceItem) => (
-                          <li key={invoiceItem.invoice.id}>
-                            <strong>
-                              {invoiceItem.invoice.invoice_number} / {formatCurrencyFromCents(invoiceItem.invoice.amount_cents)}
-                            </strong>
-                            <span>发票编号：{invoiceItem.invoice.id}</span>
-                            <span>当前异常校验：{invoiceItem.validations.filter((item) => item.status === "failed" || item.status === "pending").length} 条</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="field-hint">
-                        当前材料还没有关联到任何发票记录。若它应作为支付记录、比赛通知或行程单参与校验，请先确认归属关系。
-                      </p>
-                    )}
-                  </section>
+                      ) : null}
+                    </section>
+                  ) : null}
 
-                  <section className="admin-review-subsection">
-                    <h4>分摊去向与成员确认</h4>
-                    {selectedInvoice ? (
-                      selectedInvoice.splits.length > 0 ? (
-                        <ul className="admin-review-list" aria-label="当前材料分摊列表">
-                          {selectedInvoice.splits.map(({ split, confirmation }) => (
-                            <li key={split.id}>
-                              <strong>
-                                {formatMemberLabel(split.member_id)} / {formatCurrencyFromCents(split.amount_cents)}
-                              </strong>
-                              <span className={`status-chip ${buildConfirmationBadgeClass(confirmation)}`}>
-                                {confirmation ? formatConfirmationStatus(confirmation.status) : "未提交确认"}
+                  {detailTab === "recognition" ? (
+                    <section className="admin-review-subsection">
+                      <h4>识别字段与来源</h4>
+                      {selectedRecognition ? (
+                        <>
+                          <ul className="admin-review-list">
+                            <li>
+                              <strong>最近识别状态</strong>
+                              <span>{formatRecognitionStatus(selectedRecognition.status)}</span>
+                            </li>
+                            {selectedRecognition.failure ? (
+                              <li>
+                                <strong>识别提示</strong>
+                                <span>{describeRecognitionFailure(selectedRecognition.failure)}</span>
+                              </li>
+                            ) : null}
+                            <li>
+                              <strong>低置信度字段数</strong>
+                              <span>
+                                {
+                                  recognitionEntries.filter(([, field]) => field.status === "needs_confirmation").length
+                                }
                               </span>
-                              <span>版本 {split.version}</span>
-                              {split.note ? <span>备注：{split.note}</span> : null}
-                              {confirmation?.dispute_reason ? <span>异议原因：{confirmation.dispute_reason}</span> : null}
+                            </li>
+                          </ul>
+                          {recognitionEntries.length > 0 ? (
+                            <div className="recognition-field-grid">
+                              {recognitionEntries.map(([fieldName, field]) => (
+                                <article key={fieldName} className="recognition-field-card">
+                                  <h4>{formatFieldLabel(fieldName)}</h4>
+                                  <p className="recognition-field-value">{describeRecognitionFieldValue(field.value)}</p>
+                                  <dl className="task-meta-grid admin-review-detail-field-grid">
+                                    <div>
+                                      <dt>来源</dt>
+                                      <dd>{field.source}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>置信度</dt>
+                                      <dd>{Math.round(field.confidence * 100)}%</dd>
+                                    </div>
+                                    <div>
+                                      <dt>状态</dt>
+                                      <dd>{field.status === "needs_confirmation" ? "待人工确认" : "可直接采用"}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>更新时间</dt>
+                                      <dd>{field.updated_at ? formatDateTime(field.updated_at) : "暂无"}</dd>
+                                    </div>
+                                  </dl>
+                                </article>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="field-hint">当前识别结果还没有可展示的结构化字段。</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="field-hint">当前材料尚无识别任务结果。</p>
+                      )}
+                    </section>
+                  ) : null}
+
+                  {detailTab === "validation" ? (
+                    <section className="admin-review-subsection">
+                      <h4>当前票据与校验异常</h4>
+                      {selectedInvoice ? (
+                        <>
+                          <div className="task-meta-grid admin-review-meta-grid admin-review-detail-grid">
+                            <div>
+                              <dt>发票号码</dt>
+                              <dd>{selectedInvoice.invoice.invoice_number}</dd>
+                            </div>
+                            <div>
+                              <dt>金额</dt>
+                              <dd>{formatCurrencyFromCents(selectedInvoice.invoice.amount_cents)}</dd>
+                            </div>
+                            <div>
+                              <dt>抬头 / 税号</dt>
+                              <dd>{selectedInvoice.invoice.buyer_name} / {selectedInvoice.invoice.tax_number}</dd>
+                            </div>
+                            <div>
+                              <dt>交易时间</dt>
+                              <dd>
+                                {selectedInvoice.invoice.transaction_time
+                                  ? formatDateTime(selectedInvoice.invoice.transaction_time)
+                                  : selectedInvoice.invoice.issue_date ?? "未录入"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>支持附件数</dt>
+                              <dd>{selectedInvoice.supporting_material_ids.length}</dd>
+                            </div>
+                            <div>
+                              <dt>异常校验数</dt>
+                              <dd>{selectedValidations.length}</dd>
+                            </div>
+                          </div>
+                          {selectedInvoice.validations.length > 0 ? (
+                            <ul className="admin-review-list" aria-label="当前材料校验列表">
+                              {selectedValidations.length > 0
+                                ? selectedValidations.map((validation) => (
+                                    <li key={validation.id}>
+                                      <strong>
+                                        {formatValidationSeverity(validation.severity)} / {formatValidationRule(validation.rule_code)}
+                                      </strong>
+                                      <span className={`status-chip ${buildValidationBadgeClass(validation)}`}>
+                                        {formatValidationStatus(validation.status)}
+                                      </span>
+                                      <span>{validation.message}</span>
+                                    </li>
+                                  ))
+                                : (
+                                  <li>
+                                    <strong>当前发票暂无异常校验</strong>
+                                    <span>所有已生成规则结果均为通过或不适用。</span>
+                                  </li>
+                                )}
+                            </ul>
+                          ) : (
+                            <p className="field-hint">当前发票还没有校验结果。</p>
+                          )}
+                        </>
+                      ) : selectedMaterial.material_type === "invoice" ? (
+                        <p className="field-hint">
+                          这份发票材料还没有人工确认后的发票记录。先检查左侧预览和识别字段，再进入发票录入页补录或更正金额、抬头和税号。
+                        </p>
+                      ) : relatedInvoices.length > 0 ? (
+                        <ul className="admin-review-list" aria-label="关联发票摘要列表">
+                          {relatedInvoices.map((invoiceItem) => (
+                            <li key={invoiceItem.invoice.id}>
+                              <strong>
+                                {invoiceItem.invoice.invoice_number} / {formatCurrencyFromCents(invoiceItem.invoice.amount_cents)}
+                              </strong>
+                              <span>发票编号：{invoiceItem.invoice.id}</span>
+                              <span>当前异常校验：{invoiceItem.validations.filter((item) => item.status === "failed" || item.status === "pending").length} 条</span>
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <p className="field-hint">当前发票还没有分摊记录。</p>
-                      )
-                    ) : (
-                      <p className="field-hint">当前材料没有直接可编辑的分摊记录；若它属于某张发票，请从对应发票的详情动作进入分摊调整。</p>
-                    )}
-                  </section>
+                        <p className="field-hint">
+                          当前材料还没有关联到任何发票记录。若它应作为支付记录、比赛通知或行程单参与校验，请先确认归属关系。
+                        </p>
+                      )}
+                    </section>
+                  ) : null}
 
-                  <div className="inline-actions admin-review-action-row">
-                    {selectedInvoice ? (
-                      <>
-                        <Link
-                          className="route-link"
-                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedInvoice.invoice.material_id)}`}
-                        >
-                          更正金额与字段
+                  {detailTab === "actions" ? (
+                    <>
+                      <section className="admin-review-subsection">
+                        <h4>分摊去向与成员确认</h4>
+                        {selectedInvoice ? (
+                          selectedInvoice.splits.length > 0 ? (
+                            <ul className="admin-review-list" aria-label="当前材料分摊列表">
+                              {selectedInvoice.splits.map(({ split, confirmation }) => (
+                                <li key={split.id}>
+                                  <strong>
+                                    {formatMemberLabel(split.member_id)} / {formatCurrencyFromCents(split.amount_cents)}
+                                  </strong>
+                                  <span className={`status-chip ${buildConfirmationBadgeClass(confirmation)}`}>
+                                    {confirmation ? formatConfirmationStatus(confirmation.status) : "未提交确认"}
+                                  </span>
+                                  <span>版本 {split.version}</span>
+                                  {split.note ? <span>备注：{split.note}</span> : null}
+                                  {confirmation?.dispute_reason ? <span>异议原因：{confirmation.dispute_reason}</span> : null}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="field-hint">当前发票还没有分摊记录。</p>
+                          )
+                        ) : (
+                          <p className="field-hint">当前材料没有直接可编辑的分摊记录；若它属于某张发票，请从对应发票的详情动作进入分摊调整。</p>
+                        )}
+                      </section>
+
+                      <div className="inline-actions admin-review-action-row">
+                        {selectedInvoice ? (
+                          <>
+                            <Link
+                              className="route-link"
+                              to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedInvoice.invoice.material_id)}`}
+                            >
+                              更正金额与字段
+                            </Link>
+                            <Link
+                              className="route-link route-link-secondary"
+                              to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(selectedInvoice.invoice.id)}`}
+                            >
+                              调整分摊
+                            </Link>
+                          </>
+                        ) : selectedMaterial.material_type === "invoice" ? (
+                          <Link
+                            className="route-link"
+                            to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedMaterial.id)}`}
+                          >
+                            补录当前发票
+                          </Link>
+                        ) : relatedInvoices[0] ? (
+                          <>
+                            <Link
+                              className="route-link"
+                              to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(relatedInvoices[0].invoice.material_id)}`}
+                            >
+                              查看关联发票
+                            </Link>
+                            <Link
+                              className="route-link route-link-secondary"
+                              to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(relatedInvoices[0].invoice.id)}`}
+                            >
+                              调整关联分摊
+                            </Link>
+                          </>
+                        ) : null}
+                        <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/corrections`}>
+                          处理更正与提醒
                         </Link>
-                        <Link
-                          className="route-link route-link-secondary"
-                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(selectedInvoice.invoice.id)}`}
-                        >
-                          调整分摊
-                        </Link>
-                      </>
-                    ) : selectedMaterial.material_type === "invoice" ? (
-                      <Link
-                        className="route-link"
-                        to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedMaterial.id)}`}
-                      >
-                        补录当前发票
-                      </Link>
-                    ) : relatedInvoices[0] ? (
-                      <>
-                        <Link
-                          className="route-link"
-                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(relatedInvoices[0].invoice.material_id)}`}
-                        >
-                          查看关联发票
-                        </Link>
-                        <Link
-                          className="route-link route-link-secondary"
-                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(relatedInvoices[0].invoice.id)}`}
-                        >
-                          调整关联分摊
-                        </Link>
-                      </>
-                    ) : null}
-                    <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/corrections`}>
-                      处理更正与提醒
-                    </Link>
-                  </div>
+                      </div>
+                    </>
+                  ) : null}
                 </>
               ) : (
                 <>

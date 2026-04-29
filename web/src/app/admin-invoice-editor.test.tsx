@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,6 +22,13 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
       "Content-Type": "application/json",
       ...init.headers,
     },
+  });
+}
+
+function binaryResponse(body: BodyInit, init: ResponseInit = {}) {
+  return new Response(body, {
+    status: init.status ?? 200,
+    headers: init.headers,
   });
 }
 
@@ -246,14 +253,38 @@ function renderAdminInvoiceEditorRoute(entry = "/admin/tasks/TASK-ALPHA/invoices
 }
 
 describe("admin invoice editor page", () => {
+  const originalCreateObjectURL = URL.createObjectURL?.bind(URL);
+  const originalRevokeObjectURL = URL.revokeObjectURL?.bind(URL);
+
   beforeEach(() => {
     clearMockSession();
     setMockSession("admin");
+
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(() => "blob:invoice-preview-1"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     clearMockSession();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: originalCreateObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: originalRevokeObjectURL,
+    });
   });
 
   it("renders invoice material list, recognition field sources, and pending hints", async () => {
@@ -266,6 +297,14 @@ describe("admin invoice editor page", () => {
       if (url === "/api/tasks/TASK-ALPHA/review-summary?actor_id=admin-1") {
         return Promise.resolve(jsonResponse(buildReviewSummary()));
       }
+      if (url === "/api/materials/MAT-INV-1/content") {
+        return Promise.resolve(binaryResponse("pdf-binary", {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'inline; filename="invoice.pdf"',
+          },
+        }));
+      }
 
       throw new Error(`Unhandled fetch URL in admin invoice editor render test: ${url}`);
     });
@@ -276,16 +315,28 @@ describe("admin invoice editor page", () => {
     expect(screen.getByRole("button", { name: "保存发票字段" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("AI-INV-001")).toBeInTheDocument();
     expect(screen.getByDisplayValue("123.45")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Tongji ACM Lab")).toBeInTheDocument();
-    expect(screen.getByText("来源：图片识别，置信度 43%")).toBeInTheDocument();
-    expect(screen.getAllByText("待确认")).not.toHaveLength(0);
-
-    const validationList = screen.getByText("当前材料还没有对应发票校验结果；若这是首次录入，保存后会生成新的校验结果。");
-    expect(validationList).toBeInTheDocument();
 
     const materialList = within(screen.getByLabelText("发票材料列表"));
     expect(materialList.getByText("invoice.pdf")).toBeInTheDocument();
     expect(materialList.getByText("待录入")).toBeInTheDocument();
+
+    const detailTabs = within(screen.getByRole("tablist", { name: "发票详情标签页" }));
+    act(() => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "识别字段" }));
+    });
+    expect(await screen.findByText("Tongji ACM Lab")).toBeInTheDocument();
+    expect(await screen.findByText("来源：图片识别，置信度 43%")).toBeInTheDocument();
+    expect(screen.getAllByText("待确认")).not.toHaveLength(0);
+
+    act(() => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "校验异常" }));
+    });
+    expect(await screen.findByText("当前材料还没有对应发票校验结果；若这是首次录入，保存后会生成新的校验结果。")).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "附件预览" }));
+    });
+    expect(await screen.findByLabelText("原始票据 PDF 预览")).toHaveAttribute("data", "blob:invoice-preview-1");
   });
 
   it("submits manual invoice entry, refreshes the summary, and shows refreshed validations", async () => {
@@ -347,15 +398,22 @@ describe("admin invoice editor page", () => {
       },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "保存发票字段" }));
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "保存发票字段" }));
+    });
 
     expect(await screen.findByText("保存完成并已刷新校验结果")).toBeInTheDocument();
     expect(screen.getByText("发票 AI-INV-001 当前共有 2 条校验结果，其中失败 1 条、待确认 0 条。")).toBeInTheDocument();
+    const detailTabs = within(screen.getByRole("tablist", { name: "发票详情标签页" }));
+    act(() => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "识别字段" }));
+    });
     expect(await screen.findByText("来源：人工更正，置信度 100%")).toBeInTheDocument();
-    expect(
-      await screen.findByText((content) => content.includes("已触发重新校验")),
-    ).toBeInTheDocument();
+    expect(await screen.findByText((content) => content.includes("已触发重新校验"))).toBeInTheDocument();
 
+    act(() => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "校验异常" }));
+    });
     const validationList = within(screen.getByLabelText("发票校验结果列表"));
     expect(validationList.getByText("税号需要核对")).toBeInTheDocument();
     expect(validationList.getByText("税号不匹配")).toBeInTheDocument();

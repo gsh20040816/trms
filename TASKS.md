@@ -1275,7 +1275,7 @@
     - aria-label "管理员模块导航"、"当前任务上下文" 与 "当前任务快捷入口" 全部保留
     - 现有 admin-task-list / admin-task-detail / admin-export-tasks / admin-review-overview 等测试通过
 
-- [ ] 完善管理员任务详情：列表+详情联动深度优化
+- [x] 完善管理员任务详情：列表+详情联动深度优化
   - Done when:
     - `/admin/tasks/:id/review` 与 `/admin/tasks/:id/invoices` 在已是列表+详情的基础上，进一步用 M3 Tabs 区分识别字段、校验异常、附件预览
     - 单张发票预览、识别字段、校验异常、处理动作集中在右侧详情面板

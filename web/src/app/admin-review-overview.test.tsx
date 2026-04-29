@@ -366,7 +366,23 @@ describe("AdminReviewOverviewPage", () => {
 
     const detailPanel = within(screen.getByLabelText("当前材料详情"));
     expect(await detailPanel.findByText("invoice.pdf")).toBeInTheDocument();
+    const detailTabs = within(detailPanel.getByRole("tablist", { name: "当前材料详情标签页" }));
+    expect(detailTabs.getByRole("tab", { name: "附件预览" })).toHaveAttribute("aria-selected", "true");
+    expect(await detailPanel.findByLabelText("原始票据 PDF 预览")).toHaveAttribute(
+      "data",
+      "blob:review-preview-1",
+    );
+
+    await act(async () => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "校验异常" }));
+      await Promise.resolve();
+    });
     expect(detailPanel.getByText("发票抬头与任务抬头不一致")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "处理动作" }));
+      await Promise.resolve();
+    });
     expect(detailPanel.getByText("异议原因：报名费分摊比例需要调整")).toBeInTheDocument();
     expect(detailPanel.getByRole("link", { name: "更正金额与字段" })).toHaveAttribute(
       "href",
@@ -376,18 +392,23 @@ describe("AdminReviewOverviewPage", () => {
       "href",
       "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
     );
-    expect(await detailPanel.findByLabelText("原始票据 PDF 预览")).toHaveAttribute(
-      "data",
-      "blob:review-preview-1",
-    );
-
     await act(async () => {
       fireEvent.click(materialList.getByRole("button", { name: /payment\.png/i }));
       await Promise.resolve();
     });
 
     expect(await detailPanel.findByText("payment.png")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "附件预览" }));
+      await Promise.resolve();
+    });
     expect(await detailPanel.findByAltText("payment.png 预览")).toHaveAttribute("src", "blob:review-preview-2");
+
+    await act(async () => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "处理动作" }));
+      await Promise.resolve();
+    });
     expect(detailPanel.getByText("当前材料没有直接可编辑的分摊记录；若它属于某张发票，请从对应发票的详情动作进入分摊调整。")).toBeInTheDocument();
     expect(detailPanel.getByRole("link", { name: "查看关联发票" })).toHaveAttribute(
       "href",

@@ -1,5 +1,60 @@
 # WORKLOG
 
+## 2026-04-29 15:41 - Deepen admin task detail list-detail workflow with M3 tabs
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“完善管理员任务详情：列表+详情联动深度优化”。
+- 在 `web/src/app/admin-review-overview.tsx` 的右侧详情面板引入 M3 `Tabs`，把原先纵向堆叠的信息收口为：
+  - `附件预览`
+  - `识别字段`
+  - `校验异常`
+  - `处理动作`
+- 在 `web/src/app/admin-invoice-editor.tsx` 补齐同样的右侧 Tabs，并新增发票录入页内的原始票据预览能力，管理员无需切回复核页才能对照原件录入或更正。
+- 相关前端测试已更新：
+  - `web/src/app/admin-review-overview.test.tsx`
+  - `web/src/app/admin-invoice-editor.test.tsx`
+- `TASKS.md` 中该任务已标记完成。
+
+### 根因
+- 现有管理员复核页虽然已经有“列表 + 详情”基本结构，但右侧详情仍把预览、识别、校验、分摊和动作全部纵向铺开，扫描成本高。
+- 发票录入页则缺少原始票据预览，管理员在录入时必须依赖识别结果或在复核页与录入页之间来回切换，违背了原型图和 UI 规范里强调的“同页联动处理”。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/admin-review-overview.tsx`
+  - `web/src/app/admin-invoice-editor.tsx`
+  - `web/src/app/admin-review-overview.test.tsx`
+  - `web/src/app/admin-invoice-editor.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只改 Web 前端详情交互和测试，不改后端 API、权限语义、识别结果模型或校验规则。
+- 发票录入页的原件预览当前按需调用既有材料下载接口，仍然沿用现有内容类型边界：仅 PDF 和图片支持内联预览，其他类型继续给出明确说明，不做伪装降级。
+
+### 验证结果
+- 已通过相关前端回归：
+  - `cd web && npm test -- admin-review-overview.test.tsx admin-invoice-editor.test.tsx`
+  - `cd web && npm test`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：421 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：22 文件、78 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 验证过程中存在未导致失败的现有 warning：
+  - `pytest` 中仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警；
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning；
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功，未作为本轮处理范围。
+
+### 假设
+- 本轮将“处理动作集中在右侧详情面板”保守收口为 Tabs 内的分摊/跳转/保存动作整合，不额外扩展新的后端批量操作。
+- 发票录入页默认仍停留在 `处理动作` 标签，优先保持管理员进入页面后的主操作路径是可直接编辑，而不是先看预览。
+
 ## 2026-04-29 15:26 - Evaluate Browser Use boundaries for a later-stage assisted finance filing flow
 
 ### 完成内容

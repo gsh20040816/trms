@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import Box from "@mui/material/Box";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
@@ -24,6 +27,13 @@ type InvoiceEditorPageState =
   | { status: "loading" }
   | { status: "error"; error: unknown }
   | { status: "ready"; task: ReimbursementTask; summary: TaskReviewSummary };
+
+type InvoicePreviewState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "unsupported"; contentType: string | null }
+  | { status: "error"; error: unknown }
+  | { status: "ready"; url: string; contentType: string };
 
 type InvoiceEditorFormState = {
   invoiceNumber: string;
@@ -57,6 +67,8 @@ type InvoiceFieldConfig = {
   recognitionField: string;
   required: boolean;
 };
+
+type InvoiceDetailTab = "preview" | "recognition" | "validation" | "actions";
 
 const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
   registration: "参赛费",
@@ -431,6 +443,10 @@ function describeRecognitionFieldValue(field: RecognitionFieldResult, fieldName:
   return "无法直接展示";
 }
 
+function isPreviewableContentType(contentType: string | null) {
+  return contentType === "application/pdf" || Boolean(contentType?.startsWith("image/"));
+}
+
 export function AdminInvoiceEditorPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
@@ -444,6 +460,8 @@ export function AdminInvoiceEditorPage() {
   const [saveFeedback, setSaveFeedback] = useState<SaveFeedback | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [detailTab, setDetailTab] = useState<InvoiceDetailTab>("actions");
+  const [previewState, setPreviewState] = useState<InvoicePreviewState>({ status: "idle" });
   const latestSelectedMaterialIdRef = useRef(selectedMaterialId);
 
   useEffect(() => {
@@ -511,6 +529,76 @@ export function AdminInvoiceEditorPage() {
   const invoiceMaterialItems = pageState.status === "ready"
     ? buildInvoiceMaterialItems(pageState.summary)
     : [];
+  const task = pageState.status === "ready" ? pageState.task : null;
+  const isForeignTask = task ? task.administrator_id !== session?.actorId : false;
+  const visibleTask = pageState.status === "ready" && !isForeignTask ? pageState.task : null;
+  const visibleSummary = pageState.status === "ready" && !isForeignTask ? pageState.summary : null;
+  const selectedItem = visibleSummary ? findSelectedItem(invoiceMaterialItems, selectedMaterialId) : null;
+  const selectedMaterial = selectedItem?.materialItem.material ?? null;
+  const selectedMaterialIdForPreview = selectedMaterial?.id ?? "";
+  const selectedMaterialContentType = selectedMaterial?.content_type ?? null;
+  const selectedRecognition = selectedItem?.materialItem.latest_recognition ?? null;
+  const selectedInvoice = selectedItem?.invoiceItem?.invoice ?? null;
+  const selectedValidations = selectedItem?.invoiceItem?.validations ?? [];
+  const allowedExpenseTypes = visibleTask
+    ? visibleTask.fee_categories.filter(isExpenseType)
+    : [];
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    async function loadPreview() {
+      if (detailTab !== "preview") {
+        setPreviewState({ status: "idle" });
+        return;
+      }
+      if (!selectedMaterialIdForPreview) {
+        setPreviewState({ status: "idle" });
+        return;
+      }
+      if (!isPreviewableContentType(selectedMaterialContentType)) {
+        setPreviewState({
+          status: "unsupported",
+          contentType: selectedMaterialContentType,
+        });
+        return;
+      }
+
+      setPreviewState({ status: "loading" });
+
+      try {
+        const previewFile = await trmsApi.downloadMaterialContent(selectedMaterialIdForPreview);
+        if (cancelled) {
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(previewFile.blob);
+        setPreviewState({
+          status: "ready",
+          url: objectUrl,
+          contentType: previewFile.contentType ?? selectedMaterialContentType ?? "application/octet-stream",
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setPreviewState({
+          status: "error",
+          error,
+        });
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [detailTab, selectedMaterialContentType, selectedMaterialIdForPreview]);
 
   if (!session || session.role !== "admin") {
     return null;
@@ -527,18 +615,6 @@ export function AdminInvoiceEditorPage() {
       </div>
     );
   }
-
-  const task = pageState.status === "ready" ? pageState.task : null;
-  const isForeignTask = task ? task.administrator_id !== session.actorId : false;
-  const visibleTask = pageState.status === "ready" && !isForeignTask ? pageState.task : null;
-  const visibleSummary = pageState.status === "ready" && !isForeignTask ? pageState.summary : null;
-  const selectedItem = visibleSummary ? findSelectedItem(invoiceMaterialItems, selectedMaterialId) : null;
-  const selectedRecognition = selectedItem?.materialItem.latest_recognition ?? null;
-  const selectedInvoice = selectedItem?.invoiceItem?.invoice ?? null;
-  const selectedValidations = selectedItem?.invoiceItem?.validations ?? [];
-  const allowedExpenseTypes = visibleTask
-    ? visibleTask.fee_categories.filter(isExpenseType)
-    : [];
 
   function updateField<Key extends keyof InvoiceEditorFormState>(
     key: Key,
@@ -748,131 +824,67 @@ export function AdminInvoiceEditorPage() {
                   </div>
                 </dl>
 
-                {saveFeedback && saveFeedback.materialId === selectedItem.materialItem.material.id ? (
+                <Box sx={{ mt: 3, borderBottom: 1, borderColor: "divider" }}>
+                  <Tabs
+                    value={detailTab}
+                    onChange={(_, value: InvoiceDetailTab) => {
+                      setDetailTab(value);
+                    }}
+                    aria-label="发票详情标签页"
+                    variant="scrollable"
+                    allowScrollButtonsMobile
+                  >
+                    <Tab label="附件预览" value="preview" />
+                    <Tab label="识别字段" value="recognition" />
+                    <Tab label="校验异常" value="validation" />
+                    <Tab label="处理动作" value="actions" />
+                  </Tabs>
+                </Box>
+
+                {detailTab === "preview" ? (
                   <section className="member-status-section">
                     <div className="member-status-section-header">
                       <div>
-                        <h4>保存完成并已刷新校验结果</h4>
+                        <h4>原始票据预览</h4>
                         <p className="field-hint">
-                          发票 {saveFeedback.invoiceNumber} 当前共有 {saveFeedback.validationCount} 条校验结果，其中失败 {saveFeedback.failedValidationCount} 条、待确认 {saveFeedback.pendingValidationCount} 条。
+                          先在这里核对原始票据，再决定是否需要进入人工更正。
                         </p>
                       </div>
-                      <span className="status-chip member-status-chip-pending">已重新加载摘要</span>
+                      <span className="status-chip">{selectedItem.materialItem.material.content_type ?? "未知类型"}</span>
                     </div>
+                    {previewState.status === "loading" ? (
+                      <p className="field-hint">正在拉取原始材料内容，请稍候。</p>
+                    ) : null}
+                    {previewState.status === "unsupported" ? (
+                      <p className="field-hint">
+                        当前材料类型为 {previewState.contentType ?? "未知"}，暂不支持内联预览，请结合识别字段和原文件名判断下一步处理。
+                      </p>
+                    ) : null}
+                    {previewState.status === "error" ? <ApiErrorNotice error={previewState.error} /> : null}
+                    {previewState.status === "ready" ? (
+                      <div className="admin-review-preview-shell">
+                        {previewState.contentType.startsWith("image/") ? (
+                          <img
+                            className="admin-review-preview-image"
+                            src={previewState.url}
+                            alt={`${selectedItem.materialItem.material.original_filename} 预览`}
+                          />
+                        ) : (
+                          <object
+                            className="admin-review-preview-frame"
+                            data={previewState.url}
+                            type={previewState.contentType}
+                            aria-label="原始票据 PDF 预览"
+                          >
+                            <p className="field-hint">当前环境无法直接显示 PDF 预览，但材料内容已成功加载。</p>
+                          </object>
+                        )}
+                      </div>
+                    ) : null}
                   </section>
                 ) : null}
 
-                <form
-                  className="page-stack"
-                  onSubmit={(event) => {
-                    void handleSubmit(event);
-                  }}
-                >
-                  <div className="admin-form-grid">
-                    <label className="field-stack">
-                      <span>发票号码</span>
-                      <input
-                        name="invoice-number"
-                        value={formState.invoiceNumber}
-                        onChange={(event) => {
-                          updateField("invoiceNumber", event.target.value);
-                        }}
-                      />
-                      {formErrors.invoiceNumber ? <span className="field-error">{formErrors.invoiceNumber}</span> : null}
-                    </label>
-
-                    <label className="field-stack">
-                      <span>开票日期</span>
-                      <input
-                        type="date"
-                        name="issue-date"
-                        value={formState.issueDate}
-                        onChange={(event) => {
-                          updateField("issueDate", event.target.value);
-                        }}
-                      />
-                    </label>
-
-                    <label className="field-stack">
-                      <span>交易时间</span>
-                      <input
-                        type="datetime-local"
-                        name="transaction-time"
-                        value={formState.transactionTime}
-                        onChange={(event) => {
-                          updateField("transactionTime", event.target.value);
-                        }}
-                      />
-                    </label>
-
-                    <label className="field-stack">
-                      <span>金额（元）</span>
-                      <input
-                        name="amount-yuan"
-                        inputMode="decimal"
-                        placeholder="例如 123.45"
-                        value={formState.amountYuan}
-                        onChange={(event) => {
-                          updateField("amountYuan", event.target.value);
-                        }}
-                      />
-                      {formErrors.amountYuan ? <span className="field-error">{formErrors.amountYuan}</span> : null}
-                    </label>
-
-                    <label className="field-stack">
-                      <span>发票抬头</span>
-                      <input
-                        name="buyer-name"
-                        value={formState.buyerName}
-                        onChange={(event) => {
-                          updateField("buyerName", event.target.value);
-                        }}
-                      />
-                      {formErrors.buyerName ? <span className="field-error">{formErrors.buyerName}</span> : null}
-                    </label>
-
-                    <label className="field-stack">
-                      <span>税号</span>
-                      <input
-                        name="tax-number"
-                        value={formState.taxNumber}
-                        onChange={(event) => {
-                          updateField("taxNumber", event.target.value);
-                        }}
-                      />
-                      {formErrors.taxNumber ? <span className="field-error">{formErrors.taxNumber}</span> : null}
-                    </label>
-
-                    <label className="field-stack">
-                      <span>销售方名称</span>
-                      <input
-                        name="seller-name"
-                        value={formState.sellerName}
-                        onChange={(event) => {
-                          updateField("sellerName", event.target.value);
-                        }}
-                      />
-                    </label>
-
-                    <label className="field-stack">
-                      <span>费用类型</span>
-                      <select
-                        name="expense-type"
-                        value={formState.expenseType}
-                        onChange={(event) => {
-                          updateField("expenseType", event.target.value as ExpenseType);
-                        }}
-                      >
-                        {allowedExpenseTypes.map((expenseType) => (
-                          <option key={expenseType} value={expenseType}>
-                            {formatExpenseType(expenseType)}
-                          </option>
-                        ))}
-                      </select>
-                      {formErrors.expenseType ? <span className="field-error">{formErrors.expenseType}</span> : null}
-                    </label>
-                  </div>
-
+                {detailTab === "recognition" ? (
                   <section className="member-status-section">
                     <div className="member-status-section-header">
                       <div>
@@ -968,7 +980,9 @@ export function AdminInvoiceEditorPage() {
                       })}
                     </div>
                   </section>
+                ) : null}
 
+                {detailTab === "validation" ? (
                   <section className="member-status-section">
                     <div className="member-status-section-header">
                       <div>
@@ -1005,16 +1019,146 @@ export function AdminInvoiceEditorPage() {
                       </ul>
                     )}
                   </section>
+                ) : null}
 
-                  <div className="admin-form-footer">
-                    <p className="field-hint">
-                      保存后请继续根据校验结果补充材料或回到复核页处理剩余问题。
-                    </p>
-                    <button className="route-link" type="submit" disabled={isSubmitting}>
-                      {isSubmitting ? "正在保存并刷新摘要" : "保存发票字段"}
-                    </button>
-                  </div>
-                </form>
+                {detailTab === "actions" ? (
+                  <>
+                    {saveFeedback && saveFeedback.materialId === selectedItem.materialItem.material.id ? (
+                      <section className="member-status-section">
+                        <div className="member-status-section-header">
+                          <div>
+                            <h4>保存完成并已刷新校验结果</h4>
+                            <p className="field-hint">
+                              发票 {saveFeedback.invoiceNumber} 当前共有 {saveFeedback.validationCount} 条校验结果，其中失败 {saveFeedback.failedValidationCount} 条、待确认 {saveFeedback.pendingValidationCount} 条。
+                            </p>
+                          </div>
+                          <span className="status-chip member-status-chip-pending">已重新加载摘要</span>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    <form
+                      className="page-stack"
+                      onSubmit={(event) => {
+                        void handleSubmit(event);
+                      }}
+                    >
+                      <div className="admin-form-grid">
+                        <label className="field-stack">
+                          <span>发票号码</span>
+                          <input
+                            name="invoice-number"
+                            value={formState.invoiceNumber}
+                            onChange={(event) => {
+                              updateField("invoiceNumber", event.target.value);
+                            }}
+                          />
+                          {formErrors.invoiceNumber ? <span className="field-error">{formErrors.invoiceNumber}</span> : null}
+                        </label>
+
+                        <label className="field-stack">
+                          <span>开票日期</span>
+                          <input
+                            type="date"
+                            name="issue-date"
+                            value={formState.issueDate}
+                            onChange={(event) => {
+                              updateField("issueDate", event.target.value);
+                            }}
+                          />
+                        </label>
+
+                        <label className="field-stack">
+                          <span>交易时间</span>
+                          <input
+                            type="datetime-local"
+                            name="transaction-time"
+                            value={formState.transactionTime}
+                            onChange={(event) => {
+                              updateField("transactionTime", event.target.value);
+                            }}
+                          />
+                        </label>
+
+                        <label className="field-stack">
+                          <span>金额（元）</span>
+                          <input
+                            name="amount-yuan"
+                            inputMode="decimal"
+                            placeholder="例如 123.45"
+                            value={formState.amountYuan}
+                            onChange={(event) => {
+                              updateField("amountYuan", event.target.value);
+                            }}
+                          />
+                          {formErrors.amountYuan ? <span className="field-error">{formErrors.amountYuan}</span> : null}
+                        </label>
+
+                        <label className="field-stack">
+                          <span>发票抬头</span>
+                          <input
+                            name="buyer-name"
+                            value={formState.buyerName}
+                            onChange={(event) => {
+                              updateField("buyerName", event.target.value);
+                            }}
+                          />
+                          {formErrors.buyerName ? <span className="field-error">{formErrors.buyerName}</span> : null}
+                        </label>
+
+                        <label className="field-stack">
+                          <span>税号</span>
+                          <input
+                            name="tax-number"
+                            value={formState.taxNumber}
+                            onChange={(event) => {
+                              updateField("taxNumber", event.target.value);
+                            }}
+                          />
+                          {formErrors.taxNumber ? <span className="field-error">{formErrors.taxNumber}</span> : null}
+                        </label>
+
+                        <label className="field-stack">
+                          <span>销售方名称</span>
+                          <input
+                            name="seller-name"
+                            value={formState.sellerName}
+                            onChange={(event) => {
+                              updateField("sellerName", event.target.value);
+                            }}
+                          />
+                        </label>
+
+                        <label className="field-stack">
+                          <span>费用类型</span>
+                          <select
+                            name="expense-type"
+                            value={formState.expenseType}
+                            onChange={(event) => {
+                              updateField("expenseType", event.target.value as ExpenseType);
+                            }}
+                          >
+                            {allowedExpenseTypes.map((expenseType) => (
+                              <option key={expenseType} value={expenseType}>
+                                {formatExpenseType(expenseType)}
+                              </option>
+                            ))}
+                          </select>
+                          {formErrors.expenseType ? <span className="field-error">{formErrors.expenseType}</span> : null}
+                        </label>
+                      </div>
+
+                      <div className="admin-form-footer">
+                        <p className="field-hint">
+                          保存后请继续根据校验结果补充材料或回到复核页处理剩余问题。
+                        </p>
+                        <button className="route-link" type="submit" disabled={isSubmitting}>
+                          {isSubmitting ? "正在保存并刷新摘要" : "保存发票字段"}
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : null}
               </article>
             ) : null}
           </section>
