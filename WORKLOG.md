@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-04-30 00:17 - Split reimbursement UX simplification plan into tasks
+
+### 完成内容
+- 完成任务“将报销交互简化方案拆成可执行任务”。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)：
+  - 新增并完成方案拆分任务；
+  - 新增“报销交互简化落地”任务组；
+  - 将原有未完成任务“在成员工作台展示批量提交与撤回区”移动到新任务组首位，避免重复记录；
+  - 拆出附件手动关联权限、成员端候选发票关联、成员工作台默认结构调整、成员工作台聚合读模型、上传后处理状态刷新、管理员就绪度读模型、管理员任务详情就绪度总览、完整材料包导出、导出页主动作收口和真实 UX 验收等后续任务。
+
+### 拆分依据
+- 本轮按 [报销交互简化改造方案.md](/home/gsh/workspace/TRMS/docs/报销交互简化改造方案.md) 的最小任务顺序拆分。
+- 拆分原则：
+  - 先消费已有批量提交/撤回 API；
+  - 再补齐附件关联权限边界和成员端处理入口；
+  - 再收敛成员工作台结构与聚合读模型；
+  - 再做管理员就绪度读模型和页面入口；
+  - 最后做完整材料包导出和真实 UX 验收。
+
+### 影响范围
+- 本轮只更新任务队列和工作日志，不改动业务代码、测试代码、数据库迁移或运行配置。
+- 后续实现仍需逐项完成，每轮只处理一个最小可验证任务。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 465 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出 `--localstorage-file` 路径警告，Vite 输出 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 00:07 - Document reimbursement interaction simplification plan
 
 ### 完成内容
