@@ -1,5 +1,70 @@
 # WORKLOG
 
+## 2026-04-29 12:01 - Rewrite home page with task-driven Material 3 layout
+
+### 完成内容
+- 重写 `web/src/app/pages.tsx` 中的 `HomePage` 与 `NotFoundPage`，全面切换到 MUI v7 组件，并按"任务驱动"原则重新组织信息架构。
+- 未登录首页 `GuestHomePage`：
+  - 顶部仅保留极简 hero（"账号入口"小标 + "登录后进入对应工作台" h3 + 一句业务描述 + "前往登录 / 注册" Contained Button）。
+  - 三张 outlined Card 展示成员/管理员/系统管理员账号的"用途速览"，每张含 Avatar 图标 + 标签 + 重点词 + 一句话描述，去掉以往"账号与页面边界"这种实现导向卡片。
+- 已登录首页 `AuthenticatedHomePage`：
+  - 顶部 hero 显示"报销任务总览"小标、"Tongji ACM 报销管理系统" h3、一句任务驱动描述、当前身份与显示名 Chip 行、"进入我的工作台" Contained Button（带向前箭头）。
+  - "当前身份"卡：Avatar + 标题 + 业务摘要 + 推荐操作 Chip 行（取自 ROLE_OVERVIEWS.actions），不再是 `<ul>` 列表。
+  - "可进入的工作台"分组：每个角色用 outlined Card + CardActionArea + 操作 Chip 行表达，整张卡片即点击区，导航到对应工作台。
+- `NotFoundPage`：换成 M3 居中布局（Avatar 图标 + 标题 + Alert info + 返回按钮），不再是空 SectionCard。
+- 业务文案调整：
+  - 已登录首页副文案改为"直接进入你的工作台查看当前需要处理的任务和异常事项。"
+  - 删除"页面边界已收口"、"无关角色入口、系统配置与诊断信息不会出现在当前首页"等实现导向描述。
+- 同步更新 `web/src/app/App.test.tsx`：
+  - "登录后只展示当前账号可进入的工作台..."文案断言改为新的任务驱动文案"直接进入你的工作台查看当前需要处理的任务和异常事项。"
+  - "进入我的工作台"链接断言用 regex 包容前后缀（按钮含图标）。
+  - 其余 7 个用例均不变。
+
+### 根因
+- 旧首页是"工作台说明 + 角色入口卡 + 实现边界说明"的入口页风格，与 `docs/UI原型图对照与交互规范补充.md` 强调的"任务驱动、单页闭环、状态一眼可扫"不符。
+- 用户在 P5 计划中明确要求首页改为任务驱动总览。
+- 本轮先把 `/` 总览页本身的视觉与 IA 改完；KPI 数据计算与"今日最紧急任务"列表会随 Round 6（成员任务列表）、已存在的 `/admin` 任务列表（管理员）一起完成。
+
+### 关键改动点
+- 重写：
+  - `web/src/app/pages.tsx`：`HomePage`、`GuestHomePage`、`AuthenticatedHomePage`、`NotFoundPage` 全部基于 MUI 组件实现，移除对自造 `RoleWorkspace`/`PageHeader`/`StatCard`/`SectionCard`/`StatusBadge` 的调用。
+- 同步测试：
+  - `web/src/app/App.test.tsx`：更新两条断言以匹配新文案，并保留全部其他业务断言不变。
+- 任务状态：
+  - `TASKS.md` P5 第五条标记完成，并添加实现说明，指出 KPI 列表实际收口到 `/member` 与 `/admin` 任务列表轮次。
+
+### 风险与影响面
+- 业务行为没有变化：未登录跳登录、登录后展示当前可见工作台、点击进入对应路径。
+- 视觉与可达性都升级到 MUI 主题；颜色、间距、阴影、Hover、点击区扩大。
+- bundle gzipped 由 248.72 kB 增至 ~250 kB（与上轮基本持平），新增的 CardActionArea / Avatar / Chip 已在前序轮次随 MUI 引入；主要差异是去除了 dashboard.tsx 在首页中的部分依赖。
+- 旧 `dashboard.tsx` 中的 `RoleWorkspace`/`PageHeader`/`StatCard`/`SectionCard`/`ErrorMessage`/`TaskTable` 仍被业务页面（成员任务、管理员任务、复核、导出 等）使用，本轮不删除。
+
+### 修改文件
+- `web/src/app/pages.tsx`
+- `web/src/app/App.test.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 已登录首页只显示"当前账号可进入的工作台"卡片组合，不重复列出 KPI 数据；KPI 重写已经在 `/member` 与 `/admin` 任务列表页面分别完成或后续完成。
+- React 19 中 `JSX.Element` 命名空间不再开箱可用；使用 `ComponentType<SvgIconProps>` 表示 MUI 图标组件类型。
+- 测试用 `getByRole("link", { name: /进入我的工作台/ })` regex 匹配，是因为新版按钮带图标后 accessible name 可能拼接图标 alt 文本。
+
+### 备注
+- "今日最紧急任务"在管理员任务列表页（`AdminTaskListPage`）已经存在为"按任务推进处理当前工作"的优先级表格；成员任务列表的 KPI 卡也已经存在。本轮不重复实现。
+- 后续 Round 6 重写成员任务列表页时会将其升级为 MUI 卡片网格 + 单任务工作台 Tabs。
+
 ## 2026-04-29 11:55 - Rewrite login/register interaction with M3 components
 
 ### 完成内容

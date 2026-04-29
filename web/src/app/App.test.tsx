@@ -204,8 +204,8 @@ describe("web app account auth", () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole("heading", { name: "Tongji ACM 报销管理系统" })).toBeInTheDocument();
-    expect(screen.getByText("登录后只展示当前账号可进入的工作台，不再把其他角色的业务板块混在首页。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "进入我的工作台" })).toBeInTheDocument();
+    expect(screen.getByText("直接进入你的工作台查看当前需要处理的任务和异常事项。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /进入我的工作台/ })).toBeInTheDocument();
     expect(screen.getAllByText("报销成员").length).toBeGreaterThan(0);
     expect(screen.queryByText("管理员")).not.toBeInTheDocument();
     expect(screen.queryByText("系统管理员")).not.toBeInTheDocument();
