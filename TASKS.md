@@ -1402,7 +1402,7 @@
     - 桌面端主要操作尽量无需整页滚动；移动端保留可用降级布局
     - 前端测试覆盖发票切换、详情刷新和关键操作入口
 
-- [ ] 收口成员发票工作台剩余非 M3 表单与状态控件
+- [x] 收口成员发票工作台剩余非 M3 表单与状态控件
   - Done when:
     - `member-invoice-workbench.tsx` 中材料类型、手动补录、分摊编辑、确认原因等原生 `input` / `select` / `textarea` / `button` 改为 MUI 表单与操作组件
     - 旧 `route-link` / `button-*` / `status-chip` 类不再承担核心交互

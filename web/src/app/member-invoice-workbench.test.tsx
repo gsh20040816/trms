@@ -540,9 +540,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
     const workbenchList = await screen.findByLabelText("成员发票工作台列表");
     expect(within(workbenchList).getByRole("heading", { name: "INV-OPEN-001" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("目标任务"), {
-      target: { value: "TASK-REVIEW" },
-    });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "目标任务" }));
+    fireEvent.click(await screen.findByRole("option", { name: "CCPC Final（TASK-REVIEW）" }));
 
     expect(within(await screen.findByLabelText("成员发票工作台列表")).getByRole("heading", { name: "HOTEL-001" })).toBeInTheDocument();
     expect(within(await screen.findByLabelText("成员发票工作台摘要")).getByText("￥200.00")).toBeInTheDocument();
@@ -1189,14 +1188,15 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    const select = await screen.findByLabelText("MAT-EDIT-001 材料类型");
-    expect(select).toHaveValue("other_attachment");
+    const select = await screen.findByRole("combobox", { name: "当前材料类型" });
+    expect(select).toHaveTextContent("其他材料");
 
-    fireEvent.change(select, { target: { value: "payment_record" } });
+    fireEvent.mouseDown(select);
+    fireEvent.click(await screen.findByRole("option", { name: "支付记录" }));
     fireEvent.click(screen.getByRole("button", { name: "保存材料类型" }));
 
     await screen.findByText("支付记录 / MAT-EDIT-001");
-    expect(screen.getByLabelText("MAT-EDIT-001 材料类型")).toHaveValue("payment_record");
+    expect(screen.getByRole("combobox", { name: "当前材料类型" })).toHaveTextContent("支付记录");
   });
 
   it("lets the member adjust split targets and shows refreshed confirmation states", async () => {
@@ -1455,9 +1455,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
       target: { value: "self adjusted" },
     });
     fireEvent.click(screen.getByRole("button", { name: "新增分摊对象" }));
-    fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 2 成员"), {
-      target: { value: "2250002" },
-    });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "分配对象 2" }));
+    fireEvent.click(await screen.findByRole("option", { name: "成员 2250002" }));
     fireEvent.change(screen.getByLabelText("INV-SHARED-001 分摊行 2 金额"), {
       target: { value: "23.45" },
     });
@@ -1796,9 +1795,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("工作台上传材料类型"), {
-      target: { value: "payment_record" },
-    });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "材料类型" }));
+    fireEvent.click(await screen.findByRole("option", { name: "支付记录" }));
     fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
         files: [new File(["payment"], "pay.png", { type: "image/png" })],

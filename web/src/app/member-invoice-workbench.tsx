@@ -1,9 +1,14 @@
 import { type FormEvent, type SyntheticEvent, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import LinearProgress from "@mui/material/LinearProgress";
+import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { FileDropZone } from "../components/FileDropZone";
@@ -1622,35 +1627,33 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>材料类型</h4>
-            <span className="status-chip">可自助更正</span>
+            <StatusBadge tone="info">可自助更正</StatusBadge>
           </div>
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>当前材料类型</span>
-              <select
-                aria-label={`${item.material.material_id} 材料类型`}
-                value={materialTypeDrafts[item.material.material_id] ?? item.material.material_type}
-                onChange={(event) => {
-                  const nextMaterialType = event.target.value as MaterialType;
-                  setMaterialTypeDrafts((current) => ({
-                    ...current,
-                    [item.material.material_id]: nextMaterialType,
-                  }));
-                }}
-                disabled={updatingMaterialId === item.material.material_id}
-              >
-                {MATERIAL_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="field-stack">
-              <span>操作</span>
-              <button
+            <TextField
+              select
+              label="当前材料类型"
+              aria-label={`${item.material.material_id} 材料类型`}
+              value={materialTypeDrafts[item.material.material_id] ?? item.material.material_type}
+              onChange={(event) => {
+                const nextMaterialType = event.target.value as MaterialType;
+                setMaterialTypeDrafts((current) => ({
+                  ...current,
+                  [item.material.material_id]: nextMaterialType,
+                }));
+              }}
+              disabled={updatingMaterialId === item.material.material_id}
+            >
+              {MATERIAL_TYPE_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <Button
                 type="button"
-                className="button button-secondary"
+                variant="outlined"
                 onClick={() => {
                   void handleMaterialTypeSave(item.material.material_id);
                 }}
@@ -1661,8 +1664,8 @@ export function MemberInvoiceWorkbenchPage() {
                 }
               >
                 {updatingMaterialId === item.material.material_id ? "保存中..." : "保存材料类型"}
-              </button>
-            </div>
+              </Button>
+            </Box>
           </div>
           <p className="field-hint">
             仅收集中任务允许成员修改本人材料类型；若该材料已经形成发票主记录或存在不兼容关联，系统会明确拒绝。
@@ -1675,7 +1678,7 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>待处理事项</h4>
-            <span className="status-chip">{abnormalReasons.length} 条</span>
+            <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>{abnormalReasons.length} 条</StatusBadge>
           </div>
           {abnormalReasons.length > 0 ? (
             <ul className="member-status-message-list" aria-label={`${item.material.material_id} 异常原因列表`}>
@@ -1691,9 +1694,9 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>识别字段与当前值</h4>
-            <span className="status-chip">
+            <StatusBadge tone="info">
               {item.recognition ? renderRecognitionSource(getRecognitionFieldValue(item.recognition, "invoice_number")) : "暂无识别"}
-            </span>
+            </StatusBadge>
           </div>
           <ul className="member-status-message-list" aria-label={`${item.material.material_id} 发票字段列表`}>
             {FIELD_ORDER.map((fieldName) => {
@@ -1722,26 +1725,26 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>手动补录与重新识别</h4>
-            <span className="status-chip">仅本人材料可操作</span>
+            <StatusBadge tone="info">仅本人材料可操作</StatusBadge>
           </div>
           <p className="field-hint">
             这里的人工补录只会更新当前发票字段并保留更正痕迹；重新识别会新建一次识别任务，不会让成员直接写入任意识别原始结果。
           </p>
           <div className="inline-actions">
-            <button
+            <Button
               type="button"
-              className="button button-secondary"
+              variant="outlined"
               disabled={retryingRecognitionMaterialId === item.material.material_id}
               onClick={() => {
                 void handleRecognitionRetry(item);
               }}
             >
               {retryingRecognitionMaterialId === item.material.material_id ? "重新识别中..." : recognitionActionLabel}
-            </button>
+            </Button>
             {item.material.material_type === "invoice" ? (
-              <button
+              <Button
                 type="button"
-                className="button button-secondary"
+                variant="outlined"
                 onClick={() => {
                   if (task) {
                     handleManualEditorToggle(item, task);
@@ -1749,7 +1752,7 @@ export function MemberInvoiceWorkbenchPage() {
                 }}
               >
                 {isManualEditorOpen ? "收起手动补录" : "手动填写或更正发票"}
-              </button>
+              </Button>
             ) : null}
           </div>
           {scopedRecognitionRetryFeedback ? (
@@ -1778,110 +1781,103 @@ export function MemberInvoiceWorkbenchPage() {
               }}
             >
               <div className="admin-form-grid">
-                <label className="field-stack">
-                  <span>发票号码</span>
-                  <input
-                    aria-label={`${item.material.material_id} 发票号码`}
-                    value={manualInvoiceFormState.invoiceNumber}
-                    onChange={(event) => {
-                      updateManualInvoiceField("invoiceNumber", event.target.value);
-                    }}
-                  />
-                  {manualInvoiceErrors.invoiceNumber ? <span className="field-error">{manualInvoiceErrors.invoiceNumber}</span> : null}
-                </label>
-                <label className="field-stack">
-                  <span>开票日期</span>
-                  <input
-                    aria-label={`${item.material.material_id} 开票日期`}
-                    type="date"
-                    value={manualInvoiceFormState.issueDate}
-                    onChange={(event) => {
-                      updateManualInvoiceField("issueDate", event.target.value);
-                    }}
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>交易时间</span>
-                  <input
-                    aria-label={`${item.material.material_id} 交易时间`}
-                    type="datetime-local"
-                    value={manualInvoiceFormState.transactionTime}
-                    onChange={(event) => {
-                      updateManualInvoiceField("transactionTime", event.target.value);
-                    }}
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>金额（元）</span>
-                  <input
-                    aria-label={`${item.material.material_id} 金额`}
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="例如 123.45"
-                    value={manualInvoiceFormState.amountYuan}
-                    onChange={(event) => {
-                      updateManualInvoiceField("amountYuan", event.target.value);
-                    }}
-                  />
-                  {manualInvoiceErrors.amountYuan ? <span className="field-error">{manualInvoiceErrors.amountYuan}</span> : null}
-                </label>
-                <label className="field-stack">
-                  <span>发票抬头</span>
-                  <input
-                    aria-label={`${item.material.material_id} 发票抬头`}
-                    value={manualInvoiceFormState.buyerName}
-                    onChange={(event) => {
-                      updateManualInvoiceField("buyerName", event.target.value);
-                    }}
-                  />
-                  {manualInvoiceErrors.buyerName ? <span className="field-error">{manualInvoiceErrors.buyerName}</span> : null}
-                </label>
-                <label className="field-stack">
-                  <span>税号</span>
-                  <input
-                    aria-label={`${item.material.material_id} 税号`}
-                    value={manualInvoiceFormState.taxNumber}
-                    onChange={(event) => {
-                      updateManualInvoiceField("taxNumber", event.target.value);
-                    }}
-                  />
-                  {manualInvoiceErrors.taxNumber ? <span className="field-error">{manualInvoiceErrors.taxNumber}</span> : null}
-                </label>
-                <label className="field-stack">
-                  <span>销售方名称</span>
-                  <input
-                    aria-label={`${item.material.material_id} 销售方名称`}
-                    value={manualInvoiceFormState.sellerName}
-                    onChange={(event) => {
-                      updateManualInvoiceField("sellerName", event.target.value);
-                    }}
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>费用类型</span>
-                  <select
-                    aria-label={`${item.material.material_id} 费用类型`}
-                    value={manualInvoiceFormState.expenseType}
-                    onChange={(event) => {
-                      updateManualInvoiceField("expenseType", event.target.value as ExpenseType);
-                    }}
+                <TextField
+                  label="发票号码"
+                  value={manualInvoiceFormState.invoiceNumber}
+                  onChange={(event) => {
+                    updateManualInvoiceField("invoiceNumber", event.target.value);
+                  }}
+                  error={Boolean(manualInvoiceErrors.invoiceNumber)}
+                  helperText={manualInvoiceErrors.invoiceNumber}
+                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 发票号码` } }}
+                />
+                <TextField
+                  label="开票日期"
+                  type="date"
+                  value={manualInvoiceFormState.issueDate}
+                  onChange={(event) => {
+                    updateManualInvoiceField("issueDate", event.target.value);
+                  }}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
+                <TextField
+                  label="交易时间"
+                  type="datetime-local"
+                  value={manualInvoiceFormState.transactionTime}
+                  onChange={(event) => {
+                    updateManualInvoiceField("transactionTime", event.target.value);
+                  }}
+                  slotProps={{
+                    inputLabel: { shrink: true },
+                    htmlInput: { "aria-label": `${item.material.material_id} 交易时间` },
+                  }}
+                />
+                <TextField
+                  label="金额（元）"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="例如 123.45"
+                  value={manualInvoiceFormState.amountYuan}
+                  onChange={(event) => {
+                    updateManualInvoiceField("amountYuan", event.target.value);
+                  }}
+                  error={Boolean(manualInvoiceErrors.amountYuan)}
+                  helperText={manualInvoiceErrors.amountYuan}
+                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 金额` } }}
+                />
+                <TextField
+                  label="发票抬头"
+                  value={manualInvoiceFormState.buyerName}
+                  onChange={(event) => {
+                    updateManualInvoiceField("buyerName", event.target.value);
+                  }}
+                  error={Boolean(manualInvoiceErrors.buyerName)}
+                  helperText={manualInvoiceErrors.buyerName}
+                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 发票抬头` } }}
+                />
+                <TextField
+                  label="税号"
+                  value={manualInvoiceFormState.taxNumber}
+                  onChange={(event) => {
+                    updateManualInvoiceField("taxNumber", event.target.value);
+                  }}
+                  error={Boolean(manualInvoiceErrors.taxNumber)}
+                  helperText={manualInvoiceErrors.taxNumber}
+                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 税号` } }}
+                />
+                <TextField
+                  label="销售方名称"
+                  value={manualInvoiceFormState.sellerName}
+                  onChange={(event) => {
+                    updateManualInvoiceField("sellerName", event.target.value);
+                  }}
+                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 销售方名称` } }}
+                />
+                <TextField
+                  select
+                  label="费用类型"
+                  aria-label={`${item.material.material_id} 费用类型`}
+                  value={manualInvoiceFormState.expenseType}
+                  onChange={(event) => {
+                    updateManualInvoiceField("expenseType", event.target.value as ExpenseType);
+                  }}
+                  error={Boolean(manualInvoiceErrors.expenseType)}
+                  helperText={manualInvoiceErrors.expenseType}
                   >
                     {taskAllowedExpenseTypes.map((expenseType) => (
-                      <option key={expenseType} value={expenseType}>
+                      <MenuItem key={expenseType} value={expenseType}>
                         {formatExpenseType(expenseType)}
-                      </option>
-                    ))}
-                  </select>
-                  {manualInvoiceErrors.expenseType ? <span className="field-error">{manualInvoiceErrors.expenseType}</span> : null}
-                </label>
+                    </MenuItem>
+                  ))}
+                </TextField>
               </div>
               {manualInvoiceSubmitError ? (
                 <p className="field-error field-error-block">{manualInvoiceSubmitError}</p>
               ) : null}
               <div className="inline-actions">
-                <button className="button button-secondary" type="submit" disabled={isSavingManualInvoice}>
+                <Button variant="outlined" type="submit" disabled={isSavingManualInvoice}>
                   {isSavingManualInvoice ? "保存中..." : "保存发票字段"}
-                </button>
+                </Button>
               </div>
             </form>
           ) : null}
@@ -1890,80 +1886,74 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>当前分摊方案与确认状态</h4>
-            <span className="status-chip">{item.splits.length} 条分摊</span>
+            <StatusBadge tone="info">{item.splits.length} 条分摊</StatusBadge>
           </div>
           {invoice && task ? (
             <>
               <div className="member-status-section-header">
                 <h5>调整分配对象与备注</h5>
-                <span className="status-chip">
+                <StatusBadge tone={task.status === "open" ? "info" : "neutral"}>
                   {task.status === "open" ? "当前可编辑" : `当前${formatTaskStatus(task.status)}，不可编辑`}
-                </span>
+                </StatusBadge>
               </div>
               {splitDraftRows.map((draft, index) => (
                 <div key={draft.key} className="admin-form-grid">
-                  <label className="field-stack">
-                    <span>分配对象 {index + 1}</span>
-                    <select
-                      aria-label={`${invoice.id} 分摊行 ${index + 1} 成员`}
-                      value={draft.member_id}
-                      onChange={(event) => {
-                        updateSplitDraft(invoice.id, draft.key, {
-                          member_id: event.target.value,
-                        });
-                      }}
-                      disabled={
-                        task.status !== "open"
-                        || updatingSplitInvoiceId === invoice.id
-                      }
-                    >
-                      {task.member_ids.map((memberId) => (
-                        <option key={memberId} value={memberId}>
-                          {formatMemberLabel(memberId)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-stack">
-                    <span>金额（元）</span>
-                    <input
-                      aria-label={`${invoice.id} 分摊行 ${index + 1} 金额`}
-                      type="text"
-                      inputMode="decimal"
-                      value={draft.amount_yuan}
-                      onChange={(event) => {
-                        updateSplitDraft(invoice.id, draft.key, {
-                          amount_yuan: event.target.value,
-                        });
-                      }}
-                      disabled={
-                        task.status !== "open"
-                        || updatingSplitInvoiceId === invoice.id
-                      }
-                    />
-                  </label>
-                  <label className="field-stack">
-                    <span>备注</span>
-                    <input
-                      aria-label={`${invoice.id} 分摊行 ${index + 1} 备注`}
-                      type="text"
-                      value={draft.note}
-                      onChange={(event) => {
-                        updateSplitDraft(invoice.id, draft.key, {
-                          note: event.target.value,
-                        });
-                      }}
-                      disabled={
-                        task.status !== "open"
-                        || updatingSplitInvoiceId === invoice.id
-                      }
-                    />
-                  </label>
-                  <div className="field-stack">
-                    <span>操作</span>
-                    <button
+                  <TextField
+                    select
+                    label={`分配对象 ${index + 1}`}
+                    aria-label={`${invoice.id} 分摊行 ${index + 1} 成员`}
+                    value={draft.member_id}
+                    onChange={(event) => {
+                      updateSplitDraft(invoice.id, draft.key, {
+                        member_id: event.target.value,
+                      });
+                    }}
+                    disabled={
+                      task.status !== "open"
+                      || updatingSplitInvoiceId === invoice.id
+                    }
+                  >
+                    {task.member_ids.map((memberId) => (
+                      <MenuItem key={memberId} value={memberId}>
+                        {formatMemberLabel(memberId)}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="金额（元）"
+                    type="text"
+                    inputMode="decimal"
+                    value={draft.amount_yuan}
+                    onChange={(event) => {
+                      updateSplitDraft(invoice.id, draft.key, {
+                        amount_yuan: event.target.value,
+                      });
+                    }}
+                    disabled={
+                      task.status !== "open"
+                      || updatingSplitInvoiceId === invoice.id
+                    }
+                    slotProps={{ htmlInput: { "aria-label": `${invoice.id} 分摊行 ${index + 1} 金额` } }}
+                  />
+                  <TextField
+                    label="备注"
+                    type="text"
+                    value={draft.note}
+                    onChange={(event) => {
+                      updateSplitDraft(invoice.id, draft.key, {
+                        note: event.target.value,
+                      });
+                    }}
+                    disabled={
+                      task.status !== "open"
+                      || updatingSplitInvoiceId === invoice.id
+                    }
+                    slotProps={{ htmlInput: { "aria-label": `${invoice.id} 分摊行 ${index + 1} 备注` } }}
+                  />
+                  <Box sx={{ display: "flex", alignItems: "center" }}>
+                    <Button
                       type="button"
-                      className="button button-secondary"
+                      variant="outlined"
                       onClick={() => {
                         removeSplitDraft(invoice.id, draft.key);
                       }}
@@ -1974,14 +1964,14 @@ export function MemberInvoiceWorkbenchPage() {
                       }
                     >
                       移除
-                    </button>
-                  </div>
+                    </Button>
+                  </Box>
                 </div>
               ))}
               <div className="inline-actions">
-                <button
+                <Button
                   type="button"
-                  className="button button-secondary"
+                  variant="outlined"
                   onClick={() => {
                     addSplitDraft(invoice.id, task.member_ids);
                   }}
@@ -1991,10 +1981,10 @@ export function MemberInvoiceWorkbenchPage() {
                   }
                 >
                   新增分摊对象
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="button button-secondary"
+                  variant="outlined"
                   onClick={() => {
                     void handleSplitSave(item);
                   }}
@@ -2013,7 +2003,7 @@ export function MemberInvoiceWorkbenchPage() {
                   }
                 >
                   {updatingSplitInvoiceId === invoice.id ? "保存中..." : "保存分摊方案"}
-                </button>
+                </Button>
               </div>
               <p className="field-hint">
                 {(() => {
@@ -2054,12 +2044,15 @@ export function MemberInvoiceWorkbenchPage() {
           {item.relatedExpenseDetails.length > 0 && task ? (
             <p className="field-hint">
               当前发票已有 {item.relatedExpenseDetails.length} 条与你相关的费用明细，可直接在本页的
-              <Link
-                className="route-link route-link-secondary"
+              <Button
+                component={Link}
+                variant="text"
+                size="small"
                 to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations")}
+                sx={{ minWidth: "auto", px: 0.75, verticalAlign: "baseline" }}
               >
                 费用确认区
-              </Link>
+              </Button>
               提交确认或异议。
             </p>
           ) : null}
@@ -2068,9 +2061,9 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>关联附件与缺失项</h4>
-            <span className="status-chip">
+            <StatusBadge tone="info">
               附件 {item.supportingMaterials.length} 份 / 缺失 {item.missingMaterials.length} 项
-            </span>
+            </StatusBadge>
           </div>
           {item.supportingMaterials.length > 0 ? (
             <ul className="member-status-message-list">
@@ -2099,20 +2092,20 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>下一步动作</h4>
-            <span className="status-chip">优先留在当前工作台</span>
+            <StatusBadge tone="info">优先留在当前工作台</StatusBadge>
           </div>
           <div className="inline-actions">
             {task ? (
               <>
-                <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-upload")}>
+                <Button component={Link} variant="outlined" size="small" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-upload")}>
                   去上传区补材料
-                </Link>
-                <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations")}>
+                </Button>
+                <Button component={Link} variant="outlined" size="small" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations")}>
                   去确认区处理
-                </Link>
-                <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices")}>
+                </Button>
+                <Button component={Link} variant="outlined" size="small" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices")}>
                   回到当前发票列表
-                </Link>
+                </Button>
               </>
             ) : null}
           </div>
@@ -2154,7 +2147,7 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>基础元数据</h4>
-            <span className="status-chip">只读摘要</span>
+            <StatusBadge tone="info">只读摘要</StatusBadge>
           </div>
           <ul className="member-status-message-list">
             <li>
@@ -2171,7 +2164,7 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>当前分摊去向</h4>
-            <span className="status-chip">{item.splits.length} 条</span>
+            <StatusBadge tone="info">{item.splits.length} 条</StatusBadge>
           </div>
           {item.splits.length > 0 ? (
             <ul className="member-status-message-list">
@@ -2190,7 +2183,7 @@ export function MemberInvoiceWorkbenchPage() {
         <section className="member-status-section">
           <div className="member-status-section-header">
             <h4>必要附件摘要</h4>
-            <span className="status-chip">{item.supporting_materials.length} 类</span>
+            <StatusBadge tone="info">{item.supporting_materials.length} 类</StatusBadge>
           </div>
           <p className="field-hint">{formatSupportingMaterialSummary(item)}</p>
         </section>
@@ -2212,9 +2205,9 @@ export function MemberInvoiceWorkbenchPage() {
           meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
           actions={(
             <div className="page-actions">
-              <Link className="button button-secondary" to="/member">
+              <Button component={Link} variant="outlined" to="/member">
                 返回任务列表
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -2253,22 +2246,21 @@ export function MemberInvoiceWorkbenchPage() {
           action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
         >
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>目标任务</span>
-              <select
-                aria-label="目标任务"
-                value={selectedTaskId}
-                onChange={(event) => {
-                  handleTaskChange(event.target.value);
-                }}
-              >
-                {visibleTasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.competition_name}（{task.id}）
-                  </option>
-                ))}
-              </select>
-            </label>
+            <TextField
+              select
+              label="目标任务"
+              aria-label="目标任务"
+              value={selectedTaskId}
+              onChange={(event) => {
+                handleTaskChange(event.target.value);
+              }}
+            >
+              {visibleTasks.map((task) => (
+                <MenuItem key={task.id} value={task.id}>
+                  {task.competition_name}（{task.id}）
+                </MenuItem>
+              ))}
+            </TextField>
             {selectedTask ? (
               <dl className="task-meta-grid member-status-meta-grid">
                 <div>
@@ -2308,9 +2300,9 @@ export function MemberInvoiceWorkbenchPage() {
               <li key={action.id}>
                 <strong>{action.title}</strong>
                 <span>{action.detail}</span>
-                <Link className="route-link route-link-secondary" to={action.to}>
+                <Button component={Link} variant="text" size="small" to={action.to} sx={{ justifyContent: "flex-start", width: "fit-content", px: 0 }}>
                   {action.label}
-                </Link>
+                </Button>
               </li>
             ))}
           </ul>
@@ -2355,30 +2347,28 @@ export function MemberInvoiceWorkbenchPage() {
                 noValidate
               >
                 <div className="admin-form-grid">
-                  <label className="field-stack">
-                    <span>材料类型</span>
-                    <select
-                      aria-label="工作台上传材料类型"
-                      value={uploadFormState.materialType}
-                      onChange={(event) => {
-                        updateUploadField("materialType", event.target.value as MaterialType);
-                      }}
-                    >
-                      {MATERIAL_TYPE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {uploadValidationErrors.materialType ? (
-                      <span className="field-error">{uploadValidationErrors.materialType}</span>
-                    ) : (
-                      <span className="field-hint">请选择最接近的材料类型，便于识别、缺失项检查和后续复核。</span>
-                    )}
-                  </label>
+                  <TextField
+                    select
+                    label="材料类型"
+                    aria-label="工作台上传材料类型"
+                    value={uploadFormState.materialType}
+                    onChange={(event) => {
+                      updateUploadField("materialType", event.target.value as MaterialType);
+                    }}
+                    error={Boolean(uploadValidationErrors.materialType)}
+                    helperText={uploadValidationErrors.materialType ?? "请选择最接近的材料类型，便于识别、缺失项检查和后续复核。"}
+                  >
+                    {MATERIAL_TYPE_OPTIONS.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
 
-                  <label className="field-stack">
-                    <span>上传文件</span>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                      上传文件
+                    </Typography>
                     <FileDropZone
                       files={uploadFormState.files}
                       onChange={(files) => {
@@ -2391,9 +2381,11 @@ export function MemberInvoiceWorkbenchPage() {
                       hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会逐文件返回成功或失败结果。"
                     />
                     {uploadValidationErrors.files ? (
-                      <span className="field-error">{uploadValidationErrors.files}</span>
+                      <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                        {uploadValidationErrors.files}
+                      </Typography>
                     ) : null}
-                  </label>
+                  </Box>
                 </div>
 
                 {isUploading ? <LinearProgress aria-label="工作台上传进度" /> : null}
@@ -2402,9 +2394,9 @@ export function MemberInvoiceWorkbenchPage() {
                   <p className="field-hint">
                     上传成功后会保留原始文件并刷新当前任务视图；如存在部分失败，页面会显式列出每个失败文件的真实原因。
                   </p>
-                  <button className="route-link" type="submit" disabled={isUploading}>
+                  <Button variant="contained" type="submit" disabled={isUploading}>
                     {isUploading ? "正在上传..." : "上传到当前任务"}
-                  </button>
+                  </Button>
                 </div>
               </form>
             ) : (
@@ -2493,9 +2485,9 @@ export function MemberInvoiceWorkbenchPage() {
                           <p className="task-card-id">费用明细 {item.detail.split_id}</p>
                           <h2>{item.detail.invoice.invoice_number}</h2>
                         </div>
-                        <span className={`status-chip member-status-chip-${currentStatus}`}>
+                        <StatusBadge tone={currentStatus === "confirmed" ? "success" : currentStatus === "disputed" ? "danger" : "warning"}>
                           {formatConfirmationStatus(currentStatus)}
-                        </span>
+                        </StatusBadge>
                       </div>
 
                       <dl className="task-meta-grid member-status-meta-grid">
@@ -2525,69 +2517,72 @@ export function MemberInvoiceWorkbenchPage() {
                         </div>
                       </dl>
 
-                      <label className="field-stack confirmation-reason-field">
-                        <span>异议原因</span>
-                        <textarea
-                          aria-label={`工作台异议原因 ${item.detail.split_id}`}
-                          value={disputeReason}
-                          placeholder="如果金额、归属或附件关联不正确，请写明原因。"
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            setDisputeReasons((current) => ({
-                              ...current,
-                              [item.detail.split_id]: nextValue,
-                            }));
-                            setDisputeErrors((current) => {
-                              if (!(item.detail.split_id in current)) {
-                                return current;
-                              }
-                              const next = { ...current };
-                              delete next[item.detail.split_id];
-                              return next;
-                            });
-                          }}
-                        />
-                        {disputeError ? <span className="field-error">{disputeError}</span> : null}
-                      </label>
+                      <TextField
+                        label="异议原因"
+                        aria-label={`工作台异议原因 ${item.detail.split_id}`}
+                        value={disputeReason}
+                        placeholder="如果金额、归属或附件关联不正确，请写明原因。"
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setDisputeReasons((current) => ({
+                            ...current,
+                            [item.detail.split_id]: nextValue,
+                          }));
+                          setDisputeErrors((current) => {
+                            if (!(item.detail.split_id in current)) {
+                              return current;
+                            }
+                            const next = { ...current };
+                            delete next[item.detail.split_id];
+                            return next;
+                          });
+                        }}
+                        error={Boolean(disputeError)}
+                        helperText={disputeError}
+                        multiline
+                        minRows={3}
+                        fullWidth
+                      />
 
                       <div className="inline-actions">
-                        <button
-                          className="route-link"
+                        <Button
                           type="button"
+                          variant="contained"
                           disabled={isSubmitting}
                           onClick={() => {
                             void handleConfirmationSubmit(item, "confirmed");
                           }}
                         >
                           {isSubmitting ? "提交中..." : "确认这笔费用"}
-                        </button>
-                        <button
-                          className="route-link route-link-secondary"
+                        </Button>
+                        <Button
                           type="button"
+                          variant="outlined"
                           disabled={isSubmitting}
                           onClick={() => {
                             void handleConfirmationSubmit(item, "disputed");
                           }}
                         >
                           {isSubmitting ? "提交中..." : "提交异议"}
-                        </button>
-                        <Link
-                          className="route-link route-link-secondary"
+                        </Button>
+                        <Button
+                          component={Link}
+                          variant="outlined"
                           to={buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${item.detail.invoice.id}`)}
                         >
                           查看对应发票上下文
-                        </Link>
+                        </Button>
                         {isStale ? (
-                          <button
-                            className="route-link route-link-secondary"
+                          <Button
                             type="button"
+                            variant="outlined"
                             onClick={() => {
                               setStaleConfirmationSplitId(null);
                               setWorkbenchReloadVersion((current) => current + 1);
                             }}
                           >
                             重新加载明细
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
 
@@ -2615,9 +2610,9 @@ export function MemberInvoiceWorkbenchPage() {
           title="当前任务下还没有可查看的发票"
           description="先上传本人发票材料，或者等待任务内其他成员产生可共享查看的发票摘要。"
           action={(
-            <Link className="button button-primary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
+            <Button component={Link} variant="contained" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
               去上传区
-            </Link>
+            </Button>
           )}
         />
       ) : null}
@@ -2630,9 +2625,9 @@ export function MemberInvoiceWorkbenchPage() {
                 <p className="eyebrow">Invoice Queue</p>
                 <h2>选择当前要处理的发票</h2>
               </div>
-              <span className="status-chip">
+              <StatusBadge tone="info">
                 本人 {workbenchState.items.length} 张 / 共享 {sharedInvoices.length} 张
-              </span>
+              </StatusBadge>
             </div>
             <p className="field-hint">
               左侧固定选择当前发票，右侧保持完整上下文和操作区，避免在长列表里上下滚动寻找同一张票据。
@@ -2646,26 +2641,28 @@ export function MemberInvoiceWorkbenchPage() {
                     materialId: item.material.material_id,
                   });
                   const abnormalReasons = collectAbnormalReasons(item);
-                  return (
-                    <li key={item.material.material_id}>
-                      <button
+                    return (
+                      <li key={item.material.material_id}>
+                      <Button
                         type="button"
-                        className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
+                        variant={isSelected ? "contained" : "outlined"}
+                        fullWidth
                         onClick={() => {
                           setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
                             kind: "own",
                             materialId: item.material.material_id,
                           }));
                         }}
+                        sx={{ justifyContent: "flex-start", textAlign: "left", px: 2, py: 1.5, textTransform: "none" }}
                       >
                         <div className="task-card-header">
                           <div>
                             <p className="task-card-id">本人发票 / {item.material.material_id}</p>
                             <h3>{item.invoice?.invoice_number ?? item.material.original_filename}</h3>
                           </div>
-                          <span className="status-chip">
+                          <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>
                             {abnormalReasons.length > 0 ? `${abnormalReasons.length} 条待处理` : "状态稳定"}
-                          </span>
+                          </StatusBadge>
                         </div>
                         <dl className="task-meta-grid invoice-editor-summary-grid">
                           <div>
@@ -2685,7 +2682,7 @@ export function MemberInvoiceWorkbenchPage() {
                             <dd>{item.supportingMaterials.length} / {item.missingMaterials.length}</dd>
                           </div>
                         </dl>
-                      </button>
+                      </Button>
                     </li>
                   );
                 })}
@@ -2696,7 +2693,7 @@ export function MemberInvoiceWorkbenchPage() {
               <>
                 <div className="member-status-section-header">
                   <h4>任务内其他成员已上传发票</h4>
-                  <span className="status-chip">{sharedInvoices.length} 张</span>
+                  <StatusBadge tone="info">{sharedInvoices.length} 张</StatusBadge>
                 </div>
                 <p className="field-hint">
                   这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。
@@ -2709,22 +2706,24 @@ export function MemberInvoiceWorkbenchPage() {
                     });
                     return (
                       <li key={item.invoice_id}>
-                        <button
+                        <Button
                           type="button"
-                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
+                          variant={isSelected ? "contained" : "outlined"}
+                          fullWidth
                           onClick={() => {
                             setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
                               kind: "shared",
                               invoiceId: item.invoice_id,
                             }));
                           }}
+                          sx={{ justifyContent: "flex-start", textAlign: "left", px: 2, py: 1.5, textTransform: "none" }}
                         >
                           <div className="task-card-header">
                             <div>
                               <p className="task-card-id">共享摘要 / {item.invoice_id}</p>
                               <h3>{item.invoice_number}</h3>
                             </div>
-                            <span className="status-chip">{formatExpenseType(item.expense_type)}</span>
+                            <StatusBadge tone="info">{formatExpenseType(item.expense_type)}</StatusBadge>
                           </div>
                           <dl className="task-meta-grid invoice-editor-summary-grid">
                             <div>
@@ -2744,7 +2743,7 @@ export function MemberInvoiceWorkbenchPage() {
                               <dd>{formatSupportingMaterialSummary(item)}</dd>
                             </div>
                           </dl>
-                        </button>
+                        </Button>
                       </li>
                     );
                   })}
@@ -2803,15 +2802,17 @@ export function MemberInvoiceWorkbenchPage() {
                 <p className="field-hint">{missingMaterial.message}</p>
 
                 <div className="inline-actions">
-                  <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
+                  <Button component={Link} variant="outlined" size="small" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
                     去上传区补材料
-                  </Link>
-                  <Link
-                    className="route-link route-link-secondary"
+                  </Button>
+                  <Button
+                    component={Link}
+                    variant="outlined"
+                    size="small"
                     to={buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${missingMaterial.invoice_id}`)}
                   >
                     查看对应发票上下文
-                  </Link>
+                  </Button>
                 </div>
               </article>
             ))

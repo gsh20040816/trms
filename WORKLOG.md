@@ -1,5 +1,64 @@
 # WORKLOG
 
+## 2026-04-29 19:02 - Migrate remaining member workbench controls to Material 3
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“收口成员发票工作台剩余非 M3 表单与状态控件”。
+- 继续调整 [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 将成员工作台发票详情区中的材料类型、手动补录、分摊编辑、上传区、确认区全面切换到 MUI `Button` / `TextField` / `MenuItem` / `StatusBadge`
+  - 将“下一步动作”“待处理事项”“缺失材料跳转”等残余 `route-link` 按钮替换为 MUI `Button`
+  - 将共享发票选择列表与详情内残余 `status-chip` / 原生按钮一并收口
+  - 当前 `member-invoice-workbench.tsx` 已不再保留本轮范围内的 legacy `input` / `select` / `textarea` / `button` 或 `route-link` / `button-*` / `status-chip`
+- 同步更新测试：
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+  - [web/src/app/member-legacy-route-redirects.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-legacy-route-redirects.test.tsx)
+  - 适配 MUI `Select` 的 `combobox` 交互和 `TextField` 的真实输入节点查询
+
+### 根因
+- 上一轮虽然把工作台骨架改成了左侧列表 + 右侧详情，但详情面板和上传/确认区里仍残留大量原生控件与 legacy 按钮样式：
+  - 原生 `select` / `input` / `textarea`
+  - `.route-link`
+  - `.button-secondary`
+  - `.status-chip`
+- 这会导致同一页面内部视觉和交互语义割裂，也让测试同时混用原生表单与 MUI 语义。
+
+### 关键改动点
+- 只在 `member-invoice-workbench.tsx` 内完成控件级收口，不改后端 API，也不跨到其他成员页面。
+- 为避免 MUI `TextField` 查询命中外层 wrapper，给文本输入的真实 `htmlInput` 补充 `aria-label`，同时把 `Select` 类交互统一到 `combobox` 语义。
+
+### 风险与影响面
+- 本轮影响到成员工作台中的大量测试查询方式，尤其是：
+  - `getByLabelText` 对原生输入的断言
+  - `fireEvent.change` 对 MUI `Select` 的旧用法
+- 若后续继续调整工作台布局或文案，这些测试仍需保持按“当前详情面板作用域”断言，而不是回到全页唯一元素假设。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- src/app/member-invoice-workbench.test.tsx src/app/main-flow-e2e-placeholder.test.tsx src/app/member-legacy-route-redirects.test.tsx`
+    - 3 个文件、17 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/app/member-invoice-workbench.tsx src/app/member-invoice-workbench.test.tsx src/app/main-flow-e2e-placeholder.test.tsx src/app/member-legacy-route-redirects.test.tsx`
+- 已通过前端 build：
+  - `cd web && npm run build`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
+### 假设
+- 本轮把“剩余非 M3 控件”限定为 `member-invoice-workbench.tsx` 内仍然直接参与业务交互的控件；不把 `.invoice-material-button` 等列表布局类纳入这一轮的清理目标。
+
 ## 2026-04-29 18:55 - Commit list-detail member invoice workbench round
 
 ### 完成内容
