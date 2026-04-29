@@ -1,5 +1,56 @@
 # WORKLOG
 
+## 2026-04-29 15:26 - Evaluate Browser Use boundaries for a later-stage assisted finance filing flow
+
+### 完成内容
+- 新增评估文档 [docs/Browser Use后续阶段方案评估.md](/home/gsh/workspace/TRMS/docs/Browser%20Use%E5%90%8E%E7%BB%AD%E9%98%B6%E6%AE%B5%E6%96%B9%E6%A1%88%E8%AF%84%E4%BC%B0.md)，明确后续若评估 Browser Use，仅可作为“管理员在场的辅助填表器”，而不是无人值守自动提交器。
+- 文档已记录三类关键边界：
+  - Browser Use 自动填报的主要风险：数据事实漂移、页面脆弱性、不可逆误操作、凭据泄露和审计不足；
+  - 必须保留的人工确认点：任务版本、目标页面、字段映射预览、高风险写入和最终提交；
+  - 必须立即退出并转人工处理的条件：草稿版本过期、页面结构不匹配、关键字段歧义、验证码/二次认证、重复单据风险和未建模异常。
+- 文档同时明确“不保存财务系统登录态”的硬边界，并给出后续最小落地顺序：
+  - 先固化 `finance_draft` 输入与版本；
+  - 再做映射预览与人工确认；
+  - 再评估受控本地执行器；
+  - 最后才考虑更深的页面自动化。
+- `TASKS.md` 中“评估 Browser Use 后续阶段方案”已标记完成。
+
+### 根因
+- 虽然仓库早已把 FR-011 标记为第一阶段范围外，但目前只有“第一阶段不做”的边界说明，还缺少一份面向后续阶段的工程化评估，去回答：
+  - 为什么不能直接把 Browser Use 接到现有导出或 worker 流程上；
+  - 哪些人工确认点不能省；
+  - 出现什么情况时必须立即停止自动化。
+- 如果这层边界不提前写清楚，后续很容易把“可导出财务草稿”误延伸成“可以安全自动填报”，从而在凭据治理、审计和误操作控制上留下高风险空白。
+
+### 关键改动点
+- 新增：
+  - `docs/Browser Use后续阶段方案评估.md`
+- 修改：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只补后续阶段评估文档，不改后端、前端、CLI、导出任务或异步 worker 逻辑。
+- 文档结论强调了当前更适合“受控本地辅助填表”而不是“服务端长期持有登录态自动提交”；这属于当前架构与安全边界下的保守判断，后续若学校财务系统提供正式 API 或稳定沙箱，应重新评估。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、78 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+- 验证过程中存在现有 warning，但未导致失败：
+  - `pytest` 中仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 的弃用告警；
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning。
+
+### 假设
+- 当前评估默认“Browser Use 后续阶段方案”指的是辅助学校财务系统网页填表，而不是调用学校官方 API。
+- 当前评估默认高风险动作中的“最终提交”仍保留人工确认；若未来产品明确要求自动点击提交，则必须新增独立任务重新定义审计、回滚和审批责任边界。
+
 ## 2026-04-29 15:43 - Evaluate when the invoice validation module should move toward configurable policy or DSL
 
 ### 完成内容
