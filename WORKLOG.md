@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-29 12:49 - Rework member upload page with FileDropZone and snackbar feedback
+
+### 完成内容
+- 将 `web/src/app/member-material-upload.tsx` 的文件选择区改为复用 `web/src/components/FileDropZone.tsx`：
+  - 保留 `aria-label="上传文件"` 与 `aria-label="待上传文件列表"`，不破坏现有测试和提交逻辑；
+  - 已选文件展示改由 M3 拖拽上传卡内部负责，不再手写单独 `<input type="file">` 列表。
+- 提交反馈改为 Snackbar：
+  - 全部成功时弹出成功提示；
+  - 部分成功时弹出 warning，提示成功/失败数量；
+  - 整批失败或接口拒绝时弹出 error，不再在页面中额外插入一张提交错误红卡。
+- 保留逐文件审查结果区：
+  - 页面仍展示成功材料卡片、重复状态和失败文件列表，满足“逐文件结果可见”的要求；
+  - `Upload Result` 英文眉文案改回中文“上传结果”。
+- 同步更新 `web/src/app/member-material-upload.test.tsx`：
+  - 上传成功用例继续覆盖逐文件结果；
+  - 后端拒绝用例改为断言 Snackbar 反馈，而不是旧的页面级 `ApiErrorNotice`。
+- `TASKS.md` 中“重写成员材料上传交互（拖拽 Dialog + Snackbar）”已标记完成。
+
+### 根因
+- 上传页此前仍是原生 file input + 页面内错误卡片，和已建立的 Material 3 上传基础组件、全局 Snackbar 基础设施脱节。
+- 更重要的是，上传动作的成败属于“瞬时交互反馈”，继续用页面中插入一块错误卡片会打断用户对当前任务和逐文件结果的阅读节奏。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/member-material-upload.tsx`
+  - `web/src/app/member-material-upload.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只改成员专项上传页，不改工作台内上传区；`/member/invoices/workbench` 接入 `FileDropZone` 仍留给后续独立任务。
+- 页面整体仍保留现有表单结构和原生 select；后续“业务表单整体迁移到 MUI”任务会继续收口。
+- 由于引入 Snackbar 汇总，提交被后端拒绝时页面不会再额外显示同一份错误卡片，但错误信息仍然保留且更靠近交互时点。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：420 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 当前页的“单任务专项上传入口”定位仍保留，因此先只接入 `FileDropZone` 和 Snackbar，不把它直接并回工作台；后续旧二级路由收口时再统一处理入口层级。
+- Snackbar 只承担即时反馈职责，逐文件详细结果仍然保留在页面内，避免用户错过重复文件编号或失败原因。
+
 ## 2026-04-29 12:43 - Rewrite member invoice workbench into tabbed single-task workspace
 
 ### 完成内容

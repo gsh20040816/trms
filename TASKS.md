@@ -1201,7 +1201,7 @@
     - 视觉与新 M3 主题对齐：surface、elevation、Chip 状态色、Card 圆角、Typography scale
     - `npm run lint` / `npm test` / `npm run build` 全部通过
 
-- [ ] 重写成员材料上传交互（拖拽 Dialog + Snackbar）
+- [x] 重写成员材料上传交互（拖拽 Dialog + Snackbar）
   - Done when:
     - `/member/materials/upload` 改为 M3 拖拽上传卡 + 单文件状态显示
     - 上传成功/失败反馈通过 Snackbar 推送，不再用页面级红色卡片

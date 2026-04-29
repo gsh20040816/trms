@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../lib/api/client";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { FileDropZone } from "../components/FileDropZone";
+import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
 import type {
   MaterialBatchUploadResponse,
@@ -159,15 +161,14 @@ function validateUploadForm(
 
 export function MemberMaterialUploadPage() {
   const session = useAuthSession();
+  const { showError, showSuccess, showWarning } = useSnackbar();
   const [searchParams] = useSearchParams();
   const preferredTaskId = searchParams.get("taskId");
   const [pageState, setPageState] = useState<MemberMaterialUploadPageState>({ status: "loading" });
   const [formState, setFormState] = useState<UploadFormState>(() => buildInitialFormState());
   const [validationErrors, setValidationErrors] = useState<UploadValidationErrors>({});
-  const [submitError, setSubmitError] = useState<unknown>(null);
   const [uploadResult, setUploadResult] = useState<MaterialBatchUploadResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [fileInputKey, setFileInputKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,7 +243,6 @@ export function MemberMaterialUploadPage() {
       ...current,
       files: [],
     }));
-    setFileInputKey((current) => current + 1);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -252,7 +252,7 @@ export function MemberMaterialUploadPage() {
       return;
     }
 
-    setSubmitError(null);
+    setUploadResult(null);
 
     const errors = validateUploadForm(formState, pageState.uploadableTasks);
     setValidationErrors(errors);
@@ -273,13 +273,22 @@ export function MemberMaterialUploadPage() {
       const response = await trmsApi.submitTaskMaterials(formState.taskId, requestBody);
       setUploadResult(response);
       resetSelectedFiles();
+      if (response.status === "success") {
+        showSuccess(`上传成功：${response.items.length} 个文件已归档到当前任务。`);
+      } else {
+        const failureCount = response.failures?.length ?? 0;
+        showWarning(`上传完成：${response.items.length} 个成功，${failureCount} 个失败。`);
+      }
     } catch (error) {
       const failedBatch = extractFailedBatchUploadResponse(error);
       if (failedBatch) {
         setUploadResult(failedBatch);
         resetSelectedFiles();
+        const failureCount = failedBatch.failures?.length ?? 0;
+        showError(`上传失败：${failureCount} 个文件未通过，请查看逐文件原因。`);
       } else {
-        setSubmitError(error);
+        const message = error instanceof ApiError ? error.summary.message : "材料上传失败，请稍后重试。";
+        showError(message);
       }
     } finally {
       setIsSubmitting(false);
@@ -417,27 +426,23 @@ export function MemberMaterialUploadPage() {
                 )}
               </label>
 
-              <label className="field-stack">
+              <div className="field-stack">
                 <span>上传文件</span>
-                <input
-                  aria-label="上传文件"
-                  key={fileInputKey}
-                  name="files"
-                  type="file"
-                  multiple
-                  accept={MATERIAL_FILE_ACCEPT}
-                  onChange={(event) => {
-                    updateField("files", Array.from(event.target.files ?? []));
+                <FileDropZone
+                  files={formState.files}
+                  onChange={(files) => {
+                    updateField("files", files);
                   }}
+                  accept={MATERIAL_FILE_ACCEPT}
+                  disabled={isSubmitting}
+                  ariaLabel="上传文件"
+                  fileListAriaLabel="待上传文件列表"
+                  hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会分别提示每个文件的结果。"
                 />
                 {validationErrors.files ? (
                   <span className="field-error">{validationErrors.files}</span>
-                ) : (
-                  <span className="field-hint">
-                    支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会分别提示每个文件的结果。
-                  </span>
-                )}
-              </label>
+                ) : null}
+              </div>
             </div>
 
             {selectedTask ? (
@@ -460,19 +465,6 @@ export function MemberMaterialUploadPage() {
                 </div>
               </dl>
             ) : null}
-
-            {formState.files.length > 0 ? (
-              <ul className="upload-file-list" aria-label="待上传文件列表">
-                {formState.files.map((file) => (
-                  <li key={`${file.name}:${file.size}:${file.lastModified}`}>
-                    <strong>{file.name}</strong>
-                    <span>{file.type || "未知类型"}</span>
-                    <span>{file.size} bytes</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
             <div className="admin-form-footer">
               <p className="field-hint">
                 上传结果会显式展示材料编号、重复状态和逐文件失败原因，不把部分失败伪装成全部成功。
@@ -485,13 +477,11 @@ export function MemberMaterialUploadPage() {
         </form>
       ) : null}
 
-      {submitError ? <ApiErrorNotice error={submitError} /> : null}
-
       {uploadResult ? (
         <section className="status-card auth-panel">
           <div className="admin-form-header">
             <div>
-              <p className="eyebrow">Upload Result</p>
+              <p className="eyebrow">上传结果</p>
               <h2>上传结果</h2>
             </div>
             <span className={`status-chip upload-status-chip upload-status-${uploadResult.status}`}>

@@ -292,7 +292,7 @@ describe("MemberMaterialUploadPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
 
-    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
-    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(await screen.findByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "上传结果" })).not.toBeInTheDocument();
   });
 });
