@@ -23,11 +23,11 @@ import {
 import { FileDropZone } from "../components/FileDropZone";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
+import { formatMaterialType } from "../lib/ui-text";
 import { findOversizedFile, MAX_UPLOAD_FILE_BYTES } from "../lib/upload-validation";
 import type {
   MaterialBatchUploadResponse,
   MaterialRecord,
-  MaterialType,
   ReimbursementTask,
   SubmissionChannel,
   TaskStatus,
@@ -41,24 +41,13 @@ type MemberMaterialUploadPageState =
 
 type UploadFormState = {
   taskId: string;
-  materialType: MaterialType;
   files: File[];
 };
 
 type UploadValidationErrors = Partial<Record<keyof UploadFormState, string>>;
 
 const WEB_CHANNEL: SubmissionChannel = "web";
-const DEFAULT_MATERIAL_TYPE: MaterialType = "invoice";
 const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
-
-const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
-  { value: "invoice", label: "发票" },
-  { value: "payment_record", label: "支付记录" },
-  { value: "competition_notice", label: "比赛通知" },
-  { value: "itinerary", label: "行程单" },
-  { value: "order_screenshot", label: "订单截图" },
-  { value: "other_attachment", label: "其他附件" },
-];
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   draft: "草稿",
@@ -72,7 +61,6 @@ const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 function buildInitialFormState(): UploadFormState {
   return {
     taskId: "",
-    materialType: DEFAULT_MATERIAL_TYPE,
     files: [],
   };
 }
@@ -153,11 +141,6 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatMaterialType(materialType: MaterialType) {
-  const matched = MATERIAL_TYPE_OPTIONS.find((option) => option.value === materialType);
-  return matched?.label ?? materialType;
-}
-
 function buildUploadResultTone(status: MaterialBatchUploadResponse["status"]) {
   if (status === "failed") {
     return "warning" as const;
@@ -183,9 +166,6 @@ function validateUploadForm(
 
   if (!uploadableTasks.some((task) => task.id === formState.taskId)) {
     errors.taskId = "请选择一个当前仍开放提交的报销任务。";
-  }
-  if (!MATERIAL_TYPE_OPTIONS.some((option) => option.value === formState.materialType)) {
-    errors.materialType = "请选择受支持的材料类型。";
   }
   if (formState.files.length === 0) {
     errors.files = "至少选择一个要上传的文件。";
@@ -303,7 +283,6 @@ export function MemberMaterialUploadPage() {
     const requestBody = new FormData();
     requestBody.set("submitter_id", memberSession.actorId);
     requestBody.set("channel", WEB_CHANNEL);
-    requestBody.set("material_type", formState.materialType);
     formState.files.forEach((file) => {
       requestBody.append("files", file);
     });
@@ -353,7 +332,7 @@ export function MemberMaterialUploadPage() {
         <PageHeader
           eyebrow="材料提交"
           title="成员材料上传"
-          description="当前页是单任务发票工作台下的专项上传入口，用于补充发票或附件材料。"
+          description="直接上传发票、压缩包或辅助材料；系统会先接收文件，再由 AI 识别类型并提示缺失项。"
           actions={(
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
               <StatusBadge tone="info">当前可见任务 {visibleTaskCount} 个</StatusBadge>
@@ -404,7 +383,7 @@ export function MemberMaterialUploadPage() {
         >
           <SectionCard
             title="选择任务并上传文件"
-            description="上传结果会显式展示材料编号、重复状态和逐文件失败原因，不把部分失败伪装成全部成功。"
+            description="当前入口不再要求你先判断材料类型；上传后会显式展示材料编号、识别调度状态和逐文件失败原因。"
             action={<StatusBadge tone="info">开放任务 {uploadableTasks.length} 个</StatusBadge>}
           >
             <Stack spacing={2.5}>
@@ -445,24 +424,13 @@ export function MemberMaterialUploadPage() {
                 />
 
                 <TextField
-                  select
-                  label="材料类型"
-                  aria-label="材料类型"
-                  name="material-type"
-                  value={formState.materialType}
-                  onChange={(event) => {
-                    updateField("materialType", event.target.value as MaterialType);
-                  }}
-                  error={Boolean(validationErrors.materialType)}
-                  helperText={validationErrors.materialType ?? "请选择最接近的材料类型，便于后续整理和复核。"}
+                  label="识别策略"
+                  name="recognition-strategy"
+                  value="上传后自动识别材料类型"
+                  disabled
+                  helperText="系统会先接收文件，再识别是发票、支付记录、比赛通知或其他附件。"
                   fullWidth
-                >
-                  {MATERIAL_TYPE_OPTIONS.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                />
               </Box>
 
               <Box>
@@ -478,7 +446,7 @@ export function MemberMaterialUploadPage() {
                   disabled={isSubmitting}
                   ariaLabel="上传文件"
                   fileListAriaLabel="待上传文件列表"
-                  hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会分别提示每个文件的结果。"
+                  hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。上传后系统会自动识别材料类型，再提示还缺哪些辅助资料。"
                 />
                 {validationErrors.files ? (
                   <Typography color="error" variant="body2" sx={{ mt: 1 }}>
@@ -535,7 +503,7 @@ export function MemberMaterialUploadPage() {
                 justifyContent="space-between"
               >
                 <Typography variant="body2" color="text.secondary">
-                  上传完成后会立即给出成功、部分成功或失败反馈。
+                  上传完成后会立即给出成功、部分成功或失败反馈；若 AI 还未识别出类型，结果会先显示为“其他附件”。
                 </Typography>
                 <Button type="submit" variant="contained" disabled={isSubmitting}>
                   {isSubmitting ? "正在上传..." : "上传材料"}
@@ -549,6 +517,7 @@ export function MemberMaterialUploadPage() {
       {uploadResult ? (
         <SectionCard
           title="上传结果"
+          description="这里展示最近一次提交的逐文件结果，以及系统当前记录下来的材料类型。"
           action={<StatusBadge tone={buildUploadResultTone(uploadResult.status)}>{formatUploadResultStatus(uploadResult.status)}</StatusBadge>}
         >
           <Stack spacing={2}>

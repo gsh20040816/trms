@@ -105,7 +105,6 @@ type SplitDraftRow = {
 };
 
 type WorkbenchUploadFormState = {
-  materialType: MaterialType;
   files: File[];
 };
 
@@ -161,7 +160,6 @@ const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
   { value: "other_attachment", label: "其他材料" },
 ];
 
-const DEFAULT_UPLOAD_MATERIAL_TYPE: MaterialType = "invoice";
 const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
 
 const FIELD_ORDER = [
@@ -310,7 +308,6 @@ function buildWorkbenchTabAnchor(taskId: string, tab: WorkbenchTab) {
 
 function buildInitialUploadFormState(): WorkbenchUploadFormState {
   return {
-    materialType: DEFAULT_UPLOAD_MATERIAL_TYPE,
     files: [],
   };
 }
@@ -738,9 +735,6 @@ function validateWorkbenchUploadForm(
 
   if (!task || task.status !== "open") {
     errors.files = "当前任务不在开放提交阶段，成员不能直接补交材料。";
-  }
-  if (!MATERIAL_TYPE_OPTIONS.some((option) => option.value === formState.materialType)) {
-    errors.materialType = "请选择受支持的材料类型。";
   }
   if (formState.files.length === 0) {
     errors.files = "至少选择一个要上传的文件。";
@@ -1346,7 +1340,6 @@ export function MemberInvoiceWorkbenchPage() {
     const requestBody = new FormData();
     requestBody.set("submitter_id", session.actorId);
     requestBody.set("channel", "web");
-    requestBody.set("material_type", uploadFormState.materialType);
     uploadFormState.files.forEach((file) => {
       requestBody.append("files", file);
     });
@@ -2336,7 +2329,7 @@ export function MemberInvoiceWorkbenchPage() {
         <div id="member-workbench-upload">
           <SectionCard
             title="上传材料与附件"
-            description="在当前任务下直接补充发票、支付记录、行程单等材料；上传完成后，下面的识别、缺失项和分摊视图会自动刷新。"
+            description="在当前任务下直接补充发票、压缩包或辅助材料；上传后系统会先接收文件，再由 AI 识别类型并刷新下面的识别、缺失项和分摊视图。"
             action={(
               <StatusBadge tone={selectedTask.status === "open" ? "info" : "neutral"}>
                 {selectedTask.status === "open" ? "当前可补交" : `当前${formatTaskStatus(selectedTask.status)}，不可补交`}
@@ -2353,22 +2346,12 @@ export function MemberInvoiceWorkbenchPage() {
               >
                 <div className="admin-form-grid">
                   <TextField
-                    select
-                    label="材料类型"
-                    aria-label="工作台上传材料类型"
-                    value={uploadFormState.materialType}
-                    onChange={(event) => {
-                      updateUploadField("materialType", event.target.value as MaterialType);
-                    }}
-                    error={Boolean(uploadValidationErrors.materialType)}
-                    helperText={uploadValidationErrors.materialType ?? "请选择最接近的材料类型，便于识别、缺失项检查和后续复核。"}
-                  >
-                    {MATERIAL_TYPE_OPTIONS.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                    label="识别策略"
+                    aria-label="工作台上传识别策略"
+                    value="上传后自动识别材料类型"
+                    disabled
+                    helperText="系统会先接收文件，再识别是发票、支付记录、比赛通知或其他附件。"
+                  />
 
                   <Box>
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -2383,7 +2366,7 @@ export function MemberInvoiceWorkbenchPage() {
                       disabled={isUploading}
                       ariaLabel="工作台上传文件"
                       fileListAriaLabel="工作台待上传文件列表"
-                      hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会逐文件返回成功或失败结果。"
+                      hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。上传后系统会自动识别材料类型，再提示还缺哪些辅助资料。"
                     />
                     {uploadValidationErrors.files ? (
                       <Typography color="error" variant="body2" sx={{ mt: 1 }}>
@@ -2397,7 +2380,7 @@ export function MemberInvoiceWorkbenchPage() {
 
                 <div className="admin-form-footer">
                   <p className="field-hint">
-                    上传成功后会保留原始文件并刷新当前任务视图；如存在部分失败，页面会显式列出每个失败文件的真实原因。
+                    上传成功后会保留原始文件并刷新当前任务视图；若 AI 还未识别出类型，结果会先显示为“其他附件”。
                   </p>
                   <Button variant="contained" type="submit" disabled={isUploading}>
                     {isUploading ? "正在上传..." : "上传到当前任务"}
@@ -2649,19 +2632,18 @@ export function MemberInvoiceWorkbenchPage() {
                     materialId: item.material.material_id,
                   });
                   const abnormalReasons = collectAbnormalReasons(item);
-                    return (
-                      <li key={item.material.material_id}>
-                      <Button
+                  return (
+                    <li key={item.material.material_id}>
+                      <button
                         type="button"
-                        variant={isSelected ? "contained" : "outlined"}
-                        fullWidth
+                        className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
+                        aria-pressed={isSelected}
                         onClick={() => {
                           setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
                             kind: "own",
                             materialId: item.material.material_id,
                           }));
                         }}
-                        sx={{ justifyContent: "flex-start", textAlign: "left", px: 2, py: 1.5, textTransform: "none" }}
                       >
                         <div className="task-card-header">
                           <div>
@@ -2690,7 +2672,7 @@ export function MemberInvoiceWorkbenchPage() {
                             <dd>{item.supportingMaterials.length} / {item.missingMaterials.length}</dd>
                           </div>
                         </dl>
-                      </Button>
+                      </button>
                     </li>
                   );
                 })}
@@ -2714,17 +2696,16 @@ export function MemberInvoiceWorkbenchPage() {
                     });
                     return (
                       <li key={item.invoice_id}>
-                        <Button
+                        <button
                           type="button"
-                          variant={isSelected ? "contained" : "outlined"}
-                          fullWidth
+                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
+                          aria-pressed={isSelected}
                           onClick={() => {
                             setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
                               kind: "shared",
                               invoiceId: item.invoice_id,
                             }));
                           }}
-                          sx={{ justifyContent: "flex-start", textAlign: "left", px: 2, py: 1.5, textTransform: "none" }}
                         >
                           <div className="task-card-header">
                             <div>
@@ -2751,7 +2732,7 @@ export function MemberInvoiceWorkbenchPage() {
                               <dd>{formatSupportingMaterialSummary(item)}</dd>
                             </div>
                           </dl>
-                        </Button>
+                        </button>
                       </li>
                     );
                   })}

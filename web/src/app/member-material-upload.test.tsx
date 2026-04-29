@@ -120,7 +120,7 @@ describe("MemberMaterialUploadPage", () => {
         const body = init.body as FormData;
         expect(body.get("submitter_id")).toBe("2250001");
         expect(body.get("channel")).toBe("web");
-        expect(body.get("material_type")).toBe("invoice");
+        expect(body.get("material_type")).toBeNull();
         expect(body.getAll("files")).toHaveLength(2);
 
         return new Promise((resolve) => {
@@ -135,6 +135,7 @@ describe("MemberMaterialUploadPage", () => {
 
     expect(await screen.findByRole("heading", { name: "成员材料上传" })).toBeInTheDocument();
     expect(await screen.findByRole("combobox", { name: "目标任务" })).toHaveTextContent("ICPC Xi'an Regional（TASK-OPEN）");
+    expect(screen.getByDisplayValue("上传后自动识别材料类型")).toBeDisabled();
     expect(screen.getByRole("link", { name: "返回当前任务工作台" })).toHaveAttribute(
       "href",
       "/member/invoices/workbench?taskId=TASK-OPEN",

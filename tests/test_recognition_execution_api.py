@@ -95,14 +95,17 @@ def upload_material(
     filename: str,
     content: bytes,
     content_type: str,
+    material_type: str | None = "invoice",
 ) -> str:
+    form_data = {
+        "submitter_id": "2250001",
+        "channel": "web",
+    }
+    if material_type is not None:
+        form_data["material_type"] = material_type
     response = client.post(
         f"/api/tasks/{task_id}/materials",
-        data={
-            "submitter_id": "2250001",
-            "channel": "web",
-            "material_type": "invoice",
-        },
+        data=form_data,
         files={"files": (filename, content, content_type)},
     )
     assert response.status_code == 201
@@ -526,6 +529,51 @@ def test_execute_recognition_task_persists_structured_llm_result(tmp_path):
     assert item["recognized_fields"]["material_type"]["value"] == "invoice"
     assert item["raw_response"]["llm"] == {"provider": "fake-openai", "attempts": 1}
     assert fake_llm.calls[0]["material_id"] == material_id
+
+
+def test_execute_recognition_task_auto_updates_default_material_type_from_recognition(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "material_type": RecognitionFieldResult(
+                    value="payment_record",
+                    source="ai",
+                    confidence=0.98,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path),
+        recognition_llm_client=fake_llm,
+    )
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename="payment-proof.png",
+        content=b"fake-image-content",
+        content_type="image/png",
+        material_type=None,
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["recognized_fields"]["material_type"]["value"] == "payment_record"
+    listed_materials = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
+    assert listed_materials.status_code == 200
+    assert listed_materials.json()["items"][0]["material_type"] == "payment_record"
+    assert fake_llm.calls[0]["material_type"] == "other_attachment"
 
 
 def test_execute_recognition_task_marks_low_confidence_result_as_needs_confirmation(tmp_path):

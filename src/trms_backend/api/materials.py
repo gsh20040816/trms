@@ -68,6 +68,10 @@ class MaterialTypeUpdateRequest(BaseModel):
     material_type: MaterialType
 
 
+def _resolve_uploaded_material_type(material_type: MaterialType | None) -> MaterialType:
+    return material_type or MaterialType.OTHER_ATTACHMENT
+
+
 def build_material_router(
     auth_repository: AuthRepository,
     task_repository: TaskRepository,
@@ -147,8 +151,8 @@ def build_material_router(
         request: Request,
         identity: Annotated[RequestIdentity, Depends(optional_request_identity)],
         channel: Annotated[SubmissionChannel, Form()],
-        material_type: Annotated[MaterialType, Form()],
         files: Annotated[list[UploadFile], File(min_length=1)],
+        material_type: Annotated[MaterialType | None, Form()] = None,
         submitter_id: Annotated[str | None, Form(min_length=1)] = None,
     ):
         uploaded_files = await read_uploaded_files(files)
@@ -157,13 +161,14 @@ def build_material_router(
             submitter_id,
             field_name="submitter_id",
         )
+        resolved_material_type = _resolve_uploaded_material_type(material_type)
         try:
             result = material_submission_service.submit_to_task(
                 task_id=task_id,
                 submitter_id=resolved_submitter_id,
                 actor_id=resolved_submitter_id,
                 channel=channel,
-                material_type=material_type,
+                material_type=resolved_material_type,
                 files=uploaded_files,
                 request_id=ensure_request_id(request),
             )
@@ -192,7 +197,7 @@ def build_material_router(
         )
         encoded_items = [
             {
-                **item.model_dump(mode="json"),
+                **(material_repository.get(item.id) or item).model_dump(mode="json"),
                 "recognition_status": recognition_status_by_material_id.get(item.id, "pending"),
             }
             for item in result.records
@@ -210,19 +215,20 @@ def build_material_router(
     async def submit_pending_assignment_materials(
         request: Request,
         channel: Annotated[SubmissionChannel, Form()],
-        material_type: Annotated[MaterialType, Form()],
         files: Annotated[list[UploadFile], File(min_length=1)],
+        material_type: Annotated[MaterialType | None, Form()] = None,
         task_id_hint: Annotated[str | None, Form()] = None,
         submitter_id_hint: Annotated[str | None, Form()] = None,
     ):
         uploaded_files = await read_uploaded_files(files)
+        resolved_material_type = _resolve_uploaded_material_type(material_type)
         result = material_submission_service.submit_pending_assignment(
             actor_id=_build_pending_assignment_actor_id(
                 channel=channel,
                 submitter_id_hint=submitter_id_hint,
             ),
             channel=channel,
-            material_type=material_type,
+            material_type=resolved_material_type,
             files=uploaded_files,
             task_id_hint=task_id_hint,
             submitter_id_hint=submitter_id_hint,
@@ -238,7 +244,7 @@ def build_material_router(
         )
         encoded_items = [
             {
-                **item.model_dump(mode="json"),
+                **(material_repository.get(item.id) or item).model_dump(mode="json"),
                 "recognition_status": recognition_status_by_material_id.get(item.id, "pending"),
             }
             for item in result.records

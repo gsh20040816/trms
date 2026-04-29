@@ -638,6 +638,7 @@
 }
 
 .invoice-material-button {
+  display: block;
   width: 100%;
   border: 1px solid rgba(17, 37, 61, 0.12);
   border-radius: 20px;
@@ -661,6 +662,12 @@
 
 .invoice-editor-summary-grid {
   margin-top: 18px;
+}
+
+.invoice-material-button .task-card-id,
+.invoice-material-button h3,
+.invoice-material-button dd {
+  overflow-wrap: anywhere;
 }
 
 .invoice-editor-empty {
@@ -1666,6 +1673,7 @@ select:focus {
 }
 
 .invoice-material-button {
+  display: block;
   width: 100%;
   padding: 16px;
   text-align: left;

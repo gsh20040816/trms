@@ -1,5 +1,89 @@
 # WORKLOG
 
+## 2026-04-29 20:51 - Simplify member upload type selection and fix invoice queue overflow
+
+### 完成内容
+- 完成新增临时任务“按简化流程收口成员上传入口并修复发票队列溢出”。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)：
+  - 新增“成员简化上传流程”任务组
+  - 将本轮完成项标记为已完成
+  - 将“辅助材料自动归票与待关联提示”“发票批量提交与撤回区”拆成后续独立任务，避免本轮无边界扩散
+- 调整后端上传入口 [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)：
+  - `POST /api/tasks/{task_id}/materials` 与 `POST /api/materials/pending-assignment` 现在允许省略 `material_type`
+  - 省略时默认按 `other_attachment` 接收，避免强迫成员先做人肉分类
+  - 上传响应在请求内识别完成后，会重新读取最新材料记录，把自动收敛后的 `material_type` 返回给前端
+- 调整识别执行器 [src/trms_backend/application/recognition_preparation.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_preparation.py)：
+  - 当材料最初以 `other_attachment` 接收，且识别结果明确给出 `material_type` 且状态为 `recognized` 时，自动把材料类型更新为识别类型
+  - 只做“默认值 -> 明确识别类型”的保守收敛，不会反向覆盖成员已显式选择或历史已确定的材料类型
+- 调整成员上传 UI：
+  - [web/src/app/member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  - 移除成员上传前必须选择“材料类型”的前置表单项
+  - 上传区文案改为“上传后自动识别材料类型，并提示缺失辅助资料”
+  - 上传结果显式提示：若当前仍显示“其他附件”，表示系统已接收但 AI 还未完成材料类型识别
+- 修复成员工作台左侧发票队列溢出：
+  - 将成员工作台发票选择项从 MUI `Button` 容器改为原生 `button.invoice-material-button`
+  - 避免按钮内部默认 `inline-flex` 把标题区和元数据网格横向挤压成竖排
+  - 调整 [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 为发票卡片标题、发票号和元数据值增加 `overflow-wrap: anywhere`
+- 调整测试：
+  - [tests/test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py)
+    - 新增省略 `material_type` 时默认按 `other_attachment` 接收的 API 测试
+  - [tests/test_recognition_execution_api.py](/home/gsh/workspace/TRMS/tests/test_recognition_execution_api.py)
+    - 新增识别结果会把默认材料类型自动收敛为 `payment_record` 的测试
+  - [web/src/app/member-material-upload.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.test.tsx)
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+    - 更新为断言上传表单不再提交 `material_type`
+    - 补充“上传后自动识别材料类型”只读提示断言
+
+### 根因
+- UI 溢出的直接根因不是“数据太长”，而是成员工作台发票队列把复杂块级内容塞进了 MUI `Button` 默认的 `inline-flex` 容器里：
+  - 标题区和元数据网格被横向压缩
+  - 长发票号和状态摘要被迫进入极窄列宽，最终出现截图里的竖排/椭圆溢出
+- 上传流程繁琐的根因也很明确：
+  - 前端在上传前强制成员选择 `material_type`
+  - 后端接口同样把 `material_type` 作为必填
+  - 这导致“系统先收材料，再由 AI 识别和提示缺失项”的简化流程根本无法成立
+
+### 关键改动点
+- 没有把“免选类型上传”实现成模糊猜测或静默强行归类。
+- 当前策略是：
+  - 上传时若成员没选类型，后端保守记为 `other_attachment`
+  - 只有当识别结果明确给出 `material_type` 且状态为 `recognized` 时，才自动更新为识别类型
+- 这意味着本轮解决的是“免前置分类 + 自动收敛明确识别类型”，还没有解决“多张发票下辅助材料自动归票”的复杂场景；该部分已拆到 `TASKS.md` 的独立后续任务。
+
+### 风险与影响面
+- 当前自动收敛只覆盖“默认 `other_attachment` -> 明确识别类型”这一条安全路径：
+  - 不会自动改动成员已主动确认过的材料类型
+  - 不会替代后续更复杂的辅助材料归票规则
+- 若运行模式为 `worker`，上传成功后的即时响应仍可能先显示 `other_attachment`，因为识别尚未完成；工作台刷新后才会看到自动收敛后的类型。这是当前异步模式下的真实边界，不做伪装。
+- 本轮没有实现：
+  - 辅助材料自动绑定到具体发票
+  - 成员侧发票批量提交 / 撤回
+  - 上传后直接形成“待关联提示”闭环
+  这些都已拆分成后续任务，避免这轮为了赶功能继续堆猜测逻辑。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_materials_api.py tests/test_recognition_execution_api.py`
+    - 50 个用例通过
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-material-upload.test.tsx src/app/member-invoice-workbench.test.tsx`
+    - 2 个测试文件、17 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：445 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
 ## 2026-04-29 20:11 - Fix invisible worker logs and DeepSeek recognition normalization in runtime
 
 ### 完成内容

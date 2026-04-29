@@ -1774,6 +1774,11 @@ describe("MemberInvoiceWorkbenchPage", () => {
       }
 
       if (url === "/api/tasks/TASK-OPEN/materials" && method === "POST") {
+        expect(init?.body).toBeInstanceOf(FormData);
+        const body = init?.body as FormData;
+        expect(body.get("submitter_id")).toBe("2250001");
+        expect(body.get("channel")).toBe("web");
+        expect(body.get("material_type")).toBeNull();
         uploadCompleted = true;
         return new Promise((resolve) => {
           resolveUpload = resolve;
@@ -1794,9 +1799,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
     renderWorkbenchRoute();
 
     expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("上传后自动识别材料类型")).toBeDisabled();
 
-    fireEvent.mouseDown(screen.getByRole("combobox", { name: "材料类型" }));
-    fireEvent.click(await screen.findByRole("option", { name: "支付记录" }));
     fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
         files: [new File(["payment"], "pay.png", { type: "image/png" })],

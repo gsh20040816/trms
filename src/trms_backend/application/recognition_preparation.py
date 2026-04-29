@@ -23,11 +23,17 @@ from trms_backend.application.recognition_runtime import (
     RecognitionLlmCapabilityStatus,
 )
 from trms_backend.domain.audit_logs import AuditLogRepository
-from trms_backend.domain.materials import MaterialFileStorage, MaterialRecord, MaterialRepository
+from trms_backend.domain.materials import (
+    MaterialFileStorage,
+    MaterialRecord,
+    MaterialRepository,
+    MaterialType,
+)
 from trms_backend.domain.recognitions import (
     RecognitionFailureDetail,
     RecognitionFailureStage,
     RecognitionFieldResult,
+    RecognitionFieldStatus,
     RecognitionFieldSource,
     RecognitionResultPayload,
     RecognitionTaskRecord,
@@ -247,6 +253,10 @@ class RecognitionPreparationService:
         )
         if updated is None:
             self._raise_missing_or_conflict(recognition_task_id)
+        material = self._maybe_auto_update_material_type(
+            material=material,
+            recognized_fields=recognized_fields,
+        )
         record_recognition_result_audit(
             self._audit_log_repository,
             actor_id=actor_id,
@@ -256,6 +266,38 @@ class RecognitionPreparationService:
         )
         self._metrics_collector.record_recognition_task_status(status=updated.status)
         return updated
+
+    def _maybe_auto_update_material_type(
+        self,
+        *,
+        material: MaterialRecord,
+        recognized_fields: dict[str, RecognitionFieldResult],
+    ) -> MaterialRecord:
+        if material.material_type is not MaterialType.OTHER_ATTACHMENT:
+            return material
+
+        recognized_material_type = recognized_fields.get("material_type")
+        if (
+            recognized_material_type is None
+            or recognized_material_type.status is not RecognitionFieldStatus.RECOGNIZED
+            or not isinstance(recognized_material_type.value, str)
+        ):
+            return material
+
+        try:
+            next_material_type = MaterialType(recognized_material_type.value)
+        except ValueError:
+            return material
+        if next_material_type is MaterialType.OTHER_ATTACHMENT:
+            return material
+
+        return (
+            self._material_repository.update_material_type(
+                material_id=material.id,
+                material_type=next_material_type,
+            )
+            or material
+        )
 
     def _raise_missing_or_conflict(self, recognition_task_id: str) -> None:
         current = self._recognition_task_repository.get(recognition_task_id)

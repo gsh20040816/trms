@@ -126,6 +126,29 @@ def test_submit_material_to_open_task(tmp_path):
     }
 
 
+def test_submit_material_defaults_material_type_when_client_omits_it(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    material = response.json()["items"][0]
+    assert material["material_type"] == "other_attachment"
+    assert response.json()["recognition_dispatch"]["status"] == "executed"
+
+    audit_logs = list_material_audit_logs(tmp_path, material["id"])
+    assert len(audit_logs) == 1
+    assert audit_logs[0].detail["material_type"] == "other_attachment"
+
+
 def test_submit_pending_assignment_material_without_resolved_identity(tmp_path):
     client = make_client(tmp_path)
 
