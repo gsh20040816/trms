@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
+
+import Button from "@mui/material/Button";
+import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { StatusBadge } from "../components/dashboard";
+import {
+  EmptyState,
+  PageHeader,
+  RoleWorkspace,
+  SectionCard,
+  StatCard,
+  StatusBadge,
+} from "../components/dashboard";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -405,6 +416,36 @@ function summarizeValidations(
   };
 }
 
+function buildRecognitionBadgeTone(
+  tone: ReturnType<typeof summarizeRecognition>["tone"],
+) {
+  switch (tone) {
+    case "failed":
+      return "danger" as const;
+    case "needs_confirmation":
+      return "warning" as const;
+    case "succeeded":
+      return "success" as const;
+    default:
+      return "info" as const;
+  }
+}
+
+function buildValidationBadgeTone(
+  tone: ReturnType<typeof summarizeValidations>["tone"],
+) {
+  switch (tone) {
+    case "failed":
+      return "danger" as const;
+    case "pending":
+      return "warning" as const;
+    case "passed":
+      return "success" as const;
+    default:
+      return "neutral" as const;
+  }
+}
+
 export function MemberMaterialStatusPage() {
   const session = useAuthSession();
   const { showError, showSuccess } = useSnackbar();
@@ -569,6 +610,28 @@ export function MemberMaterialStatusPage() {
     (count, item) => count + item.validations.filter((validation) => validation.status === "failed").length,
     0,
   );
+  const summaryCards = materialState.status === "ready" ? [
+    {
+      label: "本人材料",
+      value: readyItems.length,
+      description: "当前任务下由你提交、并可在此页直接跟进的材料数。",
+    },
+    {
+      label: "识别待确认",
+      value: needsConfirmationRecognitions,
+      description: "识别结果中仍需要你手动确认或补录的材料数。",
+    },
+    {
+      label: "失败校验",
+      value: failedValidations,
+      description: "当前材料关联发票上已命中的失败校验条数。",
+    },
+    {
+      label: "缺失提示",
+      value: totalMissingTips,
+      description: "当前任务里已识别出的缺失辅助材料提示条数。",
+    },
+  ] : [];
   const allowedExpenseTypes: ExpenseType[] = (() => {
     const taskExpenseTypes = selectedTask
       ? selectedTask.fee_categories.filter(isExpenseType)
@@ -673,85 +736,89 @@ export function MemberMaterialStatusPage() {
   }
 
   return (
-    <div className="page-stack">
-      <section className="status-card auth-panel">
-        <p className="eyebrow">材料状态</p>
-        <h2>成员材料状态</h2>
-        <p>
-          当前页是单任务发票工作台下的专项状态页，只展示本人材料的识别进度、发票校验异常和缺失材料提示。
-        </p>
-        <div className="inline-actions">
-          <Link
-            className="route-link"
-            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
-          >
-            返回当前任务工作台
-          </Link>
-          <Link className="route-link route-link-secondary" to="/member">
-            返回成员任务列表
-          </Link>
-          {selectedTask?.status === "open" ? (
-            <Link
-              className="route-link route-link-secondary"
-              to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
-            >
-              去上传更多材料
-            </Link>
-          ) : null}
-          <span className="status-chip">当前可见任务 {visibleTasks.length} 个</span>
-        </div>
-      </section>
-
-      {taskState.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">Loading</p>
-          <h2>正在加载可见任务</h2>
-          <p>正在读取当前成员可访问的报销任务，以便定位你自己的材料状态。</p>
+    <RoleWorkspace
+      header={(
+        <PageHeader
+          eyebrow="材料状态"
+          title="成员材料状态"
+          description="在单任务上下文中跟进本人材料的识别进度、发票校验异常和缺失材料提示。"
+          meta={`当前成员：${memberSession.displayName}${memberSession.memberCode ? `（${memberSession.memberCode}）` : ""}`}
+          actions={(
+            <div className="page-actions">
+              <StatusBadge tone="info">当前可见任务 {visibleTasks.length} 个</StatusBadge>
+              <Button
+                component={RouterLink}
+                variant="contained"
+                to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+              >
+                返回当前任务工作台
+              </Button>
+              <Button component={RouterLink} variant="outlined" to="/member">
+                返回成员任务列表
+              </Button>
+              {selectedTask?.status === "open" ? (
+                <Button
+                  component={RouterLink}
+                  variant="outlined"
+                  to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
+                >
+                  去上传更多材料
+                </Button>
+              ) : null}
+            </div>
+          )}
+        />
+      )}
+      summary={summaryCards.length > 0 ? (
+        <section className="stat-grid" aria-label="材料状态摘要">
+          {summaryCards.map((item) => (
+            <StatCard
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              description={item.description}
+            />
+          ))}
         </section>
+      ) : undefined}
+    >
+      {taskState.status === "loading" ? (
+        <SectionCard title="正在加载可见任务" description="正在读取当前成员可访问的报销任务，以便定位你自己的材料状态。" />
       ) : null}
 
       {taskState.status === "error" ? <ApiErrorNotice error={taskState.error} /> : null}
 
       {taskState.status === "ready" && visibleTasks.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">暂无任务</p>
-          <h2>当前没有可查看状态的报销任务</h2>
-          <p>管理员创建并发布相关任务后，你可以在这里查看自己的材料状态。</p>
-        </section>
+        <EmptyState
+          title="当前没有可查看状态的报销任务"
+          description="管理员创建并发布相关任务后，你可以在这里查看自己的材料状态。"
+        />
       ) : null}
 
       {taskState.status === "ready" && visibleTasks.length > 0 ? (
-        <section className="status-card auth-panel">
-          <div className="admin-form-header">
-            <div>
-              <p className="eyebrow">Task Scope</p>
-              <h2>选择要查看的任务</h2>
-            </div>
-            {selectedTask ? (
-              <span className={`status-chip task-status-chip task-status-${selectedTask.status}`}>
-                {formatTaskStatus(selectedTask.status)}
-              </span>
-            ) : null}
-          </div>
+        <SectionCard
+          title="选择要查看的任务"
+          description="这里只展示你当前可访问的任务，并只聚合你本人提交的材料。"
+          action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
+        >
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>目标任务</span>
-              <select
-                aria-label="目标任务"
-                value={selectedTaskId}
-                onChange={(event) => {
-                  resetLocalActionState();
-                  setSelectedTaskId(event.target.value);
-                }}
-              >
-                {visibleTasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.competition_name}（{task.id}）
-                  </option>
-                ))}
-              </select>
-              <span className="field-hint">这里只列出你可以查看的任务，并只汇总你本人提交的材料。</span>
-            </label>
+            <TextField
+              select
+              label="目标任务"
+              fullWidth
+              value={selectedTaskId}
+              helperText="这里只列出你可以查看的任务，并只汇总你本人提交的材料。"
+              onChange={(event) => {
+                resetLocalActionState();
+                setSelectedTaskId(event.target.value);
+              }}
+            >
+              {visibleTasks.map((task) => (
+                <MenuItem key={task.id} value={task.id}>
+                  {task.competition_name}（{task.id}）
+                </MenuItem>
+              ))}
+            </TextField>
             {selectedTask ? (
               <dl className="task-meta-grid member-status-meta-grid">
                 <div>
@@ -765,33 +832,29 @@ export function MemberMaterialStatusPage() {
               </dl>
             ) : null}
           </div>
-          {materialState.status === "ready" ? (
-            <div className="token-list" aria-label="材料状态摘要">
-              <span className="token-chip">本人材料 {materialState.items.length} 份</span>
-              <span className="token-chip">识别待确认 {needsConfirmationRecognitions} 份</span>
-              <span className="token-chip">失败校验 {failedValidations} 条</span>
-              <span className="token-chip">缺失提示 {totalMissingTips} 条</span>
-            </div>
-          ) : null}
-        </section>
+        </SectionCard>
       ) : null}
 
       {selectedTask && materialState.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">Loading</p>
-          <h2>正在汇总成员材料状态</h2>
-          <p>正在读取该任务下你本人提交的材料、识别任务和发票校验结果。</p>
-        </section>
+        <SectionCard title="正在汇总成员材料状态" description="正在读取该任务下你本人提交的材料、识别任务和发票校验结果。" />
       ) : null}
 
       {selectedTask && materialState.status === "error" ? <ApiErrorNotice error={materialState.error} /> : null}
 
       {selectedTask && materialState.status === "ready" && materialState.items.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">尚未提交</p>
-          <h2>当前任务下还没有你提交的材料</h2>
-          <p>你还没有向当前任务提交材料，可以先上传发票或辅助材料。</p>
-        </section>
+        <EmptyState
+          title="当前任务下还没有你提交的材料"
+          description="你还没有向当前任务提交材料，可以先上传发票或辅助材料。"
+          action={selectedTask.status === "open" ? (
+            <Button
+              component={RouterLink}
+              variant="contained"
+              to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
+            >
+              去上传材料
+            </Button>
+          ) : null}
+        />
       ) : null}
 
       {selectedTask && materialState.status === "ready" && materialState.items.length > 0 ? (
@@ -812,7 +875,7 @@ export function MemberMaterialStatusPage() {
                     <p className="task-card-id">材料编号 {item.material.id}</p>
                     <h3>{item.material.original_filename}</h3>
                   </div>
-                  <span className="status-chip">{formatMaterialType(item.material.material_type)}</span>
+                  <StatusBadge tone="info">{formatMaterialType(item.material.material_type)}</StatusBadge>
                 </div>
 
                 <dl className="task-meta-grid member-status-meta-grid">
@@ -847,16 +910,16 @@ export function MemberMaterialStatusPage() {
                     <li>{item.missingMaterialTips.length > 0 ? `缺失材料 ${item.missingMaterialTips.length} 条` : "当前无缺失材料提示"}</li>
                   </ul>
                   <div className="inline-actions">
-                    <button
-                      className="route-link route-link-secondary"
+                    <Button
                       type="button"
+                      variant={isSelected ? "contained" : "outlined"}
                       onClick={() => {
                         resetLocalActionState();
                         setSelectedMaterialId(item.material.id);
                       }}
                     >
                       {isSelected ? "查看当前详情" : "查看详情"}
-                    </button>
+                    </Button>
                   </div>
                 </section>
               </article>
@@ -882,7 +945,7 @@ export function MemberMaterialStatusPage() {
                   <p className="task-card-id">当前材料详情 / 材料编号 {item.material.id}</p>
                   <h3>{item.material.original_filename}</h3>
                 </div>
-                <span className="status-chip">{formatMaterialType(item.material.material_type)}</span>
+                <StatusBadge tone="info">{formatMaterialType(item.material.material_type)}</StatusBadge>
               </div>
 
               <dl className="task-meta-grid member-status-meta-grid">
@@ -907,9 +970,9 @@ export function MemberMaterialStatusPage() {
               <section className="member-status-section">
                 <div className="member-status-section-header">
                   <h4>识别状态</h4>
-                  <span className={`status-chip member-status-chip member-status-chip-${recognitionSummary.tone}`}>
+                  <StatusBadge tone={buildRecognitionBadgeTone(recognitionSummary.tone)}>
                     {recognitionSummary.title}
-                  </span>
+                  </StatusBadge>
                 </div>
                 <ul className="member-status-detail-list">
                   {recognitionSummary.details.map((detail) => (
@@ -917,9 +980,9 @@ export function MemberMaterialStatusPage() {
                   ))}
                 </ul>
                 <div className="inline-actions">
-                  <button
-                    className="route-link route-link-secondary"
+                  <Button
                     type="button"
+                    variant="outlined"
                     disabled={retryingMaterialId === item.material.id}
                     onClick={() => {
                       void handleRetryRecognition(item);
@@ -930,16 +993,16 @@ export function MemberMaterialStatusPage() {
                       : item.recognition
                         ? "运行重新识别"
                         : "开始识别"}
-                  </button>
+                  </Button>
                 </div>
               </section>
 
               <section className="member-status-section">
                 <div className="member-status-section-header">
                   <h4>校验状态</h4>
-                  <span className={`status-chip member-status-chip member-status-chip-${validationSummary.tone}`}>
+                  <StatusBadge tone={buildValidationBadgeTone(validationSummary.tone)}>
                     {validationSummary.title}
-                  </span>
+                  </StatusBadge>
                 </div>
                 <ul className="member-status-detail-list">
                   {validationSummary.details.map((detail) => (
@@ -962,17 +1025,17 @@ export function MemberMaterialStatusPage() {
                 <section className="member-status-section">
                   <div className="member-status-section-header">
                     <h4>人工填写信息</h4>
-                    <span className="status-chip">
+                    <StatusBadge tone="info">
                       {item.invoice ? "可直接更正已录入发票" : "识别不准时可自行补录"}
-                    </span>
+                    </StatusBadge>
                   </div>
                   <p className="task-healthy-note">
                     录入后会刷新当前发票的校验结果；这一步由材料提交人自己完成，不再要求管理员代填。
                   </p>
                   <div className="inline-actions">
-                    <button
-                      className="route-link"
+                    <Button
                       type="button"
+                      variant="contained"
                       onClick={() => {
                         if (activeEditorMaterialId === item.material.id) {
                           closeManualEditor();
@@ -982,7 +1045,7 @@ export function MemberMaterialStatusPage() {
                       }}
                     >
                       {activeEditorMaterialId === item.material.id ? "收起人工填写" : "人工填写发票信息"}
-                    </button>
+                    </Button>
                   </div>
                   {activeEditorMaterialId === item.material.id && editorFormState ? (
                     <form
@@ -992,109 +1055,101 @@ export function MemberMaterialStatusPage() {
                         void handleManualInvoiceSubmit(event, item);
                       }}
                     >
-                      <label className="field-stack">
-                        <span>发票号码</span>
-                        <input
-                          value={editorFormState.invoiceNumber}
-                          onChange={(event) => {
-                            updateEditorField("invoiceNumber", event.target.value);
-                          }}
-                        />
-                        {editorErrors.invoiceNumber ? <span className="field-error">{editorErrors.invoiceNumber}</span> : null}
-                      </label>
-                      <label className="field-stack">
-                        <span>开票日期</span>
-                        <input
-                          type="date"
-                          value={editorFormState.issueDate}
-                          onChange={(event) => {
-                            updateEditorField("issueDate", event.target.value);
-                          }}
-                        />
-                      </label>
-                      <label className="field-stack">
-                        <span>交易时间</span>
-                        <input
-                          type="datetime-local"
-                          value={editorFormState.transactionTime}
-                          onChange={(event) => {
-                            updateEditorField("transactionTime", event.target.value);
-                          }}
-                        />
-                      </label>
-                      <label className="field-stack">
-                        <span>发票抬头</span>
-                        <input
-                          value={editorFormState.buyerName}
-                          onChange={(event) => {
-                            updateEditorField("buyerName", event.target.value);
-                          }}
-                        />
-                        {editorErrors.buyerName ? <span className="field-error">{editorErrors.buyerName}</span> : null}
-                      </label>
-                      <label className="field-stack">
-                        <span>税号</span>
-                        <input
-                          value={editorFormState.taxNumber}
-                          onChange={(event) => {
-                            updateEditorField("taxNumber", event.target.value);
-                          }}
-                        />
-                        {editorErrors.taxNumber ? <span className="field-error">{editorErrors.taxNumber}</span> : null}
-                      </label>
-                      <label className="field-stack">
-                        <span>销售方名称</span>
-                        <input
-                          value={editorFormState.sellerName}
-                          onChange={(event) => {
-                            updateEditorField("sellerName", event.target.value);
-                          }}
-                        />
-                      </label>
-                      <label className="field-stack">
-                        <span>金额（元）</span>
-                        <input
-                          inputMode="decimal"
-                          value={editorFormState.amountYuan}
-                          onChange={(event) => {
-                            updateEditorField("amountYuan", event.target.value);
-                          }}
-                        />
-                        {editorErrors.amountYuan ? <span className="field-error">{editorErrors.amountYuan}</span> : null}
-                      </label>
-                      <label className="field-stack">
-                        <span>费用类型</span>
-                        <select
-                          value={editorFormState.expenseType}
-                          onChange={(event) => {
-                            updateEditorField("expenseType", event.target.value as ExpenseType);
-                          }}
-                        >
-                          {allowedExpenseTypes.map((expenseType) => (
-                            <option key={expenseType} value={expenseType}>
-                              {formatExpenseType(expenseType)}
-                            </option>
-                          ))}
-                        </select>
-                        {editorErrors.expenseType ? <span className="field-error">{editorErrors.expenseType}</span> : null}
-                      </label>
+                      <TextField
+                        label="发票号码"
+                        value={editorFormState.invoiceNumber}
+                        onChange={(event) => {
+                          updateEditorField("invoiceNumber", event.target.value);
+                        }}
+                        error={Boolean(editorErrors.invoiceNumber)}
+                        helperText={editorErrors.invoiceNumber}
+                      />
+                      <TextField
+                        label="开票日期"
+                        type="date"
+                        value={editorFormState.issueDate}
+                        onChange={(event) => {
+                          updateEditorField("issueDate", event.target.value);
+                        }}
+                        slotProps={{ inputLabel: { shrink: true } }}
+                      />
+                      <TextField
+                        label="交易时间"
+                        type="datetime-local"
+                        value={editorFormState.transactionTime}
+                        onChange={(event) => {
+                          updateEditorField("transactionTime", event.target.value);
+                        }}
+                        slotProps={{ inputLabel: { shrink: true } }}
+                      />
+                      <TextField
+                        label="发票抬头"
+                        value={editorFormState.buyerName}
+                        onChange={(event) => {
+                          updateEditorField("buyerName", event.target.value);
+                        }}
+                        error={Boolean(editorErrors.buyerName)}
+                        helperText={editorErrors.buyerName}
+                      />
+                      <TextField
+                        label="税号"
+                        value={editorFormState.taxNumber}
+                        onChange={(event) => {
+                          updateEditorField("taxNumber", event.target.value);
+                        }}
+                        error={Boolean(editorErrors.taxNumber)}
+                        helperText={editorErrors.taxNumber}
+                      />
+                      <TextField
+                        label="销售方名称"
+                        value={editorFormState.sellerName}
+                        onChange={(event) => {
+                          updateEditorField("sellerName", event.target.value);
+                        }}
+                      />
+                      <TextField
+                        label="金额（元）"
+                        inputMode="decimal"
+                        value={editorFormState.amountYuan}
+                        onChange={(event) => {
+                          updateEditorField("amountYuan", event.target.value);
+                        }}
+                        error={Boolean(editorErrors.amountYuan)}
+                        helperText={editorErrors.amountYuan}
+                      />
+                      <TextField
+                        select
+                        label="费用类型"
+                        value={editorFormState.expenseType}
+                        onChange={(event) => {
+                          updateEditorField("expenseType", event.target.value as ExpenseType);
+                        }}
+                        error={Boolean(editorErrors.expenseType)}
+                        helperText={editorErrors.expenseType}
+                      >
+                        {allowedExpenseTypes.map((expenseType) => (
+                          <MenuItem key={expenseType} value={expenseType}>
+                            {formatExpenseType(expenseType)}
+                          </MenuItem>
+                        ))}
+                      </TextField>
                       <div className="form-actions">
-                        <button
-                          className="route-link"
+                        <Button
+                          variant="contained"
                           disabled={savingMaterialId === item.material.id}
                           type="submit"
                         >
                           {savingMaterialId === item.material.id ? "保存中..." : "保存发票信息"}
-                        </button>
-                        <button
-                          className="route-link route-link-secondary"
+                        </Button>
+                        <Button
+                          variant="outlined"
                           type="button"
                           onClick={() => {
                             closeManualEditor();
                           }}
                         >
                           取消
-                        </button>
+                        </Button>
                       </div>
                     </form>
                   ) : null}
@@ -1104,11 +1159,11 @@ export function MemberMaterialStatusPage() {
               <section className="member-status-section">
                 <div className="member-status-section-header">
                   <h4>缺失材料提示</h4>
-                  <span className="status-chip">
+                  <StatusBadge tone={item.missingMaterialTips.length > 0 ? "warning" : "success"}>
                     {item.missingMaterialTips.length > 0
                       ? `${item.missingMaterialTips.length} 条缺失提示`
                       : "当前无缺失提示"}
-                  </span>
+                  </StatusBadge>
                 </div>
                 {item.missingMaterialTips.length > 0 ? (
                   <ul className="member-status-message-list" aria-label={`${item.material.id} 缺失材料提示列表`}>
@@ -1127,6 +1182,6 @@ export function MemberMaterialStatusPage() {
           );
         })()
       ) : null}
-    </div>
+    </RoleWorkspace>
   );
 }

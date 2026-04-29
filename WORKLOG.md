@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-29 19:15 - Migrate member material status and expense confirmation pages to Material 3 controls
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“收口成员材料状态页与费用确认页剩余非 M3 控件”。
+- 调整成员材料状态页 [web/src/app/member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx)：
+  - 页面头部切换到 `RoleWorkspace + PageHeader`，补齐 M3 摘要统计卡
+  - 任务选择、返回入口、重新识别、人工补录表单、缺失提示状态统一改为 MUI `Button` / `TextField` / `MenuItem` / `StatusBadge`
+  - 去掉该页核心交互上的 `route-link`、原生 `select` / `input` / `button` 和手写 `status-chip`
+- 调整成员费用确认页 [web/src/app/member-expense-confirmation.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.tsx)：
+  - 将返回入口、任务选择、材料状态跳转、异议原因输入、确认/异议按钮统一切换到 MUI 组件
+  - 发票摘要、附件摘要、确认状态、异议状态改为 `StatusBadge`
+- 同步更新测试 [web/src/app/member-material-status.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.test.tsx)：
+  - 适配 MUI `combobox` 语义
+  - 同步统计摘要断言
+  - 将本地状态切换点击包进 `act`
+
+### 根因
+- 这两个成员页虽然前几轮已经完成主流程与信息架构收口，但仍保留了明显的 legacy 控件混用：
+  - 原生 `select` / `textarea` / `input`
+  - `route-link`
+  - 手写 `status-chip`
+- 结果是同一成员闭环里，工作台页已经 M3 化，而材料状态页和费用确认页仍停留在旧交互语义，造成视觉与测试模型分裂。
+
+### 关键改动点
+- 本轮只处理 `member-material-status.tsx` 与 `member-expense-confirmation.tsx` 的渲染层，不改接口、不改后端权限与提交流程。
+- `member-material-status.tsx` 额外补成 M3 页头和统计摘要，是因为该页原本仍停留在旧 `status-card` 结构；若只替换局部按钮，页面整体仍会继续依赖旧页面头语义。
+- `member-expense-confirmation.tsx` 保持原有页面骨架，只替换残余 legacy 控件，避免把本轮扩散成新的信息架构重构。
+
+### 风险与影响面
+- 前端测试断言从原生表单语义切到 MUI `combobox` / `TextField` 后，后续如果继续调整标签文案或可访问性属性，需要同步维护断言。
+- 当前只清理了这两个成员页；管理员页仍有后续独立任务负责剩余 M3 收口。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- src/app/member-material-status.test.tsx src/app/member-expense-confirmation.test.tsx`
+    - 2 个文件、7 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/app/member-material-status.tsx src/app/member-expense-confirmation.tsx src/app/member-material-status.test.tsx src/app/member-expense-confirmation.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
 ## 2026-04-29 19:02 - Migrate remaining member workbench controls to Material 3
 
 ### 完成内容

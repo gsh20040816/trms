@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
+
+import Button from "@mui/material/Button";
+import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import {
@@ -155,6 +159,17 @@ function resolveInvoiceTimeLabel(detail: ExpenseDetailItem) {
 
 function isSplitStaleError(error: unknown) {
   return error instanceof ApiError && error.status === 404 && error.message === "split not found";
+}
+
+function buildConfirmationBadgeTone(status: ConfirmationStatus) {
+  switch (status) {
+    case "confirmed":
+      return "success" as const;
+    case "disputed":
+      return "danger" as const;
+    default:
+      return "warning" as const;
+  }
 }
 
 export function MemberExpenseConfirmationPage() {
@@ -362,12 +377,13 @@ export function MemberExpenseConfirmationPage() {
           meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
           actions={(
             <div className="page-actions">
-              <Link
-                className="button button-secondary"
+              <Button
+                component={RouterLink}
+                variant="outlined"
                 to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
               >
                 返回当前任务工作台
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -405,37 +421,37 @@ export function MemberExpenseConfirmationPage() {
           action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
         >
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>目标任务</span>
-              <select
-                aria-label="目标任务"
-                value={selectedTaskId}
-                onChange={(event) => {
-                  setSelectedTaskId(event.target.value);
-                  setStaleSplitId(null);
-                }}
-              >
-                {visibleTasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.competition_name}（{task.id}）
-                  </option>
-                ))}
-              </select>
-              <span className="field-hint">这里只列出你可以查看和确认的任务。</span>
-            </label>
+            <TextField
+              select
+              label="目标任务"
+              value={selectedTaskId}
+              fullWidth
+              helperText="这里只列出你可以查看和确认的任务。"
+              onChange={(event) => {
+                setSelectedTaskId(event.target.value);
+                setStaleSplitId(null);
+              }}
+            >
+              {visibleTasks.map((task) => (
+                <MenuItem key={task.id} value={task.id}>
+                  {task.competition_name}（{task.id}）
+                </MenuItem>
+              ))}
+            </TextField>
             <div className="field-stack">
               <span>相关入口</span>
               <div className="inline-actions">
-                <Link className="route-link route-link-secondary" to="/member">
+                <Button component={RouterLink} variant="outlined" to="/member">
                   返回成员任务列表
-                </Link>
+                </Button>
                 {selectedTask ? (
-                  <Link
-                    className="route-link route-link-secondary"
+                  <Button
+                    component={RouterLink}
+                    variant="outlined"
                     to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
                   >
                     查看材料状态
-                  </Link>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -488,9 +504,9 @@ export function MemberExpenseConfirmationPage() {
                     <p className="task-card-id">费用明细 {item.detail.split_id}</p>
                     <h2>{item.detail.invoice.invoice_number}</h2>
                   </div>
-                  <span className={`status-chip member-status-chip-${currentStatus}`}>
+                  <StatusBadge tone={buildConfirmationBadgeTone(currentStatus)}>
                     {formatConfirmationStatus(currentStatus)}
-                  </span>
+                  </StatusBadge>
                 </div>
 
                 <dl className="task-meta-grid member-status-meta-grid">
@@ -523,7 +539,7 @@ export function MemberExpenseConfirmationPage() {
                 <section className="member-status-section">
                   <div className="member-status-section-header">
                     <h4>关联发票摘要</h4>
-                    <span className="status-chip">{item.detail.invoice.id}</span>
+                    <StatusBadge tone="info">{item.detail.invoice.id}</StatusBadge>
                   </div>
                   <ul className="member-status-detail-list">
                     <li>购买方：{item.detail.invoice.buyer_name}</li>
@@ -536,7 +552,7 @@ export function MemberExpenseConfirmationPage() {
                 <section className="member-status-section">
                   <div className="member-status-section-header">
                     <h4>关联附件摘要</h4>
-                    <span className="status-chip">{item.supportingMaterials.length} 份</span>
+                    <StatusBadge tone="info">{item.supportingMaterials.length} 份</StatusBadge>
                   </div>
                   {item.supportingMaterials.length === 0 ? (
                     <p className="field-hint">当前发票还没有已关联的辅助材料；如果你认为缺少支付记录、行程单或比赛通知，应先补材料或联系管理员关联。</p>
@@ -557,7 +573,7 @@ export function MemberExpenseConfirmationPage() {
                   <section className="member-status-section">
                     <div className="member-status-section-header">
                       <h4>当前异议记录</h4>
-                      <span className="status-chip member-status-chip-disputed">需管理员处理</span>
+                      <StatusBadge tone="danger">需管理员处理</StatusBadge>
                     </div>
                     <p>{item.detail.confirmation.dispute_reason}</p>
                   </section>
@@ -566,64 +582,70 @@ export function MemberExpenseConfirmationPage() {
                 <section className="member-status-section">
                   <div className="member-status-section-header">
                     <h4>确认或提出异议</h4>
-                    <span className="status-chip">成员本人提交</span>
+                    <StatusBadge tone="info">成员本人提交</StatusBadge>
                   </div>
-                  <label className="field-stack confirmation-reason-field">
-                    <span>异议原因</span>
-                    <textarea
-                      aria-label={`异议原因 ${item.detail.split_id}`}
-                      value={disputeReason}
-                      placeholder="如果金额、归属或附件关联不正确，请写明原因。"
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setDisputeReasons((current) => ({
-                          ...current,
-                          [item.detail.split_id]: nextValue,
-                        }));
-                        setDisputeErrors((current) => {
-                          if (!(item.detail.split_id in current)) {
-                            return current;
-                          }
-                          const next = { ...current };
-                          delete next[item.detail.split_id];
-                          return next;
-                        });
-                      }}
-                    />
-                    {disputeError ? <span className="field-error">{disputeError}</span> : null}
-                  </label>
+                  <TextField
+                    className="confirmation-reason-field"
+                    label="异议原因"
+                    multiline
+                    minRows={3}
+                    value={disputeReason}
+                    placeholder="如果金额、归属或附件关联不正确，请写明原因。"
+                    error={Boolean(disputeError)}
+                    helperText={disputeError}
+                    slotProps={{
+                      htmlInput: {
+                        "aria-label": `异议原因 ${item.detail.split_id}`,
+                      },
+                    }}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setDisputeReasons((current) => ({
+                        ...current,
+                        [item.detail.split_id]: nextValue,
+                      }));
+                      setDisputeErrors((current) => {
+                        if (!(item.detail.split_id in current)) {
+                          return current;
+                        }
+                        const next = { ...current };
+                        delete next[item.detail.split_id];
+                        return next;
+                      });
+                    }}
+                  />
                   <div className="inline-actions">
-                    <button
-                      className="route-link"
+                    <Button
                       type="button"
+                      variant="contained"
                       disabled={isSubmitting}
                       onClick={() => {
                         void submitConfirmation(item, "confirmed");
                       }}
                     >
                       {isSubmitting ? "提交中..." : "确认这笔费用"}
-                    </button>
-                    <button
-                      className="route-link route-link-secondary"
+                    </Button>
+                    <Button
                       type="button"
+                      variant="outlined"
                       disabled={isSubmitting}
                       onClick={() => {
                         void submitConfirmation(item, "disputed");
                       }}
                     >
                       {isSubmitting ? "提交中..." : "提交异议"}
-                    </button>
+                    </Button>
                     {isStale ? (
-                      <button
-                        className="route-link route-link-secondary"
+                      <Button
                         type="button"
+                        variant="outlined"
                         onClick={() => {
                           setStaleSplitId(null);
                           setRefreshNonce((current) => current + 1);
                         }}
                       >
                         重新加载明细
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                   {isStale ? (

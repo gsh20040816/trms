@@ -273,7 +273,9 @@ describe("MemberMaterialStatusPage", () => {
     renderMemberStatusRoute("/member/materials/status?taskId=TASK-OPEN");
 
     expect(await screen.findByRole("heading", { name: "成员材料状态" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("目标任务")).toHaveValue("TASK-OPEN");
+    expect(await screen.findByRole("combobox", { name: "目标任务" })).toHaveTextContent(
+      "ICPC Xi'an Regional（TASK-OPEN）",
+    );
     expect(screen.getByRole("link", { name: "返回当前任务工作台" })).toHaveAttribute(
       "href",
       "/member/invoices/workbench?taskId=TASK-OPEN",
@@ -299,7 +301,9 @@ describe("MemberMaterialStatusPage", () => {
     );
     expect(within(detailPanel).getByLabelText("MAT-SELF-INV 缺失材料提示列表")).toHaveTextContent("支付记录");
     expect(within(detailPanel).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
-    fireEvent.click(within(detailPanel).getByRole("button", { name: "人工填写发票信息" }));
+    act(() => {
+      fireEvent.click(within(detailPanel).getByRole("button", { name: "人工填写发票信息" }));
+    });
     expect(
       within(detailPanel).getByRole("form", { name: "MAT-SELF-INV 发票人工填写表单" }),
     ).toBeInTheDocument();
@@ -310,14 +314,17 @@ describe("MemberMaterialStatusPage", () => {
     }
     expect(within(attachmentSummaryCard).getByText("识别排队中")).toBeInTheDocument();
     expect(within(attachmentSummaryCard).getByText("当前材料暂无独立发票校验")).toBeInTheDocument();
-    fireEvent.click(within(attachmentSummaryCard).getByRole("button", { name: "查看详情" }));
+    act(() => {
+      fireEvent.click(within(attachmentSummaryCard).getByRole("button", { name: "查看详情" }));
+    });
     detailPanel = screen.getByLabelText("当前材料详情");
     expect(within(detailPanel).getByText("pay.png")).toBeInTheDocument();
     expect(within(detailPanel).getByText("识别排队中")).toBeInTheDocument();
     expect(within(detailPanel).getByText("当前材料暂无独立发票校验")).toBeInTheDocument();
     expect(within(detailPanel).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
 
-    expect(screen.getByLabelText("材料状态摘要")).toHaveTextContent("本人材料 2 份");
+    expect(screen.getByLabelText("材料状态摘要")).toHaveTextContent("本人材料");
+    expect(screen.getByLabelText("材料状态摘要")).toHaveTextContent("2");
     expect(fetchSpy).toHaveBeenCalledTimes(6);
   });
 

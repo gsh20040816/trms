@@ -1408,7 +1408,7 @@
     - 旧 `route-link` / `button-*` / `status-chip` 类不再承担核心交互
     - 相关测试同步更新
 
-- [ ] 收口成员材料状态页与费用确认页剩余非 M3 控件
+- [x] 收口成员材料状态页与费用确认页剩余非 M3 控件
   - Done when:
     - `member-material-status.tsx` 与 `member-expense-confirmation.tsx` 中残余原生表单、按钮、状态标签与链接动作统一替换为 MUI 组件
     - 页面只保留必要布局辅助类，不再依赖 legacy 操作样式类
