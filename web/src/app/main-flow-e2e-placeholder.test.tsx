@@ -46,6 +46,14 @@ function renderRoute(entry: string) {
   return render(<RouterProvider router={router} />);
 }
 
+function addMember(memberId: string) {
+  const input = screen.getByLabelText("成员名单");
+  fireEvent.change(input, {
+    target: { value: memberId },
+  });
+  fireEvent.keyDown(input, { key: "Enter" });
+}
+
 function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("比赛名称"), {
     target: { value: "E2E 主流程任务" },
@@ -62,9 +70,7 @@ function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("提交截止时间"), {
     target: { value: "2026-11-10T18:00" },
   });
-  fireEvent.change(screen.getByLabelText("成员 1"), {
-    target: { value: "2250001" },
-  });
+  addMember("2250001");
   fireEvent.click(screen.getByLabelText("火车票"));
   fireEvent.change(screen.getByLabelText("项目/课题信息"), {
     target: { value: "TRMS E2E placeholder" },

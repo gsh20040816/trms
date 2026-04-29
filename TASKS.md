@@ -1294,7 +1294,7 @@
     - 子任务至少覆盖任务创建、管理员发票录入、管理员分摊编辑、缺失材料筛选四个页面级表单
     - 上传区改造继续保留在独立的 `FileDropZone` 任务中，避免把文件输入和业务表单迁移混在同一轮
 
-- [ ] 迁移任务创建表单到 MUI TextField / Autocomplete / Checkbox 体系
+- [x] 迁移任务创建表单到 MUI TextField / Autocomplete / Checkbox 体系
   - Done when:
     - `web/src/app/admin-task-create.tsx` 的比赛信息、管理员与报销信息、发票抬头税号字段改用 MUI `TextField`
     - 成员名单行与费用类别选择改为更贴近 M3 的输入控件，并统一通过 `helperText` / `error` 表达校验

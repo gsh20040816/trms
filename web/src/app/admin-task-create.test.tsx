@@ -33,6 +33,14 @@ function renderAdminCreateRoute() {
   render(<RouterProvider router={router} />);
 }
 
+function addMember(memberId: string) {
+  const input = screen.getByLabelText("成员名单");
+  fireEvent.change(input, {
+    target: { value: memberId },
+  });
+  fireEvent.keyDown(input, { key: "Enter" });
+}
+
 function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("比赛名称"), {
     target: { value: "ICPC 区域赛" },
@@ -49,9 +57,7 @@ function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("提交截止时间"), {
     target: { value: "2026-12-01T10:00" },
   });
-  fireEvent.change(screen.getByLabelText("成员 1"), {
-    target: { value: "2250001" },
-  });
+  addMember("2250001");
   fireEvent.click(screen.getByLabelText("参赛费"));
   fireEvent.change(screen.getByLabelText("项目/课题信息"), {
     target: { value: "ACM competition project" },
@@ -139,7 +145,7 @@ describe("admin task create page", () => {
 
     expect(screen.getByRole("heading", { name: "创建报销任务" })).toBeInTheDocument();
     expect(screen.getByText("当前阶段请填写成员姓名或学号字符串，系统会把它作为该任务内的成员标识；不要填写内部数据库 ID。")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("输入成员姓名或学号")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("输入成员姓名或学号后按回车添加")).toBeInTheDocument();
 
     fillRequiredTaskForm();
     fireEvent.change(screen.getByLabelText("发票抬头"), {
@@ -187,10 +193,6 @@ describe("admin task create page", () => {
     fireEvent.change(screen.getByLabelText("提交截止时间"), {
       target: { value: "2026-12-01T10:00" },
     });
-    fireEvent.change(screen.getByLabelText("成员 1"), {
-      target: { value: "2250001" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "新增成员项" }));
     fireEvent.click(screen.getByLabelText("参赛费"));
     fireEvent.change(screen.getByLabelText("项目/课题信息"), {
       target: { value: "ACM competition project" },
@@ -202,7 +204,7 @@ describe("admin task create page", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
     expect(await screen.findByText("比赛结束日期不能早于开始日期。")).toBeInTheDocument();
-    expect(screen.getByText("成员名单不能包含空成员项。")).toBeInTheDocument();
+    expect(screen.getByText("至少填写一名成员。")).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

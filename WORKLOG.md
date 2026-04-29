@@ -1,5 +1,60 @@
 # WORKLOG
 
+## 2026-04-29 15:57 - Migrate the admin task creation form to Material 3 form controls
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“迁移任务创建表单到 MUI TextField / Autocomplete / Checkbox 体系”。
+- 将 [web/src/app/admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx) 中以下输入收口到 MUI 表单控件：
+  - 比赛信息、管理员与报销信息、发票抬头税号改为 `TextField`
+  - 成员名单改为 `Autocomplete` 多值录入，成员通过“输入后回车”加入标签
+  - 费用类别改为 `Checkbox` + `FormHelperText`
+- 同步更新前端测试：
+  - [web/src/app/admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+- `TASKS.md` 中该任务已标记完成。
+
+### 根因
+- 任务创建页仍沿用原生 `input`、`textarea` 和手写错误标签，和当前已迁移到 Material 3 的登录页、壳层导航、工作台结构不一致。
+- 成员名单仍采用“增删行”式原生输入，费用类别仍靠自造 checkbox 卡片，校验提示也散落在字段外层，不符合当前任务拆分里要求的“按页面收口到 M3 表单体系”。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/admin-task-create.tsx`
+  - `web/src/app/admin-task-create.test.tsx`
+  - `web/src/app/main-flow-e2e-placeholder.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只改任务创建页和直接依赖它的前端测试，不改后端任务创建 API、权限语义、字段校验规则或其他业务表单页。
+- 成员名单录入从“多行输入框”切到 `Autocomplete` 标签录入后，前端不再保留“空成员行”这一交互状态；对应校验收口为“至少填写一名成员”，属于 UI 交互调整，不改变后端 `member_ids` 语义。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- admin-task-create.test.tsx main-flow-e2e-placeholder.test.tsx`
+  - `cd web && npm test -- admin-invoice-editor.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：421 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：22 文件、78 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 验证过程中观察到一次未稳定复现的既有前端测试波动：
+  - 第一次执行 `./scripts/verify.sh` 时，`web` 阶段曾出现 `src/app/admin-invoice-editor.test.tsx` 失败；
+  - 随后单独执行 `cd web && npm test -- admin-invoice-editor.test.tsx` 通过；
+  - 第二次完整执行 `./scripts/verify.sh` 已全部通过。
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 中仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警；
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning；
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功。
+
+### 假设
+- 当前成员名单 `Autocomplete` 继续按自由文本录入“成员姓名或学号”，不在本轮引入真实成员搜索、历史成员候选或后端模糊匹配能力。
+
 ## 2026-04-29 15:44 - Split the oversized Material 3 business-form migration task into page-level tasks
 
 ### 完成内容

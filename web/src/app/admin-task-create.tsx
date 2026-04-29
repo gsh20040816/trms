@@ -1,6 +1,16 @@
 import { startTransition, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+import Autocomplete from "@mui/material/Autocomplete";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import FormControl from "@mui/material/FormControl";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormGroup from "@mui/material/FormGroup";
+import FormHelperText from "@mui/material/FormHelperText";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader } from "../components/dashboard";
 import { useAuthSession } from "./auth-store";
@@ -41,7 +51,7 @@ function buildInitialFormState(administratorId: string): TaskCreateFormState {
     competitionStartDate: "",
     competitionEndDate: "",
     deadline: "",
-    memberIds: [""],
+    memberIds: [],
     feeCategories: [],
     administratorId,
     projectInfo: "",
@@ -138,6 +148,7 @@ export function AdminTaskCreatePage() {
   const [formState, setFormState] = useState<TaskCreateFormState>(() =>
     buildInitialFormState(session?.actorId ?? ""),
   );
+  const [memberInputValue, setMemberInputValue] = useState("");
   const [validationErrors, setValidationErrors] = useState<ValidationErrorState>({});
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -164,30 +175,20 @@ export function AdminTaskCreatePage() {
     });
   }
 
-  function updateMember(index: number, value: string) {
-    const nextMembers = formState.memberIds.map((memberId, currentIndex) =>
-      currentIndex === index ? value : memberId,
-    );
-    updateField("memberIds", nextMembers);
-  }
-
-  function addMemberRow() {
-    updateField("memberIds", [...formState.memberIds, ""]);
-  }
-
-  function removeMemberRow(index: number) {
-    const nextMembers =
-      formState.memberIds.length === 1
-        ? [""]
-        : formState.memberIds.filter((_, currentIndex) => currentIndex !== index);
-    updateField("memberIds", nextMembers);
-  }
-
   function toggleFeeCategory(category: ExpenseType) {
     const nextCategories = formState.feeCategories.includes(category)
       ? formState.feeCategories.filter((value) => value !== category)
       : [...formState.feeCategories, category];
     updateField("feeCategories", nextCategories);
+  }
+
+  function commitMemberInput() {
+    const normalized = memberInputValue.trim();
+    if (normalized.length === 0) {
+      return;
+    }
+    updateField("memberIds", [...formState.memberIds, normalized]);
+    setMemberInputValue("");
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -250,74 +251,67 @@ export function AdminTaskCreatePage() {
             <span className="status-chip">创建后默认状态为草稿</span>
           </div>
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>比赛名称</span>
-              <input
-                name="competition-name"
-                value={formState.competitionName}
-                onChange={(event) => {
-                  updateField("competitionName", event.target.value);
-                }}
-              />
-              {validationErrors.competitionName ? (
-                <span className="field-error">{validationErrors.competitionName}</span>
-              ) : null}
-            </label>
-            <label className="field-stack">
-              <span>比赛地点</span>
-              <input
-                name="competition-location"
-                value={formState.competitionLocation}
-                onChange={(event) => {
-                  updateField("competitionLocation", event.target.value);
-                }}
-              />
-              {validationErrors.competitionLocation ? (
-                <span className="field-error">{validationErrors.competitionLocation}</span>
-              ) : null}
-            </label>
-            <label className="field-stack">
-              <span>比赛开始日期</span>
-              <input
-                type="date"
-                name="competition-start-date"
-                value={formState.competitionStartDate}
-                onChange={(event) => {
-                  updateField("competitionStartDate", event.target.value);
-                }}
-              />
-              {validationErrors.competitionStartDate ? (
-                <span className="field-error">{validationErrors.competitionStartDate}</span>
-              ) : null}
-            </label>
-            <label className="field-stack">
-              <span>比赛结束日期</span>
-              <input
-                type="date"
-                name="competition-end-date"
-                value={formState.competitionEndDate}
-                onChange={(event) => {
-                  updateField("competitionEndDate", event.target.value);
-                }}
-              />
-              {validationErrors.competitionEndDate ? (
-                <span className="field-error">{validationErrors.competitionEndDate}</span>
-              ) : null}
-            </label>
-            <label className="field-stack">
-              <span>提交截止时间</span>
-              <input
-                type="datetime-local"
-                name="deadline"
-                value={formState.deadline}
-                onChange={(event) => {
-                  updateField("deadline", event.target.value);
-                }}
-              />
-              {validationErrors.deadline ? (
-                <span className="field-error">{validationErrors.deadline}</span>
-              ) : null}
-            </label>
+            <TextField
+              label="比赛名称"
+              name="competition-name"
+              value={formState.competitionName}
+              onChange={(event) => {
+                updateField("competitionName", event.target.value);
+              }}
+              error={Boolean(validationErrors.competitionName)}
+              helperText={validationErrors.competitionName}
+              fullWidth
+            />
+            <TextField
+              label="比赛地点"
+              name="competition-location"
+              value={formState.competitionLocation}
+              onChange={(event) => {
+                updateField("competitionLocation", event.target.value);
+              }}
+              error={Boolean(validationErrors.competitionLocation)}
+              helperText={validationErrors.competitionLocation}
+              fullWidth
+            />
+            <TextField
+              label="比赛开始日期"
+              type="date"
+              name="competition-start-date"
+              value={formState.competitionStartDate}
+              onChange={(event) => {
+                updateField("competitionStartDate", event.target.value);
+              }}
+              error={Boolean(validationErrors.competitionStartDate)}
+              helperText={validationErrors.competitionStartDate}
+              fullWidth
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              label="比赛结束日期"
+              type="date"
+              name="competition-end-date"
+              value={formState.competitionEndDate}
+              onChange={(event) => {
+                updateField("competitionEndDate", event.target.value);
+              }}
+              error={Boolean(validationErrors.competitionEndDate)}
+              helperText={validationErrors.competitionEndDate}
+              fullWidth
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              label="提交截止时间"
+              type="datetime-local"
+              name="deadline"
+              value={formState.deadline}
+              onChange={(event) => {
+                updateField("deadline", event.target.value);
+              }}
+              error={Boolean(validationErrors.deadline)}
+              helperText={validationErrors.deadline}
+              fullWidth
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
           </div>
         </section>
 
@@ -327,63 +321,70 @@ export function AdminTaskCreatePage() {
               <p className="eyebrow">Members</p>
               <h2>成员名单与费用类别</h2>
             </div>
-            <button className="route-link route-link-secondary" type="button" onClick={addMemberRow}>
-              新增成员项
-            </button>
           </div>
 
-          <div className="member-list" aria-label="成员名单">
-            {formState.memberIds.map((memberId, index) => (
-              <div key={`member-${index}`} className="member-row">
-                <label className="field-stack member-field">
-                  <span>成员 {index + 1}（姓名或学号）</span>
-                  <input
-                    aria-label={`成员 ${index + 1}`}
-                    value={memberId}
-                    placeholder="输入成员姓名或学号"
-                    onChange={(event) => {
-                      updateMember(index, event.target.value);
-                    }}
-                  />
-                </label>
-                <button
-                  className="route-link route-link-secondary member-remove-button"
-                  type="button"
-                  onClick={() => {
-                    removeMemberRow(index);
-                  }}
-                >
-                  移除
-                </button>
-              </div>
-            ))}
-          </div>
-          {validationErrors.memberIds ? (
-            <p className="field-error field-error-block">{validationErrors.memberIds}</p>
-          ) : (
-            <p className="field-hint">当前阶段请填写成员姓名或学号字符串，系统会把它作为该任务内的成员标识；不要填写内部数据库 ID。</p>
-          )}
+          <Stack spacing={3}>
+            <Autocomplete
+              multiple
+              freeSolo
+              options={[]}
+              value={formState.memberIds}
+              inputValue={memberInputValue}
+              onInputChange={(_event, value, reason) => {
+                if (reason === "reset") {
+                  setMemberInputValue("");
+                  return;
+                }
+                setMemberInputValue(value);
+              }}
+              onChange={(_event, value) => {
+                updateField(
+                  "memberIds",
+                  value
+                    .map((memberId) => memberId.trim())
+                    .filter((memberId) => memberId.length > 0),
+                );
+              }}
+              onKeyDown={(event) => {
+                if ((event.key === "Enter" || event.key === ",") && memberInputValue.trim().length > 0) {
+                  event.preventDefault();
+                  commitMemberInput();
+                }
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="成员名单"
+                  placeholder="输入成员姓名或学号后按回车添加"
+                  error={Boolean(validationErrors.memberIds)}
+                  helperText={validationErrors.memberIds ?? "当前阶段请填写成员姓名或学号字符串，系统会把它作为该任务内的成员标识；不要填写内部数据库 ID。"}
+                />
+              )}
+            />
 
-          <fieldset className="checkbox-group">
-            <legend>费用类别</legend>
-            <div className="checkbox-grid">
+            <FormControl error={Boolean(validationErrors.feeCategories)} component="fieldset" variant="standard">
+              <FormGroup className="checkbox-grid" aria-label="费用类别">
               {FEE_CATEGORY_OPTIONS.map((option) => (
-                <label key={option.value} className="checkbox-card">
-                  <input
-                    type="checkbox"
-                    checked={formState.feeCategories.includes(option.value)}
-                    onChange={() => {
-                      toggleFeeCategory(option.value);
-                    }}
-                  />
-                  <span>{option.label}</span>
-                </label>
+                <FormControlLabel
+                  key={option.value}
+                  className="checkbox-card"
+                  control={(
+                    <Checkbox
+                      checked={formState.feeCategories.includes(option.value)}
+                      onChange={() => {
+                        toggleFeeCategory(option.value);
+                      }}
+                    />
+                  )}
+                  label={option.label}
+                />
               ))}
-            </div>
-          </fieldset>
-          {validationErrors.feeCategories ? (
-            <p className="field-error field-error-block">{validationErrors.feeCategories}</p>
-          ) : null}
+              </FormGroup>
+              <FormHelperText>
+                {validationErrors.feeCategories ?? "请选择本次任务允许成员上传和分摊的费用类别。"}
+              </FormHelperText>
+            </FormControl>
+          </Stack>
         </section>
 
         <section className="status-card admin-form-card">
@@ -394,47 +395,43 @@ export function AdminTaskCreatePage() {
             </div>
           </div>
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>管理员标识</span>
-              <input
-                name="administrator-id"
-                value={formState.administratorId}
-                onChange={(event) => {
-                  updateField("administratorId", event.target.value);
-                }}
-              />
-              {validationErrors.administratorId ? (
-                <span className="field-error">{validationErrors.administratorId}</span>
-              ) : null}
-            </label>
-            <label className="field-stack">
-              <span>项目/课题信息</span>
-              <textarea
-                name="project-info"
-                rows={3}
-                value={formState.projectInfo}
-                onChange={(event) => {
-                  updateField("projectInfo", event.target.value);
-                }}
-              />
-              {validationErrors.projectInfo ? (
-                <span className="field-error">{validationErrors.projectInfo}</span>
-              ) : null}
-            </label>
-            <label className="field-stack">
-              <span>报销人信息</span>
-              <textarea
-                name="reimburser-info"
-                rows={3}
-                value={formState.reimburserInfo}
-                onChange={(event) => {
-                  updateField("reimburserInfo", event.target.value);
-                }}
-              />
-              {validationErrors.reimburserInfo ? (
-                <span className="field-error">{validationErrors.reimburserInfo}</span>
-              ) : null}
-            </label>
+            <TextField
+              label="管理员标识"
+              name="administrator-id"
+              value={formState.administratorId}
+              onChange={(event) => {
+                updateField("administratorId", event.target.value);
+              }}
+              error={Boolean(validationErrors.administratorId)}
+              helperText={validationErrors.administratorId}
+              fullWidth
+            />
+            <TextField
+              label="项目/课题信息"
+              name="project-info"
+              value={formState.projectInfo}
+              onChange={(event) => {
+                updateField("projectInfo", event.target.value);
+              }}
+              error={Boolean(validationErrors.projectInfo)}
+              helperText={validationErrors.projectInfo}
+              multiline
+              minRows={3}
+              fullWidth
+            />
+            <TextField
+              label="报销人信息"
+              name="reimburser-info"
+              value={formState.reimburserInfo}
+              onChange={(event) => {
+                updateField("reimburserInfo", event.target.value);
+              }}
+              error={Boolean(validationErrors.reimburserInfo)}
+              helperText={validationErrors.reimburserInfo}
+              multiline
+              minRows={3}
+              fullWidth
+            />
           </div>
         </section>
 
@@ -446,32 +443,29 @@ export function AdminTaskCreatePage() {
             </div>
           </div>
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>发票抬头</span>
-              <input
-                name="invoice-title"
-                value={formState.invoiceTitle}
-                placeholder="留空时尝试继承全局配置"
-                onChange={(event) => {
-                  updateField("invoiceTitle", event.target.value);
-                }}
-              />
-            </label>
-            <label className="field-stack">
-              <span>税号</span>
-              <input
-                name="tax-number"
-                value={formState.taxNumber}
-                placeholder="留空时尝试继承全局配置"
-                onChange={(event) => {
-                  updateField("taxNumber", event.target.value);
-                }}
-              />
-            </label>
+            <TextField
+              label="发票抬头"
+              name="invoice-title"
+              value={formState.invoiceTitle}
+              placeholder="留空时尝试继承全局配置"
+              onChange={(event) => {
+                updateField("invoiceTitle", event.target.value);
+              }}
+              helperText="留空时尝试继承全局配置。"
+              fullWidth
+            />
+            <TextField
+              label="税号"
+              name="tax-number"
+              value={formState.taxNumber}
+              placeholder="留空时尝试继承全局配置"
+              onChange={(event) => {
+                updateField("taxNumber", event.target.value);
+              }}
+              helperText="留空时尝试继承全局配置。"
+              fullWidth
+            />
           </div>
-          <p className="field-hint">
-            这两个字段可以留空；如果系统已配置默认值，会自动补入。
-          </p>
         </section>
 
         <section className="status-card admin-form-card admin-form-footer">
@@ -480,14 +474,14 @@ export function AdminTaskCreatePage() {
             <h2>提交创建请求</h2>
             <p>如果信息不完整或不符合要求，页面会直接提示需要补充的内容。</p>
           </div>
-          <div className="inline-actions">
-            <Link className="route-link route-link-secondary" to="/admin">
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+            <Button component={Link} to="/admin" variant="outlined" color="inherit">
               取消并返回
-            </Link>
-            <button className="route-link" type="submit" disabled={isSubmitting}>
+            </Button>
+            <Button type="submit" variant="contained" disabled={isSubmitting}>
               {isSubmitting ? "正在创建..." : "创建草稿任务"}
-            </button>
-          </div>
+            </Button>
+          </Stack>
         </section>
       </form>
     </AdminWorkspaceShell>
