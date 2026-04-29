@@ -48,6 +48,12 @@ from trms_backend.domain.global_invoice_config import (
     GlobalInvoiceConfig,
     GlobalInvoiceConfigRepository,
 )
+from trms_backend.domain.system_ai_provider_config import (
+    SystemAiProviderConfig,
+    SystemAiProviderConfigPatch,
+    SystemAiProviderConfigRepository,
+    SystemAiProviderOverride,
+)
 from trms_backend.domain.invoices import (
     ExpenseType,
     InvoiceCreate,
@@ -108,6 +114,7 @@ from trms_backend.infrastructure.models import (
     MaterialReminderRow,
     MaterialRow,
     RecognitionTaskRow,
+    SystemAiProviderConfigRow,
     TaskRow,
     TelegramAccountBindingRow,
     UserAccountRow,
@@ -143,6 +150,71 @@ class SqlAlchemyGlobalInvoiceConfigRepository(GlobalInvoiceConfigRepository):
                 row.updated_at = now
             session.add(row)
         return _global_invoice_config_from_row(row)
+
+
+class SqlAlchemySystemAiProviderConfigRepository(SystemAiProviderConfigRepository):
+    _default_id = "default"
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def get(self) -> SystemAiProviderConfig | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(SystemAiProviderConfigRow, self._default_id)
+            return _system_ai_provider_config_from_row(row) if row else None
+
+    def patch(self, payload: SystemAiProviderConfigPatch) -> SystemAiProviderConfig:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            row = session.get(SystemAiProviderConfigRow, self._default_id)
+            if row is None:
+                row = SystemAiProviderConfigRow(
+                    id=self._default_id,
+                    created_at=now,
+                    updated_at=now,
+                    text_llm_base_url=payload.text_llm.base_url,
+                    text_llm_model=payload.text_llm.model,
+                    text_llm_timeout_seconds=payload.text_llm.timeout_seconds,
+                    text_llm_max_retries=payload.text_llm.max_retries,
+                    text_llm_api_key=(
+                        payload.text_llm.api_key.get_secret_value()
+                        if payload.text_llm.api_key is not None
+                        else None
+                    ),
+                    vlm_base_url=payload.vlm.base_url,
+                    vlm_model=payload.vlm.model,
+                    vlm_timeout_seconds=payload.vlm.timeout_seconds,
+                    vlm_max_retries=payload.vlm.max_retries,
+                    vlm_api_key=(
+                        payload.vlm.api_key.get_secret_value()
+                        if payload.vlm.api_key is not None
+                        else None
+                    ),
+                )
+            else:
+                row.text_llm_base_url = payload.text_llm.base_url
+                row.text_llm_model = payload.text_llm.model
+                row.text_llm_timeout_seconds = payload.text_llm.timeout_seconds
+                row.text_llm_max_retries = payload.text_llm.max_retries
+                if "api_key" in payload.text_llm.model_fields_set:
+                    row.text_llm_api_key = (
+                        payload.text_llm.api_key.get_secret_value()
+                        if payload.text_llm.api_key is not None
+                        else None
+                    )
+                row.vlm_base_url = payload.vlm.base_url
+                row.vlm_model = payload.vlm.model
+                row.vlm_timeout_seconds = payload.vlm.timeout_seconds
+                row.vlm_max_retries = payload.vlm.max_retries
+                if "api_key" in payload.vlm.model_fields_set:
+                    row.vlm_api_key = (
+                        payload.vlm.api_key.get_secret_value()
+                        if payload.vlm.api_key is not None
+                        else None
+                    )
+                row.updated_at = now
+            session.add(row)
+        return _system_ai_provider_config_from_row(row)
 
 
 class SqlAlchemyAuthRepository(AuthRepository):
@@ -1332,6 +1404,27 @@ def _global_invoice_config_from_row(row: GlobalInvoiceConfigRow) -> GlobalInvoic
     return GlobalInvoiceConfig(
         invoice_title=row.invoice_title,
         tax_number=row.tax_number,
+    )
+
+
+def _system_ai_provider_config_from_row(
+    row: SystemAiProviderConfigRow,
+) -> SystemAiProviderConfig:
+    return SystemAiProviderConfig(
+        text_llm=SystemAiProviderOverride(
+            base_url=row.text_llm_base_url,
+            model=row.text_llm_model,
+            timeout_seconds=row.text_llm_timeout_seconds,
+            max_retries=row.text_llm_max_retries,
+            api_key=row.text_llm_api_key,
+        ),
+        vlm=SystemAiProviderOverride(
+            base_url=row.vlm_base_url,
+            model=row.vlm_model,
+            timeout_seconds=row.vlm_timeout_seconds,
+            max_retries=row.vlm_max_retries,
+            api_key=row.vlm_api_key,
+        ),
     )
 
 

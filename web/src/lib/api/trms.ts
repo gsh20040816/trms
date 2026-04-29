@@ -29,6 +29,8 @@ import type {
   ReimbursementTask,
   RoleSwitchPayload,
   SystemDashboard,
+  SystemAiProviderConfigPayload,
+  SystemAiProviderConfigSummary,
   TaskCreateInput,
   TaskExportBoundary,
   TaskExportJobRecord,
@@ -155,6 +157,16 @@ export const trmsApi = {
 
   updateGlobalInvoiceConfig(payload: GlobalInvoiceConfig) {
     return apiClient.request<GlobalInvoiceConfig>("/system/global-invoice-config", {
+      method: "PUT",
+      body: payload,
+    });
+  },
+
+  updateRecognitionProviderConfig(payload: SystemAiProviderConfigPayload) {
+    return apiClient.request<{
+      text_llm: SystemAiProviderConfigSummary;
+      vlm: SystemAiProviderConfigSummary;
+    }>("/system/recognition-provider-config", {
       method: "PUT",
       body: payload,
     });

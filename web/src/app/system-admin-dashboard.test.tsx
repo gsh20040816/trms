@@ -56,12 +56,30 @@ describe("system admin dashboard page", () => {
             invoice_title: "同济大学 ACM 实验室",
             tax_number: "91310000TEST00001",
           },
+          system_ai_provider_config: {
+            text_llm: {
+              base_url: "https://text.example.com/v1",
+              model: "gpt-4.1-mini",
+              timeout_seconds: 20,
+              max_retries: 1,
+              api_key_configured: true,
+            },
+            vlm: {
+              base_url: null,
+              model: null,
+              timeout_seconds: null,
+              max_retries: null,
+              api_key_configured: false,
+            },
+          },
           runtime: {
             environment: "development",
             public_api_base_url: "http://127.0.0.1:9876/api",
             async_job_mode: "in_process",
             file_storage_backend: "local",
             llm_provider_configured: false,
+            text_llm_provider_configured: true,
+            vlm_provider_configured: false,
             allow_admin_self_register: true,
             bootstrap_admin_configured: false,
             telegram_inbound_configured: false,
@@ -86,6 +104,40 @@ describe("system admin dashboard page", () => {
         }));
       }
 
+      if (url === "/api/system/recognition-provider-config" && init?.method === "PUT") {
+        expect(init.body).toBe(JSON.stringify({
+          text_llm: {
+            base_url: "https://text.example.com/v1",
+            model: "gpt-4.1-mini",
+            timeout_seconds: 20,
+            max_retries: 1,
+            api_key: "sk-updated-text",
+          },
+          vlm: {
+            base_url: "https://vlm.example.com/v1",
+            model: "gpt-4.1",
+            timeout_seconds: 45,
+            max_retries: 2,
+          },
+        }));
+        return Promise.resolve(jsonResponse({
+          text_llm: {
+            base_url: "https://text.example.com/v1",
+            model: "gpt-4.1-mini",
+            timeout_seconds: 20,
+            max_retries: 1,
+            api_key_configured: true,
+          },
+          vlm: {
+            base_url: "https://vlm.example.com/v1",
+            model: "gpt-4.1",
+            timeout_seconds: 45,
+            max_retries: 2,
+            api_key_configured: false,
+          },
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in system admin test: ${url}`);
     });
 
@@ -96,6 +148,7 @@ describe("system admin dashboard page", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByDisplayValue("同济大学 ACM 实验室")).toBeInTheDocument();
     expect(screen.getByText("http://127.0.0.1:9876/api")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://text.example.com/v1")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("发票抬头"), { target: { value: "同济大学" } });
     fireEvent.change(screen.getByLabelText("税号"), { target: { value: "12100000425006117D" } });
@@ -103,6 +156,15 @@ describe("system admin dashboard page", () => {
 
     expect(await screen.findByDisplayValue("同济大学")).toBeInTheDocument();
     expect(screen.getByDisplayValue("12100000425006117D")).toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByLabelText("API Key")[0]!, { target: { value: "sk-updated-text" } });
+    fireEvent.change(screen.getAllByLabelText("Base URL")[1]!, { target: { value: "https://vlm.example.com/v1" } });
+    fireEvent.change(screen.getAllByLabelText("模型")[1]!, { target: { value: "gpt-4.1" } });
+    fireEvent.change(screen.getAllByLabelText("超时秒数")[1]!, { target: { value: "45" } });
+    fireEvent.change(screen.getAllByLabelText("最大重试次数")[1]!, { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存识别 Provider 配置" }));
+
+    expect(await screen.findByDisplayValue("https://vlm.example.com/v1")).toBeInTheDocument();
   });
 
   it("blocks ordinary admins before requesting system settings", async () => {

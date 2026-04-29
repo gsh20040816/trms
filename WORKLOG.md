@@ -1,5 +1,114 @@
 # WORKLOG
 
+## 2026-04-29 21:25 - Split text LLM and VLM configuration with system-level overrides
+
+### 完成内容
+- 完成新增临时任务“支持区分文本 LLM / VLM 的系统级优先配置”。
+- 调整运行配置 [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)：
+  - 新增 `text_llm_provider` 与 `vlm_provider`
+  - 支持从 `TRMS_TEXT_LLM_*` 与 `TRMS_VLM_*` 分别读取配置
+  - 继续兼容旧 `TRMS_LLM_*`：若未配置新变量，text/VLM 两侧都会回退到旧单一路径变量
+  - 新增 `apply_system_ai_provider_overrides(...)`，用于把系统级覆盖项与环境变量按“系统优先、缺失回退 env”合并成生效配置
+- 新增系统级 AI 配置模型与持久化：
+  - [src/trms_backend/domain/system_ai_provider_config.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/system_ai_provider_config.py)
+  - [src/trms_backend/infrastructure/models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [alembic/versions/20260429_02_system_ai_provider_config.py](/home/gsh/workspace/TRMS/alembic/versions/20260429_02_system_ai_provider_config.py)
+  - 新建 `system_ai_provider_configs` 表，保存系统管理员设置的 text LLM / VLM 覆盖项
+  - API key 落库但不回显；更新接口里留空表示保持现有系统密钥不变
+- 调整系统管理 API [src/trms_backend/api/system.py](/home/gsh/workspace/TRMS/src/trms_backend/api/system.py)：
+  - `GET /api/system/dashboard` 现在返回：
+    - `system_ai_provider_config`
+    - `runtime.text_llm_provider_configured`
+    - `runtime.vlm_provider_configured`
+  - `PUT /api/system/recognition-provider-config` 允许系统管理员保存 text LLM / VLM 覆盖项
+  - Dashboard 运行态摘要按“当前库里的系统配置 + env fallback”实时计算，不再只看启动时快照
+- 调整识别路由 [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - 新增 `RoutedRecognitionClient`
+  - `pdf_text` 路径走 text LLM
+  - `pdf_file` / `image_file` 路径走 VLM
+  - 未配置对应 provider 时分别报：
+    - `text_llm_provider_not_configured`
+    - `vlm_provider_not_configured`
+- 调整应用装配：
+  - [src/trms_backend/main.py](/home/gsh/workspace/TRMS/src/trms_backend/main.py)
+  - [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py)
+  - API 进程和 worker 都改成“执行时动态解析当前系统级 provider 覆盖项”，保存新配置后无需重启即可用于后续识别任务
+- 调整系统管理员前端：
+  - [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)
+  - 新增“文本 LLM 与 VLM 配置”卡片
+  - 可分别编辑：
+    - Base URL
+    - 模型
+    - 超时秒数
+    - 最大重试次数
+    - API Key
+  - 文案明确说明：系统配置优先、缺失字段 fallback `.env`、API key 不回显
+- 调整前端 API 类型与调用：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+- 调整文档与模板：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+  - 现在明确记录 `TRMS_TEXT_LLM_*` / `TRMS_VLM_*` 与旧 `TRMS_LLM_*` 的兼容关系
+
+### 根因
+- 之前所有识别路径只有一个 `llm_provider`：
+  - 文本 PDF 的结构化抽取
+  - 扫描 PDF 的多模态识别
+  - 图片/截图的多模态识别
+  都只能共用同一套 `base_url / api_key / model`
+- 这在实际部署里会造成两个问题：
+  - 文本模型与多模态模型无法分别接到不同供应商或不同模型
+  - 即使系统管理员后续补了系统配置，运行时也只会继续读启动时的 `.env` 快照
+
+### 关键改动点
+- 没有直接删除旧 `TRMS_LLM_*`，而是做兼容迁移：
+  - 新部署优先用 `TRMS_TEXT_LLM_*` 与 `TRMS_VLM_*`
+  - 旧部署未迁移时，仍可由旧 `TRMS_LLM_*` 同时驱动 text/VLM 两条链路
+- 系统管理员配置不是“全量替代 env”，而是字段级覆盖：
+  - 系统里填了的字段优先生效
+  - 系统里未填的字段继续回退到 env
+  - 因此可以只在系统里覆盖 `base_url` / `model`，而把密钥暂时留在环境变量里
+- 保存系统配置后无需重启即可生效：
+  - 识别执行时动态合并系统配置与 env
+  - Dashboard 运行态摘要也按当前库里的系统配置实时计算
+
+### 风险与影响面
+- 现在“未配置 provider”的失败原因从统一 `llm_provider_not_configured` 细分成了：
+  - `text_llm_provider_not_configured`
+  - `vlm_provider_not_configured`
+  前端文案已兼容这两个新原因，但仓库外若有直接依赖旧 reason 值的调用方，需要同步更新。
+- 系统管理员配置目前仍是明文保存在数据库中，只是：
+  - 不回显到前端
+  - 不写入日志
+  - 仍建议生产环境后续评估加密存储或外部 secret manager
+- 当前“系统配置优先”只覆盖识别 provider，不扩展到其它运行时敏感配置（如对象存储、入站 token、数据库等）。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_runtime_config.py tests/test_system_admin_api.py tests/test_recognition_runtime.py tests/test_recognition_execution_api.py`
+    - 46 个用例通过
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/system-admin-dashboard.test.tsx`
+    - 1 个测试文件、2 个用例通过
+- 其中新增覆盖包括：
+  - text/VLM 环境变量分离读取
+  - 系统配置字段级覆盖与 env fallback
+  - 系统管理员保存 recognition provider 配置
+  - 保存系统配置后无需重启即可用于文本 PDF 识别
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：450 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过，旧 `TRMS_LLM_*` 缺失警告已消失
+    - `git diff --check` 通过
+
 ## 2026-04-29 20:51 - Simplify member upload type selection and fix invoice queue overflow
 
 ### 完成内容

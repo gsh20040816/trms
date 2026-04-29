@@ -131,11 +131,22 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
 - `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`
 - `TRMS_AUTH_EMAIL_INBOUND_TOKEN`
-- `TRMS_LLM_API_KEY`
-- `TRMS_LLM_BASE_URL`
-- `TRMS_LLM_MODEL`
-- `TRMS_LLM_TIMEOUT_SECONDS`
-- `TRMS_LLM_MAX_RETRIES`
+- `TRMS_TEXT_LLM_API_KEY`
+- `TRMS_TEXT_LLM_BASE_URL`
+- `TRMS_TEXT_LLM_MODEL`
+- `TRMS_TEXT_LLM_TIMEOUT_SECONDS`
+- `TRMS_TEXT_LLM_MAX_RETRIES`
+- `TRMS_VLM_API_KEY`
+- `TRMS_VLM_BASE_URL`
+- `TRMS_VLM_MODEL`
+- `TRMS_VLM_TIMEOUT_SECONDS`
+- `TRMS_VLM_MAX_RETRIES`
+- 兼容旧配置：
+  - `TRMS_LLM_API_KEY`
+  - `TRMS_LLM_BASE_URL`
+  - `TRMS_LLM_MODEL`
+  - `TRMS_LLM_TIMEOUT_SECONDS`
+  - `TRMS_LLM_MAX_RETRIES`
 
 开发环境默认值：
 
@@ -187,14 +198,23 @@ uv run alembic upgrade head && \
 uv run python -m trms_backend --host 0.0.0.0 --port 9876
 ```
 
-OpenAI 兼容 LLM Provider 配置边界：
+OpenAI 兼容文本 LLM / VLM Provider 配置边界：
 
-- 只有在至少配置了一个 `TRMS_LLM_*` 变量时，后端才会尝试启用 LLM Provider 配置块。
-- 一旦开始配置 `TRMS_LLM_*`，`TRMS_LLM_API_KEY` 和 `TRMS_LLM_MODEL` 必填；缺失时服务会在启动阶段直接报错。
-- `TRMS_LLM_BASE_URL` 默认为 `https://api.openai.com/v1`，可替换为任何 OpenAI 兼容接口地址；尾部 `/` 会被规范化去掉。
-- `TRMS_LLM_TIMEOUT_SECONDS` 默认 `30`，`TRMS_LLM_MAX_RETRIES` 默认 `2`。
-- 当前仓库已接入“文本 PDF 提取 + 扫描 PDF / 图片直送 OpenAI 兼容 VLM -> 结构化识别”的执行链；文本 PDF 会优先走本地可抽取文本，纯扫描 PDF 会把 PDF 文件本体直接交给多模态模型，图片会以 base64 data URL 形式直送多模态模型。生产级队列治理和更完整的失败恢复策略仍待后续任务补齐。
-- 未配置 LLM Provider 时，识别执行链会将任务显式视为 `disabled`，而不是伪造识别成功。
+- 当前仓库区分两类 provider：
+  - `TRMS_TEXT_LLM_*`：用于纯文本材料和可抽取文本的 PDF
+  - `TRMS_VLM_*`：用于扫描 PDF、图片和截图
+- 兼容旧单一路径配置：
+  - 若未配置 `TRMS_TEXT_LLM_*` 或 `TRMS_VLM_*`，系统会分别回退到旧的 `TRMS_LLM_*`
+  - 这样旧部署不需要立刻改环境变量，仍保持“文本 PDF + 扫描 PDF/图片共用一套 provider”的旧行为
+- 一旦开始配置某一类 provider 的 `*_BASE_URL` / `*_MODEL` 等字段，该类 provider 的 `*_API_KEY` 和 `*_MODEL` 必填；缺失时服务会在启动阶段直接报错。
+- `TRMS_TEXT_LLM_BASE_URL` 与 `TRMS_VLM_BASE_URL` 默认都是 `https://api.openai.com/v1`，可替换为任何兼容接口地址；尾部 `/` 会被规范化去掉。
+- `TRMS_TEXT_LLM_TIMEOUT_SECONDS`、`TRMS_VLM_TIMEOUT_SECONDS` 默认 `30`，`TRMS_TEXT_LLM_MAX_RETRIES`、`TRMS_VLM_MAX_RETRIES` 默认 `2`。
+- 当前仓库已接入“文本 PDF 提取 + 扫描 PDF / 图片直送 OpenAI 兼容 VLM -> 结构化识别”的执行链；文本 PDF 会优先走本地可抽取文本，纯扫描 PDF 会把 PDF 文件本体直接交给多模态模型，图片会以 base64 data URL 形式直送多模态模型。
+- 系统管理员现在可以在系统管理页保存识别 provider 的系统级覆盖项；运行时优先读取系统配置，缺失字段再回退到环境变量，不回显 API key 原文。
+- 未配置对应 provider 时，识别会按材料类型分别显式停在：
+  - `text_llm_provider_not_configured`
+  - `vlm_provider_not_configured`
+  而不是伪造识别成功。
 
 Telegram 入站可信边界：
 
@@ -223,11 +243,12 @@ Telegram 入站可信边界：
 示例：
 
 ```bash
-TRMS_LLM_API_KEY=sk-example \
-TRMS_LLM_BASE_URL=https://llm.example.com/v1 \
-TRMS_LLM_MODEL=gpt-4.1-mini \
-TRMS_LLM_TIMEOUT_SECONDS=20 \
-TRMS_LLM_MAX_RETRIES=1 \
+TRMS_TEXT_LLM_API_KEY=sk-example \
+TRMS_TEXT_LLM_BASE_URL=https://llm.example.com/v1 \
+TRMS_TEXT_LLM_MODEL=gpt-4.1-mini \
+TRMS_VLM_API_KEY=sk-example \
+TRMS_VLM_BASE_URL=https://llm.example.com/v1 \
+TRMS_VLM_MODEL=gpt-4.1-mini \
 uv run python -m trms_backend --reload
 ```
 
@@ -249,7 +270,7 @@ TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker --once
 
 - Telegram 渠道目前只完成后端可信边界和待归属语义，未提供真实 Bot / Webhook 联通说明。
 - 格式化邮件渠道目前只完成格式规范和受信任入站边界，未实现真实 IMAP 轮询、Webhook 收件或邮箱绑定闭环。
-- OpenAI 兼容 LLM Provider 只有在显式配置 `TRMS_LLM_*` 后才会启用；未配置时识别会显式停在 `disabled`，不会伪装为识别成功。
+- OpenAI 兼容文本 LLM / VLM Provider 只有在环境变量或系统管理员系统配置中至少配置了一类后才会启用；未配置对应 provider 时识别会显式失败，不会伪装为识别成功。
 - Browser Use / 财务系统自动录入明确属于第一阶段范围外，不应被当作现成功能。
 - XLSX 导出仍未实现；当前可落盘并下载的是 CSV / JSON / `merged_pdf`。
 
@@ -304,7 +325,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8100/api
 - 不要把 OpenAI 兼容 LLM `api_key`、后端 secret、数据库凭据或长期 token 写入 `VITE_*` 变量。
 - 不要把对象存储 access key / secret key 写入 `VITE_*` 变量。
 - 前端页面和测试不应展示上述 secret；相关敏感配置只能保留在后端环境变量或专用密钥管理中。
-- `TRMS_LLM_API_KEY` 只允许从后端环境变量或密钥管理读取，不入库、不返回前端，也不应写入日志。
+- `TRMS_TEXT_LLM_API_KEY`、`TRMS_VLM_API_KEY` 与兼容旧路径的 `TRMS_LLM_API_KEY` 只能保留在后端环境变量、系统管理员系统配置或专用密钥管理中，不返回前端，也不应写入日志。
 
 ## 基础账号登录
 

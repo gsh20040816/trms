@@ -207,6 +207,8 @@ export function describeRecognitionFailure(failure: RecognitionFailureDetail | n
     failure.stage === "ai"
     && (
       failure.reason === "llm_provider_not_configured"
+      || failure.reason === "text_llm_provider_not_configured"
+      || failure.reason === "vlm_provider_not_configured"
       || failure.reason === "structured_recognition_not_configured"
     )
   ) {

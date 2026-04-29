@@ -8,6 +8,7 @@ from trms_backend.application.recognition_llm import (
     RecognitionLlmClient,
     RecognitionLlmExecutionError,
     RecognitionLlmExtractionResult,
+    OpenAiCompatibleRecognitionClient,
 )
 from trms_backend.domain.recognitions import (
     RecognitionFailureDetail,
@@ -24,6 +25,7 @@ from test_tasks_api import (
     create_task as create_admin_task,
     register_and_get_token,
 )
+from test_system_admin_api import system_admin_auth_headers
 
 
 class FakeRecognitionLlmClient(RecognitionLlmClient):
@@ -229,7 +231,7 @@ def test_execute_recognition_task_extracts_pdf_text_into_preparation_payload(tmp
     assert item["status"] == "failed"
     assert item["failure"] == {
         "stage": "ai",
-        "reason": "llm_provider_not_configured",
+        "reason": "text_llm_provider_not_configured",
     }
     preparation = item["raw_response"]["preparation"]
     assert preparation["material_id"] == material_id
@@ -576,6 +578,81 @@ def test_execute_recognition_task_auto_updates_default_material_type_from_recogn
     assert fake_llm.calls[0]["material_type"] == "other_attachment"
 
 
+def test_execute_recognition_task_uses_system_level_text_provider_override_without_restart(tmp_path, monkeypatch):
+    runtime_config = load_runtime_config(
+        env={
+            "DATABASE_URL": f"sqlite:///{tmp_path}/test.db",
+            "TRMS_PUBLIC_API_BASE_URL": "http://127.0.0.1:8000/api",
+        }
+    )
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename="text-invoice.pdf",
+        content=build_text_pdf_bytes(),
+        content_type="application/pdf",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    save_response = client.put(
+        "/api/system/recognition-provider-config",
+        json={
+            "text_llm": {
+                "base_url": "https://text.example.com/v1",
+                "model": "gpt-4.1-mini",
+                "api_key": "sk-system-text",
+            },
+            "vlm": {},
+        },
+        headers=system_admin_auth_headers(client),
+    )
+    assert save_response.status_code == 200
+
+    captured_provider_configs: list[dict[str, object]] = []
+
+    def fake_recognize(self, *, material, document_input):
+        captured_provider_configs.append(
+            {
+                "base_url": self._provider_config.base_url,
+                "model": self._provider_config.model,
+                "api_key": self._provider_config.api_key.get_secret_value(),
+                "material_id": material.id,
+                "source": document_input.source,
+            }
+        )
+        return RecognitionLlmExtractionResult(
+            raw_response={"provider": "system-override"},
+            recognized_fields={
+                "invoice_number": RecognitionFieldResult(
+                    value="SYS-001",
+                    source="ai",
+                    confidence=0.98,
+                ),
+            },
+        )
+
+    monkeypatch.setattr(OpenAiCompatibleRecognitionClient, "recognize", fake_recognize)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "succeeded"
+    assert captured_provider_configs == [
+        {
+            "base_url": "https://text.example.com/v1",
+            "model": "gpt-4.1-mini",
+            "api_key": "sk-system-text",
+            "material_id": material_id,
+            "source": "pdf_text",
+        }
+    ]
+
+
 def test_execute_recognition_task_marks_low_confidence_result_as_needs_confirmation(tmp_path):
     fake_llm = FakeRecognitionLlmClient(
         result=RecognitionLlmExtractionResult(
@@ -686,7 +763,7 @@ def test_execute_recognition_task_prepares_image_input_before_llm_capability_che
     assert item["status"] == "failed"
     assert item["failure"] == {
         "stage": "ai",
-        "reason": "llm_provider_not_configured",
+        "reason": "vlm_provider_not_configured",
     }
     assert item["raw_response"]["preparation"] == {
         "material_id": material_id,
@@ -723,7 +800,7 @@ def test_execute_recognition_task_prepares_scanned_pdf_input_before_llm_capabili
     assert response.status_code == 200
     assert response.json()["item"]["failure"] == {
         "stage": "ai",
-        "reason": "llm_provider_not_configured",
+        "reason": "vlm_provider_not_configured",
     }
     assert response.json()["item"]["raw_response"]["preparation"]["recognition_input"] == {
         "source": "pdf_file",

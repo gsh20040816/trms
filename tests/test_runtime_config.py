@@ -5,8 +5,13 @@ from fastapi.testclient import TestClient
 
 import trms_backend.runtime_config as runtime_config_module
 from trms_backend.main import create_app
+from trms_backend.domain.system_ai_provider_config import (
+    SystemAiProviderConfig,
+    SystemAiProviderOverride,
+)
 from trms_backend.runtime_config import (
     RuntimeConfigError,
+    apply_system_ai_provider_overrides,
     load_runtime_config,
     load_runtime_environment_variables,
 )
@@ -225,6 +230,63 @@ def test_llm_provider_safe_log_fields_redact_api_key():
     assert safe_log_fields["api_key"] == "[redacted]"
     assert safe_log_fields["api_key_configured"] is True
     assert "sk-live-secret-value" not in str(safe_log_fields)
+
+
+def test_load_runtime_config_supports_separate_text_llm_and_vlm_providers():
+    config = load_runtime_config(
+        env={
+            "TRMS_TEXT_LLM_API_KEY": "sk-text-secret",
+            "TRMS_TEXT_LLM_BASE_URL": "https://text.example.com/v1",
+            "TRMS_TEXT_LLM_MODEL": "gpt-4.1-mini",
+            "TRMS_VLM_API_KEY": "sk-vlm-secret",
+            "TRMS_VLM_BASE_URL": "https://vlm.example.com/v1",
+            "TRMS_VLM_MODEL": "gpt-4.1",
+        }
+    )
+
+    assert config.text_llm_provider is not None
+    assert config.text_llm_provider.api_key.get_secret_value() == "sk-text-secret"
+    assert config.text_llm_provider.base_url == "https://text.example.com/v1"
+    assert config.text_llm_provider.model == "gpt-4.1-mini"
+    assert config.vlm_provider is not None
+    assert config.vlm_provider.api_key.get_secret_value() == "sk-vlm-secret"
+    assert config.vlm_provider.base_url == "https://vlm.example.com/v1"
+    assert config.vlm_provider.model == "gpt-4.1"
+
+
+def test_apply_system_ai_provider_overrides_prefers_system_config_and_falls_back_to_env():
+    config = load_runtime_config(
+        env={
+            "TRMS_TEXT_LLM_API_KEY": "sk-text-env",
+            "TRMS_TEXT_LLM_BASE_URL": "https://text-env.example.com/v1",
+            "TRMS_TEXT_LLM_MODEL": "gpt-4.1-mini",
+            "TRMS_VLM_API_KEY": "sk-vlm-env",
+            "TRMS_VLM_BASE_URL": "https://vlm-env.example.com/v1",
+            "TRMS_VLM_MODEL": "gpt-4.1",
+        }
+    )
+
+    effective = apply_system_ai_provider_overrides(
+        config,
+        SystemAiProviderConfig(
+            text_llm=SystemAiProviderOverride(
+                base_url="https://text-system.example.com/v1",
+                model="gpt-4.1-nano",
+            ),
+            vlm=SystemAiProviderOverride(
+                model="gpt-4.1-vision",
+            ),
+        ),
+    )
+
+    assert effective.text_llm_provider is not None
+    assert effective.text_llm_provider.base_url == "https://text-system.example.com/v1"
+    assert effective.text_llm_provider.model == "gpt-4.1-nano"
+    assert effective.text_llm_provider.api_key.get_secret_value() == "sk-text-env"
+    assert effective.vlm_provider is not None
+    assert effective.vlm_provider.base_url == "https://vlm-env.example.com/v1"
+    assert effective.vlm_provider.model == "gpt-4.1-vision"
+    assert effective.vlm_provider.api_key.get_secret_value() == "sk-vlm-env"
 
 
 def test_auth_config_reads_bootstrap_token_and_redacts_it_from_logs():

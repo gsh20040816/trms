@@ -20,7 +20,6 @@ from trms_backend.application.recognition_audit import (
 )
 from trms_backend.application.recognition_runtime import (
     RecognitionLlmCapability,
-    RecognitionLlmCapabilityStatus,
 )
 from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.materials import (
@@ -144,22 +143,17 @@ class RecognitionPreparationService:
             )
 
         base_payload["preparation"]["recognition_input"] = document_input.to_safe_log_payload()
-        if self._llm_capability.status is RecognitionLlmCapabilityStatus.DISABLED:
-            return self._fail_task(
-                recognition_task_id=recognition_task_id,
-                raw_response=base_payload,
-                failure=self._llm_capability.failure,
-                material=material,
-                actor_id=actor_id,
-                request_id=request_id,
-            )
         if self._recognition_llm_client is None:
             return self._fail_task(
                 recognition_task_id=recognition_task_id,
                 raw_response=base_payload,
-                failure=RecognitionFailureDetail(
-                    stage=RecognitionFailureStage.AI,
-                    reason="structured_recognition_not_configured",
+                failure=(
+                    self._llm_capability.failure
+                    if self._llm_capability.failure is not None
+                    else RecognitionFailureDetail(
+                        stage=RecognitionFailureStage.AI,
+                        reason="structured_recognition_not_configured",
+                    )
                 ),
                 material=material,
                 actor_id=actor_id,

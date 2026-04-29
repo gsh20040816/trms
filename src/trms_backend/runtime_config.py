@@ -7,6 +7,10 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
+from trms_backend.domain.system_ai_provider_config import (
+    SystemAiProviderConfig,
+    SystemAiProviderOverride,
+)
 from trms_backend.logging_safety import sanitize_log_fields
 
 RuntimeEnvironment = Literal["development", "test", "production"]
@@ -273,7 +277,8 @@ class RuntimeConfig(BaseModel):
     api_port: int = Field(ge=1, le=65535)
     async_jobs: AsyncJobConfig
     auth: AuthConfig
-    llm_provider: LLMProviderConfig | None = None
+    text_llm_provider: LLMProviderConfig | None = None
+    vlm_provider: LLMProviderConfig | None = None
 
     @field_validator("database_url")
     @classmethod
@@ -333,6 +338,10 @@ class RuntimeConfig(BaseModel):
             return self.file_storage.root_dir
         raise RuntimeError("material_storage_dir is only available for local file storage")
 
+    @property
+    def llm_provider(self) -> LLMProviderConfig | None:
+        return self.text_llm_provider or self.vlm_provider
+
     def to_safe_log_fields(self) -> dict[str, object]:
         return sanitize_log_fields(
             {
@@ -350,6 +359,16 @@ class RuntimeConfig(BaseModel):
                 "auth": self.auth.to_safe_log_fields(),
                 "llm_provider": (
                     self.llm_provider.to_safe_log_fields() if self.llm_provider is not None else None
+                ),
+                "text_llm_provider": (
+                    self.text_llm_provider.to_safe_log_fields()
+                    if self.text_llm_provider is not None
+                    else None
+                ),
+                "vlm_provider": (
+                    self.vlm_provider.to_safe_log_fields()
+                    if self.vlm_provider is not None
+                    else None
                 ),
             }
         )
@@ -472,19 +491,26 @@ def load_runtime_config(
         environment_variables.get("TRMS_STORAGE_S3_KEY_PREFIX"),
     )
 
-    raw_llm_api_key = _resolve_value(llm_api_key, environment_variables.get("TRMS_LLM_API_KEY"))
-    raw_llm_base_url = _resolve_value(
-        llm_base_url,
-        environment_variables.get("TRMS_LLM_BASE_URL"),
+    text_llm_provider_payload = _resolve_provider_payload(
+        explicit={
+            "api_key": llm_api_key,
+            "base_url": llm_base_url,
+            "model": llm_model,
+            "timeout_seconds": llm_timeout_seconds,
+            "max_retries": llm_max_retries,
+        },
+        env=environment_variables,
+        prefix="TRMS_TEXT_LLM",
+        legacy_prefix="TRMS_LLM",
+        issues=issues,
     )
-    raw_llm_model = _resolve_value(llm_model, environment_variables.get("TRMS_LLM_MODEL"))
-    raw_llm_timeout_seconds = _resolve_value(
-        llm_timeout_seconds,
-        environment_variables.get("TRMS_LLM_TIMEOUT_SECONDS"),
-    )
-    raw_llm_max_retries = _resolve_value(
-        llm_max_retries,
-        environment_variables.get("TRMS_LLM_MAX_RETRIES"),
+    vlm_provider_payload = _resolve_provider_payload(
+        explicit=None,
+        env=environment_variables,
+        prefix="TRMS_VLM",
+        legacy_prefix="TRMS_LLM",
+        issues=issues,
+        validate_legacy_missing=False,
     )
     raw_async_job_mode = _resolve_value(
         async_job_mode,
@@ -564,43 +590,6 @@ def load_runtime_config(
     else:
         storage_payload = {"backend": raw_storage_backend}
 
-    llm_provider_payload: dict[str, object] | None = None
-    if any(
-        value is not None
-        for value in (
-            raw_llm_api_key,
-            raw_llm_base_url,
-            raw_llm_model,
-            raw_llm_timeout_seconds,
-            raw_llm_max_retries,
-        )
-    ):
-        if not _has_meaningful_value(raw_llm_api_key):
-            issues.append(
-                "TRMS_LLM_API_KEY is required when any TRMS_LLM_* setting is configured"
-            )
-        if not _has_meaningful_value(raw_llm_model):
-            issues.append(
-                "TRMS_LLM_MODEL is required when any TRMS_LLM_* setting is configured"
-            )
-        llm_provider_payload = {
-            "api_key": raw_llm_api_key,
-            "base_url": (
-                raw_llm_base_url if raw_llm_base_url is not None else DEFAULT_LLM_BASE_URL
-            ),
-            "model": raw_llm_model,
-            "timeout_seconds": (
-                raw_llm_timeout_seconds
-                if raw_llm_timeout_seconds is not None
-                else DEFAULT_LLM_TIMEOUT_SECONDS
-            ),
-            "max_retries": (
-                raw_llm_max_retries
-                if raw_llm_max_retries is not None
-                else DEFAULT_LLM_MAX_RETRIES
-            ),
-        }
-
     if issues:
         raise RuntimeConfigError(issues)
 
@@ -624,7 +613,8 @@ def load_runtime_config(
                     "telegram_inbound_token": raw_auth_telegram_inbound_token,
                     "email_inbound_token": raw_auth_email_inbound_token,
                 },
-                "llm_provider": llm_provider_payload,
+                "text_llm_provider": text_llm_provider_payload,
+                "vlm_provider": vlm_provider_payload,
             }
         )
     except ValidationError as error:
@@ -635,6 +625,158 @@ def _resolve_value(explicit_value: object | None, environment_value: object | No
     if explicit_value is not None:
         return explicit_value
     return environment_value
+
+
+def _resolve_provider_payload(
+    *,
+    explicit: Mapping[str, object | None] | None,
+    env: Mapping[str, str],
+    prefix: str,
+    legacy_prefix: str,
+    issues: list[str],
+    validate_legacy_missing: bool = True,
+) -> dict[str, object] | None:
+    explicit_values = explicit or {}
+    explicit_has_values = any(value is not None for value in explicit_values.values())
+    prefixed_values = {
+        "api_key": env.get(f"{prefix}_API_KEY"),
+        "base_url": env.get(f"{prefix}_BASE_URL"),
+        "model": env.get(f"{prefix}_MODEL"),
+        "timeout_seconds": env.get(f"{prefix}_TIMEOUT_SECONDS"),
+        "max_retries": env.get(f"{prefix}_MAX_RETRIES"),
+    }
+    prefixed_has_values = any(value is not None for value in prefixed_values.values())
+    legacy_values = {
+        "api_key": env.get(f"{legacy_prefix}_API_KEY"),
+        "base_url": env.get(f"{legacy_prefix}_BASE_URL"),
+        "model": env.get(f"{legacy_prefix}_MODEL"),
+        "timeout_seconds": env.get(f"{legacy_prefix}_TIMEOUT_SECONDS"),
+        "max_retries": env.get(f"{legacy_prefix}_MAX_RETRIES"),
+    }
+    legacy_has_values = any(value is not None for value in legacy_values.values())
+
+    if not explicit_has_values and not prefixed_has_values and not legacy_has_values:
+        return None
+
+    source_values = prefixed_values if prefixed_has_values else legacy_values
+    using_legacy_values = not prefixed_has_values and legacy_has_values
+    if explicit_has_values:
+        source_values = {
+            **source_values,
+            **{key: value for key, value in explicit_values.items() if value is not None},
+        }
+
+    api_key = source_values.get("api_key")
+    model = source_values.get("model")
+    issue_prefix = legacy_prefix if using_legacy_values else prefix
+    if not _has_meaningful_value(api_key) and (validate_legacy_missing or not using_legacy_values):
+        issues.append(
+            f"{issue_prefix}_API_KEY is required when any {issue_prefix}_* setting is configured"
+        )
+    if not _has_meaningful_value(model) and (validate_legacy_missing or not using_legacy_values):
+        issues.append(
+            f"{issue_prefix}_MODEL is required when any {issue_prefix}_* setting is configured"
+        )
+    return {
+        "api_key": api_key,
+        "base_url": (
+            source_values.get("base_url")
+            if source_values.get("base_url") is not None
+            else DEFAULT_LLM_BASE_URL
+        ),
+        "model": model,
+        "timeout_seconds": (
+            source_values.get("timeout_seconds")
+            if source_values.get("timeout_seconds") is not None
+            else DEFAULT_LLM_TIMEOUT_SECONDS
+        ),
+        "max_retries": (
+            source_values.get("max_retries")
+            if source_values.get("max_retries") is not None
+            else DEFAULT_LLM_MAX_RETRIES
+        ),
+    }
+
+
+def apply_system_ai_provider_overrides(
+    runtime_config: RuntimeConfig,
+    system_config: SystemAiProviderConfig | None,
+) -> RuntimeConfig:
+    if system_config is None:
+        return runtime_config
+
+    return runtime_config.model_copy(
+        update={
+            "text_llm_provider": _merge_provider_override(
+                fallback_provider=runtime_config.text_llm_provider,
+                override=system_config.text_llm,
+            ),
+            "vlm_provider": _merge_provider_override(
+                fallback_provider=runtime_config.vlm_provider,
+                override=system_config.vlm,
+            ),
+        }
+    )
+
+
+def _merge_provider_override(
+    *,
+    fallback_provider: LLMProviderConfig | None,
+    override: SystemAiProviderOverride,
+) -> LLMProviderConfig | None:
+    has_override_values = any(
+        (
+            override.base_url is not None,
+            override.model is not None,
+            override.timeout_seconds is not None,
+            override.max_retries is not None,
+            override.api_key is not None,
+        )
+    )
+    if not has_override_values:
+        return fallback_provider
+
+    merged_api_key = override.api_key or (
+        fallback_provider.api_key if fallback_provider is not None else None
+    )
+    merged_model = override.model or (
+        fallback_provider.model if fallback_provider is not None else None
+    )
+    if merged_api_key is None or merged_model is None:
+        return None
+
+    return LLMProviderConfig.model_validate(
+        {
+            "api_key": merged_api_key,
+            "base_url": (
+                override.base_url
+                or (
+                    fallback_provider.base_url
+                    if fallback_provider is not None
+                    else DEFAULT_LLM_BASE_URL
+                )
+            ),
+            "model": merged_model,
+            "timeout_seconds": (
+                override.timeout_seconds
+                if override.timeout_seconds is not None
+                else (
+                    fallback_provider.timeout_seconds
+                    if fallback_provider is not None
+                    else DEFAULT_LLM_TIMEOUT_SECONDS
+                )
+            ),
+            "max_retries": (
+                override.max_retries
+                if override.max_retries is not None
+                else (
+                    fallback_provider.max_retries
+                    if fallback_provider is not None
+                    else DEFAULT_LLM_MAX_RETRIES
+                )
+            ),
+        }
+    )
 
 
 def load_runtime_environment_variables(env: Mapping[str, str] | None = None) -> Mapping[str, str]:

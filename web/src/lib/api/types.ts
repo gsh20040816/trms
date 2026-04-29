@@ -89,10 +89,37 @@ export type RuntimeSummary = {
   async_job_mode: string;
   file_storage_backend: string;
   llm_provider_configured: boolean;
+  text_llm_provider_configured: boolean;
+  vlm_provider_configured: boolean;
   allow_admin_self_register: boolean;
   bootstrap_admin_configured: boolean;
   telegram_inbound_configured: boolean;
   email_inbound_configured: boolean;
+};
+
+export type SystemAiProviderConfigSummary = {
+  base_url: string | null;
+  model: string | null;
+  timeout_seconds: number | null;
+  max_retries: number | null;
+  api_key_configured: boolean;
+};
+
+export type SystemAiProviderConfigPayload = {
+  text_llm: {
+    base_url?: string | null;
+    model?: string | null;
+    timeout_seconds?: number | null;
+    max_retries?: number | null;
+    api_key?: string | null;
+  };
+  vlm: {
+    base_url?: string | null;
+    model?: string | null;
+    timeout_seconds?: number | null;
+    max_retries?: number | null;
+    api_key?: string | null;
+  };
 };
 
 export type SystemUserCountSummary = {
@@ -104,6 +131,10 @@ export type SystemUserCountSummary = {
 export type SystemDashboard = {
   service_health: string;
   global_invoice_config: GlobalInvoiceConfig | null;
+  system_ai_provider_config: {
+    text_llm: SystemAiProviderConfigSummary;
+    vlm: SystemAiProviderConfigSummary;
+  };
   runtime: RuntimeSummary;
   user_counts: SystemUserCountSummary;
 };

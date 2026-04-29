@@ -7,6 +7,7 @@ from trms_backend.application.metrics import InMemoryMetricsCollector, MetricsCo
 from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.material_type_update import MaterialTypeUpdateService
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
+from trms_backend.application.recognition_llm import RoutedRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
 from trms_backend.application.telegram_material_submission import (
@@ -41,6 +42,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyMaterialReminderRepository,
     SqlAlchemyMaterialRepository,
     SqlAlchemyRecognitionTaskRepository,
+    SqlAlchemySystemAiProviderConfigRepository,
     SqlAlchemyTaskRepository,
     SqlAlchemyTelegramAccountBindingRepository,
     SqlAlchemyValidationRepository,
@@ -51,7 +53,11 @@ from trms_backend.request_context_logging import (
     install_request_id_log_record_factory,
     reset_request_id,
 )
-from trms_backend.runtime_config import RuntimeConfig, load_runtime_config
+from trms_backend.runtime_config import (
+    RuntimeConfig,
+    apply_system_ai_provider_overrides,
+    load_runtime_config,
+)
 
 
 def create_app(
@@ -66,12 +72,7 @@ def create_app(
     install_request_id_log_record_factory()
     app = FastAPI(title="TRMS API")
     register_error_response_handlers(app)
-    app.state.runtime_config = config
-    app.state.async_job_config = config.async_jobs
-    app.state.recognition_llm_capability = resolve_recognition_llm_capability(config)
     app.state.metrics_collector = metrics_collector or InMemoryMetricsCollector()
-    if recognition_llm_client is None and config.llm_provider is not None:
-        recognition_llm_client = OpenAiCompatibleRecognitionClient(config.llm_provider)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(config.cors_allowed_origins),
@@ -85,13 +86,29 @@ def create_app(
         allow_schema_bootstrap=config.environment != "production",
     )
     global_invoice_config_repository = SqlAlchemyGlobalInvoiceConfigRepository(session_factory)
+    system_ai_provider_config_repository = SqlAlchemySystemAiProviderConfigRepository(session_factory)
     auth_repository = SqlAlchemyAuthRepository(session_factory)
     if global_invoice_config is not None:
         global_invoice_config_repository.set(global_invoice_config)
+    def resolve_effective_runtime_config() -> RuntimeConfig:
+        return apply_system_ai_provider_overrides(
+            config,
+            system_ai_provider_config_repository.get(),
+        )
+
+    effective_config = resolve_effective_runtime_config()
+    app.state.runtime_config = effective_config
+    app.state.async_job_config = effective_config.async_jobs
+    app.state.recognition_llm_capability = resolve_recognition_llm_capability(effective_config)
+    if recognition_llm_client is None:
+        recognition_llm_client = RoutedRecognitionClient(
+            text_provider_config_resolver=lambda: resolve_effective_runtime_config().text_llm_provider,
+            vlm_provider_config_resolver=lambda: resolve_effective_runtime_config().vlm_provider,
+        )
     task_repository = SqlAlchemyTaskRepository(session_factory)
     material_repository = SqlAlchemyMaterialRepository(session_factory)
     if material_file_storage is None:
-        material_file_storage = build_material_file_storage(config)
+        material_file_storage = build_material_file_storage(effective_config)
     material_reminder_repository = SqlAlchemyMaterialReminderRepository(session_factory)
     automatic_reminder_task_repository = SqlAlchemyAutomaticReminderTaskRepository(session_factory)
     export_job_repository = SqlAlchemyExportJobRepository(session_factory)
@@ -170,7 +187,8 @@ def create_app(
         build_system_router(
             auth_repository,
             global_invoice_config_repository,
-            config,
+            system_ai_provider_config_repository,
+            effective_config,
         )
     )
     app.include_router(
@@ -217,7 +235,7 @@ def create_app(
             material_deletion_service,
             material_type_update_service,
             audit_log_repository,
-            config.async_jobs.mode,
+            effective_config.async_jobs.mode,
             app.state.metrics_collector,
         )
     )

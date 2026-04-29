@@ -15,7 +15,10 @@ import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader, RoleWorkspace, StatCard } from "../components/dashboard";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
-import type { SystemDashboard } from "../lib/api/types";
+import type {
+  SystemAiProviderConfigPayload,
+  SystemDashboard,
+} from "../lib/api/types";
 import { useAuthSession } from "./auth-store";
 
 type SystemDashboardState =
@@ -33,10 +36,40 @@ type ConfigFormErrors = {
   taxNumber?: string;
 };
 
+type RecognitionProviderFormState = {
+  textBaseUrl: string;
+  textModel: string;
+  textTimeoutSeconds: string;
+  textMaxRetries: string;
+  textApiKey: string;
+  vlmBaseUrl: string;
+  vlmModel: string;
+  vlmTimeoutSeconds: string;
+  vlmMaxRetries: string;
+  vlmApiKey: string;
+};
+
+type RecognitionProviderFormErrors = Partial<Record<keyof RecognitionProviderFormState, string>>;
+
 function buildConfigFormState(dashboard: SystemDashboard): ConfigFormState {
   return {
     invoiceTitle: dashboard.global_invoice_config?.invoice_title ?? "",
     taxNumber: dashboard.global_invoice_config?.tax_number ?? "",
+  };
+}
+
+function buildRecognitionProviderFormState(dashboard: SystemDashboard): RecognitionProviderFormState {
+  return {
+    textBaseUrl: dashboard.system_ai_provider_config.text_llm.base_url ?? "",
+    textModel: dashboard.system_ai_provider_config.text_llm.model ?? "",
+    textTimeoutSeconds: dashboard.system_ai_provider_config.text_llm.timeout_seconds?.toString() ?? "",
+    textMaxRetries: dashboard.system_ai_provider_config.text_llm.max_retries?.toString() ?? "",
+    textApiKey: "",
+    vlmBaseUrl: dashboard.system_ai_provider_config.vlm.base_url ?? "",
+    vlmModel: dashboard.system_ai_provider_config.vlm.model ?? "",
+    vlmTimeoutSeconds: dashboard.system_ai_provider_config.vlm.timeout_seconds?.toString() ?? "",
+    vlmMaxRetries: dashboard.system_ai_provider_config.vlm.max_retries?.toString() ?? "",
+    vlmApiKey: "",
   };
 }
 
@@ -49,6 +82,70 @@ function validateConfigForm(formState: ConfigFormState) {
     errors.taxNumber = "税号不能为空。";
   }
   return errors;
+}
+
+function parseOptionalNumber(
+  rawValue: string,
+  fieldLabel: string,
+  integerOnly = false,
+): { value: number | null; error?: string } {
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    return { value: null };
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return { value: null, error: `${fieldLabel}必须是数字。` };
+  }
+  if (parsed <= 0 && fieldLabel.includes("超时")) {
+    return { value: null, error: `${fieldLabel}必须大于 0。` };
+  }
+  if (parsed < 0 && fieldLabel.includes("重试")) {
+    return { value: null, error: `${fieldLabel}不能小于 0。` };
+  }
+  if (integerOnly && !Number.isInteger(parsed)) {
+    return { value: null, error: `${fieldLabel}必须是整数。` };
+  }
+  return { value: parsed };
+}
+
+function validateRecognitionProviderForm(formState: RecognitionProviderFormState) {
+  const errors: RecognitionProviderFormErrors = {};
+
+  for (const [fieldKey, fieldLabel, integerOnly] of [
+    ["textTimeoutSeconds", "文本 LLM 超时秒数", false],
+    ["textMaxRetries", "文本 LLM 重试次数", true],
+    ["vlmTimeoutSeconds", "VLM 超时秒数", false],
+    ["vlmMaxRetries", "VLM 重试次数", true],
+  ] as const) {
+    const parsed = parseOptionalNumber(formState[fieldKey], fieldLabel, integerOnly);
+    if (parsed.error) {
+      errors[fieldKey] = parsed.error;
+    }
+  }
+
+  return errors;
+}
+
+function buildRecognitionProviderPayload(
+  formState: RecognitionProviderFormState,
+): SystemAiProviderConfigPayload {
+  return {
+    text_llm: {
+      base_url: formState.textBaseUrl.trim() || null,
+      model: formState.textModel.trim() || null,
+      timeout_seconds: parseOptionalNumber(formState.textTimeoutSeconds, "文本 LLM 超时秒数").value,
+      max_retries: parseOptionalNumber(formState.textMaxRetries, "文本 LLM 重试次数", true).value,
+      ...(formState.textApiKey.trim() ? { api_key: formState.textApiKey.trim() } : {}),
+    },
+    vlm: {
+      base_url: formState.vlmBaseUrl.trim() || null,
+      model: formState.vlmModel.trim() || null,
+      timeout_seconds: parseOptionalNumber(formState.vlmTimeoutSeconds, "VLM 超时秒数").value,
+      max_retries: parseOptionalNumber(formState.vlmMaxRetries, "VLM 重试次数", true).value,
+      ...(formState.vlmApiKey.trim() ? { api_key: formState.vlmApiKey.trim() } : {}),
+    },
+  };
 }
 
 function renderBooleanChip(value: boolean, trueLabel: string, falseLabel: string) {
@@ -71,7 +168,21 @@ export function SystemAdminDashboardPage() {
     taxNumber: "",
   });
   const [formErrors, setFormErrors] = useState<ConfigFormErrors>({});
+  const [recognitionProviderFormState, setRecognitionProviderFormState] = useState<RecognitionProviderFormState>({
+    textBaseUrl: "",
+    textModel: "",
+    textTimeoutSeconds: "",
+    textMaxRetries: "",
+    textApiKey: "",
+    vlmBaseUrl: "",
+    vlmModel: "",
+    vlmTimeoutSeconds: "",
+    vlmMaxRetries: "",
+    vlmApiKey: "",
+  });
+  const [recognitionProviderFormErrors, setRecognitionProviderFormErrors] = useState<RecognitionProviderFormErrors>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingRecognitionProviders, setIsSavingRecognitionProviders] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
 
   useEffect(() => {
@@ -92,6 +203,8 @@ export function SystemAdminDashboardPage() {
         }
         setState({ status: "ready", dashboard });
         setFormState(buildConfigFormState(dashboard));
+        setRecognitionProviderFormState(buildRecognitionProviderFormState(dashboard));
+        setRecognitionProviderFormErrors({});
       } catch (error) {
         if (cancelled) {
           return;
@@ -114,6 +227,8 @@ export function SystemAdminDashboardPage() {
   const dashboard = state.status === "ready" ? state.dashboard : null;
   const validationErrors = validateConfigForm(formState);
   const hasValidationErrors = Object.keys(validationErrors).length > 0;
+  const recognitionProviderValidationErrors = validateRecognitionProviderForm(recognitionProviderFormState);
+  const hasRecognitionProviderValidationErrors = Object.keys(recognitionProviderValidationErrors).length > 0;
   const summaryCards = dashboard ? [
     {
       label: "成员账号",
@@ -167,6 +282,44 @@ export function SystemAdminDashboardPage() {
       showError("保存全局发票配置失败");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleRecognitionProviderSave() {
+    const nextErrors = validateRecognitionProviderForm(recognitionProviderFormState);
+    setRecognitionProviderFormErrors(nextErrors);
+    setSaveError(null);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    setIsSavingRecognitionProviders(true);
+    try {
+      const savedConfig = await trmsApi.updateRecognitionProviderConfig(
+        buildRecognitionProviderPayload(recognitionProviderFormState),
+      );
+      setState((current) => (
+        current.status === "ready"
+          ? {
+            status: "ready",
+            dashboard: {
+              ...current.dashboard,
+              system_ai_provider_config: savedConfig,
+            },
+          }
+          : current
+      ));
+      setRecognitionProviderFormState((current) => ({
+        ...current,
+        textApiKey: "",
+        vlmApiKey: "",
+      }));
+      showSuccess("已保存识别 Provider 系统配置");
+    } catch (error) {
+      setSaveError(error);
+      showError("保存识别 Provider 系统配置失败");
+    } finally {
+      setIsSavingRecognitionProviders(false);
     }
   }
 
@@ -303,6 +456,189 @@ export function SystemAdminDashboardPage() {
 
             <Card>
               <CardContent>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                  <Box>
+                    <Typography variant="overline" color="text.secondary">
+                      Recognition Providers
+                    </Typography>
+                    <Typography variant="h5" sx={{ mt: 0.5 }}>
+                      文本 LLM 与 VLM 配置
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      系统配置优先于 `.env`；当前表单留空的字段会继续回退到环境变量。API key 不回显，留空表示保持现有系统密钥不变。
+                    </Typography>
+                  </Box>
+                  <Stack spacing={1} alignItems="flex-end">
+                    {renderBooleanChip(
+                      dashboard.runtime.text_llm_provider_configured,
+                      "文本 LLM 已生效",
+                      "文本 LLM 未生效",
+                    )}
+                    {renderBooleanChip(
+                      dashboard.runtime.vlm_provider_configured,
+                      "VLM 已生效",
+                      "VLM 未生效",
+                    )}
+                  </Stack>
+                </Stack>
+
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", xl: "repeat(2, minmax(0, 1fr))" },
+                    gap: 3,
+                    mt: 3,
+                  }}
+                >
+                  {([
+                    {
+                      key: "text",
+                      title: "纯文本材料 / PDF 文本提取",
+                      summary: dashboard.system_ai_provider_config.text_llm,
+                      baseUrlKey: "textBaseUrl",
+                      modelKey: "textModel",
+                      timeoutKey: "textTimeoutSeconds",
+                      retryKey: "textMaxRetries",
+                      apiKeyKey: "textApiKey",
+                    },
+                    {
+                      key: "vlm",
+                      title: "扫描 PDF / 图片 / 截图",
+                      summary: dashboard.system_ai_provider_config.vlm,
+                      baseUrlKey: "vlmBaseUrl",
+                      modelKey: "vlmModel",
+                      timeoutKey: "vlmTimeoutSeconds",
+                      retryKey: "vlmMaxRetries",
+                      apiKeyKey: "vlmApiKey",
+                    },
+                  ] as const).map((provider) => (
+                    <Card key={provider.key} variant="outlined">
+                      <CardContent>
+                        <Stack spacing={2}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                            <Box>
+                              <Typography variant="subtitle1">{provider.title}</Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                当前系统覆盖：{provider.summary.base_url ?? "未设置 base URL"} / {provider.summary.model ?? "未设置模型"}
+                              </Typography>
+                            </Box>
+                            {renderBooleanChip(
+                              provider.summary.api_key_configured,
+                              "系统密钥已保存",
+                              "系统密钥未保存",
+                            )}
+                          </Stack>
+
+                          <TextField
+                            label="Base URL"
+                            value={recognitionProviderFormState[provider.baseUrlKey]}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setRecognitionProviderFormState((current) => ({
+                                ...current,
+                                [provider.baseUrlKey]: nextValue,
+                              }));
+                            }}
+                            fullWidth
+                          />
+                          <TextField
+                            label="模型"
+                            value={recognitionProviderFormState[provider.modelKey]}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setRecognitionProviderFormState((current) => ({
+                                ...current,
+                                [provider.modelKey]: nextValue,
+                              }));
+                            }}
+                            fullWidth
+                          />
+                          <Box
+                            sx={{
+                              display: "grid",
+                              gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" },
+                              gap: 2,
+                            }}
+                          >
+                            <TextField
+                              label="超时秒数"
+                              value={recognitionProviderFormState[provider.timeoutKey]}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setRecognitionProviderFormState((current) => ({
+                                  ...current,
+                                  [provider.timeoutKey]: nextValue,
+                                }));
+                                setRecognitionProviderFormErrors((current) => ({
+                                  ...current,
+                                  [provider.timeoutKey]: undefined,
+                                }));
+                              }}
+                              error={Boolean(recognitionProviderFormErrors[provider.timeoutKey])}
+                              helperText={recognitionProviderFormErrors[provider.timeoutKey]}
+                              fullWidth
+                            />
+                            <TextField
+                              label="最大重试次数"
+                              value={recognitionProviderFormState[provider.retryKey]}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setRecognitionProviderFormState((current) => ({
+                                  ...current,
+                                  [provider.retryKey]: nextValue,
+                                }));
+                                setRecognitionProviderFormErrors((current) => ({
+                                  ...current,
+                                  [provider.retryKey]: undefined,
+                                }));
+                              }}
+                              error={Boolean(recognitionProviderFormErrors[provider.retryKey])}
+                              helperText={recognitionProviderFormErrors[provider.retryKey]}
+                              fullWidth
+                            />
+                          </Box>
+                          <TextField
+                            label="API Key"
+                            type="password"
+                            value={recognitionProviderFormState[provider.apiKeyKey]}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setRecognitionProviderFormState((current) => ({
+                                ...current,
+                                [provider.apiKeyKey]: nextValue,
+                              }));
+                            }}
+                            helperText="留空表示保持当前系统配置中的密钥；若系统配置未保存密钥，则继续 fallback 到 .env。"
+                            fullWidth
+                          />
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+
+                {hasRecognitionProviderValidationErrors ? (
+                  <Alert severity="warning" sx={{ mt: 2 }}>
+                    请先修正文本 LLM / VLM 的数字字段格式，再保存识别 Provider 配置。
+                  </Alert>
+                ) : null}
+
+                <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
+                  <Button
+                    variant="contained"
+                    onClick={() => {
+                      void handleRecognitionProviderSave();
+                    }}
+                    disabled={isSavingRecognitionProviders}
+                  >
+                    {isSavingRecognitionProviders ? "保存中..." : "保存识别 Provider 配置"}
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent>
                 <Typography variant="overline" color="text.secondary">
                   Runtime Summary
                 </Typography>
@@ -358,6 +694,26 @@ export function SystemAdminDashboardPage() {
                         dashboard.runtime.llm_provider_configured,
                         "已配置",
                         "未配置",
+                      )}
+                    </Box>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2">纯文本材料 Provider</Typography>
+                    <Box sx={{ mt: 1 }}>
+                      {renderBooleanChip(
+                        dashboard.runtime.text_llm_provider_configured,
+                        "已生效",
+                        "未生效",
+                      )}
+                    </Box>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2">VLM Provider</Typography>
+                    <Box sx={{ mt: 1 }}>
+                      {renderBooleanChip(
+                        dashboard.runtime.vlm_provider_configured,
+                        "已生效",
+                        "未生效",
                       )}
                     </Box>
                   </Box>

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import BigInteger, JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trms_backend.infrastructure.database import Base
@@ -12,6 +12,24 @@ class GlobalInvoiceConfigRow(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     invoice_title: Mapped[str] = mapped_column(String(255), nullable=False)
     tax_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SystemAiProviderConfigRow(Base):
+    __tablename__ = "system_ai_provider_configs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    text_llm_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    text_llm_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    text_llm_timeout_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    text_llm_max_retries: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text_llm_api_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    vlm_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vlm_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vlm_timeout_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vlm_max_retries: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vlm_api_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

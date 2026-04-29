@@ -11,7 +11,9 @@ from trms_backend.application.async_jobs import AsyncJobWorker
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
 from trms_backend.application.metrics import InMemoryMetricsCollector
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
-from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
+from trms_backend.application.recognition_llm import (
+    RoutedRecognitionClient,
+)
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
 from trms_backend.infrastructure.database import build_session_factory, init_database
@@ -23,12 +25,14 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyInvoiceRepository,
     SqlAlchemyMaterialRepository,
     SqlAlchemyRecognitionTaskRepository,
+    SqlAlchemySystemAiProviderConfigRepository,
     SqlAlchemyTaskRepository,
     SqlAlchemyValidationRepository,
 )
 from trms_backend.infrastructure.storage import build_material_file_storage
 from trms_backend.runtime_config import (
     RuntimeConfig,
+    apply_system_ai_provider_overrides,
     load_runtime_config,
     load_runtime_environment_variables,
 )
@@ -74,7 +78,7 @@ def run_api_command(argv: Sequence[str]) -> int:
     return 0
 
 
-def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
+def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, RuntimeConfig]:
     session_factory = build_session_factory(config.database_url)
     init_database(
         session_factory,
@@ -89,47 +93,59 @@ def build_async_job_worker(config: RuntimeConfig) -> AsyncJobWorker:
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
-    material_file_storage = build_material_file_storage(config)
+    system_ai_provider_config_repository = SqlAlchemySystemAiProviderConfigRepository(session_factory)
+    def resolve_effective_runtime_config() -> RuntimeConfig:
+        return apply_system_ai_provider_overrides(
+            config,
+            system_ai_provider_config_repository.get(),
+        )
+
+    effective_config = resolve_effective_runtime_config()
+    material_file_storage = build_material_file_storage(effective_config)
     metrics_collector = InMemoryMetricsCollector()
     recognition_llm_client = (
-        OpenAiCompatibleRecognitionClient(config.llm_provider)
-        if config.llm_provider is not None
-        else None
+        RoutedRecognitionClient(
+            text_provider_config_resolver=lambda: resolve_effective_runtime_config().text_llm_provider,
+            vlm_provider_config_resolver=lambda: resolve_effective_runtime_config().vlm_provider,
+        )
     )
     recognition_preparation_service = RecognitionPreparationService(
         material_repository,
         material_file_storage,
         recognition_task_repository,
         audit_log_repository,
-        resolve_recognition_llm_capability(config),
+        resolve_recognition_llm_capability(effective_config),
         recognition_llm_client,
         metrics_collector,
     )
-    return AsyncJobWorker(
-        config.async_jobs,
-        processors=(
-            RecognitionAsyncJobProcessor(
-                task_repository=task_repository,
-                material_repository=material_repository,
-                invoice_repository=invoice_repository,
-                validation_repository=validation_repository,
-                recognition_task_repository=recognition_task_repository,
-                recognition_preparation_service=recognition_preparation_service,
-                metrics_collector=metrics_collector,
-            ),
-            ExportAsyncJobProcessor(
-                task_repository=task_repository,
-                export_job_repository=export_job_repository,
-                invoice_repository=invoice_repository,
-                material_repository=material_repository,
-                material_file_storage=material_file_storage,
-                validation_repository=validation_repository,
-                split_repository=split_repository,
-                confirmation_repository=confirmation_repository,
-                audit_log_repository=audit_log_repository,
-                metrics_collector=metrics_collector,
+    return (
+        AsyncJobWorker(
+            effective_config.async_jobs,
+            processors=(
+                RecognitionAsyncJobProcessor(
+                    task_repository=task_repository,
+                    material_repository=material_repository,
+                    invoice_repository=invoice_repository,
+                    validation_repository=validation_repository,
+                    recognition_task_repository=recognition_task_repository,
+                    recognition_preparation_service=recognition_preparation_service,
+                    metrics_collector=metrics_collector,
+                ),
+                ExportAsyncJobProcessor(
+                    task_repository=task_repository,
+                    export_job_repository=export_job_repository,
+                    invoice_repository=invoice_repository,
+                    material_repository=material_repository,
+                    material_file_storage=material_file_storage,
+                    validation_repository=validation_repository,
+                    split_repository=split_repository,
+                    confirmation_repository=confirmation_repository,
+                    audit_log_repository=audit_log_repository,
+                    metrics_collector=metrics_collector,
+                ),
             ),
         ),
+        effective_config,
     )
 
 
@@ -144,7 +160,12 @@ def run_worker_command(argv: Sequence[str]) -> int:
 
     configure_worker_logging()
     config = load_runtime_config(env=load_runtime_environment_variables())
-    worker = build_async_job_worker(config)
+    worker_bundle = build_async_job_worker(config)
+    if isinstance(worker_bundle, tuple):
+        worker, effective_config = worker_bundle
+    else:
+        worker = worker_bundle
+        effective_config = config
     LOGGER.info(
         "worker_startup %s",
         {
@@ -152,10 +173,15 @@ def run_worker_command(argv: Sequence[str]) -> int:
             "poll_interval_seconds": worker.poll_interval_seconds,
             "registered_job_types": list(worker.registered_job_types),
             "environment": config.environment,
-            "file_storage": config.file_storage.to_safe_log_fields(),
-            "llm_provider": (
-                config.llm_provider.to_safe_log_fields()
-                if config.llm_provider is not None
+            "file_storage": effective_config.file_storage.to_safe_log_fields(),
+            "text_llm_provider": (
+                effective_config.text_llm_provider.to_safe_log_fields()
+                if effective_config.text_llm_provider is not None
+                else None
+            ),
+            "vlm_provider": (
+                effective_config.vlm_provider.to_safe_log_fields()
+                if effective_config.vlm_provider is not None
                 else None
             ),
         },

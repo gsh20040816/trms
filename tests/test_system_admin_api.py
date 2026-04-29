@@ -57,12 +57,30 @@ def test_system_admin_dashboard_returns_real_config_and_runtime_summary(tmp_path
             "invoice_title": "同济大学",
             "tax_number": "12100000425006117D",
         },
+        "system_ai_provider_config": {
+            "text_llm": {
+                "base_url": None,
+                "model": None,
+                "timeout_seconds": None,
+                "max_retries": None,
+                "api_key_configured": False,
+            },
+            "vlm": {
+                "base_url": None,
+                "model": None,
+                "timeout_seconds": None,
+                "max_retries": None,
+                "api_key_configured": False,
+            },
+        },
         "runtime": {
             "environment": "development",
             "public_api_base_url": "http://127.0.0.1:9876/api",
             "async_job_mode": "in_process",
             "file_storage_backend": "local",
             "llm_provider_configured": True,
+            "text_llm_provider_configured": True,
+            "vlm_provider_configured": True,
             "allow_admin_self_register": True,
             "bootstrap_admin_configured": True,
             "telegram_inbound_configured": True,
@@ -92,6 +110,49 @@ def test_system_admin_can_update_global_invoice_config(tmp_path):
     assert response.json() == {
         "invoice_title": "同济大学 ACM 实验室",
         "tax_number": "91310000TEST00001",
+    }
+
+
+def test_system_admin_can_update_recognition_provider_config(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.put(
+        "/api/system/recognition-provider-config",
+        json={
+            "text_llm": {
+                "base_url": "https://text.example.com/v1",
+                "model": "gpt-4.1-mini",
+                "timeout_seconds": 25,
+                "max_retries": 1,
+                "api_key": "sk-text-override",
+            },
+            "vlm": {
+                "base_url": "https://vlm.example.com/v1",
+                "model": "gpt-4.1",
+                "timeout_seconds": 40,
+                "max_retries": 2,
+                "api_key": "sk-vlm-override",
+            },
+        },
+        headers=system_admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "text_llm": {
+            "base_url": "https://text.example.com/v1",
+            "model": "gpt-4.1-mini",
+            "timeout_seconds": 25.0,
+            "max_retries": 1,
+            "api_key_configured": True,
+        },
+        "vlm": {
+            "base_url": "https://vlm.example.com/v1",
+            "model": "gpt-4.1",
+            "timeout_seconds": 40.0,
+            "max_retries": 2,
+            "api_key_configured": True,
+        },
     }
 
 
@@ -131,6 +192,28 @@ def test_system_admin_update_rejects_member(tmp_path):
             "invoice_title": "同济大学",
             "tax_number": "12100000425006117D",
         },
+        headers=member_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "actor is not allowed to manage system settings"
+
+
+def test_system_admin_recognition_provider_update_rejects_member(tmp_path):
+    client = make_client(tmp_path)
+    member_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+
+    response = client.put(
+        "/api/system/recognition-provider-config",
+        json={"text_llm": {}, "vlm": {}},
         headers=member_headers,
     )
 

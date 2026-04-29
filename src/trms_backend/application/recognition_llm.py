@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import StrEnum
 import json
 from datetime import datetime
@@ -228,6 +229,65 @@ class RecognitionLlmClient(Protocol):
         document_input: RecognitionDocumentInput,
     ) -> RecognitionLlmExtractionResult:
         raise NotImplementedError
+
+
+class RoutedRecognitionClient:
+    def __init__(
+        self,
+        *,
+        text_client: RecognitionLlmClient | None = None,
+        vlm_client: RecognitionLlmClient | None = None,
+        text_provider_config_resolver: Callable[[], LLMProviderConfig | None] | None = None,
+        vlm_provider_config_resolver: Callable[[], LLMProviderConfig | None] | None = None,
+    ) -> None:
+        self._text_client = text_client
+        self._vlm_client = vlm_client
+        self._text_provider_config_resolver = text_provider_config_resolver
+        self._vlm_provider_config_resolver = vlm_provider_config_resolver
+
+    def recognize(
+        self,
+        *,
+        material: MaterialRecord,
+        document_input: RecognitionDocumentInput,
+    ) -> RecognitionLlmExtractionResult:
+        selected_client: RecognitionLlmClient | None
+        missing_reason: str
+        if document_input.source is RecognitionInputSource.PDF_TEXT:
+            selected_client = self._text_client or self._build_resolved_client(
+                self._text_provider_config_resolver
+            )
+            missing_reason = "text_llm_provider_not_configured"
+        else:
+            selected_client = self._vlm_client or self._build_resolved_client(
+                self._vlm_provider_config_resolver
+            )
+            missing_reason = "vlm_provider_not_configured"
+
+        if selected_client is None:
+            raise RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(
+                    stage=RecognitionFailureStage.AI,
+                    reason=missing_reason,
+                ),
+                raw_response={
+                    "material_id": material.id,
+                    "recognition_input": document_input.to_safe_log_payload(),
+                },
+            )
+
+        return selected_client.recognize(material=material, document_input=document_input)
+
+    @staticmethod
+    def _build_resolved_client(
+        resolver: Callable[[], LLMProviderConfig | None] | None,
+    ) -> RecognitionLlmClient | None:
+        if resolver is None:
+            return None
+        provider_config = resolver()
+        if provider_config is None:
+            return None
+        return OpenAiCompatibleRecognitionClient(provider_config)
 
 
 class OpenAiCompatibleRecognitionClient:
