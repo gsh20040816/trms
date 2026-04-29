@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-29 17:08 - Stop codex-nightly by pending task state instead of max rounds
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“让 `scripts/codex-nightly.sh` 按未完成任务自动停止”。
+- 调整 `scripts/codex-nightly.sh` 的停止策略：
+  - 删除 `MAX_ROUNDS` 轮数上限循环；
+  - 每轮开始前继续检查 `.codex-nightly/STOP` 和 `TASKS.md` 是否还存在 `- [ ]`；
+  - 每轮成功结束后再次检查 `.codex-nightly/STOP` 和 `TASKS.md`，若已无未完成任务则立即停止；
+  - 若一轮执行后未完成任务列表快照完全不变，则停止夜间执行，避免在同一未完成任务上无界重复空转。
+- 新增脚本级回归测试 `tests/test_codex_nightly_script.py`，覆盖：
+  - 初始无未完成任务时不启动 Codex；
+  - 一轮内完成未完成任务后自动停止；
+  - 未完成任务快照无变化时自动停止；
+  - dirty working tree 防护仍然生效。
+
+### 根因
+- 现有 `scripts/codex-nightly.sh` 仍以 `MAX_ROUNDS` 作为主停止条件，即使 `TASKS.md` 已经是唯一可信任务源，脚本依旧依赖固定轮数兜底。
+- 这会带来两个问题：
+  - 任务全部完成后，停止逻辑不够明确，仍保留与任务队列无关的轮数配置；
+  - 若某一轮没有推进 `TASKS.md`，脚本只能继续靠轮数上限兜住，无法基于“未完成任务是否还在变化”主动停止。
+
+### 关键改动点
+- 修改：
+  - `scripts/codex-nightly.sh`
+  - `tests/test_codex_nightly_script.py`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只调整夜间脚本的继续/停止条件，不改动 Codex prompt、日志目录结构、人工 `STOP` 文件协议或 dirty working tree 的失败语义。
+- “未完成任务列表无变化即停止”意味着：如果某轮只更新了 `WORKLOG.md` / `BLOCKERS.md`，但没有推进或拆分 `TASKS.md`，脚本会在该轮后结束，而不是继续重复尝试同一未完成任务。
+
+### 验证结果
+- 已通过定向脚本自检：
+  - `bash -n scripts/codex-nightly.sh`
+- 已通过定向回归：
+  - `uv run pytest tests/test_codex_nightly_script.py`
+
+### 假设
+- 本轮将“按未完成任务自动停止”保守定义为：脚本的继续与停止都由 `TASKS.md` 未完成项状态驱动，并在未完成项不再发生变化时停止，避免无限重试同一任务；不再保留额外的固定轮数停止条件。
+
 ## 2026-04-29 17:04 - Allow admins to update draft task configuration
 
 ### 完成内容

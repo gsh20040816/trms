@@ -1337,7 +1337,7 @@
     - 已确认该问题当前由以下未完成任务覆盖：`迁移缺失材料筛选表单到 MUI Select`、`把材料上传场景接入 FileDropZone`、`把破坏性业务动作接入 ConfirmDialog`、`进一步收缩 styles.css 死代码`
     - 后续继续按这些最小任务逐项收口，不再新增一个过大的“统一重写前端风格”任务
 
-- [ ] 让 `scripts/codex-nightly.sh` 按未完成任务自动停止
+- [x] 让 `scripts/codex-nightly.sh` 按未完成任务自动停止
   - Done when:
     - 脚本不再依赖 `MAX_ROUNDS` 作为停止条件
     - 每轮开始前和每轮结束后都通过 `TASKS.md` 中是否还存在 `- [ ]` 判断是否继续

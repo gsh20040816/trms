@@ -2,7 +2,6 @@
 set -euo pipefail
 
 REPO_DIR="${1:-$(pwd)}"
-MAX_ROUNDS="${MAX_ROUNDS:-30}"
 
 log() {
   printf '[codex-nightly] %s\n' "$*"
@@ -35,19 +34,29 @@ if [[ ! -f TASKS.md ]]; then
   die "缺少 TASKS.md，无法读取任务队列"
 fi
 
+has_pending_tasks() {
+  grep -q '^- \[ \]' TASKS.md
+}
+
+pending_tasks_snapshot() {
+  grep '^- \[ \]' TASKS.md || true
+}
+
 mkdir -p .codex-nightly/logs
 
 round=1
-while [[ "$round" -le "$MAX_ROUNDS" ]]; do
+while true; do
   if [[ -f .codex-nightly/STOP ]]; then
     log "检测到 .codex-nightly/STOP，停止夜间执行"
     exit 0
   fi
 
-  if ! grep -q '^- \[ \]' TASKS.md; then
+  if ! has_pending_tasks; then
     log "TASKS.md 中没有未完成任务，停止夜间执行"
     exit 0
   fi
+
+  pending_before="$(pending_tasks_snapshot)"
 
   timestamp="$(date '+%Y%m%d-%H%M%S')"
   log_file=".codex-nightly/logs/round-${round}-${timestamp}.log"
@@ -93,7 +102,22 @@ PROMPT
   fi
 
   log "第 $round 轮完成"
+
+  if [[ -f .codex-nightly/STOP ]]; then
+    log "检测到 .codex-nightly/STOP，停止夜间执行"
+    exit 0
+  fi
+
+  if ! has_pending_tasks; then
+    log "第 $round 轮后 TASKS.md 中已无未完成任务，停止夜间执行"
+    exit 0
+  fi
+
+  pending_after="$(pending_tasks_snapshot)"
+  if [[ "$pending_after" == "$pending_before" ]]; then
+    log "第 $round 轮后未完成任务列表无变化，停止夜间执行"
+    exit 0
+  fi
+
   round=$((round + 1))
 done
-
-log "达到最大轮数 MAX_ROUNDS=$MAX_ROUNDS，停止夜间执行"
