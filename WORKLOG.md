@@ -1,5 +1,76 @@
 # WORKLOG
 
+## 2026-04-29 17:33 - Attach destructive business actions to ConfirmDialog
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“把破坏性业务动作接入 ConfirmDialog”。
+- 调整 [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)：
+  - 任务状态流转前统一弹出确认对话框
+  - 完成归档时要求输入任务 ID 二次确认
+- 调整 [web/src/app/admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx)：
+  - 创建导出任务前弹出带任务状态、任务编号和导出格式上下文的确认对话框
+- 调整 [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)：
+  - 删除分摊行前弹出确认对话框
+  - 覆盖保存分摊方案前弹出确认对话框，并明确提示可能重置成员确认状态
+- 同步更新前端测试：
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - [web/src/app/admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx)
+  - [web/src/app/admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+  - 覆盖确认与取消路径，并把主流程占位 E2E 适配到新的确认弹窗交互
+
+### 根因
+- `ConfirmDialogProvider` 和 `useConfirmDialog()` 已经存在，但当前高风险操作仍然直接执行：
+  - 任务状态按钮点击后立即发起状态流转请求
+  - 导出任务创建按钮点击后立即入队异步导出
+  - 分摊编辑里的删除分摊行和覆盖保存分摊会直接丢弃本地编辑或覆盖服务端当前版本
+- 这与当前任务“把破坏性业务动作接入 ConfirmDialog”的要求不一致，也让管理员缺少最后一道明确确认边界。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/admin-task-detail.tsx`
+  - `web/src/app/admin-export-tasks.tsx`
+  - `web/src/app/admin-split-editor.tsx`
+  - `web/src/app/admin-task-detail.test.tsx`
+  - `web/src/app/admin-export-tasks.test.tsx`
+  - `web/src/app/admin-split-editor.test.tsx`
+  - `web/src/app/main-flow-e2e-placeholder.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只收口当前前端已经暴露的破坏性动作，不新增新的业务入口，不扩展权限边界，不改后端 API 语义。
+- 当前前端尚未提供独立的“管理员代确认”“材料删除”或“强制导出重跑”业务入口；因此本轮按现有真实入口保守收口为：
+  - 任务状态流转
+  - 导出任务创建
+  - 分摊行删除
+  - 分摊覆盖保存
+- 由于新增确认弹窗，所有相关前端测试和主流程占位 E2E 都必须显式通过弹窗确认，否则会误判为页面无响应；本轮已同步修复这些受影响测试。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- admin-task-detail.test.tsx admin-export-tasks.test.tsx admin-split-editor.test.tsx`
+  - `cd web && npm test -- main-flow-e2e-placeholder.test.tsx`
+- 已通过定向前端 lint：
+  - `cd web && npm run lint -- src/app/admin-task-detail.tsx src/app/admin-export-tasks.tsx src/app/admin-split-editor.tsx src/app/admin-task-detail.test.tsx src/app/admin-export-tasks.test.tsx src/app/admin-split-editor.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、87 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
+### 假设
+- 本轮将“破坏性业务动作”保守定义为：会直接推进任务状态、创建真实导出任务、丢弃本地分摊编辑或覆盖现有分摊版本的管理员动作；不把普通导航、预览、下载等非破坏性动作纳入确认弹窗范围。
+
 ## 2026-04-29 17:22 - Connect member upload flows to FileDropZone progress and snackbar feedback
 
 ### 完成内容

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -164,6 +165,7 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 
 export function AdminExportTasksPage() {
   const session = useAuthSession();
+  const { confirm } = useConfirmDialog();
   const { taskId } = useParams<{ taskId: string }>();
   const [pageState, setPageState] = useState<ExportPageState>({ status: "loading" });
   const [actionError, setActionError] = useState<unknown>(null);
@@ -260,6 +262,17 @@ export function AdminExportTasksPage() {
 
   async function handleCreateJob(kind: ExportArtifactKind) {
     if (!session || pageState.status !== "ready" || !taskId) {
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: `确认创建${formatExportKind(kind)}任务？`,
+      description: `任务 ${pageState.task.competition_name}（${pageState.task.id}）当前处于${formatTaskStatus(pageState.task.status)}。确认后会以 ${formatExportFormat(PREFERRED_JOB_FORMATS[kind])} 格式创建新的异步导出任务，并按当前数据版本进入后台队列。`,
+      confirmLabel: "创建导出任务",
+      cancelLabel: "暂不创建",
+      tone: kind === "merged_pdf" ? "warning" : "info",
+    });
+    if (!confirmed) {
       return;
     }
 

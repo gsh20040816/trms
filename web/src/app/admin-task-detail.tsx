@@ -12,6 +12,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type { ExpenseType, ReimbursementTask, TaskStatus, TaskUpdateInput } from "../lib/api/types";
@@ -174,6 +175,7 @@ function validateForm(formState: TaskEditFormState): {
 
 export function AdminTaskDetailPage() {
   const session = useAuthSession();
+  const { confirm } = useConfirmDialog();
   const { taskId } = useParams<{ taskId: string }>();
   const [state, setState] = useState<TaskDetailState>({ status: "loading" });
   const [formState, setFormState] = useState<TaskEditFormState | null>(null);
@@ -338,6 +340,18 @@ export function AdminTaskDetailPage() {
 
   async function handleStatusUpdate(targetStatus: TaskStatus) {
     if (!task) {
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: `确认将任务切换为${formatTaskStatus(targetStatus)}？`,
+      description: `任务 ${task.competition_name}（${task.id}）将从${formatTaskStatus(task.status)}切换为${formatTaskStatus(targetStatus)}。请确认当前阶段的成员提交流程、复核进度和导出准备度都已符合预期。`,
+      confirmLabel: "确认切换状态",
+      cancelLabel: "保留当前状态",
+      destructive: targetStatus === "completed",
+      requireTyping: targetStatus === "completed" ? task.id : undefined,
+    });
+    if (!confirmed) {
       return;
     }
 

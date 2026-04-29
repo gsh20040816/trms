@@ -1362,7 +1362,7 @@
     - 支持 `tone`、`destructive`、`requireTyping`、`confirmLabel`、`cancelLabel` 等 M3 选项
     - `RootLayout` 包裹 `ConfirmDialogProvider`，业务页面无需改动即可使用
 
-- [ ] 把破坏性业务动作接入 ConfirmDialog
+- [x] 把破坏性业务动作接入 ConfirmDialog
   - Done when:
     - 任务状态流转、删除、代确认、强制导出等动作前调用 `useConfirmDialog().confirm(...)`
     - 取消时不发起请求，确认时附带操作上下文记录

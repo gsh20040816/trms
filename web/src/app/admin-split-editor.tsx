@@ -4,6 +4,7 @@ import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -212,6 +213,7 @@ function countCurrentConfirmationStatus(
 
 export function AdminSplitEditorPage() {
   const session = useAuthSession();
+  const { confirm } = useConfirmDialog();
   const { taskId } = useParams<{ taskId: string }>();
   const [searchParams] = useSearchParams();
   const preferredInvoiceId = searchParams.get("invoiceId");
@@ -391,7 +393,22 @@ export function AdminSplitEditorPage() {
     ]);
   }
 
-  function handleRemoveRow(rowId: string) {
+  async function handleRemoveRow(rowId: string, rowIndex: number) {
+    if (formRows.length <= 1 || !selectedInvoice || !visibleTask) {
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: `确认删除分摊行 ${rowIndex}？`,
+      description: `当前正在编辑任务 ${visibleTask.competition_name}（${visibleTask.id}）下发票 ${selectedInvoice.invoice_number} 的分摊方案。删除后，这一行尚未保存的成员、金额和备注会直接丢失。`,
+      confirmLabel: "删除分摊行",
+      cancelLabel: "继续编辑",
+      destructive: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setFormRows((current) => {
       if (current.length <= 1) {
         return current;
@@ -410,7 +427,7 @@ export function AdminSplitEditorPage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session || !selectedInvoiceItem || formRows.length === 0) {
+    if (!session || !selectedInvoiceItem || formRows.length === 0 || !visibleTask || !selectedInvoice) {
       return;
     }
 
@@ -418,6 +435,17 @@ export function AdminSplitEditorPage() {
     setFormErrors(nextErrors);
     setSubmitError(null);
     if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: "确认覆盖保存当前分摊方案？",
+      description: `任务 ${visibleTask.competition_name}（${visibleTask.id}）的发票 ${selectedInvoice.invoice_number} 将按当前表单覆盖保存 ${formRows.length} 条分摊。服务端可能把受影响成员的确认状态重置为待确认，请确认金额和归属成员已核对无误。`,
+      confirmLabel: "确认保存分摊",
+      cancelLabel: "继续编辑",
+      destructive: true,
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -647,7 +675,7 @@ export function AdminSplitEditorPage() {
                             className="route-link route-link-secondary"
                             type="button"
                             onClick={() => {
-                              handleRemoveRow(row.rowId);
+                              void handleRemoveRow(row.rowId, index + 1);
                             }}
                             disabled={formRows.length <= 1}
                           >

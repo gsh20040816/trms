@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -273,6 +273,7 @@ describe("admin split editor page", () => {
 
   it("renders split rows, shows difference, saves splits, and refreshes summary", async () => {
     let reviewSummaryRequestCount = 0;
+    let replaceSplitsRequestCount = 0;
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
@@ -293,6 +294,7 @@ describe("admin split editor page", () => {
       }
 
       if (url === "/api/invoices/INV-1/splits" && init?.method === "PUT") {
+        replaceSplitsRequestCount += 1;
         expect(parseRequestJsonBody(init)).toEqual({
           actor_id: "admin-1",
           items: [
@@ -380,9 +382,81 @@ describe("admin split editor page", () => {
       fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
       await Promise.resolve();
     });
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("任务 全国邀请赛（TASK-ALPHA）的发票 INV-001 将按当前表单覆盖保存 3 条分摊。服务端可能把受影响成员的确认状态重置为待确认，请确认金额和归属成员已核对无误。")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "继续编辑" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(replaceSplitsRequestCount).toBe(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+      await Promise.resolve();
+    });
+    const secondConfirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(secondConfirmDialog).getByRole("button", { name: "确认保存分摊" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
     expect(await screen.findByText(/2250003 · ￥43.45/)).toBeInTheDocument();
+    expect(replaceSplitsRequestCount).toBe(1);
     expect(screen.getByText("已确认 1 / 3")).toBeInTheDocument();
+  });
+
+  it("confirms before deleting a split row and keeps the row when canceled", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-ALPHA") {
+        return Promise.resolve(jsonResponse(buildTask()));
+      }
+
+      if (url === "/api/tasks/TASK-ALPHA/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReviewSummary()));
+      }
+
+      throw new Error(`Unhandled fetch URL in split row delete confirmation test: ${url}`);
+    });
+
+    renderAdminSplitEditorRoute();
+
+    expect(await screen.findByRole("heading", { name: "费用分摊编辑" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "新增分摊行" }));
+
+    const thirdRow = await screen.findByRole("group", { name: "分摊行 3" });
+    fireEvent.click(within(thirdRow).getByRole("button", { name: "删除" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("当前正在编辑任务 全国邀请赛（TASK-ALPHA）下发票 INV-001 的分摊方案。删除后，这一行尚未保存的成员、金额和备注会直接丢失。")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "继续编辑" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("group", { name: "分摊行 3" })).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole("group", { name: "分摊行 3" })).getByRole("button", { name: "删除" }));
+    const secondConfirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(secondConfirmDialog).getByRole("button", { name: "删除分摊行" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("group", { name: "分摊行 3" })).not.toBeInTheDocument();
   });
 
   it("shows helper text and does not submit when a split row is invalid", async () => {
@@ -448,6 +522,14 @@ describe("admin split editor page", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "确认保存分摊" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
     expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();

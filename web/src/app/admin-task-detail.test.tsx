@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -118,6 +118,8 @@ describe("admin task detail page", () => {
   });
 
   it("updates task status when the backend accepts the transition", async () => {
+    let statusUpdateRequestCount = 0;
+
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
 
@@ -143,6 +145,7 @@ describe("admin task detail page", () => {
       }
 
       if (url === "/api/tasks/TASK-DRAFT/status" && init?.method === "PATCH") {
+        statusUpdateRequestCount += 1;
         expect(init.body).toBe(JSON.stringify({ target_status: "open" }));
         return Promise.resolve(jsonResponse({
           id: "TASK-DRAFT",
@@ -170,9 +173,38 @@ describe("admin task detail page", () => {
     renderAdminTaskDetailRoute("TASK-DRAFT");
 
     const openButton = await screen.findByRole("button", { name: "切换为收集中" });
-    fireEvent.click(openButton);
+    await act(async () => {
+      fireEvent.click(openButton);
+      await Promise.resolve();
+    });
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("任务 创建中任务（TASK-DRAFT）将从草稿切换为收集中。请确认当前阶段的成员提交流程、复核进度和导出准备度都已符合预期。")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "保留当前状态" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(statusUpdateRequestCount).toBe(0);
+    expect(screen.queryByText("当前状态：收集中")).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "切换为收集中" }));
+      await Promise.resolve();
+    });
+    const secondConfirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(secondConfirmDialog).getByRole("button", { name: "确认切换状态" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
     expect((await screen.findAllByText("当前状态：收集中")).length).toBeGreaterThan(0);
+    expect(statusUpdateRequestCount).toBe(1);
     expect(screen.getByRole("button", { name: "切换为草稿" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为已截止" })).toBeInTheDocument();
   });
@@ -328,7 +360,15 @@ describe("admin task detail page", () => {
 
     renderAdminTaskDetailRoute("TASK-READY");
 
-    fireEvent.click(await screen.findByRole("button", { name: "切换为已完成" }));
+    fireEvent.click(await screen.findByText("切换为已完成"));
+    const confirmDialog = await screen.findByRole("dialog");
+    fireEvent.change(within(confirmDialog).getByLabelText("确认动作输入框"), {
+      target: { value: "TASK-READY" },
+    });
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "确认切换状态" }));
+      await Promise.resolve();
+    });
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
     expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();

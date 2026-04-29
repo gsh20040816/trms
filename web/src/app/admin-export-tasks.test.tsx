@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -128,6 +128,8 @@ describe("admin export tasks page", () => {
   });
 
   it("creates export jobs, shows failed history and previews current output", async () => {
+    let createJobRequestCount = 0;
+
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
 
@@ -188,6 +190,7 @@ describe("admin export tasks page", () => {
       }
 
       if (url === "/api/tasks/TASK-EXPORT/exports" && init?.method === "POST") {
+        createJobRequestCount += 1;
         expect(init.body).toBe(JSON.stringify({
           actor_id: "admin-1",
           kind: "reimbursement_summary",
@@ -243,10 +246,36 @@ describe("admin export tasks page", () => {
       fireEvent.click(summaryActions.getByRole("button", { name: "创建报销汇总表任务" }));
       await Promise.resolve();
     });
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("任务 ICPC 区域赛报销（TASK-EXPORT）当前处于可导出。确认后会以 XLSX 格式创建新的异步导出任务，并按当前数据版本进入后台队列。")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "暂不创建" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(createJobRequestCount).toBe(0);
+    expect(screen.queryByText("报销汇总表 导出任务已创建，当前状态：待生成。")).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(summaryActions.getByRole("button", { name: "创建报销汇总表任务" }));
+      await Promise.resolve();
+    });
+    const secondConfirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(secondConfirmDialog).getByRole("button", { name: "创建导出任务" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
     expect(
       await screen.findByText("报销汇总表 导出任务已创建，当前状态：待生成。"),
     ).toBeInTheDocument();
+    expect(createJobRequestCount).toBe(1);
     expect(screen.getByText("export-job-summary")).toBeInTheDocument();
 
     const refreshedSummaryCard = screen.getByRole("heading", { name: "报销汇总表" }).closest("article");

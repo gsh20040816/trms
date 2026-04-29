@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -736,7 +736,18 @@ describe("frontend main flow e2e placeholder", () => {
     renderRoute("/admin/tasks/TASK-E2E");
 
     expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "切换为收集中" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "切换为收集中" }));
+      await Promise.resolve();
+    });
+    const confirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "确认切换状态" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
     expect((await screen.findAllByText("收集中")).length).toBeGreaterThan(0);
 
     cleanup();
@@ -776,7 +787,18 @@ describe("frontend main flow e2e placeholder", () => {
     renderRoute("/admin/tasks/TASK-E2E/splits?invoiceId=INV-001");
 
     expect(await screen.findByRole("heading", { name: "费用分摊编辑" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+      await Promise.resolve();
+    });
+    const splitConfirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(splitConfirmDialog).getByRole("button", { name: "确认保存分摊" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
     expect(await screen.findByText(/已保存 1 条分摊，合计 ￥123.45。/)).toBeInTheDocument();
 
