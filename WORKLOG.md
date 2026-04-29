@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-29 12:17 - Add Material 3 file drop zone component and split form rounds
+
+### 完成内容
+- 新增 `web/src/components/FileDropZone.tsx`：基于 MUI v7 的 Material 3 风格拖拽上传组件。
+  - 视觉：dashed outlined 容器 + 拖拽态主色高亮 + Avatar/CloudUpload 图标 + "拖拽 / 点击选择" 文案 + 主题化 hint。
+  - 行为：原生隐藏 `<input type="file">` + 自定义点击与拖拽事件；多文件追加；单文件覆盖；删除单个文件；自动按 mime/扩展名渲染图标（PDF / Image / 通用）。
+  - 可达性：可传 `ariaLabel`、`fileListAriaLabel`、`inputId`、`inputName`，便于业务页面与现有测试断言（如 `getByLabelText("上传文件")`）兼容。
+  - 已选文件列表使用 MUI List + ListItemAvatar，单文件显示文件名、类型与人类可读大小（B/KB/MB/GB）。
+- 拆分 P5 第八条任务：
+  - 原"重写表单与上传组件"任务被拆为三条：
+    1. 准备 Material 3 表单与上传基础组件（本轮完成；包括 Round 4 已迁移的 TextField/Select、Round 6.2 已迁移的 ErrorMessage Alert，以及本轮新增的 FileDropZone）
+    2. 把成员/管理员业务表单整体迁移到 MUI TextField / Select / Autocomplete（后续轮次）
+    3. 把材料上传场景接入 FileDropZone（后续轮次）
+- 第一条已标记 `[x]`。
+
+### 根因
+- 业务页面里的表单（任务创建、发票录入、分摊编辑、确认表单）和文件上传分布在 1000+ 行的多个文件中，一次性重写违反 AGENTS.md "不要一次性重写大块架构" 原则。
+- 更稳健的策略是先准备好 M3 基础组件（TextField / Select / Alert / FileDropZone），再分轮把业务页面表单逐一迁移；这一轮先把 FileDropZone 这个目前还缺失的核心组件补齐。
+
+### 关键改动点
+- 新增组件：
+  - `web/src/components/FileDropZone.tsx`
+- 任务拆分：
+  - `TASKS.md` Round 8 拆为三条；第一条标记完成。
+
+### 风险与影响面
+- 本轮没有任何业务页面消费 FileDropZone，行为完全未变；仅新增了一个可选的组件供后续轮次接入。
+- bundle 影响极小；FileDropZone 引用的 List/ListItem/Avatar/IconButton/Button/Stack 在前序轮次已经被打入 bundle。
+- 测试改动面：0；现有 21 文件 / 69 用例无修改通过。
+
+### 修改文件
+- `web/src/components/FileDropZone.tsx`（新增）
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 业务页面后续接入时，会根据每个上传场景选择是否传 `accept`、`multiple`、`disabled`，并通过 `ariaLabel="上传文件"` 等保持现有测试断言不变。
+- 拖拽容器整体 onClick 触发 hidden input 的策略避免了 native input 的视觉污染，又保持键盘焦点路径仍可用（input 本身仍可 focus）。
+
+### 备注
+- 本轮属于 Round 8 范围；剩余两个子任务（业务表单整体迁移、上传接入）将在后续轮次推进。
+
 ## 2026-04-29 12:14 - Rewrite admin workspace shell with MUI navigation list
 
 ### 完成内容

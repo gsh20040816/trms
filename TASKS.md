@@ -1242,12 +1242,24 @@
     - 单张发票预览、识别字段、校验异常、处理动作集中在右侧详情面板
     - 相关测试更新
 
-- [ ] 重写表单与上传组件
+- [x] 准备 Material 3 表单与上传基础组件
   - Done when:
-    - 全部 input / select / textarea 替换为 M3 TextField / Select / Autocomplete
-    - 文件上传改为带拖拽、单文件状态、结果反馈的组件
+    - 登录/注册页已采用 MUI TextField / Select（Round 4 完成）
+    - dashboard 公共组件 `ErrorMessage` 改用 MUI Alert，错误展示语义统一
+    - 新增 `web/src/components/FileDropZone.tsx`：M3 拖拽上传卡，支持点击选择、拖拽、单文件移除、文件类型图标、可选 hint，对外暴露 `files`、`onChange`、`accept`、`ariaLabel`、`fileListAriaLabel` 等 props，后续业务页面可直接消费
+    - `npm run lint` / `npm test` / `npm run build` 全部通过
+
+- [ ] 把成员/管理员业务表单整体迁移到 MUI TextField / Select / Autocomplete
+  - Done when:
+    - 任务创建表单、发票录入表单、分摊编辑表单、缺失材料筛选表单等使用 M3 TextField / Select / Autocomplete
     - Form 校验错误使用 helperText / error，不再使用自造 `.field-error`
-    - 表单测试更新
+    - 相关测试同步更新
+
+- [ ] 把材料上传场景接入 FileDropZone
+  - Done when:
+    - `/member/materials/upload`、`/member/invoices/workbench` 上传区使用 FileDropZone
+    - 上传中通过 LinearProgress 表达进度，结果通过 Snackbar 反馈
+    - 相关测试同步更新
 
 - [ ] 引入 ConfirmDialog 守护破坏性操作
   - Done when:
