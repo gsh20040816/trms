@@ -1155,7 +1155,7 @@
     - 现有 `styles.css` 暂时保留，后续按页迁移
     - `npm run lint` / `npm test` / `npm run build` 全部通过
 
-- [ ] 重构应用骨架：Top App Bar + Navigation Rail + Snackbar 容器
+- [x] 重构应用骨架：Top App Bar + Navigation Rail + Snackbar 容器
   - Done when:
     - `RootLayout` 改为 M3 Top App Bar（左：菜单 + 品牌；右：账号头像菜单）
     - 桌面端使用 Navigation Rail，移动端使用 Bottom Navigation

@@ -1,5 +1,77 @@
 # WORKLOG
 
+## 2026-04-29 11:48 - Replace app shell with M3 top app bar, navigation rail and global snackbar
+
+### 完成内容
+- 新增 `web/src/components/AppShell.tsx`：基于 MUI v7 实现 Material 3 顶栏 + 侧边导航 rail（桌面）/ 抽屉 + 底部导航（移动）。
+  - 顶部 AppBar 左侧：响应式菜单按钮（移动端打开抽屉）+ TR 圆角品牌 + 副标题"同济 ACM 报销管理"。
+  - 顶部 AppBar 右侧：未登录显示"登录 / 注册"按钮 + 账号 IconButton；已登录显示头像首字 IconButton。
+  - 账号弹出菜单：当前账号信息、可切换身份（多角色账号才出现）、外观主题（亮/暗/跟随系统）、退出登录或登录入口。
+  - 桌面端 ≥ md：左侧 88px Navigation Rail，垂直堆叠图标 + 文字，hover 与 active 状态使用 surface tonal 层。
+  - 移动端 < md：顶栏菜单按钮打开 SwipeableDrawer；底部 BottomNavigation 显示 1~4 个主入口。
+  - 鼓励路径：导航项随 `useAuthSession().availableRoles` 动态生成，未登录只显示总览。
+- 新增 `web/src/components/AppSnackbar.tsx` + `snackbar-context.ts` + `use-snackbar.ts`：全局 Snackbar 队列。
+  - 提供 `useSnackbar()` hook 与 `showSuccess` / `showError` / `showInfo` / `showWarning` 快捷方法。
+  - 多次调用按队列依次展示；同时只展示一个；点击外部不关闭，过期或主动关闭时下一条自动入队。
+- 重写 `web/src/app/pages.tsx` 中的 `RootLayout` 为 `<AppThemeProvider><SnackbarProvider><AppShell><Outlet /></AppShell></SnackbarProvider></AppThemeProvider>`，并移除自造顶栏代码。
+- 调整 `web/src/main.tsx`：移除外层 AppThemeProvider（已下沉到 RootLayout），保留 Roboto Flex 字体导入。
+- 删除 `pages.tsx` 中不再使用的 `formatRole`、`useLocation`、`Link` 中部分引用。
+
+### 根因
+- 旧 `RootLayout` 顶栏由原生 HTML + 1700+ 行 `styles.css` 拼成，无统一主题、无 Snackbar、无主题切换。
+- 用户在 P5 重写计划中明确要求按 M3 重构应用骨架，并把账号操作收口到顶栏右上角的账号菜单。
+- 全局 Snackbar 是后续轮次（登录、上传、状态流转、确认）操作反馈的前置基础。
+
+### 关键改动点
+- 新增组件：
+  - `web/src/components/AppShell.tsx`
+  - `web/src/components/AppSnackbar.tsx`
+  - `web/src/components/snackbar-context.ts`
+  - `web/src/components/use-snackbar.ts`
+- 重写：
+  - `web/src/app/pages.tsx`：`RootLayout` 简化为 Provider 包裹 + AppShell。
+- 调整入口：
+  - `web/src/main.tsx`：删除外层 AppThemeProvider 包裹（下沉到 RootLayout），避免双重包裹。
+- 任务状态：
+  - `TASKS.md` P5 第三条任务标记为已完成。
+
+### 风险与影响面
+- AppShell 直接消费 MUI 主题 token，对原 `styles.css` 中 `.topbar*`、`.brand-mark`、`.workspace-page`、`.app-shell` 等类名不再有依赖，但这些 CSS 仍保留在 `styles.css` 中，将在 Round 10 清理。
+- 现有 21 个测试文件、69 个用例全部通过。`useMediaQuery` 在 jsdom 环境下触发的 act() 警告不影响测试结果。
+- bundle gzipped 从 178.37 kB 增至 228.39 kB（+50.02 kB），主要来自 AppBar、Toolbar、IconButton、Menu、SwipeableDrawer、BottomNavigation、Snackbar、Avatar、Tooltip、Stack 等首批 MUI 组件。
+- `RootLayout` 同时包裹 ThemeProvider，因此所有现有测试只要 render `routes` 都自动获得正确的主题与 Snackbar 上下文，不需要修改 App.test.tsx。
+- 多角色账号在账号菜单切换身份后会自动 navigate 到对应工作台路径，并通过 Snackbar 反馈。
+
+### 修改文件
+- `web/src/components/AppShell.tsx`（新增）
+- `web/src/components/AppSnackbar.tsx`（新增）
+- `web/src/components/snackbar-context.ts`（新增）
+- `web/src/components/use-snackbar.ts`（新增）
+- `web/src/app/pages.tsx`
+- `web/src/main.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全通过
+  - Web `npm run build` 成功；bundle gzipped 228.39 kB
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 桌面端断点采用 MUI 默认 `breakpoints.up("md")`（≥ 900px），与原 `styles.css` 的 960px 接近。
+- Navigation Rail 仅在用户登录后显示业务入口；总览路径 `/` 始终可见。
+- 顶栏品牌点击回到 `/`；移动端折叠后保留 `TR` Avatar，副标题在 xs 屏隐藏。
+
+### 备注
+- 测试期间出现"An update to AppShell inside a test was not wrapped in act(...)"警告，由 `useMediaQuery` 的异步状态更新引发，与 MUI 在 jsdom 上下文的标准行为一致；不影响断言通过，后续若噪音过大可通过在 setup 中固定 matchMedia 返回值消除。
+- 仍保留旧 `styles.css`，以便后续按页迁移时旧业务页面继续工作。
+
 ## 2026-04-29 11:42 - Bring in MUI v7 baseline theme and font
 
 ### 完成内容

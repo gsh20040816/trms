@@ -1,9 +1,12 @@
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 
-import { clearMockSession, logoutCurrentSession, useAuthSession } from "./auth-store";
+import { useAuthSession } from "./auth-store";
 import { roleRoutes, type UserRole } from "./role-routes";
+import { AppShell } from "../components/AppShell";
+import { SnackbarProvider } from "../components/AppSnackbar";
 import { PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge } from "../components/dashboard";
-import { formatRole, formatWorkspace } from "../lib/ui-text";
+import { formatWorkspace } from "../lib/ui-text";
+import { AppThemeProvider } from "../theme/AppThemeProvider";
 
 type RoleOverview = {
   role: UserRole;
@@ -33,13 +36,6 @@ const ROLE_OVERVIEWS: RoleOverview[] = [
   },
 ];
 
-function isRouteActive(pathname: string, targetPath: string) {
-  if (targetPath === "/") {
-    return pathname === "/";
-  }
-  return pathname === targetPath || pathname.startsWith(`${targetPath}/`);
-}
-
 function getActiveOverview(role: UserRole) {
   return ROLE_OVERVIEWS.find((item) => item.role === role) ?? null;
 }
@@ -50,66 +46,14 @@ function getVisibleRoleRoutes(roleNames: UserRole[]) {
 }
 
 export function RootLayout() {
-  const location = useLocation();
-  const session = useAuthSession();
-  const visibleRoleRoutes = session ? getVisibleRoleRoutes(session.availableRoles) : [];
-
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="topbar-inner">
-          <Link className="brand-mark" to="/">
-            TRMS
-          </Link>
-          <nav className="topbar-nav" aria-label="主导航">
-            <Link className={`topbar-link${location.pathname === "/" ? " topbar-link-active" : ""}`} to="/">
-              总览
-            </Link>
-            {visibleRoleRoutes.map((roleRoute) => (
-              <Link
-                key={roleRoute.path}
-                className={`topbar-link${isRouteActive(location.pathname, roleRoute.path) ? " topbar-link-active" : ""}`}
-                to={roleRoute.path}
-              >
-                {roleRoute.title}
-              </Link>
-            ))}
-          </nav>
-          <div className="topbar-session">
-            {session ? (
-              <>
-                <StatusBadge tone="info">{formatRole(session.role)}</StatusBadge>
-                <span className="session-text">
-                  {session.displayName}
-                  {session.memberCode ? `（${session.memberCode}）` : ""}
-                </span>
-                <button
-                  className="button button-secondary"
-                  type="button"
-                  onClick={() => {
-                    if (session.isMock) {
-                      clearMockSession();
-                      return;
-                    }
-                    void logoutCurrentSession();
-                  }}
-                >
-                  退出登录
-                </button>
-              </>
-            ) : (
-              <Link className="button button-primary" to="/login">
-                登录
-              </Link>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <main className="page-content">
-        <Outlet />
-      </main>
-    </div>
+    <AppThemeProvider>
+      <SnackbarProvider>
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      </SnackbarProvider>
+    </AppThemeProvider>
   );
 }
 export function HomePage() {
