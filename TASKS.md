@@ -1274,8 +1274,15 @@
     - 取消时不发起请求，确认时附带操作上下文记录
     - 测试覆盖确认与取消路径
 
-- [ ] 移除遗留 `styles.css` 与冲突类
+- [x] 清理 `styles.css` 中与 MUI 主题冲突的全局 token
   - Done when:
-    - 所有页面已迁移到 M3 后，删除 `styles.css` 中重复或冲突的 token
-    - 仅保留少量 utility（如 `.sr-only`）或迁移到 MUI 全局样式
-    - `npm run lint` / `npm run build` 通过
+    - 删除两个冲突的 `:root` 块、body 强制颜色与背景
+    - 删除已被 MUI AppShell 完全替代的 `.topbar*`、`.workspace-shell`、`.workspace-header`、`.workspace-hero*`、`.workspace-nav*`、`.brand-mark`、`.session-pill` 等旧顶栏/Hero 类
+    - 由 MUI CssBaseline 统一接管 body 字体、背景、字色
+    - `npm run lint` / `npm run build` / `npm test` 全部通过
+
+- [ ] 进一步收缩 `styles.css` 死代码
+  - Done when:
+    - 排查并删除 `.workflow-*`、`.kpi-*`、`.dashboard-grid`、`.workspace-meta-grid`、`.task-insight*`、`.task-stage-line`、`.anomaly-chip*`、`.task-workflow*` 等当前 .tsx 中未被引用的死类
+    - 保留仍被业务页 `<article className="task-card">` 等引用的辅助类
+    - `npm run lint` / `npm run build` / `npm test` 全部通过

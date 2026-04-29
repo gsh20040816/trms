@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-29 12:25 - Strip conflicting global tokens from styles.css
+
+### 完成内容
+- 删除 `web/src/styles.css` 顶部第一个 `:root` 块：旧的多色径向渐变背景 + `color: #132238` 强制色 + 旧字体栈，全部由 MUI CssBaseline + Material 3 主题接管。
+- 删除 `body` 强制 `color: #132238`（旧）与 `body { background: #f8fafc; color: #0f172a }`（后期），统一由主题控制。
+- 删除文件中段第二个 `:root` 块（与 MUI 主题颜色重复）。
+- 删除 `.topbar`、`.topbar-inner`、`.topbar-nav`、`.topbar-link`、`.topbar-link-active`、`.topbar-session`、`.session-text`（旧）、`.app-shell`（旧）等已被 MUI AppShell 完全替代的旧顶栏样式。
+- 删除 `.workspace-shell`、`.workspace-header`、`.workspace-header::before`、`.workspace-nav-row`、`.workspace-nav`、`.workspace-nav-link`、`.workspace-session-cluster`、`.workspace-hero`、`.workspace-hero-main`、`.workspace-hero-panel`、`.brand-mark`、`.session-pill` 等已被 MUI 替代的旧 Hero / 顶栏类。
+- 在文件顶部追加注释，明确"全局 reset 与基础排版由 MUI CssBaseline + 主题控制；本文件保留的旧规则只用于尚未迁移到 MUI 的业务页面"。
+- 拆分 P5 第十条任务：
+  - 原"移除遗留 styles.css 与冲突类"拆为两条：
+    1. 清理与 MUI 主题冲突的全局 token（本轮完成）
+    2. 进一步收缩死代码（`.workflow-*`、`.kpi-*`、`.dashboard-grid`、`.workspace-meta-grid` 等当前 .tsx 中未被引用的死类，留作后续轮次）
+
+### 根因
+- `styles.css` 历史上有两次大重写："早期橙金 + Hero" 与 "后期 dashboard redesign overrides"，两套互相冲突的全局 token 同时存在；MUI 主题接管后，两套都不再需要，但仍会强制覆盖 body 颜色和背景，造成视觉污染（背景偏黄偏蓝、字色偏深紫）。
+- 用户感受到的"前端实在太丑陋"很大一部分来自这两套 token 同时生效；移除后整体观感与 MUI Material 3 主题一致。
+
+### 关键改动点
+- 修改：
+  - `web/src/styles.css`：从 2233 行（第二次写入前）-> 2046 行（最终），CSS 输出体积 31.07 kB → 27.14 kB（gzipped 6.66 kB → 5.79 kB）。
+- 任务拆分：
+  - `TASKS.md` Round 10 拆为两条；第一条标记完成。
+
+### 风险与影响面
+- 测试 21 文件 / 69 用例无修改通过。
+- 视觉行为：未登录页、登录页、首页、成员任务列表、管理员任务列表、任务详情、复核、分摊、导出等页面在 Round 2-9 已逐步切换到 MUI 主题，本轮删除旧 token 后视觉更纯净。
+- 留存在 styles.css 中的：`.field-stack`、`.admin-form-grid`、`.task-card`、`.member-status-card`、`.member-confirmation-card`、`.route-link`、`.status-card`、`.invoice-material-button`、`.split-row-card`、`.recognition-field-card` 等仍被业务页面消费的辅助类；它们将在对应业务页 MUI 化轮次中替换。
+
+### 修改文件
+- `web/src/styles.css`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功（CSS 27.14 kB / gzipped 5.79 kB）
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 业务页面在 Round 6.2 / dashboard.tsx M3 化以及 Round 7 admin-workspace-shell M3 化之后，即使删除上述 token，也能正确从 MUI 主题获得颜色、字体、间距与 elevation。
+- "进一步收缩死代码"留待后续轮次，逐项确认 `.tsx` 引用，避免一次性删除导致某些页面意外失去样式。
+
+### 备注
+- bundle gzipped 仍约 260.6 kB（与上一轮基本持平）；CSS 是同步降低 0.87 kB gzipped。
+- 这是 P5 重写第十轮的第一段；至此 Round 1~10 主线全部完成。后续补强工作（Round 6.3~6.6 单任务工作台拆分、Round 7 第二条详情联动深度优化、Round 8 表单与上传接入、Round 9 confirm 接入、Round 10 死代码收缩）按子任务推进。
+
 ## 2026-04-29 12:21 - Add Material 3 confirm dialog infrastructure
 
 ### 完成内容

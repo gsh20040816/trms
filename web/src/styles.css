@@ -1,202 +1,21 @@
-:root {
-  color-scheme: light;
-  font-family: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #132238;
-  background:
-    radial-gradient(circle at top left, rgba(231, 147, 41, 0.28), transparent 24%),
-    radial-gradient(circle at 85% 0%, rgba(24, 105, 186, 0.22), transparent 22%),
-    linear-gradient(180deg, #f5efe2 0%, #f6f8fb 38%, #edf3fb 100%);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+/*
+ * 全局 reset 与基础排版由 MUI CssBaseline 提供，body 背景与字色由 Material 3
+ * 主题（src/theme/m3-theme.ts）控制。本文件保留的旧规则只用于尚未迁移到 MUI 的
+ * 业务页面（成员任务工作台、管理员复核详情等）的辅助类样式，逐轮迁移后将
+ * 进一步收缩。
+ */
 
 * {
   box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  color: #132238;
-}
-
-a {
-  color: inherit;
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
 }
 
 #root {
   min-height: 100vh;
 }
 
-.workspace-shell {
-  min-height: 100vh;
-  padding: 24px 20px 56px;
-}
-
-.workspace-header,
-.route-card,
-.status-card,
-.task-card {
-  border: 1px solid rgba(19, 34, 56, 0.1);
-  background: rgba(255, 255, 255, 0.84);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 28px 70px rgba(14, 36, 63, 0.08);
-}
-
-.workspace-header {
-  position: relative;
-  margin: 0 auto 28px;
-  max-width: 1240px;
-  border-radius: 32px;
-  padding: 22px;
-  overflow: hidden;
-  animation: rise-in 420ms ease-out;
-}
-
-.workspace-header::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(135deg, rgba(242, 164, 74, 0.1), transparent 36%),
-    linear-gradient(180deg, rgba(23, 71, 124, 0.06), transparent 48%);
-  pointer-events: none;
-}
-
-.workspace-nav-row,
-.workspace-hero,
-.workflow-strip,
-.page-content {
-  position: relative;
-  z-index: 1;
-}
-
-.workspace-nav-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 84px;
-  min-height: 48px;
-  padding: 0 18px;
-  border-radius: 16px;
-  background: #132238;
-  color: #f6efe4;
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-decoration: none;
-}
-
-.workspace-nav {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.workspace-nav-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 42px;
-  padding: 0 14px;
-  border: 1px solid rgba(19, 34, 56, 0.1);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #29415d;
-  font-weight: 700;
-  text-decoration: none;
-  transition:
-    background 160ms ease,
-    transform 160ms ease,
-    border-color 160ms ease;
-}
-
-.workspace-nav-link:hover,
-.workspace-nav-link-active {
-  background: rgba(242, 164, 74, 0.18);
-  border-color: rgba(231, 147, 41, 0.24);
-  color: #132238;
-  transform: translateY(-1px);
-}
-
-.workspace-session-cluster {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.session-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: rgba(19, 34, 56, 0.08);
-  color: #132238;
-  font-weight: 700;
-}
-
-.session-text {
-  color: #29415d;
-  font-weight: 700;
-}
-
-.workspace-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
-  gap: 22px;
-  margin-top: 24px;
-}
-
-.workspace-hero-main,
-.workspace-hero-panel {
-  border-radius: 28px;
-  padding: 28px;
-}
-
-.workspace-hero-main {
-  background:
-    linear-gradient(145deg, rgba(19, 34, 56, 0.96), rgba(23, 71, 124, 0.9));
-  color: #f8fafc;
-}
-
-.workspace-hero-main .eyebrow,
-.workspace-hero-main .hero-copy {
-  color: rgba(248, 250, 252, 0.82);
-}
-
-.workspace-hero-main h1 {
-  margin: 0;
-  font-size: clamp(2.2rem, 5vw, 4rem);
-  line-height: 0.98;
-  letter-spacing: -0.03em;
-}
-
-.workspace-hero-panel {
-  border: 1px solid rgba(19, 34, 56, 0.08);
-  background: rgba(255, 255, 255, 0.78);
-}
+/* 旧顶栏 / hero / 导航 / 角色入口卡片 CSS 已被 MUI AppShell 与 RoleWorkspace 完全替代，
+ * 在 Round 10 移除。后续如需还原任何视觉细节，应基于 MUI 主题与 sx 实现，而不是
+ * 重新引入这些自造类。 */
 
 .eyebrow,
 .card-kicker {
@@ -1395,16 +1214,6 @@ select {
 
 /* Dashboard redesign overrides */
 
-:root {
-  color: #0f172a;
-  background: #f8fafc;
-}
-
-body {
-  background: #f8fafc;
-  color: #0f172a;
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1415,86 +1224,6 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-.app-shell {
-  min-height: 100vh;
-  background: #f8fafc;
-}
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: rgba(248, 250, 252, 0.96);
-  border-bottom: 1px solid #e2e8f0;
-  backdrop-filter: blur(10px);
-}
-
-.topbar-inner,
-.page-content {
-  width: min(1200px, calc(100% - 32px));
-  margin: 0 auto;
-}
-
-.topbar-inner {
-  min-height: 60px;
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.page-content {
-  padding: 24px 0 40px;
-}
-
-.brand-mark {
-  min-width: 68px;
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: #0f172a;
-  color: #f8fafc;
-  font-size: 0.95rem;
-  letter-spacing: 0.04em;
-}
-
-.topbar-nav {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.topbar-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: 8px;
-  color: #475569;
-  font-size: 0.95rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.topbar-link:hover,
-.topbar-link-active {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.topbar-session {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-left: auto;
-}
-
-.session-text {
-  color: #334155;
-  font-size: 0.95rem;
-  font-weight: 600;
 }
 
 .workspace-page,
