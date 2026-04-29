@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-04-29 15:44 - Split the oversized Material 3 business-form migration task into page-level tasks
+
+### 完成内容
+- 识别出 `TASKS.md` 中当前第一个未完成任务“把成员/管理员业务表单整体迁移到 MUI TextField / Select / Autocomplete”实际横跨多个页面，不适合作为单轮最小可验证任务直接实现。
+- 将该任务拆分为 4 个页面级子任务：
+  - `迁移任务创建表单到 MUI TextField / Autocomplete / Checkbox 体系`
+  - `迁移管理员发票录入表单到 MUI TextField / Select`
+  - `迁移管理员分摊编辑表单到 MUI TextField / Select`
+  - `迁移缺失材料筛选表单到 MUI Select`
+- 同时把原任务改写为已完成的“拆分成员/管理员业务表单整体迁移任务”，确保下一轮可以从新的第一个未完成子任务继续。
+
+### 根因
+- 原任务同时覆盖 `admin-task-create`、`admin-invoice-editor`、`admin-split-editor` 和 `task-missing-materials` 四类表单，既包含简单筛选，也包含动态成员行、复核录入和分摊行编辑。
+- 如果继续把这些页面打包在一轮内处理，会同时触发多组测试和多类交互回归，违反仓库“每轮只完成一个最小可验证任务”的规则，也不利于定位回归根因。
+
+### 关键改动点
+- 修改：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只调整任务拆分与记录，不改任何业务代码、测试语义或前端交互。
+- 拆分时保守假设“上传区输入控件迁移”仍由独立的 `FileDropZone` 任务负责，不并入本组表单迁移，避免页面表单和文件上传状态机在同一轮耦合。
+
+### 验证结果
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：421 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：22 文件、78 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 验证过程中观察到一次未稳定复现的前端测试波动：
+  - 第一次执行 `./scripts/verify.sh` 时，`web` 阶段曾出现 `src/app/admin-invoice-editor.test.tsx` 单测失败；
+  - 随后单独执行 `cd web && npm test -- admin-invoice-editor.test.tsx` 通过；
+  - 第二次完整执行 `./scripts/verify.sh` 也已全部通过。
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 中仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警；
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning；
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功。
+
+### 假设
+- 当前把“缺失材料筛选表单”限定为 `web/src/app/task-missing-materials.tsx` 里的任务选择和查看维度筛选，不把列表布局或成员工作台其他表单一并纳入本轮拆分。
+
 ## 2026-04-29 15:41 - Deepen admin task detail list-detail workflow with M3 tabs
 
 ### 完成内容

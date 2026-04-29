@@ -1288,10 +1288,34 @@
     - 新增 `web/src/components/FileDropZone.tsx`：M3 拖拽上传卡，支持点击选择、拖拽、单文件移除、文件类型图标、可选 hint，对外暴露 `files`、`onChange`、`accept`、`ariaLabel`、`fileListAriaLabel` 等 props，后续业务页面可直接消费
     - `npm run lint` / `npm test` / `npm run build` 全部通过
 
-- [ ] 把成员/管理员业务表单整体迁移到 MUI TextField / Select / Autocomplete
+- [x] 拆分成员/管理员业务表单整体迁移任务
   - Done when:
-    - 任务创建表单、发票录入表单、分摊编辑表单、缺失材料筛选表单等使用 M3 TextField / Select / Autocomplete
-    - Form 校验错误使用 helperText / error，不再使用自造 `.field-error`
+    - 原“把成员/管理员业务表单整体迁移到 MUI TextField / Select / Autocomplete”已拆成按页面收口的独立子任务
+    - 子任务至少覆盖任务创建、管理员发票录入、管理员分摊编辑、缺失材料筛选四个页面级表单
+    - 上传区改造继续保留在独立的 `FileDropZone` 任务中，避免把文件输入和业务表单迁移混在同一轮
+
+- [ ] 迁移任务创建表单到 MUI TextField / Autocomplete / Checkbox 体系
+  - Done when:
+    - `web/src/app/admin-task-create.tsx` 的比赛信息、管理员与报销信息、发票抬头税号字段改用 MUI `TextField`
+    - 成员名单行与费用类别选择改为更贴近 M3 的输入控件，并统一通过 `helperText` / `error` 表达校验
+    - 相关测试同步更新
+
+- [ ] 迁移管理员发票录入表单到 MUI TextField / Select
+  - Done when:
+    - `web/src/app/admin-invoice-editor.tsx` 中发票编辑表单改用 MUI `TextField` / `Select`
+    - 校验错误不再依赖自造 `.field-error`
+    - 相关测试同步更新
+
+- [ ] 迁移管理员分摊编辑表单到 MUI TextField / Select
+  - Done when:
+    - `web/src/app/admin-split-editor.tsx` 的成员选择、金额和备注输入改用 MUI 表单控件
+    - 行级校验通过 `helperText` / `error` 呈现，而不是继续手写错误标签
+    - 相关测试同步更新
+
+- [ ] 迁移缺失材料筛选表单到 MUI Select
+  - Done when:
+    - `web/src/app/task-missing-materials.tsx` 中任务选择与查看维度筛选改用 MUI `Select`
+    - 筛选表单保持现有成员侧权限与跳转语义，不顺带改动列表展示结构
     - 相关测试同步更新
 
 - [ ] 把材料上传场景接入 FileDropZone
