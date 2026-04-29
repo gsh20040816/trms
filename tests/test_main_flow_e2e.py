@@ -396,7 +396,7 @@ def test_main_flow_e2e_scaffold_covers_submission_to_export_gate(tmp_path):
     assert blocked_export_body["current_task_status"] == "open"
     assert blocked_export_body["export_allowed"] is False
     assert blocked_export_body["blocking_reasons"] == [
-        "task must be ready_to_export or completed before real exports can be generated"
+        "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
     ]
 
     confirmation_response = client.put(

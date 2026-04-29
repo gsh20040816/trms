@@ -208,11 +208,7 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["export_allowed"] is True
     assert body["blocking_reasons"] == []
     assert body["execution_mode"] == "async_worker"
-    assert body["note"] == (
-        "reimbursement summary/member details/invoice details/missing materials CSV export and "
-        "finance draft JSON export and merged PDF export are available through async export "
-        "jobs with persisted artifacts"
-    )
+    assert body["note"] == "当前导出会通过后台任务生成，并在成功后保留可下载产物。"
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}
     assert set(supported_by_kind) == {
         "reimbursement_summary",
@@ -930,7 +926,7 @@ def test_export_capabilities_report_blocking_reason_before_final_confirmation(tm
     assert response.status_code == 200
     assert response.json()["export_allowed"] is False
     assert response.json()["blocking_reasons"] == [
-        "task must be ready_to_export or completed before real exports can be generated"
+        "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
     ]
 
 
@@ -1171,8 +1167,7 @@ def test_create_export_job_requires_ready_to_export_or_completed_task(tmp_path):
 
     assert response.status_code == 409
     assert response.json()["detail"] == (
-        "task is not ready for export: "
-        "task must be ready_to_export or completed before real exports can be generated"
+        "task is not ready for export: 当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
     )
 
 

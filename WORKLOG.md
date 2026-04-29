@@ -1,5 +1,77 @@
 # WORKLOG
 
+## 2026-04-29 14:16 - Run real-data UX browser test and patch low-risk blockers
+
+### 完成内容
+- 使用 Playwright MCP 对隔离实例完成了真实用户路径实测：
+  - 后端：`127.0.0.1:9877`
+  - 前端：`127.0.0.1:4173`
+  - 数据库：`tmp/ux-runtime/ux-test.db`
+  - 真实材料副本：`tmp/ux-real-data/`
+- 实测角色与流程：
+  - 管理员：注册、创建武汉区域赛任务、开放收集、查看复核页、记录补材料提醒、查看导出页。
+  - 普通队员 A：注册、查看任务、上传武汉报名费发票、上传沈阳行程 PNG、上传超大邀请函并观察失败提示。
+  - 普通队员 B：注册、查看任务、上传沈阳网约车发票，并核对共享发票区域。
+  - 财务视角：通过管理员复核页与导出页检查汇总信息是否足以提交财务。
+- 生成 UX 产物：
+  - 报告：`UX_TEST_REPORT.md`
+  - Playwright 基线脚本：`tests/ux/real-user-flows.spec.mjs`
+  - 执行说明：`tests/ux/README.md`
+  - 截图：`test-artifacts/ux/*.png`
+- 本轮顺手修复了 3 个低风险但直接影响 UX 的问题：
+  1. 导出页英文/技术化文案改成中文业务文案；
+  2. 中文文件名材料预览因 `Content-Disposition` 编码失败而被伪装成“网络连接异常”的问题已修复；
+  3. 超大文件上传失败补充了明确的“上传文件过大”提示，不再只显示泛化报错。
+
+### 根因
+- 这轮用户目标不是补功能，而是验证当前系统是否真的能被报销参与者直接使用。静态阅读代码无法暴露：
+  - 识别链路未配置时成员端和管理员端会如何误导用户；
+  - 中文文件名预览会在实际浏览器里触发什么错误；
+  - 真实超大 PDF 上传失败时前端是否能告诉用户真正原因；
+  - 共享发票能力在真实多成员路径下是否按产品要求工作。
+- 实测表明，当前最大问题不是单个按钮文案，而是“识别结果、附件归属、共享可见性、财务导出准备度”这几条核心链路仍未闭合。
+
+### 关键改动点
+- 新增：
+  - `UX_TEST_REPORT.md`
+  - `tests/ux/README.md`
+  - `tests/ux/real-user-flows.spec.mjs`
+- 修改：
+  - `.gitignore`
+  - `TASKS.md`
+  - `src/trms_backend/api/materials.py`
+  - `src/trms_backend/domain/exports.py`
+  - `tests/test_exports_api.py`
+  - `tests/test_main_flow_e2e.py`
+  - `tests/test_materials_api.py`
+  - `web/src/app/admin-export-tasks.tsx`
+  - `web/src/lib/ui-text.ts`
+
+### 风险与影响面
+- 本轮没有改动识别、分摊、确认、导出核心业务规则，只修复了用户可见的文案和中文文件名预览头部。
+- `materials.py` 的响应头修复会影响所有材料预览下载路径；已补回归测试锁住 ASCII 与中文文件名场景。
+- `exports.py` 的导出门禁说明改成中文后，前端和测试不再依赖英文内部状态描述；CLI/第三方若直接消费该文案，需接受文案变化。
+- UX 报告引用了真实材料类型，但未提交真实数据副本和截图二进制；这些产物保留在本地忽略目录中。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、72 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+- 浏览器实测确认：
+  - 导出页中文化文案已生效；
+  - 中文文件名 PDF 在管理员复核页可正常进入内联预览；
+  - 超大邀请函上传失败时已显示“上传文件过大，请缩小到页面允许的大小后重试。”。
+
+### 假设
+- 真实材料目录里没有直接可用于系统成员标识的学号表；本轮测试以邀请函中的真实姓名作为成员身份标识完成 UI 路径验证，并已在报告中明确记录该限制。
+- Playwright MCP 当前不提供 trace 落盘接口，因此本轮只保留截图和 `.playwright-mcp/` 快照目录，不声称已生成 trace。
+
 ## 2026-04-29 13:18 - Redirect legacy member subroutes into the invoice workbench
 
 ### 完成内容

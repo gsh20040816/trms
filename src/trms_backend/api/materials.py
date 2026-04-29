@@ -1,4 +1,5 @@
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
@@ -588,7 +589,7 @@ def build_material_router(
         return Response(
             content=content,
             media_type=media_type,
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            headers={"Content-Disposition": _build_inline_content_disposition(filename)},
         )
 
     return router
@@ -603,6 +604,21 @@ def _build_pending_assignment_actor_id(
     if normalized_hint:
         return normalized_hint[:128]
     return f"pending-assignment:{channel.value}"
+
+
+def _build_inline_content_disposition(filename: str) -> str:
+    sanitized = filename.replace('"', "")
+    try:
+        sanitized.encode("latin-1")
+    except UnicodeEncodeError:
+        ascii_fallback = "".join(
+            character if 32 <= ord(character) < 127 and character not in {'"', "\\", ";"}
+            else "_"
+            for character in sanitized
+        ).strip("._") or "material"
+        encoded_filename = quote(sanitized, safe="")
+        return f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
+    return f'inline; filename="{sanitized}"'
 
 
 def _record_material_claim_audit(

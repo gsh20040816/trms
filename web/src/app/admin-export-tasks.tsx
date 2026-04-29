@@ -436,7 +436,7 @@ export function AdminExportTasksPage() {
               <section className="admin-review-subsection">
                 <div className="task-card-header">
                   <div>
-                    <p className="task-card-id">Export Gate</p>
+                    <p className="task-card-id">导出门禁</p>
                     <h4>当前任务尚未满足导出前置条件</h4>
                   </div>
                   <span className="status-chip member-status-chip-failed">已阻止导出</span>
@@ -556,7 +556,7 @@ export function AdminExportTasksPage() {
           <section className="status-card admin-review-panel">
             <div className="task-card-header">
               <div>
-                <p className="task-card-id">Export Jobs</p>
+                <p className="task-card-id">导出任务</p>
                 <h2>导出任务历史</h2>
               </div>
               <span className="status-chip">{pageState.jobs.length} 条记录</span>

@@ -208,6 +208,35 @@ def test_administrator_can_preview_assigned_material_content(tmp_path):
     assert response.headers["content-disposition"] == 'inline; filename="ticket.pdf"'
 
 
+def test_administrator_can_preview_assigned_material_content_with_unicode_filename(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    created = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("高德打车电子发票.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+    material = created.json()["items"][0]
+
+    response = client.get(
+        f"/api/materials/{material['id']}/content",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"fake-pdf-content"
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.headers["content-disposition"] == (
+        "inline; filename=\"pdf\"; "
+        "filename*=UTF-8''%E9%AB%98%E5%BE%B7%E6%89%93%E8%BD%A6%E7%94%B5%E5%AD%90%E5%8F%91%E7%A5%A8.pdf"
+    )
+
+
 def test_member_cannot_preview_other_members_material_content(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)

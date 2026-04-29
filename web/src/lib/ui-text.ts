@@ -230,6 +230,12 @@ export function mapBackendMessage(message: string, status = 0) {
   if (normalized.includes("ocr") || normalized.includes("parse failed")) {
     return "材料识别失败，请上传更清晰的文件或改为人工补录。";
   }
+  if (normalized.includes("payload is too large") || normalized.includes("content too large")) {
+    return "上传文件过大，请缩小到页面允许的大小后重试。";
+  }
+  if (normalized.includes("ready_to_export") || normalized.includes("可导出")) {
+    return "当前任务还没完成导出前置条件，请先处理缺失材料、复核或状态推进。";
+  }
   if (normalized.includes("unsupported fee categories")) {
     return "所选费用类别暂不支持，请调整后再提交。";
   }

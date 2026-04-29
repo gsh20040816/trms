@@ -53,9 +53,7 @@ class TaskExportBoundary(BaseModel):
     supported_exports: list[TaskExportCapability]
     note: str = Field(
         default=(
-            "reimbursement summary/member details/invoice details/missing materials CSV export and "
-            "finance draft JSON export and merged PDF export are available through async export "
-            "jobs with persisted artifacts"
+            "当前导出会通过后台任务生成，并在成功后保留可下载产物。"
         )
     )
 
@@ -409,7 +407,7 @@ def build_task_export_boundary(
     blocking_reasons: list[str] = []
     if task.status not in {TaskStatus.READY_TO_EXPORT, TaskStatus.COMPLETED}:
         blocking_reasons.append(
-            "task must be ready_to_export or completed before real exports can be generated"
+            "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
         )
 
     return TaskExportBoundary(

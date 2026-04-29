@@ -18,3 +18,7 @@ data/
 *.tsbuildinfo
 .codex-nightly/
 .codex
+.playwright-mcp/
+test-artifacts/ux/
+tmp/ux-real-data/
+tmp/ux-runtime/
