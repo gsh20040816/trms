@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-29 16:47 - Replace dev quick role entry with a real backend-backed session
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“把开发环境快捷角色入口改成真实 dev 会话登录”。
+- 登录页开发入口不再调用 `setMockSession()` 伪造前端会话，而是改为：
+  - 先尝试用固定 dev 账号注册对应角色
+  - 若用户名已存在则回退到登录
+  - 成功后拿到真实 bearer session，再进入对应工作台
+- 为开发快捷入口固定了可重复复用的账号名策略：
+  - `dev-member`
+  - `dev-admin`
+  - `dev-system-admin`
+- 同时修正了一处已有 mock 会话一致性问题：mock 多角色切换时现在会同步更新 `actorId`、`displayName` 和 `memberCode`，避免只改 `role` 导致页面显示错乱。
+- 新增前端测试覆盖：
+  - 首次通过开发入口创建真实会话
+  - 账号已存在时复用已有账号登录
+  - 注册冲突且登录失败时展示错误提示
+
+### 根因
+- 原登录页里的“以成员/管理员/系统管理员进入”只会写入前端本地 mock session，没有向后端申请真实 bearer token。
+- 进入成员/管理员工作台后，页面上的真实 API 请求仍然会被后端视为匿名用户，因此看起来“进入了页面”，但实际没有真正登录成功。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/auth.tsx`
+  - `web/src/app/auth-store.ts`
+  - `web/src/app/App.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只修改开发环境快捷入口，不改变正式用户名密码登录、正式注册、权限切换 API 或生产环境下隐藏开发入口的规则。
+- dev 快捷入口当前使用固定测试密码，仅用于开发构建可见场景；生产构建继续由 `resolveAuthUiConfig()` 隐藏该入口。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- App.test.tsx`
+  - `cd web && npm test -- auth-ui-config.test.ts`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：425 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、84 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前把“开发环境快捷入口真正登录成功”的最小定义收口为：点击入口后能建立后端承认的 bearer 会话，并能复用固定 dev 账号；不在本轮额外引入专门的开发态 impersonation API。
+
 ## 2026-04-29 16:36 - Make the system admin panel usable with real config and runtime data
 
 ### 完成内容

@@ -109,9 +109,32 @@ describe("web app account auth", () => {
     ).toBeInTheDocument();
   });
 
-  it("allows entering the requested route with a dev member session", async () => {
+  it("creates a real dev member session on first entry", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
       const url = resolveRequestUrl(input);
+
+      if (url === "/api/auth/register") {
+        return Promise.resolve(new Response(JSON.stringify({
+          access_token: "token-member",
+          token_type: "bearer",
+          user: {
+            id: "user-member",
+            username: "dev-member",
+            role: "member",
+            roles: ["member"],
+            actor_id: "2250001",
+            display_name: "王队员",
+            member_code: "MEM-001",
+            created_at: "2026-04-28T00:00:00Z",
+            updated_at: "2026-04-28T00:00:00Z",
+          },
+        }), {
+          status: 201,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
 
       if (url === "/api/tasks") {
         return Promise.resolve(new Response(JSON.stringify([]), {
@@ -135,6 +158,109 @@ describe("web app account auth", () => {
 
     expect(await screen.findByRole("heading", { name: "我的报销任务" })).toBeInTheDocument();
     expect(await screen.findByText("当前没有可见报销任务")).toBeInTheDocument();
+  });
+
+  it("reuses the existing dev account by logging in when registration conflicts", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/auth/register") {
+        return Promise.resolve(new Response(JSON.stringify({
+          detail: "username already exists: dev-admin",
+        }), {
+          status: 409,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      if (url === "/api/auth/login") {
+        return Promise.resolve(new Response(JSON.stringify({
+          access_token: "token-admin",
+          token_type: "bearer",
+          user: {
+            id: "user-admin",
+            username: "dev-admin",
+            role: "admin",
+            roles: ["admin"],
+            actor_id: "admin-1",
+            display_name: "张管理员",
+            member_code: null,
+            created_at: "2026-04-28T00:00:00Z",
+            updated_at: "2026-04-28T00:00:00Z",
+          },
+        }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in auth test: ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/login"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "以管理员进入" }));
+
+    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
+    expect(await screen.findByText("当前管理员名下还没有任务")).toBeInTheDocument();
+  });
+
+  it("shows an error when the dev quick entry cannot establish a real session", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/auth/register") {
+        return Promise.resolve(new Response(JSON.stringify({
+          detail: "username already exists: dev-system-admin",
+        }), {
+          status: 409,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      if (url === "/api/auth/login") {
+        return Promise.resolve(new Response(JSON.stringify({
+          detail: "invalid username or password",
+        }), {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in auth test: ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/login"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "以系统管理员进入" }));
+
+    expect((await screen.findAllByText("当前操作未完成，请检查填写内容后重试。")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "账号登录与注册" })).toBeInTheDocument();
   });
 
   it("hides dev role entries and privileged self-registration when auth ui config disables them", () => {

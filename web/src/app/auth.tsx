@@ -30,7 +30,6 @@ import {
   loginWithPassword,
   logoutCurrentSession,
   registerWithPassword,
-  setMockSession,
   switchCurrentRole,
   useAuthSession,
 } from "./auth-store";
@@ -64,6 +63,12 @@ function describeError(error: unknown) {
   return summarizeUnknownError(error).message;
 }
 
+const DEV_ROLE_PASSWORD = "dev-password-123";
+
+function buildDevRoleUsername(role: UserRole) {
+  return `dev-${role.replaceAll("_", "-")}`;
+}
+
 export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?: AuthUiConfig }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -77,6 +82,7 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
   const [actorId, setActorId] = useState("");
   const [memberCode, setMemberCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [devEntrySubmittingRole, setDevEntrySubmittingRole] = useState<UserRole | null>(null);
   const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
   const nextPath = normalizeNextPath(searchParams.get("next"));
   const activeRoleRoute = session ? getRoleRouteOrThrow(session.role) : null;
@@ -115,13 +121,44 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
     })();
   }
 
-  function handleMockLogin(targetRole: UserRole) {
+  function handleDevRoleLogin(targetRole: UserRole) {
     const targetRoleRoute = getRoleRouteOrThrow(targetRole);
-    setMockSession(targetRole);
-    showSuccess(`已使用调试身份进入：${targetRoleRoute.loginLabel}`);
-    void navigate(nextPath ?? targetRoleRoute.path, {
-      replace: true,
-    });
+    setFormErrorMessage(null);
+    setDevEntrySubmittingRole(targetRole);
+    void (async () => {
+      try {
+        const username = buildDevRoleUsername(targetRole);
+        try {
+          await registerWithPassword({
+            username,
+            password: DEV_ROLE_PASSWORD,
+            role: targetRole,
+            displayName: targetRoleRoute.mockDisplayName,
+            actorId: targetRoleRoute.mockActorId,
+            memberCode: targetRoleRoute.mockMemberCode ?? undefined,
+          });
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 409) {
+            throw error;
+          }
+          await loginWithPassword({
+            username,
+            password: DEV_ROLE_PASSWORD,
+          });
+        }
+
+        showSuccess(`已使用开发快捷入口登录：${targetRoleRoute.loginLabel}`);
+        void navigate(targetRoleRoute.path, {
+          replace: true,
+        });
+      } catch (submitError) {
+        const message = describeError(submitError);
+        setFormErrorMessage(message);
+        showError(message);
+      } finally {
+        setDevEntrySubmittingRole(null);
+      }
+    })();
   }
 
   function handleSwitchRole(targetRole: UserRole) {
@@ -318,16 +355,19 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
                       {roleRoute.summary}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-                      调试身份：{roleRoute.mockDisplayName}
+                      开发会话：{roleRoute.mockDisplayName}
                       {roleRoute.mockMemberCode ? `（${roleRoute.mockMemberCode}）` : ""}
                     </Typography>
                     <Button
                       variant="outlined"
                       size="small"
                       sx={{ mt: 1.5 }}
-                      onClick={() => handleMockLogin(roleRoute.role)}
+                      onClick={() => handleDevRoleLogin(roleRoute.role)}
+                      disabled={devEntrySubmittingRole !== null}
                     >
-                      以{roleRoute.loginLabel}进入
+                      {devEntrySubmittingRole === roleRoute.role
+                        ? "进入中..."
+                        : `以${roleRoute.loginLabel}进入`}
                     </Button>
                   </CardContent>
                 </Card>
