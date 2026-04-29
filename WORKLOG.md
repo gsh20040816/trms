@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-30 01:42 - Add member invoice submission status model and batch submit API
+
+### 完成内容
+- 完成任务“建立成员侧发票提交状态模型与批量提交 API”。
+- 调整发票领域模型 [invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoices.py)：
+  - 新增 `InvoiceMemberSubmissionStatus`
+    - `unsubmitted`
+    - `submitted`
+  - 发票记录新增：
+    - `member_submission_status`
+    - `submitted_by_member_id`
+    - `submitted_at`
+- 调整数据库模型与仓储：
+  - [models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)
+  - [repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - 新增 Alembic revision [20260430_01_invoice_member_submission_status.py](/home/gsh/workspace/TRMS/alembic/versions/20260430_01_invoice_member_submission_status.py)
+  - 仓储新增 `update_member_submission_status(...)`
+- 新增后端服务 [invoice_member_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/invoice_member_submission.py)：
+  - 批量提交若干发票
+  - 对每张发票分别校验并返回逐票失败原因
+  - 对成功/拒绝提交都写审计日志
+- 调整 [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)：
+  - 新增 `POST /api/tasks/{task_id}/invoice-submissions`
+  - 仅任务成员可调用
+  - 返回：
+    - `status`
+    - `items`
+    - `failures`
+- 新增测试 [test_invoice_member_submission_api.py](/home/gsh/workspace/TRMS/tests/test_invoice_member_submission_api.py)：
+  - 批量提交成功
+  - 部分成功、部分失败
+  - 无关成员越权失败
+
+### 提交前置条件
+- 当前这轮把“成员正式提交给管理员”的语义收敛到这些条件：
+  - 任务状态必须仍是 `open`
+  - 调用方必须是任务成员，且是该发票主材料的提交人
+  - 发票不能已经是 `submitted`
+  - 发票必须满足与任务最终导出门禁一致的核心条件：
+    - 没有 blocker 级失败/待确认校验
+    - 已有分摊
+    - 所有关联成员确认都已经 `confirmed`
+- 这次没有把“已确认费用”直接等同于“已提交管理员”，而是显式新增了独立发票状态。
+
+### 为什么这样设计
+- 之前仓库里只有：
+  - 分摊确认
+  - 任务进入 `reviewing / ready_to_export` 的任务级状态
+- 但没有“成员已经把这张发票正式交给管理员处理”的发票级状态。
+- 如果直接拿“确认已完成”冒充“已提交”，会混淆两件不同的事：
+  - 成员确认自己相关费用
+  - 成员正式声明这张发票已准备好交给管理员
+- 因此本轮先建立独立的发票提交状态，再让下一轮撤回规则和前端批量区块建立在这个状态上。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_invoice_member_submission_api.py tests/test_tasks_api.py tests/test_invoices_api.py`
+    - 87 个用例通过
+- 仓库级验证待本轮记录更新后统一执行 `./scripts/verify.sh`。
+
 ## 2026-04-30 01:16 - Split batch invoice submit and withdraw task
 
 ### 完成内容

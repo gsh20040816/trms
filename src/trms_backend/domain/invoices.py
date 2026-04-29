@@ -16,6 +16,11 @@ class ExpenseType(StrEnum):
     OTHER = "other"
 
 
+class InvoiceMemberSubmissionStatus(StrEnum):
+    UNSUBMITTED = "unsubmitted"
+    SUBMITTED = "submitted"
+
+
 class ValidationSeverity(StrEnum):
     BLOCKER = "blocker"
     WARNING = "warning"
@@ -86,6 +91,9 @@ class InvoiceRecord(BaseModel):
     seller_name: str | None
     amount_cents: int
     expense_type: ExpenseType
+    member_submission_status: InvoiceMemberSubmissionStatus = InvoiceMemberSubmissionStatus.UNSUBMITTED
+    submitted_by_member_id: str | None = None
+    submitted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -152,6 +160,16 @@ class InvoiceRepository(Protocol):
         invoice_number: str,
         exclude_invoice_id: str,
     ) -> str | None:
+        raise NotImplementedError
+
+    def update_member_submission_status(
+        self,
+        *,
+        invoice_id: str,
+        status: InvoiceMemberSubmissionStatus,
+        submitted_by_member_id: str | None,
+        submitted_at: datetime | None,
+    ) -> InvoiceRecord | None:
         raise NotImplementedError
 
 

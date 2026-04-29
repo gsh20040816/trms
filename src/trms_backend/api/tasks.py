@@ -11,6 +11,9 @@ from trms_backend.api.request_identity import (
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.expense_audit import record_split_confirmation_audit
+from trms_backend.application.invoice_member_submission import (
+    InvoiceMemberSubmissionService,
+)
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
     AutomaticReminderTaskGenerate,
@@ -110,6 +113,20 @@ class TaskMaterialReminderCreateRequest(BaseModel):
         )
 
 
+class InvoiceMemberSubmissionBatchRequest(BaseModel):
+    actor_id: str | None = None
+    invoice_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "InvoiceMemberSubmissionBatchRequest":
+        if self.actor_id is not None:
+            self.actor_id = self.actor_id.strip() or None
+        self.invoice_ids = [invoice_id.strip() for invoice_id in self.invoice_ids if invoice_id.strip()]
+        if not self.invoice_ids:
+            raise ValueError("invoice_ids must not be empty")
+        return self
+
+
 def build_task_router(
     auth_repository: AuthRepository,
     repository: TaskRepository,
@@ -127,6 +144,11 @@ def build_task_router(
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     authenticated_request_identity = build_authenticated_request_identity_dependency(
         auth_repository
+    )
+    invoice_member_submission_service = InvoiceMemberSubmissionService(
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        audit_log_repository=audit_log_repository,
     )
 
     def ensure_task_management_role(
@@ -484,6 +506,61 @@ def build_task_router(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),
             ) from error
+
+    @router.post("/{task_id}/invoice-submissions")
+    def submit_task_invoices(
+        task_id: str,
+        request: Request,
+        payload: InvoiceMemberSubmissionBatchRequest,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            payload.actor_id,
+            field_name="actor_id",
+        )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to submit invoices for this task",
+        )
+        if scope is not TaskAccessScope.MEMBER or identity.role is not UserRole.MEMBER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to submit invoices for this task",
+            )
+
+        invoices = invoice_repository.list_by_task(task_id)
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        confirmations_by_split_id = {}
+        for invoice in invoices:
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        result = invoice_member_submission_service.submit_batch(
+            task=task,
+            actor_id=resolved_actor_id,
+            actor_role=identity.role,
+            invoice_ids=payload.invoice_ids,
+            validations_by_invoice_id=validations_by_invoice_id,
+            splits_by_invoice_id=splits_by_invoice_id,
+            confirmations_by_split_id=confirmations_by_split_id,
+            request_id=ensure_request_id(request),
+        )
+        return {
+            "status": result.status,
+            "items": result.items,
+            "failures": result.failures,
+        }
 
     @router.get("/{task_id}/supporting-material-linkage")
     def get_task_supporting_material_linkage(

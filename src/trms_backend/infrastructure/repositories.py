@@ -57,6 +57,7 @@ from trms_backend.domain.system_ai_provider_config import (
 from trms_backend.domain.invoices import (
     ExpenseType,
     InvoiceCreate,
+    InvoiceMemberSubmissionStatus,
     InvoiceRecord,
     InvoiceSupportingMaterialLinkRecord,
     ValidationRepository,
@@ -666,6 +667,9 @@ class SqlAlchemyInvoiceRepository:
                     id=str(uuid4()),
                     task_id=task_id,
                     material_id=material_id,
+                    member_submission_status=InvoiceMemberSubmissionStatus.UNSUBMITTED.value,
+                    submitted_by_member_id=None,
+                    submitted_at=None,
                     created_at=now,
                     updated_at=now,
                     **data.model_dump(),
@@ -783,6 +787,25 @@ class SqlAlchemyInvoiceRepository:
                 .order_by(InvoiceRow.created_at)
                 .limit(1)
             )
+
+    def update_member_submission_status(
+        self,
+        *,
+        invoice_id: str,
+        status: InvoiceMemberSubmissionStatus,
+        submitted_by_member_id: str | None,
+        submitted_at: datetime | None,
+    ) -> InvoiceRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(InvoiceRow, invoice_id)
+            if row is None:
+                return None
+            row.member_submission_status = status.value
+            row.submitted_by_member_id = submitted_by_member_id
+            row.submitted_at = submitted_at
+            row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+        return _invoice_from_row(row)
 
 
 class SqlAlchemyValidationRepository(ValidationRepository):
@@ -1548,6 +1571,9 @@ def _invoice_from_row(row: InvoiceRow) -> InvoiceRecord:
         seller_name=row.seller_name,
         amount_cents=row.amount_cents,
         expense_type=ExpenseType(row.expense_type),
+        member_submission_status=InvoiceMemberSubmissionStatus(row.member_submission_status),
+        submitted_by_member_id=row.submitted_by_member_id,
+        submitted_at=row.submitted_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
