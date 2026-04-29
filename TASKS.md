@@ -1147,7 +1147,7 @@
     - 记录引入新依赖的范围、bundle 体积影响和测试改动面预估
     - 不实际安装任何依赖，不改动业务代码
 
-- [ ] 引入 Material 3 主题与基线依赖
+- [x] 引入 Material 3 主题与基线依赖
   - Done when:
     - `web/` 引入 MUI v7（`@mui/material`、`@emotion/react`、`@emotion/styled`、`@mui/icons-material`）
     - 建立 `src/theme/m3-theme.ts`，含完整 M3 颜色 token、字体、形状、tonal elevation

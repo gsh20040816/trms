@@ -1,5 +1,80 @@
 # WORKLOG
 
+## 2026-04-29 11:42 - Bring in MUI v7 baseline theme and font
+
+### 完成内容
+- 在 `web/` 引入 MUI v7 全套：`@mui/material@^7.3.10`、`@emotion/react@^11.14`、`@emotion/styled@^11.14`、`@mui/icons-material@^7.3.10`、`@fontsource/roboto-flex@^5.2`。
+- 新增 Material 3 主题文件 `web/src/theme/m3-theme.ts`，包含完整 M3 token：
+  - 亮色和暗色两套 palette（primary/secondary/error/warning/success/info、background、text、divider）
+  - 字体栈以 Roboto Flex 为主，回退到中文系统字体
+  - typography scale（h1~h6 + button + body1/2）
+  - 25 级渐进 elevation 阴影
+  - 全局组件 token 默认值（Button、Card、Paper、AppBar、TextField、OutlinedInput、Chip、Tooltip、TableCell）
+  - 圆角 token `borderRadius=12`
+- 新增 `web/src/theme/AppThemeProvider.tsx`，包裹 `ThemeProvider` 与 `CssBaseline`，按 `localStorage` 存储用户偏好，并通过 `useMediaQuery('(prefers-color-scheme: dark)')` 跟随系统主题。
+- 拆分 `web/src/theme/app-theme-context.ts` 与 `web/src/theme/use-app-theme.ts`，避免 `react-refresh/only-export-components` 警告。
+- `main.tsx` 新增 Roboto Flex 400（variable font）字体导入，并把根组件 `<App />` 包入 `AppThemeProvider`。
+- 在 `src/test/setup.ts` 中补齐 jsdom 环境下缺失的 `matchMedia` 与 `ResizeObserver` polyfill，避免后续 MUI 组件在测试中报错。
+
+### 根因
+- 用户在 P5 重写计划中确认采用 MUI v7 实现 Material 3。本轮负责"主题与基线"层，把库装上、token 统一、Provider 接好，让后续每一轮可以在确定的主题上下文中改具体页面。
+- 本轮不调用任何 MUI 组件，避免一次性触发大量测试与样式联动失败；现有 `styles.css` 完整保留。
+
+### 关键改动点
+- `web/package.json`、`web/package-lock.json`：新增 5 个生产依赖。
+- 新增主题文件：
+  - `web/src/theme/m3-theme.ts`
+  - `web/src/theme/AppThemeProvider.tsx`
+  - `web/src/theme/app-theme-context.ts`
+  - `web/src/theme/use-app-theme.ts`
+- 修改入口：
+  - `web/src/main.tsx`：包裹 ThemeProvider；引入 Roboto Flex 字体。
+- 修改测试基线：
+  - `web/src/test/setup.ts`：补 `matchMedia` / `ResizeObserver` polyfill。
+- 任务状态：
+  - `TASKS.md` 第二条 P5 子任务标记为已完成。
+
+### 风险与影响面
+- 本轮新增依赖；bundle gzipped 从 145.60 kB 增至 178.37 kB（+32.77 kB），全部为 ThemeProvider/CssBaseline/useMediaQuery 与样式引擎。后续轮次替换组件后，自造 `styles.css` 体积会回降。
+- 现有 1700+ 行 `styles.css` 暂时保留；它定义的 `:root` 颜色与背景与 MUI `CssBaseline` 注入的 `body` 颜色会有重叠，后续轮次会按页迁移再清理。
+- `MuiAppBar` 默认 elevation 改为 0、color 设为透明并使用主题 surface 背景；这会在 Round 3 顶栏重写时立即生效。
+- `enableColorScheme` 让 `<html style="color-scheme">` 自动同步亮/暗，浏览器表单控件原生外观会跟随主题。
+
+### 修改文件
+- `web/package.json`
+- `web/package-lock.json`
+- `web/src/main.tsx`
+- `web/src/test/setup.ts`
+- `web/src/theme/m3-theme.ts`（新增）
+- `web/src/theme/AppThemeProvider.tsx`（新增）
+- `web/src/theme/app-theme-context.ts`（新增）
+- `web/src/theme/use-app-theme.ts`（新增）
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过（420 用例）
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 个文件、69 个用例全通过
+  - Web `npm run build` 成功；产物体积如下记录
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 主题 seed color `#1A53A8` 是与同济 ACM 蓝接近的深蓝；Round 3 重写顶栏时如果设计上需要更接近橙金品牌色，可以再调整 palette。
+- 本轮还没有任何业务组件使用 MUI；现有所有页面继续走旧 `styles.css`。
+
+### 备注
+- bundle 体积对比：
+  - 之前：`dist/assets/index-*.js 531.16 kB │ gzip 145.60 kB`
+  - 现在：`dist/assets/index-*.js 625.53 kB │ gzip 178.37 kB`
+  - 净增：+94.37 kB / +32.77 kB gzipped
+- 1 个 `vite build` 体积告警（500 kB）属于既有警告，本轮未新增构建失败。
+- `@fontsource/roboto-flex` 是 variable font，只导出 `400.css`（实际覆盖 100~1000 字重）；不需要分别导入 500/600/700。
+
 ## 2026-04-29 11:35 - Evaluate Material 3 React adoption plan
 
 ### 完成内容
