@@ -1,5 +1,37 @@
 # WORKLOG
 
+## 2026-04-30 00:07 - Document reimbursement interaction simplification plan
+
+### 完成内容
+- 完成任务“分析并记录成员/管理员报销交互简化改造方案”。
+- 新增 [报销交互简化改造方案.md](/home/gsh/workspace/TRMS/docs/报销交互简化改造方案.md)，记录：
+  - 当前系统交互繁琐的根因；
+  - 成员端“上传后自动处理、只展示待办和可提交发票”的目标流程；
+  - 管理端“异常优先处理、一键完整材料包”的目标流程；
+  - 附件手动关联、成员批量提交/撤回、任务就绪度读模型、完整材料包导出等可拆任务；
+  - AI 自动化边界和不建议方向。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，新增并完成本轮临时文档任务。
+
+### 当前判断
+- 当前仓库已经具备免选类型上传、两阶段识别、单候选附件自动归票、待关联附件摘要、共享发票摘要、成员批量提交/撤回 API、异步导出和 merged PDF 导出等底层能力。
+- 后续关键不是重写架构，而是把已有能力编排成：
+  - 成员端少判断、少跳转、只处理系统列出的阻塞项；
+  - 管理端少逐张检查、少手工拼导出物、直接下载带 manifest 的完整材料包。
+
+### 影响范围
+- 本轮只新增和更新文档，不改动业务代码、测试代码、数据库迁移或运行配置。
+- 后续实现仍应按方案中的最小任务拆分逐项落地，不应一次性重写成员工作台或管理员导出模块。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 465 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出 `--localstorage-file` 路径警告，Vite 输出 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 02:01 - Add member invoice submission withdrawal workflow
 
 ### 完成内容
