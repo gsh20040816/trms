@@ -69,6 +69,10 @@ from trms_backend.domain.task_member_status import (
     TaskMemberStatusActorNotAllowedError,
     build_task_member_status_report,
 )
+from trms_backend.domain.task_member_workbench import (
+    TaskMemberWorkbenchActorNotAllowedError,
+    build_task_member_workbench_summary,
+)
 from trms_backend.domain.task_shared_invoices import (
     TaskSharedInvoiceActorNotAllowedError,
     build_task_shared_invoice_report,
@@ -464,6 +468,86 @@ def build_task_router(
                 confirmations_by_split_id=confirmations_by_split_id,
             )
         except TaskMemberStatusActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/member-workbench")
+    def get_task_member_workbench(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
+
+        materials = material_repository.list_by_task(task_id)
+        invoices = invoice_repository.list_by_task(task_id)
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        latest_recognitions_by_material_id = {}
+        for material in materials:
+            if material.submitter_id != resolved_actor_id:
+                continue
+            latest_recognitions_by_material_id[material.id] = (
+                recognition_task_repository.get_latest_effective_by_material(material.id)
+            )
+        supporting_materials_by_invoice_id: dict[str, list[MaterialRecord]] = {}
+        shared_supporting_materials_by_invoice_id: dict[str, list[MaterialRecord]] = {}
+        linked_invoice_ids_by_material_id: dict[str, list[str]] = {
+            material.id: []
+            for material in materials
+        }
+        for invoice in invoices:
+            supporting_materials: list[MaterialRecord] = []
+            shared_supporting_materials: list[MaterialRecord] = []
+            for link in invoice_repository.list_supporting_material_links(invoice.id):
+                linked_invoice_ids_by_material_id.setdefault(link.material_id, []).append(invoice.id)
+                material = material_repository.get(link.material_id)
+                if material is None:
+                    continue
+                shared_supporting_materials.append(material)
+                if material.submitter_id != resolved_actor_id:
+                    continue
+                supporting_materials.append(material)
+            supporting_materials_by_invoice_id[invoice.id] = supporting_materials
+            shared_supporting_materials_by_invoice_id[invoice.id] = shared_supporting_materials
+        splits_by_invoice_id = {
+            invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        confirmations_by_invoice_id = {
+            invoice.id: confirmation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
+        current_confirmations_by_split_id = {}
+        for invoice in invoices:
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                current_confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        try:
+            return build_task_member_workbench_summary(
+                task,
+                actor_id=resolved_actor_id,
+                materials=materials,
+                invoices=invoices,
+                latest_recognitions_by_material_id=latest_recognitions_by_material_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+                supporting_materials_by_invoice_id=supporting_materials_by_invoice_id,
+                shared_supporting_materials_by_invoice_id=shared_supporting_materials_by_invoice_id,
+                linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_invoice_id=confirmations_by_invoice_id,
+                current_confirmations_by_split_id=current_confirmations_by_split_id,
+            )
+        except TaskMemberWorkbenchActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),

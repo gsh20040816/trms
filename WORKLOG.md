@@ -1,5 +1,61 @@
 # WORKLOG
 
+## 2026-04-30 01:40 - Add aggregated member workbench read model
+
+### 完成内容
+- 完成任务“新增成员工作台聚合读模型”。
+- 新增后端读模型 [task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py)：
+  - 聚合成员工作台所需的本人材料/发票、脱敏识别摘要、校验结果、已关联附件、分摊、确认、缺失材料、待关联附件和共享发票摘要；
+  - 为每个成员材料条目产出 `queue_group`、`blocking_reasons` 和 `ready_for_submission`，把前端原先自行推导的可提交/阻塞口径下沉到后端；
+  - 共享发票继续只暴露基础元数据、分摊摘要和附件类型计数；聚合接口不再返回识别 `raw_response`。
+- 调整 [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)：
+  - 新增 `GET /api/tasks/{task_id}/member-workbench`；
+  - 仅允许任务成员读取；
+  - 同时返回成员状态汇总、工作台条目、待关联附件和共享发票摘要。
+- 调整前端工作台：
+  - [trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts) 新增 `getTaskMemberWorkbench(...)`；
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 新增成员工作台聚合响应类型；
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 主数据加载改为优先读取聚合接口；聚合成功时不再继续请求成员状态、共享发票、待关联附件、识别、校验、附件、分摊和确认的 N+1 组合；
+  - 保留旧加载链路作为兼容回退，避免滚动更新或测试夹具尚未接新接口时直接让页面不可用。
+- 新增/更新测试：
+  - 新增 [test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py)，覆盖权限边界、`ready_for_submission` 与成员提交状态、阻塞原因映射、共享摘要/识别结果脱敏；
+  - 新增 [member-invoice-workbench-aggregate.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-aggregate.test.tsx)，覆盖前端优先使用聚合接口而不是旧 N+1 请求；
+  - 更新 [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)，去掉对旧请求次数的脆弱硬编码，改为直接断言“超大文件不会触发上传 POST”。
+
+### 根因
+- 成员工作台此前虽然已经收口到单任务，但主数据仍依赖：
+  - 1 次成员状态；
+  - 1 次共享发票；
+  - 1 次待关联附件；
+  - 1 次发票列表；
+  - 再按材料/发票逐个补识别、校验、附件、分摊和确认。
+- 结果是页面默认加载路径存在明显 N+1，请求次数高、前端状态推导重复、测试也必须手工拼一整套分散返回，继续迭代会越来越重。
+
+### 保守假设
+- 本轮保留了前端对旧接口链路的兼容回退，而不是直接删掉旧加载逻辑。
+- 原因是当前仓库里已有大量工作台测试和可能存在的滚动部署窗口仍依赖旧返回形状；先让新聚合接口成为主路径，再把完全删除回退作为后续独立清理任务，更符合“本轮只完成一个最小可验证任务”的边界。
+
+### 影响范围
+- 修改了成员工作台的后端读模型与任务路由，以及成员工作台前端主数据加载方式。
+- 没有改动成员批量提交/撤回规则、附件写权限规则、数据库 schema、管理员页面或导出链路。
+
+### 验证结果
+- 已通过定向验证：
+  - `uv run pytest tests/test_task_member_workbench_api.py`
+    - 4 个用例通过
+  - `cd web && npm test -- member-invoice-workbench.test.tsx member-invoice-workbench-aggregate.test.tsx`
+    - 17 个用例通过
+  - `cd web && npm run build`
+    - 通过；存在既有 Vite chunk size 警告
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 474 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 01:13 - Restructure member workbench around ready and blocked invoices
 
 ### 完成内容

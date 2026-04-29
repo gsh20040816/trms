@@ -40,6 +40,7 @@ import type {
   TaskExportJobRequest,
   TaskSharedInvoiceReport,
   TaskMemberStatusReport,
+  TaskMemberWorkbenchSummary,
   TaskMembersUpdate,
   TaskReviewSummary,
   TaskStatusUpdate,
@@ -212,6 +213,12 @@ export const trmsApi = {
   getTaskMemberStatus(taskId: string, actorId: string) {
     return apiClient.request<TaskMemberStatusReport>(
       `/tasks/${encodeSegment(taskId)}/member-status${buildActorScopedQuery(actorId)}`,
+    );
+  },
+
+  getTaskMemberWorkbench(taskId: string, actorId: string) {
+    return apiClient.request<TaskMemberWorkbenchSummary>(
+      `/tasks/${encodeSegment(taskId)}/member-workbench${buildActorScopedQuery(actorId)}`,
     );
   },
 

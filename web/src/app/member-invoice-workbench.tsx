@@ -42,6 +42,8 @@ import type {
   RecognitionTaskRecord,
   RecognitionTaskStatus,
   ReimbursementTask,
+  TaskMemberWorkbenchItem as TaskMemberWorkbenchSummaryItem,
+  TaskMemberWorkbenchQueueGroup,
   TaskMemberMaterialStatusItem,
   TaskMemberStatusReport,
   TaskSharedInvoiceItem,
@@ -110,14 +112,22 @@ type WorkbenchTab = "invoices" | "missing-materials" | "confirmations";
 type WorkbenchInvoiceItem = {
   material: TaskMemberMaterialStatusItem;
   invoice: InvoiceRecord | null;
-  recognition: RecognitionTaskRecord | null;
+  recognition: WorkbenchRecognition | null;
   validations: ValidationResult[];
   supportingMaterials: MaterialRecord[];
   splits: ExpenseSplitRecord[];
   confirmations: ConfirmationRecord[];
   relatedExpenseDetails: ExpenseDetailItem[];
   missingMaterials: TaskMemberStatusReport["missing_materials"];
+  queueGroup?: TaskMemberWorkbenchQueueGroup;
+  blockingReasons?: Array<Exclude<TaskMemberWorkbenchQueueGroup, "ready">>;
+  readyForSubmission?: boolean;
 };
+
+type WorkbenchRecognition = Pick<
+  RecognitionTaskRecord,
+  "id" | "material_id" | "status" | "failure" | "recognized_fields" | "manual_corrections" | "created_at" | "updated_at"
+>;
 
 type SplitDraftRow = {
   key: string;
@@ -484,14 +494,14 @@ function getInvoiceFieldValue(
 }
 
 function getRecognitionFieldValue(
-  recognition: RecognitionTaskRecord | null,
+  recognition: WorkbenchRecognition | null,
   fieldName: (typeof FIELD_ORDER)[number],
 ) {
   return recognition?.recognized_fields[fieldName] ?? null;
 }
 
 function getRecognitionFieldTextValue(
-  recognition: RecognitionTaskRecord | null,
+  recognition: WorkbenchRecognition | null,
   fieldName: (typeof FIELD_ORDER)[number],
 ) {
   const field = getRecognitionFieldValue(recognition, fieldName);
@@ -507,7 +517,7 @@ function getRecognitionFieldTextValue(
   return "";
 }
 
-function getRecognitionAmountInput(recognition: RecognitionTaskRecord | null) {
+function getRecognitionAmountInput(recognition: WorkbenchRecognition | null) {
   const field = getRecognitionFieldValue(recognition, "amount_cents");
   if (!field || typeof field.value !== "number") {
     return "";
@@ -516,7 +526,7 @@ function getRecognitionAmountInput(recognition: RecognitionTaskRecord | null) {
 }
 
 function getRecognitionExpenseType(
-  recognition: RecognitionTaskRecord | null,
+  recognition: WorkbenchRecognition | null,
   allowedExpenseTypes: ExpenseType[],
 ) {
   const rawValue = getRecognitionFieldTextValue(recognition, "expense_type");
@@ -681,10 +691,27 @@ function collectAbnormalReasons(item: WorkbenchInvoiceItem) {
   return reasons;
 }
 
+function mapWorkbenchSummaryItem(item: TaskMemberWorkbenchSummaryItem): WorkbenchInvoiceItem {
+  return {
+    material: item.material,
+    invoice: item.invoice,
+    recognition: item.recognition,
+    validations: item.validations,
+    supportingMaterials: item.supporting_materials,
+    splits: item.splits,
+    confirmations: item.confirmations,
+    relatedExpenseDetails: item.related_expense_details,
+    missingMaterials: item.missing_materials,
+    queueGroup: item.queue_group,
+    blockingReasons: item.blocking_reasons,
+    readyForSubmission: item.ready_for_submission,
+  };
+}
+
 function buildWorkbenchItems(
   report: TaskMemberStatusReport,
   invoices: InvoiceRecord[],
-  recognitionsByMaterialId: Map<string, RecognitionTaskRecord | null>,
+  recognitionsByMaterialId: Map<string, WorkbenchRecognition | null>,
   validationsByInvoiceId: Map<string, ValidationResult[]>,
   supportingMaterialsByInvoiceId: Map<string, MaterialRecord[]>,
   splitsByInvoiceId: Map<string, ExpenseSplitRecord[]>,
@@ -710,6 +737,9 @@ function buildWorkbenchItems(
         missingMaterials: invoice
           ? report.missing_materials.filter((entry) => entry.invoice_id === invoice.id)
           : [],
+        queueGroup: undefined,
+        blockingReasons: undefined,
+        readyForSubmission: undefined,
       };
     });
 }
@@ -1025,6 +1055,9 @@ function deriveInvoiceQueueGroupKey(
   item: WorkbenchInvoiceItem,
   pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[],
 ): InvoiceQueueGroupKey {
+  if (item.queueGroup) {
+    return item.queueGroup;
+  }
   const recognitionStatus = getRecognitionStatus(item);
   if (recognitionStatus === "pending") {
     return "recognition_pending";
@@ -1051,7 +1084,7 @@ function buildInvoiceQueueGroups(
   items: WorkbenchInvoiceItem[],
   pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[],
 ) {
-  const readyItems: WorkbenchInvoiceItem[] = [];
+  const readyItems: WorkbenchInvoiceItem[] = items.filter((item) => item.readyForSubmission ?? false);
   const problemGroups = new Map<Exclude<InvoiceQueueGroupKey, "ready">, WorkbenchInvoiceItem[]>();
 
   (Object.keys(INVOICE_QUEUE_GROUP_METADATA) as Array<Exclude<InvoiceQueueGroupKey, "ready">>).forEach((key) => {
@@ -1061,7 +1094,9 @@ function buildInvoiceQueueGroups(
   items.forEach((item) => {
     const groupKey = deriveInvoiceQueueGroupKey(item, pendingSupportingMaterialLinkageItems);
     if (groupKey === "ready") {
-      readyItems.push(item);
+      if (!readyItems.includes(item)) {
+        readyItems.push(item);
+      }
       return;
     }
     problemGroups.get(groupKey)?.push(item);
@@ -1268,48 +1303,79 @@ export function MemberInvoiceWorkbenchPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadWorkbench(task: ReimbursementTask) {
-      setWorkbenchState({ status: "loading", task });
+    function applyLoadedWorkbenchState(
+      task: ReimbursementTask,
+      report: TaskMemberStatusReport,
+      items: WorkbenchInvoiceItem[],
+      pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[],
+      sharedInvoices: TaskSharedInvoiceItem[],
+    ) {
+      if (cancelled) {
+        return;
+      }
 
-      try {
-        const [report, sharedInvoicesReport, pendingSupportingMaterialLinkageReport, invoicesResponse] = await Promise.all([
-          trmsApi.getTaskMemberStatus(task.id, session!.actorId),
-          trmsApi.getTaskSharedInvoices(task.id, session!.actorId),
-          trmsApi.getTaskSupportingMaterialLinkage(task.id, session!.actorId),
-          trmsApi.listTaskInvoices(task.id),
-        ]);
-        const invoices = invoicesResponse.items;
-        const recognitionEntries = await Promise.all(
-          report.materials.map(async (material) => [
-            material.material_id,
-            (await trmsApi.listMaterialRecognitionTasks(material.material_id)).latest_effective,
-          ] as const),
-        );
-        const validationEntries = await Promise.all(
-          invoices.map(async (invoice) => [
-            invoice.id,
-            (await trmsApi.listInvoiceValidations(invoice.id)).items,
-          ] as const),
-        );
-        const supportingEntries = await Promise.all(
-          invoices.map(async (invoice) => [
-            invoice.id,
-            (await trmsApi.listInvoiceSupportingMaterials(invoice.id)).items,
-          ] as const),
-        );
-        const splitEntries = await Promise.all(
-          invoices.map(async (invoice) => [
-            invoice.id,
-            (await trmsApi.listInvoiceSplits(invoice.id)).items,
-          ] as const),
-        );
-        const confirmationEntries = await Promise.all(
-          invoices.map(async (invoice) => [
-            invoice.id,
-            (await trmsApi.listInvoiceConfirmations(invoice.id)).items,
-          ] as const),
-        );
-        const items = buildWorkbenchItems(
+      setWorkbenchState({
+        status: "ready",
+        task,
+        report,
+        items,
+        pendingSupportingMaterialLinkageItems,
+        sharedInvoices: [...sharedInvoices].sort(
+          (left, right) => right.updated_at.localeCompare(left.updated_at),
+        ),
+      });
+      setMaterialTypeDrafts(
+        Object.fromEntries(
+          report.materials.map((material) => [material.material_id, material.material_type] as const),
+        ),
+      );
+      setSplitDrafts(buildInitialSplitDrafts(items, session!.actorId));
+      setMaterialTypeErrors({});
+      setSplitErrors({});
+    }
+
+    async function loadWorkbenchLegacy(task: ReimbursementTask) {
+      const [report, sharedInvoicesReport, pendingSupportingMaterialLinkageReport, invoicesResponse] = await Promise.all([
+        trmsApi.getTaskMemberStatus(task.id, session!.actorId),
+        trmsApi.getTaskSharedInvoices(task.id, session!.actorId),
+        trmsApi.getTaskSupportingMaterialLinkage(task.id, session!.actorId),
+        trmsApi.listTaskInvoices(task.id),
+      ]);
+      const invoices = invoicesResponse.items;
+      const recognitionEntries = await Promise.all(
+        report.materials.map(async (material) => [
+          material.material_id,
+          (await trmsApi.listMaterialRecognitionTasks(material.material_id)).latest_effective,
+        ] as const),
+      );
+      const validationEntries = await Promise.all(
+        invoices.map(async (invoice) => [
+          invoice.id,
+          (await trmsApi.listInvoiceValidations(invoice.id)).items,
+        ] as const),
+      );
+      const supportingEntries = await Promise.all(
+        invoices.map(async (invoice) => [
+          invoice.id,
+          (await trmsApi.listInvoiceSupportingMaterials(invoice.id)).items,
+        ] as const),
+      );
+      const splitEntries = await Promise.all(
+        invoices.map(async (invoice) => [
+          invoice.id,
+          (await trmsApi.listInvoiceSplits(invoice.id)).items,
+        ] as const),
+      );
+      const confirmationEntries = await Promise.all(
+        invoices.map(async (invoice) => [
+          invoice.id,
+          (await trmsApi.listInvoiceConfirmations(invoice.id)).items,
+        ] as const),
+      );
+      applyLoadedWorkbenchState(
+        task,
+        report,
+        buildWorkbenchItems(
           report,
           invoices,
           new Map(recognitionEntries),
@@ -1317,35 +1383,33 @@ export function MemberInvoiceWorkbenchPage() {
           new Map(supportingEntries),
           new Map(splitEntries),
           new Map(confirmationEntries),
-        );
+        ),
+        pendingSupportingMaterialLinkageReport.items,
+        sharedInvoicesReport.items,
+      );
+    }
 
-        if (cancelled) {
-          return;
-        }
+    async function loadWorkbench(task: ReimbursementTask) {
+      setWorkbenchState({ status: "loading", task });
 
-        setWorkbenchState({
-          status: "ready",
+      try {
+        const summary = await trmsApi.getTaskMemberWorkbench(task.id, session!.actorId);
+        applyLoadedWorkbenchState(
           task,
-          report,
-          items,
-          pendingSupportingMaterialLinkageItems: pendingSupportingMaterialLinkageReport.items,
-          sharedInvoices: [...sharedInvoicesReport.items].sort(
-            (left, right) => right.updated_at.localeCompare(left.updated_at),
-          ),
-        });
-        setMaterialTypeDrafts(
-          Object.fromEntries(
-            report.materials.map((material) => [material.material_id, material.material_type] as const),
-          ),
+          summary.report,
+          summary.items.map(mapWorkbenchSummaryItem),
+          summary.pending_supporting_material_linkage_items,
+          summary.shared_invoices,
         );
-        setSplitDrafts(buildInitialSplitDrafts(items, session!.actorId));
-        setMaterialTypeErrors({});
-        setSplitErrors({});
       } catch (error) {
-        if (cancelled) {
-          return;
+        try {
+          await loadWorkbenchLegacy(task);
+        } catch (legacyError) {
+          if (cancelled) {
+            return;
+          }
+          setWorkbenchState({ status: "error", task, error: legacyError ?? error });
         }
-        setWorkbenchState({ status: "error", task, error });
       }
     }
 

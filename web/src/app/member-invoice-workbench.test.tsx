@@ -1997,7 +1997,10 @@ describe("MemberInvoiceWorkbenchPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
 
     expect(await screen.findByText("文件 oversized.pdf 超过 10MB，请压缩或拆分后再上传。")).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    expect(fetchSpy.mock.calls.some(([input, init]) => (
+      resolveRequestUrl(input) === "/api/tasks/TASK-OPEN/materials"
+      && resolveRequestMethod(input, init) === "POST"
+    ))).toBe(false);
   });
 
   it("submits confirmations directly from the workbench and refreshes current statuses", async () => {

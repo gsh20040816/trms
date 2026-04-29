@@ -619,6 +619,53 @@ export type TaskMemberStatusReport = {
   expense_details: ExpenseDetailItem[];
 };
 
+export type TaskMemberWorkbenchQueueGroup =
+  | "ready"
+  | "recognition_pending"
+  | "recognition_review"
+  | "supporting_material_linkage"
+  | "missing_materials"
+  | "split_incomplete"
+  | "confirmation_incomplete";
+
+export type TaskMemberWorkbenchBlockingReason =
+  Exclude<TaskMemberWorkbenchQueueGroup, "ready">;
+
+export type TaskMemberWorkbenchRecognitionItem = {
+  id: string;
+  material_id: string;
+  status: RecognitionTaskStatus;
+  failure: RecognitionFailureDetail | null;
+  recognized_fields: Record<string, RecognitionFieldResult>;
+  manual_corrections: RecognitionFieldCorrectionRecord[];
+  created_at: ApiDateTime;
+  updated_at: ApiDateTime;
+};
+
+export type TaskMemberWorkbenchItem = {
+  material: TaskMemberMaterialStatusItem;
+  invoice: InvoiceRecord | null;
+  recognition: TaskMemberWorkbenchRecognitionItem | null;
+  validations: ValidationResult[];
+  supporting_materials: MaterialRecord[];
+  splits: ExpenseSplitRecord[];
+  confirmations: ConfirmationRecord[];
+  related_expense_details: ExpenseDetailItem[];
+  missing_materials: MissingMaterialItem[];
+  queue_group: TaskMemberWorkbenchQueueGroup;
+  blocking_reasons: TaskMemberWorkbenchBlockingReason[];
+  ready_for_submission: boolean;
+};
+
+export type TaskMemberWorkbenchSummary = {
+  task_id: string;
+  actor_id: string;
+  report: TaskMemberStatusReport;
+  items: TaskMemberWorkbenchItem[];
+  pending_supporting_material_linkage_items: PendingSupportingMaterialLinkageItem[];
+  shared_invoices: TaskSharedInvoiceItem[];
+};
+
 export type TaskSharedInvoiceSplitSummary = {
   member_id: string;
   amount_cents: number;
