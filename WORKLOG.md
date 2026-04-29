@@ -1,5 +1,91 @@
 # WORKLOG
 
+## 2026-04-29 23:32 - Establish two-stage recognition pipeline
+
+### 完成内容
+- 完成临时任务“建立材料两阶段识别总流程”。
+- 调整 [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - 将单次识别调用拆成两个显式阶段：
+    - 第一阶段：材料分类
+    - 第二阶段：按分类结果选择 schema 再提取字段
+  - 第一阶段固定输出：
+    - `document_family`
+    - `material_type`
+    - `expense_type_candidate`
+    - `is_reimbursement_voucher`
+    - `classification_confidence`
+  - 第二阶段不再共用一套统一字段模型，而是按 `material_type` 选择独立输出 schema：
+    - `invoice`
+    - `payment_record`
+    - `competition_notice`
+    - `order_screenshot`
+    - `itinerary`
+    - `other_attachment`
+  - 最终识别结果会合并两阶段字段，原始响应按 `classification / selected_schema / extraction` 分段保存，便于排障和审计。
+- 调整测试 [test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)：
+  - 覆盖两阶段 prompt、schema 选择、DeepSeek 风格归一化、空输出失败和结构化校验失败路径。
+
+### 根因
+- 现有识别链路把“先判断材料是什么”和“再提取哪些字段”混在一次 prompt 里。
+- 这导致两个问题：
+  - 分类判断无法作为后续字段提取的显式前提，材料类型一复杂就只能继续堆提示词特判。
+  - 所有材料被迫共用一套输出字段，和当前 [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py) 已经存在的“按材料类别读取不同证据”的规则入口不一致。
+
+### 当前规则与字段映射边界
+- 第一阶段只负责分类，不负责详细元数据：
+  - `document_family` / `material_type` 决定第二阶段 schema
+  - `expense_type_candidate` 只提供费用类别候选，不直接代替最终提取字段
+  - `is_reimbursement_voucher` 只表达“该材料本身是否像直接报销凭证”，本轮还没有固化税局盖章特判
+- 第二阶段 schema 当前边界：
+  - `invoice`：`invoice_number`、`amount_cents`、`buyer_name`、`tax_number`、`transaction_time`、`location`、`expense_type`、`trip_route`、`transport_mode`、`cabin_class`
+  - `payment_record`：`amount_cents`、`transaction_time`、`location`、`expense_type`、`trip_route`、`transport_mode`
+  - `competition_notice`：`transaction_time`、`location`、`expense_type`、`trip_route`
+  - `order_screenshot`：`amount_cents`、`transaction_time`、`location`、`expense_type`、`trip_route`、`transport_mode`
+  - `itinerary`：`transaction_time`、`location`、`expense_type`、`trip_route`、`transport_mode`、`cabin_class`
+  - `other_attachment`：`transaction_time`、`location`、`expense_type`、`trip_route`、`transport_mode`
+- 与当前规则主入口的对齐方式：
+  - 发票抬头/税号/金额/重复号：依赖 `invoice` schema
+  - 支付记录金额核对：依赖 `payment_record.amount_cents`
+  - 航空舱位和网约车行程校验：依赖 `invoice / itinerary / order_screenshot / payment_record` 中的 `trip_route`、`transport_mode`、`cabin_class`
+  - 比赛时间/地点范围校验：依赖各 schema 中的 `transaction_time` 与 `location/trip_route`
+- 上述映射只是“两阶段总流程”的当前执行边界，不等同于后续“税局盖章归票规则”和“按类别 schema 清单任务”已经全部完成。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_llm.py tests/test_recognition_execution_api.py`
+    - 31 个用例通过
+- 仓库级验证待本轮文档更新后统一执行 `./scripts/verify.sh`。
+
+## 2026-04-29 22:23 - Record two-stage recognition planning and tax-seal voucher rule
+
+### 完成内容
+- 未改动业务代码；本轮只根据新的产品要求更新任务拆分和实现边界。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)：
+  - 新增“材料两阶段识别总流程”任务
+  - 新增“税局盖章材料归发票类别”的分类规则任务
+  - 新增“按类别提取字段的 schema 清单”任务
+- 明确新的核心产品规则：
+  - 只要材料上存在税局盖章或等价税务监制特征，就应按发票类别处理
+  - 铁路电子客票、铁路电子行程单、航空电子客票报销凭证等可直接报销凭证应归入发票主链路，而不是辅助材料链路
+  - 识别链路后续应拆成两次调用：
+    - 第一次：分类
+    - 第二次：按分类结果提取元数据
+
+### 当前判断
+- 现有单次结构化识别把“材料分类”和“字段提取”混在一个 prompt 里，已经不足以支撑当前规则复杂度。
+- 当前规则主入口 [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py) 已经隐含要求不同材料类型提供不同字段，但识别层还没有按材料类别拆 schema。
+- 因此本轮先把任务拆清，避免后续实现继续在单次 prompt 上叠补丁。
+
+### 下一步最合理动作
+- 先实现第一阶段分类结果模型和提示词，明确：
+  - 发票类凭证
+  - 比赛通知
+  - 支付凭证
+  - 订单截图
+  - 行程单
+  - 其他附件
+- 再按类别实现第二阶段字段提取 schema，并把当前规则所需字段一条条对齐。
+
 ## 2026-04-29 22:15 - Unify structured recognition response_format to json_object
 
 ### 完成内容

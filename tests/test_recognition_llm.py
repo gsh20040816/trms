@@ -62,13 +62,162 @@ def build_document_input() -> RecognitionDocumentInput:
     )
 
 
-def test_openai_compatible_recognition_client_uses_json_object_response_format():
-    captured_request = {}
+def build_classification_output(
+    *,
+    document_family: str = "invoice",
+    material_type: str = "invoice",
+    expense_type_candidate: str = "registration",
+    is_reimbursement_voucher: bool = True,
+    classification_confidence: float = 0.97,
+    field_confidence: float = 0.97,
+):
+    return {
+        "output": {
+            "document_family": {
+                "value": document_family,
+                "confidence": field_confidence,
+            },
+            "material_type": {
+                "value": material_type,
+                "confidence": field_confidence,
+            },
+            "expense_type_candidate": {
+                "value": expense_type_candidate,
+                "confidence": field_confidence,
+            },
+            "is_reimbursement_voucher": {
+                "value": is_reimbursement_voucher,
+                "confidence": field_confidence,
+            },
+            "classification_confidence": {
+                "value": classification_confidence,
+                "confidence": field_confidence,
+            },
+        }
+    }
+
+
+def build_two_stage_handler(
+    *,
+    classification_content: dict,
+    extraction_content: dict,
+):
+    call_count = {"value": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_request["path"] = request.url.path
-        captured_request["authorization"] = request.headers["Authorization"]
-        captured_request["payload"] = json.loads(request.content.decode())
+        call_count["value"] += 1
+        content = classification_content if call_count["value"] == 1 else extraction_content
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(content, ensure_ascii=False),
+                        }
+                    }
+                ]
+            },
+        )
+
+    return handler
+
+
+def _deepseek_two_stage_response(
+    request: httpx.Request,
+    call_count: dict[str, int],
+) -> httpx.Response:
+    call_count["value"] += 1
+    if call_count["value"] == 1:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                build_classification_output(
+                                    document_family="发票",
+                                    material_type="电子发票",
+                                    expense_type_candidate="报名费",
+                                    classification_confidence=0.95,
+                                    field_confidence=0.95,
+                                ),
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "output": {
+                                    "invoice_number": {
+                                        "value": "25112000000125800852",
+                                        "confidence": "high",
+                                    },
+                                    "amount_cents": {
+                                        "value": 50000,
+                                        "confidence": "high",
+                                    },
+                                    "buyer_name": {
+                                        "value": "同济大学",
+                                        "confidence": "high",
+                                    },
+                                    "tax_number": {
+                                        "value": "12100000425006125J",
+                                        "confidence": "high",
+                                    },
+                                    "expense_type": {
+                                        "value": "培训费",
+                                        "confidence": "high",
+                                    },
+                                }
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
+        },
+    )
+
+
+def test_openai_compatible_recognition_client_uses_json_object_response_format():
+    captured_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode())
+        captured_requests.append(
+            {
+                "path": request.url.path,
+                "authorization": request.headers["Authorization"],
+                "payload": payload,
+            }
+        )
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    build_classification_output(),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -85,10 +234,6 @@ def test_openai_compatible_recognition_client_uses_json_object_response_format()
                                         "location": {
                                             "value": "上海",
                                             "confidence": 0.42,
-                                        },
-                                        "material_type": {
-                                            "value": "invoice",
-                                            "confidence": 0.95,
                                         },
                                     }
                                 },
@@ -110,25 +255,56 @@ def test_openai_compatible_recognition_client_uses_json_object_response_format()
 
     result = client.recognize(material=build_material(), document_input=build_document_input())
 
-    assert captured_request["path"] == "/v1/chat/completions"
-    assert captured_request["authorization"] == "Bearer sk-test"
-    assert captured_request["payload"]["response_format"] == {"type": "json_object"}
-    assert "Prompt version: trms-recognition-v2." in captured_request["payload"]["messages"][0]["content"]
-    assert "Do not guess missing fields." in captured_request["payload"]["messages"][0]["content"]
+    assert len(captured_requests) == 2
+    assert captured_requests[0]["path"] == "/v1/chat/completions"
+    assert captured_requests[0]["authorization"] == "Bearer sk-test"
+    assert captured_requests[0]["payload"]["response_format"] == {"type": "json_object"}
+    assert captured_requests[1]["payload"]["response_format"] == {"type": "json_object"}
+    assert "Prompt version: trms-recognition-v3." in captured_requests[0]["payload"]["messages"][0]["content"]
+    assert "Stage 1 only" in captured_requests[0]["payload"]["messages"][1]["content"]
+    assert "Selected schema: invoice." in captured_requests[1]["payload"]["messages"][0]["content"]
     assert result.recognized_fields["invoice_number"].value == "INV-001"
     assert result.recognized_fields["location"].status is RecognitionFieldStatus.NEEDS_CONFIRMATION
     assert result.recognized_fields["material_type"].value == "invoice"
-    assert result.raw_response["attempts"] == 1
-    assert result.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
-    assert result.raw_response["request"]["user_prompt"]["recognition_input"]["source"] == "pdf_text"
+    assert result.recognized_fields["document_family"].value == "invoice"
+    assert result.recognized_fields["expense_type_candidate"].value == "registration"
+    assert result.recognized_fields["is_reimbursement_voucher"].value is True
+    assert result.recognized_fields["classification_confidence"].value == 0.97
+    assert result.raw_response["classification"]["attempts"] == 1
+    assert result.raw_response["classification"]["request"]["user_prompt"]["prompt_version"] == (
+        "trms-recognition-v3"
+    )
+    assert (
+        result.raw_response["classification"]["request"]["user_prompt"]["recognition_input"]["source"]
+        == "pdf_text"
+    )
+    assert result.raw_response["selected_schema"]["name"] == "invoice"
+    assert result.raw_response["extraction"]["attempts"] == 1
 
 
 def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_prompt():
-    captured_request = {}
+    captured_requests = []
     chinese_text = "电子发票 发票号码 12345678 购买方名称 同济大学 纳税人识别号 12100000425006117D 价税合计￥123.45"
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_request["payload"] = json.loads(request.content.decode())
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    build_classification_output(),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -168,14 +344,15 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
 
     client.recognize(material=build_material(), document_input=chinese_input)
 
-    system_prompt = captured_request["payload"]["messages"][0]["content"]
-    user_prompt = json.loads(captured_request["payload"]["messages"][1]["content"])
-    assert "VAT electronic invoices" in system_prompt
-    assert "For amount_cents, convert RMB yuan to integer cents" in system_prompt
-    assert "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible." in system_prompt
-    assert user_prompt == {
+    classification_user_prompt = json.loads(captured_requests[0]["messages"][1]["content"])
+    extraction_system_prompt = captured_requests[1]["messages"][0]["content"]
+    extraction_user_prompt = json.loads(captured_requests[1]["messages"][1]["content"])
+    assert "document_family must be one of" in captured_requests[0]["messages"][0]["content"]
+    assert "Selected schema: invoice." in extraction_system_prompt
+    assert "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible." in extraction_system_prompt
+    assert classification_user_prompt == {
         "material_id": "material-1",
-        "material_type": "invoice",
+        "uploaded_material_type": "invoice",
         "original_filename": "invoice.pdf",
         "content_type": "application/pdf",
         "recognition_input": {
@@ -186,23 +363,51 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
         },
         "instructions": [
             "Return JSON only.",
-            "Do not fabricate fields that are not supported by the provided document.",
-            "Use amount_cents as integer cents.",
-            "Use ISO 8601 with timezone for transaction_time when available.",
-            "Use TRMS enums for expense_type and material_type.",
-            "For Chinese invoices, only extract buyer_name and tax_number when they are explicitly visible on the document.",
-            "If the document only shows a date but not a complete time, keep transaction_time absent instead of inventing a time.",
-            "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
+            "Stage 1 only: classify the document before extracting detailed metadata.",
+            "Always populate document_family, material_type, expense_type_candidate, is_reimbursement_voucher, and classification_confidence.",
+            "Use only TRMS enums for document_family, material_type, and expense_type_candidate.",
+            "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
+            "classification_confidence.value must be a float between 0 and 1 describing the overall confidence of the classification result.",
         ],
-        "prompt_version": "trms-recognition-v2",
+        "prompt_version": "trms-recognition-v3",
+        "stage": "classification",
     }
+    assert extraction_user_prompt["stage"] == "metadata_extraction"
+    assert extraction_user_prompt["classification_result"]["material_type"]["value"] == "invoice"
+    assert extraction_user_prompt["selected_schema"]["name"] == "invoice"
+    assert extraction_user_prompt["selected_schema"]["allowed_fields"] == [
+        "invoice_number",
+        "amount_cents",
+        "buyer_name",
+        "tax_number",
+        "transaction_time",
+        "location",
+        "expense_type",
+        "trip_route",
+        "transport_mode",
+        "cabin_class",
+    ]
 
 
 def test_openai_compatible_recognition_client_sends_pdf_file_input_for_scanned_pdf():
-    captured_request = {}
+    captured_requests = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_request["payload"] = json.loads(request.content.decode())
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(build_classification_output())
+                            }
+                        }
+                    ]
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -243,24 +448,39 @@ def test_openai_compatible_recognition_client_sends_pdf_file_input_for_scanned_p
 
     result = client.recognize(material=build_material(), document_input=document_input)
 
-    user_content = captured_request["payload"]["messages"][1]["content"]
-    assert isinstance(user_content, list)
-    assert user_content[0]["type"] == "text"
-    assert user_content[1] == {
-        "type": "file",
-        "file": {
-            "filename": "scan.pdf",
-            "file_data": "data:application/pdf;base64,c2Nhbi1wZGY=",
-        },
-    }
+    for payload in captured_requests:
+        user_content = payload["messages"][1]["content"]
+        assert isinstance(user_content, list)
+        assert user_content[0]["type"] == "text"
+        assert user_content[1] == {
+            "type": "file",
+            "file": {
+                "filename": "scan.pdf",
+                "file_data": "data:application/pdf;base64,c2Nhbi1wZGY=",
+            },
+        }
     assert result.recognized_fields["invoice_number"].value == "INV-SCAN-001"
 
 
 def test_openai_compatible_recognition_client_sends_image_input_for_uploaded_image():
-    captured_request = {}
+    captured_requests = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_request["payload"] = json.loads(request.content.decode())
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(build_classification_output())
+                            }
+                        }
+                    ]
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -270,8 +490,8 @@ def test_openai_compatible_recognition_client_sends_image_input_for_uploaded_ima
                             "content": json.dumps(
                                 {
                                     "output": {
-                                        "material_type": {
-                                            "value": "invoice",
+                                        "invoice_number": {
+                                            "value": "IMG-001",
                                             "confidence": 0.92,
                                         }
                                     }
@@ -300,24 +520,40 @@ def test_openai_compatible_recognition_client_sends_image_input_for_uploaded_ima
 
     result = client.recognize(material=build_material(), document_input=document_input)
 
-    user_content = captured_request["payload"]["messages"][1]["content"]
-    assert isinstance(user_content, list)
-    assert user_content[0]["type"] == "text"
-    assert user_content[1] == {
-        "type": "image_url",
-        "image_url": {
-            "url": "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
-            "detail": "high",
-        },
-    }
+    for payload in captured_requests:
+        user_content = payload["messages"][1]["content"]
+        assert isinstance(user_content, list)
+        assert user_content[0]["type"] == "text"
+        assert user_content[1] == {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+                "detail": "high",
+            },
+        }
     assert result.recognized_fields["material_type"].value == "invoice"
+    assert result.recognized_fields["invoice_number"].value == "IMG-001"
 
 
 def test_deepseek_compatible_recognition_client_uses_json_object_response_format():
-    captured_request = {}
+    captured_requests = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_request["payload"] = json.loads(request.content.decode())
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(build_classification_output())
+                            }
+                        }
+                    ]
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -353,7 +589,8 @@ def test_deepseek_compatible_recognition_client_uses_json_object_response_format
 
     result = client.recognize(material=build_material(), document_input=build_document_input())
 
-    assert captured_request["payload"]["response_format"] == {"type": "json_object"}
+    assert captured_requests[0]["response_format"] == {"type": "json_object"}
+    assert captured_requests[1]["response_format"] == {"type": "json_object"}
     assert result.recognized_fields["invoice_number"].value == "INV-001"
 
 
@@ -365,23 +602,36 @@ def test_deepseek_compatible_recognition_client_accepts_direct_field_object():
         provider_config,
         http_client=httpx.Client(
             transport=httpx.MockTransport(
-                lambda request: httpx.Response(
-                    200,
-                    json={
-                        "choices": [
-                            {
-                                "message": {
-                                    "content": json.dumps(
-                                        {
-                                            "invoice_number": {
-                                                "value": "INV-002",
-                                                "confidence": 0.88,
-                                            }
-                                        }
-                                    )
-                                }
+                build_two_stage_handler(
+                    classification_content={
+                        "document_family": {
+                            "value": "invoice",
+                            "confidence": 0.96,
+                        },
+                        "material_type": {
+                            "value": "invoice",
+                            "confidence": 0.96,
+                        },
+                        "expense_type_candidate": {
+                            "value": "registration",
+                            "confidence": 0.96,
+                        },
+                        "is_reimbursement_voucher": {
+                            "value": True,
+                            "confidence": 0.96,
+                        },
+                        "classification_confidence": {
+                            "value": 0.96,
+                            "confidence": 0.96,
+                        },
+                    },
+                    extraction_content={
+                        "output": {
+                            "invoice_number": {
+                                "value": "INV-002",
+                                "confidence": 0.88,
                             }
-                        ]
+                        }
                     },
                 )
             ),
@@ -391,6 +641,7 @@ def test_deepseek_compatible_recognition_client_accepts_direct_field_object():
 
     result = client.recognize(material=build_material(), document_input=build_document_input())
 
+    assert result.recognized_fields["document_family"].value == "invoice"
     assert result.recognized_fields["invoice_number"].value == "INV-002"
 
 
@@ -398,52 +649,12 @@ def test_deepseek_compatible_recognition_client_normalizes_textual_confidence_an
     provider_config = build_provider_config().model_copy(
         update={"base_url": "https://api.deepseek.com"}
     )
+    call_count = {"value": 0}
     client = OpenAiCompatibleRecognitionClient(
         provider_config,
         http_client=httpx.Client(
             transport=httpx.MockTransport(
-                lambda request: httpx.Response(
-                    200,
-                    json={
-                        "choices": [
-                            {
-                                "message": {
-                                    "content": json.dumps(
-                                        {
-                                            "output": {
-                                                "invoice_number": {
-                                                    "value": "25112000000125800852",
-                                                    "confidence": "high",
-                                                },
-                                                "amount_cents": {
-                                                    "value": 50000,
-                                                    "confidence": "high",
-                                                },
-                                                "buyer_name": {
-                                                    "value": "同济大学",
-                                                    "confidence": "high",
-                                                },
-                                                "tax_number": {
-                                                    "value": "12100000425006125J",
-                                                    "confidence": "high",
-                                                },
-                                                "expense_type": {
-                                                    "value": "培训费",
-                                                    "confidence": "high",
-                                                },
-                                                "material_type": {
-                                                    "value": "电子发票",
-                                                    "confidence": "high",
-                                                },
-                                            }
-                                        },
-                                        ensure_ascii=False,
-                                    )
-                                }
-                            }
-                        ]
-                    },
-                )
+                lambda request: _deepseek_two_stage_response(request, call_count)
             ),
             base_url="https://api.deepseek.com",
         ),
@@ -454,6 +665,7 @@ def test_deepseek_compatible_recognition_client_normalizes_textual_confidence_an
     assert result.recognized_fields["invoice_number"].confidence == 0.95
     assert result.recognized_fields["amount_cents"].confidence == 0.95
     assert result.recognized_fields["material_type"].value == "invoice"
+    assert result.recognized_fields["document_family"].value == "invoice"
     assert "expense_type" not in result.recognized_fields
 
 
@@ -475,7 +687,7 @@ def test_openai_compatible_recognition_client_rejects_non_json_content():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_not_json"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v3"
     assert error.value.raw_response["raw_content"] == "not-json"
 
 
@@ -497,9 +709,9 @@ def test_openai_compatible_recognition_client_rejects_missing_fields_output():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_missing_fields"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
-    assert error.value.raw_response["parsed_content"]["output"]["invoice_number"] is None
-    assert error.value.raw_response["parsed_content"]["output"]["amount_cents"] is None
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v3"
+    assert error.value.raw_response["parsed_content"]["output"]["document_family"] is None
+    assert error.value.raw_response["parsed_content"]["output"]["classification_confidence"] is None
 
 
 def test_openai_compatible_recognition_client_reports_invalid_schema_details():
@@ -507,26 +719,32 @@ def test_openai_compatible_recognition_client_reports_invalid_schema_details():
         build_provider_config(),
         http_client=httpx.Client(
             transport=httpx.MockTransport(
-                lambda request: httpx.Response(
-                    200,
-                    json={
-                        "choices": [
-                            {
-                                "message": {
-                                    "content": json.dumps(
-                                        {
-                                            "output": {
-                                                "amount_cents": {
-                                                    "value": "not-an-integer",
-                                                    "confidence": 0.91,
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        ]
+                build_two_stage_handler(
+                    classification_content={
+                        "output": {
+                            "document_family": {
+                                "value": "invoice",
+                                "confidence": 0.91,
+                            },
+                            "material_type": {
+                                "value": "invoice",
+                                "confidence": 0.91,
+                            },
+                            "expense_type_candidate": {
+                                "value": "registration",
+                                "confidence": 0.91,
+                            },
+                            "is_reimbursement_voucher": {
+                                "value": True,
+                                "confidence": 0.91,
+                            },
+                            "classification_confidence": {
+                                "value": "not-a-float",
+                                "confidence": 0.91,
+                            },
+                        }
                     },
+                    extraction_content={"output": {}},
                 )
             ),
             base_url="https://llm.example.com/v1",
@@ -537,16 +755,28 @@ def test_openai_compatible_recognition_client_reports_invalid_schema_details():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_invalid"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v3"
     assert error.value.raw_response["parsed_content"] == {
         "output": {
-            "amount_cents": {
-                "value": "not-an-integer",
+            "document_family": {
+                "value": "invoice",
                 "confidence": 0.91,
-            }
+            },
+            "material_type": {
+                "value": "invoice",
+                "confidence": 0.91,
+            },
+            "expense_type_candidate": {
+                "value": "registration",
+                "confidence": 0.91,
+            },
+            "is_reimbursement_voucher": {
+                "value": True,
+                "confidence": 0.91,
+            },
         }
     }
-    assert error.value.raw_response["validation_errors"][0]["type"] == "int_parsing"
+    assert error.value.raw_response["validation_errors"][0]["type"] == "missing"
 
 
 def test_openai_compatible_recognition_client_reports_timeout_after_retries():

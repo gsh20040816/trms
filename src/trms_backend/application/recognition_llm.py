@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import StrEnum
+from functools import lru_cache
 import json
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, create_model, model_validator
 
 from trms_backend.domain.invoices import ExpenseType
 from trms_backend.domain.materials import MaterialRecord, MaterialType
@@ -21,7 +23,7 @@ from trms_backend.domain.recognitions import (
 from trms_backend.runtime_config import LLMProviderConfig
 
 LOW_CONFIDENCE_THRESHOLD = 0.8
-PROMPT_VERSION = "trms-recognition-v2"
+PROMPT_VERSION = "trms-recognition-v3"
 _CONFIDENCE_TEXT_TO_FLOAT = {
     "high": 0.95,
     "medium": 0.7,
@@ -62,6 +64,32 @@ _EXPENSE_TYPE_ALIASES = {
     "酒店费": "hotel",
     "房费": "hotel",
     "其他": "other",
+}
+_DOCUMENT_FAMILY_ALIASES = {
+    "发票": "invoice",
+    "电子发票": "invoice",
+    "普通发票": "invoice",
+    "比赛通知": "competition_notice",
+    "通知": "competition_notice",
+    "支付记录": "payment_record",
+    "付款记录": "payment_record",
+    "订单截图": "order_screenshot",
+    "订单": "order_screenshot",
+    "行程单": "itinerary",
+    "其他附件": "other_attachment",
+    "辅助材料": "other_attachment",
+}
+_BOOLEAN_TEXT_TO_VALUE = {
+    "true": True,
+    "false": False,
+    "yes": True,
+    "no": False,
+    "1": True,
+    "0": False,
+    "是": True,
+    "否": False,
+    "可报销": True,
+    "不可报销": False,
 }
 
 
@@ -169,6 +197,16 @@ class RecognitionDatetimeField(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
+class RecognitionBooleanField(BaseModel):
+    value: bool
+    confidence: float = Field(ge=0, le=1)
+
+
+class RecognitionFloatField(BaseModel):
+    value: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=1)
+
+
 class RecognitionExpenseTypeField(BaseModel):
     value: ExpenseType
     confidence: float = Field(ge=0, le=1)
@@ -179,7 +217,29 @@ class RecognitionMaterialTypeField(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
-class RecognitionStructuredOutput(BaseModel):
+class RecognitionDocumentFamily(StrEnum):
+    INVOICE = "invoice"
+    COMPETITION_NOTICE = "competition_notice"
+    PAYMENT_RECORD = "payment_record"
+    ORDER_SCREENSHOT = "order_screenshot"
+    ITINERARY = "itinerary"
+    OTHER_ATTACHMENT = "other_attachment"
+
+
+class RecognitionDocumentFamilyField(BaseModel):
+    value: RecognitionDocumentFamily
+    confidence: float = Field(ge=0, le=1)
+
+
+class RecognitionClassificationOutput(BaseModel):
+    document_family: RecognitionDocumentFamilyField
+    material_type: RecognitionMaterialTypeField
+    expense_type_candidate: RecognitionExpenseTypeField
+    is_reimbursement_voucher: RecognitionBooleanField
+    classification_confidence: RecognitionFloatField
+
+
+class RecognitionInvoiceExtractionOutput(BaseModel):
     invoice_number: RecognitionTextField | None = None
     amount_cents: RecognitionIntegerField | None = None
     buyer_name: RecognitionTextField | None = None
@@ -187,14 +247,120 @@ class RecognitionStructuredOutput(BaseModel):
     transaction_time: RecognitionDatetimeField | None = None
     location: RecognitionTextField | None = None
     expense_type: RecognitionExpenseTypeField | None = None
-    material_type: RecognitionMaterialTypeField | None = None
     trip_route: RecognitionTextField | None = None
     transport_mode: RecognitionTextField | None = None
     cabin_class: RecognitionTextField | None = None
 
 
-class RecognitionLlmResponse(BaseModel):
-    output: RecognitionStructuredOutput
+class RecognitionPaymentRecordExtractionOutput(BaseModel):
+    amount_cents: RecognitionIntegerField | None = None
+    transaction_time: RecognitionDatetimeField | None = None
+    location: RecognitionTextField | None = None
+    expense_type: RecognitionExpenseTypeField | None = None
+    trip_route: RecognitionTextField | None = None
+    transport_mode: RecognitionTextField | None = None
+
+
+class RecognitionCompetitionNoticeExtractionOutput(BaseModel):
+    transaction_time: RecognitionDatetimeField | None = None
+    location: RecognitionTextField | None = None
+    expense_type: RecognitionExpenseTypeField | None = None
+    trip_route: RecognitionTextField | None = None
+
+
+class RecognitionOrderScreenshotExtractionOutput(BaseModel):
+    amount_cents: RecognitionIntegerField | None = None
+    transaction_time: RecognitionDatetimeField | None = None
+    location: RecognitionTextField | None = None
+    expense_type: RecognitionExpenseTypeField | None = None
+    trip_route: RecognitionTextField | None = None
+    transport_mode: RecognitionTextField | None = None
+
+
+class RecognitionItineraryExtractionOutput(BaseModel):
+    transaction_time: RecognitionDatetimeField | None = None
+    location: RecognitionTextField | None = None
+    expense_type: RecognitionExpenseTypeField | None = None
+    trip_route: RecognitionTextField | None = None
+    transport_mode: RecognitionTextField | None = None
+    cabin_class: RecognitionTextField | None = None
+
+
+class RecognitionOtherAttachmentExtractionOutput(BaseModel):
+    transaction_time: RecognitionDatetimeField | None = None
+    location: RecognitionTextField | None = None
+    expense_type: RecognitionExpenseTypeField | None = None
+    trip_route: RecognitionTextField | None = None
+    transport_mode: RecognitionTextField | None = None
+
+
+@dataclass(frozen=True)
+class RecognitionExtractionSchemaDefinition:
+    name: str
+    description: str
+    output_model: type[BaseModel]
+
+    @property
+    def allowed_field_names(self) -> tuple[str, ...]:
+        return tuple(self.output_model.model_fields.keys())
+
+
+_INVOICE_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
+    name="invoice",
+    description=(
+        "For invoices and direct reimbursement vouchers. Extract invoice identity, "
+        "amount, buyer/tax identifiers, transaction time/location, and any route or cabin clues."
+    ),
+    output_model=RecognitionInvoiceExtractionOutput,
+)
+_PAYMENT_RECORD_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
+    name="payment_record",
+    description=(
+        "For bank or platform payment proofs. Extract paid amount, payment time, "
+        "location, expense type hints, and any visible trip metadata."
+    ),
+    output_model=RecognitionPaymentRecordExtractionOutput,
+)
+_COMPETITION_NOTICE_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
+    name="competition_notice",
+    description=(
+        "For notices or official competition announcements. Extract event time, "
+        "location, expense type clues, and route references only when explicit."
+    ),
+    output_model=RecognitionCompetitionNoticeExtractionOutput,
+)
+_ORDER_SCREENSHOT_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
+    name="order_screenshot",
+    description=(
+        "For platform order screenshots. Extract amount, transaction time, location, "
+        "expense type hints, and route or ride details when visible."
+    ),
+    output_model=RecognitionOrderScreenshotExtractionOutput,
+)
+_ITINERARY_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
+    name="itinerary",
+    description=(
+        "For travel itineraries and ticket details. Extract time, location, expense "
+        "type, route, transport mode, and cabin or seat class."
+    ),
+    output_model=RecognitionItineraryExtractionOutput,
+)
+_OTHER_ATTACHMENT_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
+    name="other_attachment",
+    description=(
+        "For uncategorized supporting attachments. Extract only general time, location, "
+        "expense type clues, or route hints when they are explicit."
+    ),
+    output_model=RecognitionOtherAttachmentExtractionOutput,
+)
+_EXTRACTION_SCHEMA_BY_MATERIAL_TYPE = {
+    MaterialType.INVOICE: _INVOICE_EXTRACTION_SCHEMA,
+    MaterialType.PAYMENT_RECORD: _PAYMENT_RECORD_EXTRACTION_SCHEMA,
+    MaterialType.COMPETITION_NOTICE: _COMPETITION_NOTICE_EXTRACTION_SCHEMA,
+    MaterialType.ORDER_SCREENSHOT: _ORDER_SCREENSHOT_EXTRACTION_SCHEMA,
+    MaterialType.ITINERARY: _ITINERARY_EXTRACTION_SCHEMA,
+    MaterialType.OTHER_ATTACHMENT: _OTHER_ATTACHMENT_EXTRACTION_SCHEMA,
+}
 
 
 class RecognitionLlmExtractionResult(BaseModel):
@@ -305,13 +471,59 @@ class OpenAiCompatibleRecognitionClient:
         material: MaterialRecord,
         document_input: RecognitionDocumentInput,
     ) -> RecognitionLlmExtractionResult:
-        request_payload = _build_chat_completions_payload(
-            provider_base_url=self._provider_config.base_url,
-            model=self._provider_config.model,
-            material=material,
-            document_input=document_input,
+        classification_output, classification_fields, classification_raw_response = (
+            self._run_recognition_stage(
+                request_payload=_build_classification_chat_completions_payload(
+                    provider_base_url=self._provider_config.base_url,
+                    model=self._provider_config.model,
+                    material=material,
+                    document_input=document_input,
+                ),
+                output_model=RecognitionClassificationOutput,
+                allow_empty_fields=False,
+            )
+        )
+        classification_output = cast(RecognitionClassificationOutput, classification_output)
+        extraction_schema = _select_extraction_schema(classification_output)
+        extraction_output, extraction_fields, extraction_raw_response = self._run_recognition_stage(
+            request_payload=_build_extraction_chat_completions_payload(
+                provider_base_url=self._provider_config.base_url,
+                model=self._provider_config.model,
+                material=material,
+                document_input=document_input,
+                classification_output=classification_output,
+                extraction_schema=extraction_schema,
+            ),
+            output_model=extraction_schema.output_model,
+            allow_empty_fields=True,
+        )
+        _ = extraction_output
+
+        recognized_fields = {
+            **classification_fields,
+            **extraction_fields,
+        }
+
+        return RecognitionLlmExtractionResult(
+            raw_response={
+                "classification": classification_raw_response,
+                "selected_schema": {
+                    "name": extraction_schema.name,
+                    "description": extraction_schema.description,
+                    "allowed_fields": list(extraction_schema.allowed_field_names),
+                },
+                "extraction": extraction_raw_response,
+            },
+            recognized_fields=recognized_fields,
         )
 
+    def _run_recognition_stage(
+        self,
+        *,
+        request_payload: dict[str, Any],
+        output_model: type[BaseModel],
+        allow_empty_fields: bool,
+    ) -> tuple[BaseModel, dict[str, RecognitionFieldResult], dict[str, Any]]:
         attempt_count = 0
         for attempt in range(self._provider_config.max_retries + 1):
             attempt_count = attempt + 1
@@ -363,9 +575,30 @@ class OpenAiCompatibleRecognitionClient:
                 },
             ) from error
 
-        normalized_parsed_content = _normalize_llm_response_payload(parsed_content)
+        normalized_parsed_content = _normalize_llm_response_payload(
+            parsed_content,
+            known_output_fields=set(output_model.model_fields.keys()),
+        )
+        if (
+            not allow_empty_fields
+            and isinstance(normalized_parsed_content, dict)
+            and normalized_parsed_content.get("output") == {}
+        ):
+            raise RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(
+                    stage=RecognitionFailureStage.AI,
+                    reason="llm_output_missing_fields",
+                ),
+                raw_response={
+                    "request": _safe_request_summary(request_payload),
+                    "response": response_payload,
+                    "parsed_content": {"output": _empty_output_payload(output_model)},
+                    "attempts": attempt_count,
+                },
+            )
+        response_model = _build_stage_response_model(output_model)
         try:
-            validated = RecognitionLlmResponse.model_validate(normalized_parsed_content)
+            validated = response_model.model_validate(normalized_parsed_content)
         except ValidationError as error:
             raise RecognitionLlmExecutionError(
                 failure=RecognitionFailureDetail(
@@ -381,8 +614,9 @@ class OpenAiCompatibleRecognitionClient:
                 },
             ) from error
 
-        recognized_fields = _recognized_fields_from_output(validated.output)
-        if not recognized_fields:
+        output = validated.output
+        recognized_fields = _recognized_fields_from_output(output)
+        if not recognized_fields and not allow_empty_fields:
             raise RecognitionLlmExecutionError(
                 failure=RecognitionFailureDetail(
                     stage=RecognitionFailureStage.AI,
@@ -395,15 +629,15 @@ class OpenAiCompatibleRecognitionClient:
                     "attempts": attempt_count,
                 },
             )
-
-        return RecognitionLlmExtractionResult(
-            raw_response={
+        return (
+            output,
+            recognized_fields,
+            {
                 "request": _safe_request_summary(request_payload),
                 "response": response_payload,
                 "parsed_content": validated.model_dump(mode="json"),
                 "attempts": attempt_count,
             },
-            recognized_fields=recognized_fields,
         )
 
     def _post_chat_completions(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -437,7 +671,7 @@ class OpenAiCompatibleRecognitionClient:
         }
 
 
-def _build_chat_completions_payload(
+def _build_classification_chat_completions_payload(
     *,
     provider_base_url: str,
     model: str,
@@ -446,17 +680,87 @@ def _build_chat_completions_payload(
 ) -> dict[str, Any]:
     user_prompt = {
         "prompt_version": PROMPT_VERSION,
+        "stage": "classification",
         "material_id": material.id,
-        "material_type": material.material_type.value,
+        "uploaded_material_type": material.material_type.value,
         "original_filename": material.original_filename,
         "content_type": material.content_type,
         "recognition_input": document_input.to_prompt_payload(),
         "instructions": [
             "Return JSON only.",
+            "Stage 1 only: classify the document before extracting detailed metadata.",
+            "Always populate document_family, material_type, expense_type_candidate, is_reimbursement_voucher, and classification_confidence.",
+            "Use only TRMS enums for document_family, material_type, and expense_type_candidate.",
+            "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
+            "classification_confidence.value must be a float between 0 and 1 describing the overall confidence of the classification result.",
+        ],
+    }
+    user_prompt_json = json.dumps(user_prompt, ensure_ascii=False)
+    return {
+        "model": model,
+        "response_format": _build_response_format(provider_base_url),
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You classify Chinese university reimbursement materials before metadata extraction. "
+                    f"Prompt version: {PROMPT_VERSION}. "
+                    "Return JSON only. "
+                    "The top-level object must contain an 'output' field. "
+                    "Inside 'output', always provide these fields as objects with 'value' and 'confidence': "
+                    "document_family, material_type, expense_type_candidate, is_reimbursement_voucher, classification_confidence. "
+                    "document_family must be one of: invoice, competition_notice, payment_record, order_screenshot, itinerary, other_attachment. "
+                    "material_type must be one of the TRMS material_type enums. "
+                    "expense_type_candidate must be one of the TRMS expense_type enums and should use 'other' when no stronger category is supported. "
+                    "classification_confidence.value must equal the overall classification confidence in [0, 1]. "
+                    "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "
+                    "payment records, competition notices, travel itineraries, train or flight documents, rideshare receipts, "
+                    "hotel invoices, and platform order screenshots. "
+                    "Do not extract detailed invoice metadata in this stage. "
+                    "Do not guess unsupported categories. "
+                    "For scanned PDFs or photos, rely only on the visible content in the supplied file, not on filename guesses."
+                ),
+            },
+            {
+                "role": "user",
+                "content": document_input.to_message_content(metadata_json=user_prompt_json),
+            },
+        ],
+    }
+
+
+def _build_extraction_chat_completions_payload(
+    *,
+    provider_base_url: str,
+    model: str,
+    material: MaterialRecord,
+    document_input: RecognitionDocumentInput,
+    classification_output: RecognitionClassificationOutput,
+    extraction_schema: RecognitionExtractionSchemaDefinition,
+) -> dict[str, Any]:
+    allowed_fields = list(extraction_schema.allowed_field_names)
+    user_prompt = {
+        "prompt_version": PROMPT_VERSION,
+        "stage": "metadata_extraction",
+        "material_id": material.id,
+        "material_type": material.material_type.value,
+        "original_filename": material.original_filename,
+        "content_type": material.content_type,
+        "recognition_input": document_input.to_prompt_payload(),
+        "classification_result": classification_output.model_dump(mode="json"),
+        "selected_schema": {
+            "name": extraction_schema.name,
+            "description": extraction_schema.description,
+            "allowed_fields": allowed_fields,
+        },
+        "instructions": [
+            "Return JSON only.",
+            "Stage 2 only: extract metadata allowed by the selected schema.",
+            "Do not repeat classification-only fields in this stage.",
             "Do not fabricate fields that are not supported by the provided document.",
             "Use amount_cents as integer cents.",
             "Use ISO 8601 with timezone for transaction_time when available.",
-            "Use TRMS enums for expense_type and material_type.",
+            "Use TRMS enums for expense_type.",
             "For Chinese invoices, only extract buyer_name and tax_number when they are explicitly visible on the document.",
             "If the document only shows a date but not a complete time, keep transaction_time absent instead of inventing a time.",
             "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
@@ -474,17 +778,15 @@ def _build_chat_completions_payload(
                     f"Prompt version: {PROMPT_VERSION}. "
                     "Return JSON only. "
                     "The top-level object must contain an 'output' field. "
-                    "Inside 'output', only use these known field names when the document explicitly supports them: "
-                    "invoice_number, amount_cents, buyer_name, tax_number, transaction_time, "
-                    "location, expense_type, material_type, trip_route, transport_mode, cabin_class. "
+                    f"Inside 'output', only use these field names for the selected schema: {', '.join(allowed_fields)}. "
                     "Each populated field must be an object with 'value' and 'confidence'. "
-                    "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "
-                    "train or flight itineraries, rideshare receipts, hotel invoices, competition notices and payment records. "
+                    f"Selected schema: {extraction_schema.name}. "
+                    f"Schema intent: {extraction_schema.description} "
                     "Do not guess missing fields. If a field is blurred, absent, ambiguous, or contradicted, omit it. "
                     "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible. "
                     "For amount_cents, convert RMB yuan to integer cents and ignore currency symbols or separators. "
                     "For transaction_time, use the clearest transaction or issue timestamp on the document; if only a date is present, leave the field absent. "
-                    "For expense_type and material_type, choose only TRMS enum values that are directly supported by the document evidence. "
+                    "For expense_type, choose only a TRMS enum value that is directly supported by the document evidence. "
                     "For scanned PDFs or photos, rely only on the visible content in the supplied file, not on filename guesses."
                 ),
             },
@@ -540,7 +842,7 @@ def _extract_message_content(response_payload: dict[str, Any]) -> str:
 
 
 def _recognized_fields_from_output(
-    output: RecognitionStructuredOutput,
+    output: BaseModel,
 ) -> dict[str, RecognitionFieldResult]:
     recognized_fields: dict[str, RecognitionFieldResult] = {}
     for field_name, field_payload in output.model_dump(mode="json", exclude_none=True).items():
@@ -607,7 +909,11 @@ def _build_response_format(provider_base_url: str) -> dict[str, Any]:
     return {"type": "json_object"}
 
 
-def _normalize_llm_response_payload(payload: Any) -> Any:
+def _normalize_llm_response_payload(
+    payload: Any,
+    *,
+    known_output_fields: set[str],
+) -> Any:
     if not isinstance(payload, dict):
         return payload
     if "output" in payload:
@@ -619,7 +925,6 @@ def _normalize_llm_response_payload(payload: Any) -> Any:
             }
         return payload
 
-    known_output_fields = set(RecognitionStructuredOutput.model_fields.keys())
     if payload and set(payload.keys()).issubset(known_output_fields):
         return {"output": _normalize_output_fields(payload)}
     return payload
@@ -643,11 +948,35 @@ def _normalize_output_fields(output: dict[str, Any]) -> dict[str, Any]:
                 continue
             next_field_value["value"] = normalized_material_type
 
+        if field_name == "document_family":
+            normalized_document_family = _normalize_document_family_value(
+                next_field_value.get("value")
+            )
+            if normalized_document_family is None:
+                continue
+            next_field_value["value"] = normalized_document_family
+
         if field_name == "expense_type":
             normalized_expense_type = _normalize_expense_type_value(next_field_value.get("value"))
             if normalized_expense_type is None:
                 continue
             next_field_value["value"] = normalized_expense_type
+
+        if field_name == "expense_type_candidate":
+            normalized_expense_type = _normalize_expense_type_value(next_field_value.get("value"))
+            next_field_value["value"] = normalized_expense_type or ExpenseType.OTHER.value
+
+        if field_name == "classification_confidence":
+            normalized_value = _normalize_confidence_value(next_field_value.get("value"))
+            if normalized_value is None:
+                continue
+            next_field_value["value"] = normalized_value
+
+        if field_name == "is_reimbursement_voucher":
+            normalized_boolean = _normalize_boolean_value(next_field_value.get("value"))
+            if normalized_boolean is None:
+                continue
+            next_field_value["value"] = normalized_boolean
 
         normalized[field_name] = next_field_value
     return normalized
@@ -685,3 +1014,45 @@ def _normalize_expense_type_value(value: Any) -> str | None:
     if normalized in ExpenseType._value2member_map_:
         return normalized
     return _EXPENSE_TYPE_ALIASES.get(value.strip())
+
+
+def _normalize_document_family_value(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in RecognitionDocumentFamily._value2member_map_:
+        return normalized
+    return _DOCUMENT_FAMILY_ALIASES.get(value.strip())
+
+
+def _normalize_boolean_value(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return _BOOLEAN_TEXT_TO_VALUE.get(value.strip().lower())
+    return None
+
+
+def _select_extraction_schema(
+    classification_output: RecognitionClassificationOutput,
+) -> RecognitionExtractionSchemaDefinition:
+    material_type = classification_output.material_type.value
+    return _EXTRACTION_SCHEMA_BY_MATERIAL_TYPE.get(
+        material_type,
+        _OTHER_ATTACHMENT_EXTRACTION_SCHEMA,
+    )
+
+
+@lru_cache(maxsize=None)
+def _build_stage_response_model(output_model: type[BaseModel]) -> type[BaseModel]:
+    return create_model(
+        f"{output_model.__name__}Response",
+        output=(output_model, ...),
+    )
+
+
+def _empty_output_payload(output_model: type[BaseModel]) -> dict[str, None]:
+    return {
+        field_name: None
+        for field_name in output_model.model_fields.keys()
+    }
