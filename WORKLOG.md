@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-30 01:59 - Restrict supporting material linkage write permissions
+
+### 完成内容
+- 完成任务“收口附件手动关联 API 的成员权限边界”。
+- 调整 [invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py)：
+  - `PUT /api/invoices/{invoice_id}/supporting-materials/{material_id}` 与 `DELETE /api/invoices/{invoice_id}/supporting-materials/{material_id}` 现在都要求 bearer 身份；
+  - 任务管理员可继续处理其负责任务内的全部附件关联；
+  - 成员只能关联或解除关联“同一任务内、本人提交的非发票辅助材料”到“本人提交的发票”；
+  - 无关成员会被显式拒绝，跨任务材料仍返回冲突错误，不再允许匿名写操作。
+- 新增测试 [test_invoice_supporting_material_permissions_api.py](/home/gsh/workspace/TRMS/tests/test_invoice_supporting_material_permissions_api.py)：
+  - 覆盖成员本人关联/解除关联成功；
+  - 覆盖匿名请求被 401 拒绝；
+  - 覆盖同任务无关成员被 403 拒绝；
+  - 覆盖跨任务材料被 409 拒绝；
+  - 覆盖管理员可处理任务内任意成员附件关联。
+- 同步更新受影响既有测试：
+  - [test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)
+  - [test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py)
+  - [test_member_material_type_update_api.py](/home/gsh/workspace/TRMS/tests/test_member_material_type_update_api.py)
+  - [test_task_review_summary_api.py](/home/gsh/workspace/TRMS/tests/test_task_review_summary_api.py)
+  - [test_task_shared_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_task_shared_invoices_api.py)
+  - [test_web_bearer_request_identity_api.py](/home/gsh/workspace/TRMS/tests/test_web_bearer_request_identity_api.py)
+  - [test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)
+
+### 根因
+- 附件手动关联与解除关联接口此前完全未接入 bearer 身份解析和任务访问控制。
+- 结果是任何匿名请求都能直接改写发票与辅助材料的关联关系，也没有限制成员只能操作本人材料，违反了当前需求和“多候选附件必须人工但受控处理”的权限边界。
+
+### 保守假设
+- 本轮将“成员可操作的候选发票”收敛为：发票主材料提交人与当前成员一致，且辅助材料提交人与当前成员一致。
+- 也就是说，成员不能把自己提交的辅助材料挂到其他成员的发票，也不能解除管理员为其他成员发票建立的跨成员关联；这与当前自动候选规则和成员工作台待关联摘要口径一致。
+- 本轮不额外引入任务状态门禁；若后续要求只允许 `open` 状态改附件关联，应作为独立任务收口。
+
+### 影响范围
+- 仅修改发票附件关联/解除关联的后端权限校验与相关测试。
+- 不改动成员工作台 UI、待关联候选展示逻辑、自动归票规则、导出链路或数据库 schema。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_invoice_supporting_material_permissions_api.py tests/test_invoices_api.py tests/test_materials_api.py tests/test_task_shared_invoices_api.py tests/test_web_bearer_request_identity_api.py tests/test_task_review_summary_api.py tests/test_exports_api.py tests/test_member_material_type_update_api.py`
+    - 121 个用例通过，存在 3 条既有 DeprecationWarning
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 470 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 00:40 - Add member workbench batch submit and withdrawal panel
 
 ### 完成内容

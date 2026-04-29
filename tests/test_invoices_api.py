@@ -1075,7 +1075,8 @@ def test_attach_order_screenshot_revalidates_rideshare_invoice_to_pass(tmp_path)
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{order_screenshot_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{order_screenshot_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1156,7 +1157,8 @@ def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1226,7 +1228,8 @@ def test_attach_competition_notice_revalidates_registration_invoice_to_pass(tmp_
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{competition_notice_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{competition_notice_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1283,7 +1286,8 @@ def test_attach_itinerary_with_cabin_info_revalidates_airfare_invoice_to_pass(tm
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{itinerary_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{itinerary_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1361,10 +1365,14 @@ def test_attach_order_screenshot_marks_airfare_cabin_validation_pending_when_cab
         filename="order.png",
         content_type="image/png",
     )
-    client.put(f"/api/invoices/{invoice_id}/supporting-materials/{itinerary_material_id}")
+    client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{itinerary_material_id}",
+        headers=admin_auth_headers(client),
+    )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{order_screenshot_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{order_screenshot_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1411,7 +1419,8 @@ def test_attach_payment_record_fails_amount_match_when_total_differs_from_invoic
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1452,7 +1461,8 @@ def test_retry_payment_record_recognition_revalidates_failed_amount_match_to_pas
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1550,7 +1560,8 @@ def test_attach_payment_record_marks_amount_match_pending_when_amount_missing(tm
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_record_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert attach_response.status_code == 200
@@ -1984,10 +1995,12 @@ def test_attach_supporting_material_allows_same_attachment_for_multiple_invoices
     ).json()["invoice"]["id"]
 
     first_response = client.put(
-        f"/api/invoices/{first_invoice_id}/supporting-materials/{supporting_material_id}"
+        f"/api/invoices/{first_invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
     )
     second_response = client.put(
-        f"/api/invoices/{second_invoice_id}/supporting-materials/{supporting_material_id}"
+        f"/api/invoices/{second_invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert first_response.status_code == 200
@@ -2042,9 +2055,15 @@ def test_detach_supporting_material_removes_invoice_association(tmp_path):
         json=valid_invoice_payload(),
     ).json()["invoice"]["id"]
     supporting_material_id = upload_supporting_material(client, task_id)
-    client.put(f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}")
+    client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
 
-    response = client.delete(f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}")
+    response = client.delete(
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
 
     assert response.status_code == 200
     assert response.json()["status"] == "deleted"
@@ -2111,7 +2130,8 @@ def test_attach_supporting_material_rejects_invoice_type_material(tmp_path):
     another_invoice_material_id = upload_material(client, task_id, "ticket-2.pdf")
 
     response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{another_invoice_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{another_invoice_material_id}",
+        headers=admin_auth_headers(client),
     )
 
     assert response.status_code == 409

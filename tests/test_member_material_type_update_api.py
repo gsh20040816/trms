@@ -183,6 +183,7 @@ def test_member_material_type_update_refreshes_invoice_validations(tmp_path):
     )
     attach_response = client.put(
         f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=auth_headers(member_token),
     )
     assert attach_response.status_code == 200
 

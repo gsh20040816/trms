@@ -625,10 +625,12 @@ def test_member_bearer_fee_and_confirmation_queries_only_expose_own_records(tmp_
     invoice_id = invoice_response.json()["invoice"]["id"]
 
     assert client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{own_support_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{own_support_material_id}",
+        headers=auth_headers(admin_token),
     ).status_code == 200
     assert client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{other_support_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{other_support_material_id}",
+        headers=auth_headers(admin_token),
     ).status_code == 200
 
     split_response = client.put(

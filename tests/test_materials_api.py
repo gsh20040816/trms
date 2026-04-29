@@ -691,7 +691,8 @@ def test_cannot_mark_supporting_material_deleted_when_linked_to_invoice(tmp_path
     ).json()["items"][0]["id"]
     invoice_id = create_invoice(client, invoice_material_id)
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
     )
     assert attach_response.status_code == 200
 

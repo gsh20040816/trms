@@ -634,7 +634,8 @@ def test_task_administrator_can_export_empty_missing_materials_csv(tmp_path):
         filename="notice.pdf",
     )
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{competition_notice_material_id}"
+        f"/api/invoices/{invoice_id}/supporting-materials/{competition_notice_material_id}",
+        headers=admin_auth_headers(client),
     )
     assert attach_response.status_code == 200
     update_task_row(tmp_path, task_id, status="ready_to_export")

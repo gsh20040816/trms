@@ -116,10 +116,12 @@ def create_shared_invoice_fixture(client: TestClient) -> str:
     )
 
     assert client.put(
-        f"/api/invoices/{member_one_invoice_id}/supporting-materials/{own_support_material_id}"
+        f"/api/invoices/{member_one_invoice_id}/supporting-materials/{own_support_material_id}",
+        headers=admin_auth_headers(client),
     ).status_code == 200
     assert client.put(
-        f"/api/invoices/{member_one_invoice_id}/supporting-materials/{other_support_material_id}"
+        f"/api/invoices/{member_one_invoice_id}/supporting-materials/{other_support_material_id}",
+        headers=admin_auth_headers(client),
     ).status_code == 200
 
     split_response = client.put(

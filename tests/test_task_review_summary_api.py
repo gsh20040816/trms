@@ -133,7 +133,10 @@ def create_review_fixture(client: TestClient) -> tuple[str, str, str, str]:
     assert response.status_code == 201
     invoice_id = response.json()["invoice"]["id"]
 
-    response = client.put(f"/api/invoices/{invoice_id}/supporting-materials/{payment_material_id}")
+    response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{payment_material_id}",
+        headers=admin_auth_headers(client),
+    )
     assert response.status_code == 200
 
     response = client.put(

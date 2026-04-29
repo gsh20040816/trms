@@ -8,6 +8,7 @@ from trms_backend.api.error_responses import ensure_request_id
 from trms_backend.api.invoice_validation_refresh import refresh_invoice_validations
 from trms_backend.api.request_identity import (
     RequestIdentity,
+    build_authenticated_request_identity_dependency,
     build_optional_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
@@ -91,6 +92,9 @@ def build_invoice_router(
 ) -> APIRouter:
     router = APIRouter(tags=["invoices"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
+    authenticated_request_identity = build_authenticated_request_identity_dependency(
+        auth_repository
+    )
     metrics = metrics_collector or NoOpMetricsCollector()
     supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
         material_repository=material_repository,
@@ -110,6 +114,34 @@ def build_invoice_router(
             material.id: recognition_task_repository.get_latest_effective_by_material(material.id)
             for material in supporting_materials
         }
+
+    def ensure_supporting_material_write_allowed(
+        *,
+        identity: RequestIdentity,
+        task,
+        invoice,
+        material,
+    ) -> None:
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to manage supporting materials for this task",
+        )
+        if scope is TaskAccessScope.ADMINISTRATOR:
+            return
+
+        actor_id = identity.actor_id or ""
+        invoice_material = material_repository.get(invoice.material_id)
+        if invoice_material is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="invoice material not found",
+            )
+        if invoice_material.submitter_id != actor_id or material.submitter_id != actor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to manage supporting materials for this task",
+            )
 
     @router.post("/api/materials/{material_id}/invoice", status_code=status.HTTP_201_CREATED)
     def create_invoice(
@@ -290,14 +322,28 @@ def build_invoice_router(
         return {"items": validation_repository.list_by_invoice(invoice_id)}
 
     @router.put("/api/invoices/{invoice_id}/supporting-materials/{material_id}")
-    def attach_supporting_material(invoice_id: str, material_id: str):
+    def attach_supporting_material(
+        invoice_id: str,
+        material_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
 
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
         material = material_repository.get(material_id)
         if material is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        ensure_supporting_material_write_allowed(
+            identity=identity,
+            task=task,
+            invoice=invoice,
+            material=material,
+        )
         if material.status is not MaterialStatus.ASSIGNED or material.task_id is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -354,10 +400,27 @@ def build_invoice_router(
         return {"items": items}
 
     @router.delete("/api/invoices/{invoice_id}/supporting-materials/{material_id}")
-    def detach_supporting_material(invoice_id: str, material_id: str):
+    def detach_supporting_material(
+        invoice_id: str,
+        material_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
         invoice = invoice_repository.get(invoice_id)
         if invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        material = material_repository.get(material_id)
+        if material is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        ensure_supporting_material_write_allowed(
+            identity=identity,
+            task=task,
+            invoice=invoice,
+            material=material,
+        )
         deleted = invoice_repository.detach_supporting_material(invoice_id, material_id)
         if not deleted:
             raise HTTPException(
