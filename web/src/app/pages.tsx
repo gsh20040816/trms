@@ -22,6 +22,7 @@ import Typography from "@mui/material/Typography";
 
 import { AppShell } from "../components/AppShell";
 import { SnackbarProvider } from "../components/AppSnackbar";
+import { ConfirmDialogProvider } from "../components/ConfirmDialog";
 import { AppThemeProvider } from "../theme/AppThemeProvider";
 import { useAuthSession } from "./auth-store";
 import { roleRoutes, type UserRole } from "./role-routes";
@@ -71,9 +72,11 @@ export function RootLayout() {
   return (
     <AppThemeProvider>
       <SnackbarProvider>
-        <AppShell>
-          <Outlet />
-        </AppShell>
+        <ConfirmDialogProvider>
+          <AppShell>
+            <Outlet />
+          </AppShell>
+        </ConfirmDialogProvider>
       </SnackbarProvider>
     </AppThemeProvider>
   );

@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-29 12:21 - Add Material 3 confirm dialog infrastructure
+
+### 完成内容
+- 新增 `web/src/components/confirm-dialog-context.ts`：`ConfirmDialogContext` + `ConfirmDialogOptions` 与 `ConfirmDialogContextValue` 类型，定义 `tone`/`destructive`/`requireTyping`/`confirmLabel`/`cancelLabel` 等 Material 3 二次确认参数。
+- 新增 `web/src/components/ConfirmDialog.tsx`：`ConfirmDialogProvider` 基于 MUI Dialog 实现。
+  - 入参为 `confirm(options)` 返回 `Promise<boolean>`，调用方按 await 结果决定是否继续动作；取消和点击关闭一律 resolve(false)。
+  - 视觉：圆角 4 dialog + 标题区彩色 WarningAmber 图标 + 描述 + 可选 destructive 警示 Alert + 可选 typing 确认（输入指定字符串才允许提交）。
+  - 颜色：destructive 时按钮红色 + warning 标题；普通确认走 primary。
+- 新增 `web/src/components/use-confirm-dialog.ts`：`useConfirmDialog()` hook；在 Provider 之外调用退化为始终通过的 noop（与 `useSnackbar` 同样的退化策略）。
+- `web/src/app/pages.tsx`：`RootLayout` 在 `SnackbarProvider` 内部嵌入 `<ConfirmDialogProvider>`，使所有路由下的业务组件可以无需额外接入直接调用 `useConfirmDialog().confirm(...)`。
+- 拆分 P5 第九条任务：
+  - 原"引入 ConfirmDialog 守护破坏性操作"拆为：
+    1. 引入 ConfirmDialog 全局基础设施（本轮完成）
+    2. 把破坏性业务动作接入 ConfirmDialog（后续轮次）
+
+### 根因
+- 项目中诸多破坏性动作（任务状态流转 / 强制提前关闭 / 代成员确认 / 重置识别结果 / 删除标记 / 强制导出等）目前是直接调用对应 API，没有用户二次确认，存在误操作风险。
+- 接入需要逐页调整业务调用，按规则不能一次性铺开；先完成全局 Provider 与 hook 基础设施，让后续轮次只需在调用点 `await confirm(...)` 即可。
+
+### 关键改动点
+- 新增组件：
+  - `web/src/components/confirm-dialog-context.ts`
+  - `web/src/components/ConfirmDialog.tsx`
+  - `web/src/components/use-confirm-dialog.ts`
+- 集成：
+  - `web/src/app/pages.tsx`：`RootLayout` 加入 `ConfirmDialogProvider`。
+- 任务拆分：
+  - `TASKS.md` Round 9 拆分；第一条标记完成。
+
+### 风险与影响面
+- 业务行为没有变化：本轮没有任何业务动作调用 `confirm(...)`，因此 21 文件 / 69 用例无修改通过。
+- 即使在 Provider 之外的隔离单元测试中调用 `useConfirmDialog().confirm(...)`，hook 退化为 `Promise.resolve(true)`，不会破坏既有测试。
+- bundle 影响极小（Dialog/DialogTitle/DialogContent/DialogActions/TextField/Alert 之前已在 bundle 中）。
+
+### 修改文件
+- `web/src/components/ConfirmDialog.tsx`（新增）
+- `web/src/components/confirm-dialog-context.ts`（新增）
+- `web/src/components/use-confirm-dialog.ts`（新增）
+- `web/src/app/pages.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- `requireTyping` 默认要求严格匹配（trim 后等于目标字符串），用于关闭任务等非常严格的二次确认；普通破坏性动作可以仅传 `destructive: true`。
+- 多次连续调用 confirm 在当前实现下会先后排队，但目前只支持单 Dialog；后续接入时由调用方保证不会并发触发。
+
+### 备注
+- Round 9 第二条子任务（接入业务动作）将作为后续轮次工作；按 AGENTS.md 原则不一次性接入所有页面。
+
 ## 2026-04-29 12:17 - Add Material 3 file drop zone component and split form rounds
 
 ### 完成内容

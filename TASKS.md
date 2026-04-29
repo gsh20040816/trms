@@ -1261,9 +1261,16 @@
     - 上传中通过 LinearProgress 表达进度，结果通过 Snackbar 反馈
     - 相关测试同步更新
 
-- [ ] 引入 ConfirmDialog 守护破坏性操作
+- [x] 引入 ConfirmDialog 全局基础设施
   - Done when:
-    - 任务状态流转、删除、代确认、强制导出等动作前出现 M3 Dialog 二次确认
+    - 新增 `web/src/components/ConfirmDialog.tsx` 提供 `ConfirmDialogProvider`
+    - 新增 `useConfirmDialog()` hook，返回 `confirm(options): Promise<boolean>`
+    - 支持 `tone`、`destructive`、`requireTyping`、`confirmLabel`、`cancelLabel` 等 M3 选项
+    - `RootLayout` 包裹 `ConfirmDialogProvider`，业务页面无需改动即可使用
+
+- [ ] 把破坏性业务动作接入 ConfirmDialog
+  - Done when:
+    - 任务状态流转、删除、代确认、强制导出等动作前调用 `useConfirmDialog().confirm(...)`
     - 取消时不发起请求，确认时附带操作上下文记录
     - 测试覆盖确认与取消路径
 
