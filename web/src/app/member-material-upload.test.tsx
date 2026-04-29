@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
@@ -52,6 +52,7 @@ describe("MemberMaterialUploadPage", () => {
   });
 
   it("submits batch materials and shows per-file results", async () => {
+    let resolveUpload: ((value: Response) => void) | null = null;
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
 
@@ -122,61 +123,9 @@ describe("MemberMaterialUploadPage", () => {
         expect(body.get("material_type")).toBe("invoice");
         expect(body.getAll("files")).toHaveLength(2);
 
-        return Promise.resolve(jsonResponse(
-          {
-            status: "partial_success",
-            items: [
-              {
-                id: "MAT-001",
-                status: "assigned",
-                task_id: "TASK-OPEN",
-                submitter_id: "2250001",
-                task_id_hint: null,
-                submitter_id_hint: null,
-                channel: "web",
-                material_type: "invoice",
-                storage_key: "TASK-OPEN/MAT-001-ticket.pdf",
-                original_filename: "ticket.pdf",
-                content_type: "application/pdf",
-                size_bytes: 12,
-                sha256: "a".repeat(64),
-                duplicate_of: null,
-                claimed_by: null,
-                claimed_at: null,
-                created_at: "2026-04-28T10:00:00+08:00",
-              },
-              {
-                id: "MAT-002",
-                status: "assigned",
-                task_id: "TASK-OPEN",
-                submitter_id: "2250001",
-                task_id_hint: null,
-                submitter_id_hint: null,
-                channel: "web",
-                material_type: "invoice",
-                storage_key: "TASK-OPEN/MAT-002-ticket-copy.pdf",
-                original_filename: "ticket-copy.pdf",
-                content_type: "application/pdf",
-                size_bytes: 12,
-                sha256: "b".repeat(64),
-                duplicate_of: "MAT-001",
-                claimed_by: null,
-                claimed_at: null,
-                created_at: "2026-04-28T10:00:01+08:00",
-              },
-            ],
-            failures: [
-              {
-                original_filename: "notes.txt",
-                error_code: "unsupported_content_type",
-                detail: "unsupported material content type: text/plain; supported content types: application/pdf, application/zip, image/jpeg, image/png, image/webp",
-              },
-            ],
-          },
-          {
-            status: 207,
-          },
-        ));
+        return new Promise((resolve) => {
+          resolveUpload = resolve;
+        });
       }
 
       throw new Error(`Unhandled fetch URL in member upload test: ${url}`);
@@ -204,7 +153,68 @@ describe("MemberMaterialUploadPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
 
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
+
+    act(() => {
+      resolveUpload?.(jsonResponse(
+        {
+          status: "partial_success",
+          items: [
+            {
+              id: "MAT-001",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "invoice",
+              storage_key: "TASK-OPEN/MAT-001-ticket.pdf",
+              original_filename: "ticket.pdf",
+              content_type: "application/pdf",
+              size_bytes: 12,
+              sha256: "a".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T10:00:00+08:00",
+            },
+            {
+              id: "MAT-002",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "invoice",
+              storage_key: "TASK-OPEN/MAT-002-ticket-copy.pdf",
+              original_filename: "ticket-copy.pdf",
+              content_type: "application/pdf",
+              size_bytes: 12,
+              sha256: "b".repeat(64),
+              duplicate_of: "MAT-001",
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T10:00:01+08:00",
+            },
+          ],
+          failures: [
+            {
+              original_filename: "notes.txt",
+              error_code: "unsupported_content_type",
+              detail: "unsupported material content type: text/plain; supported content types: application/pdf, application/zip, image/jpeg, image/png, image/webp",
+            },
+          ],
+        },
+        {
+          status: 207,
+        },
+      ));
+    });
+
     expect(await screen.findByRole("heading", { name: "上传结果" })).toBeInTheDocument();
+    expect(await screen.findByText("上传完成：2 个成功，1 个失败。")).toBeInTheDocument();
     const successList = screen.getByLabelText("上传成功材料列表");
     expect(within(successList).getByText("材料编号 MAT-001")).toBeInTheDocument();
     expect(within(successList).getByText("材料编号 MAT-002")).toBeInTheDocument();

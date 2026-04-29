@@ -1690,6 +1690,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
   it("uploads materials directly from the workbench and refreshes the current task view", async () => {
     let uploadCompleted = false;
+    let resolveUpload: ((value: Response) => void) | null = null;
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
@@ -1775,31 +1776,9 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
       if (url === "/api/tasks/TASK-OPEN/materials" && method === "POST") {
         uploadCompleted = true;
-        return Promise.resolve(jsonResponse({
-          status: "success",
-          items: [
-            {
-              id: "MAT-UP-001",
-              status: "assigned",
-              task_id: "TASK-OPEN",
-              submitter_id: "2250001",
-              task_id_hint: null,
-              submitter_id_hint: null,
-              channel: "web",
-              material_type: "payment_record",
-              storage_key: "TASK-OPEN/pay.png",
-              original_filename: "pay.png",
-              content_type: "image/png",
-              size_bytes: 128,
-              sha256: "a".repeat(64),
-              duplicate_of: null,
-              claimed_by: null,
-              claimed_at: null,
-              created_at: "2026-04-28T14:00:00+08:00",
-            },
-          ],
-          failures: [],
-        }));
+        return new Promise((resolve) => {
+          resolveUpload = resolve;
+        });
       }
 
       if (url.includes("/shared-invoices?actor_id=2250001")) {
@@ -1825,9 +1804,41 @@ describe("MemberInvoiceWorkbenchPage", () => {
         files: [new File(["payment"], "pay.png", { type: "image/png" })],
       },
     });
+    expect(screen.getByLabelText("工作台待上传文件列表")).toHaveTextContent("pay.png");
     fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
 
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
+
+    act(() => {
+      resolveUpload?.(jsonResponse({
+        status: "success",
+        items: [
+          {
+            id: "MAT-UP-001",
+            status: "assigned",
+            task_id: "TASK-OPEN",
+            submitter_id: "2250001",
+            task_id_hint: null,
+            submitter_id_hint: null,
+            channel: "web",
+            material_type: "payment_record",
+            storage_key: "TASK-OPEN/pay.png",
+            original_filename: "pay.png",
+            content_type: "image/png",
+            size_bytes: 128,
+            sha256: "a".repeat(64),
+            duplicate_of: null,
+            claimed_by: null,
+            claimed_at: null,
+            created_at: "2026-04-28T14:00:00+08:00",
+          },
+        ],
+        failures: [],
+      }));
+    });
+
     expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
+    expect(await screen.findByText("上传成功：1 个文件已归档到当前任务。")).toBeInTheDocument();
     expect(screen.getByText("材料编号：MAT-UP-001")).toBeInTheDocument();
     expect(await screen.findByText("支付记录 / MAT-UP-001")).toBeInTheDocument();
   });

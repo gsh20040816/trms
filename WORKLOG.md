@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-04-29 17:22 - Connect member upload flows to FileDropZone progress and snackbar feedback
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“把材料上传场景接入 FileDropZone”。
+- 调整 [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 将工作台上传区从原生 `input[type=file]` 切换为 `FileDropZone`
+  - 上传请求进行中显示 `LinearProgress`
+  - 上传成功、部分成功和失败统一通过现有 `Snackbar` 反馈
+- 调整 [web/src/app/member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx)：
+  - 保留既有 `FileDropZone` 和逐文件结果展示
+  - 上传请求进行中补充 `LinearProgress`
+- 同步更新前端测试：
+  - [web/src/app/member-material-upload.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.test.tsx)
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - 覆盖上传过程中的进度条、Snackbar 反馈和工作台待上传文件列表展示
+
+### 根因
+- “材料上传场景接入 FileDropZone”在两个成员上传入口上的完成度不一致：
+  - 专项上传页已经使用 `FileDropZone`，但缺少上传中的进度反馈；
+  - 工作台上传区仍停留在原生文件输入框，也没有接入统一的 Snackbar 上传结果反馈。
+- 这导致两个成员上传入口的交互风格和反馈语义不一致，与当前前端 Material 3 收口目标不符。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/member-invoice-workbench.tsx`
+  - `web/src/app/member-invoice-workbench.test.tsx`
+  - `web/src/app/member-material-upload.tsx`
+  - `web/src/app/member-material-upload.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只调整成员上传区组件和上传反馈方式，不改材料上传 API、权限校验、逐文件结果结构或任务刷新逻辑。
+- 工作台上传结果页内的“最近上传结果”明细仍然保留；本轮新增 Snackbar 只是补齐即时反馈，不额外删改已有结果详情展示。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- member-material-upload.test.tsx member-invoice-workbench.test.tsx`
+- 已通过定向前端 lint：
+  - `cd web && npm run lint -- src/app/member-material-upload.tsx src/app/member-invoice-workbench.tsx src/app/member-material-upload.test.tsx src/app/member-invoice-workbench.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、86 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
+### 假设
+- 本轮将“结果通过 Snackbar 反馈”保守定义为：上传完成后必须有即时 Snackbar 反馈，同时保留已有逐文件结果视图，避免为了统一交互而删掉当前可审查的上传明细。
+
 ## 2026-04-29 17:15 - Migrate missing materials filters to MUI Select
 
 ### 完成内容

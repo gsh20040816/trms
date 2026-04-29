@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
+import LinearProgress from "@mui/material/LinearProgress";
+
 import { ApiError } from "../lib/api/client";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { FileDropZone } from "../components/FileDropZone";
@@ -450,6 +452,8 @@ export function MemberMaterialUploadPage() {
                 ) : null}
               </div>
             </div>
+
+            {isSubmitting ? <LinearProgress aria-label="材料上传进度" /> : null}
 
             {selectedTask ? (
               <dl className="task-meta-grid member-upload-meta-grid" aria-label="当前选中任务摘要">

@@ -1349,7 +1349,7 @@
     - 筛选表单保持现有成员侧权限与跳转语义，不顺带改动列表展示结构
     - 相关测试同步更新
 
-- [ ] 把材料上传场景接入 FileDropZone
+- [x] 把材料上传场景接入 FileDropZone
   - Done when:
     - `/member/materials/upload`、`/member/invoices/workbench` 上传区使用 FileDropZone
     - 上传中通过 LinearProgress 表达进度，结果通过 Snackbar 反馈

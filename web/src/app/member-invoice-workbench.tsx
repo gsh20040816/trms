@@ -3,8 +3,10 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import LinearProgress from "@mui/material/LinearProgress";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { FileDropZone } from "../components/FileDropZone";
 import { ApiError } from "../lib/api/client";
 import {
   EmptyState,
@@ -14,6 +16,7 @@ import {
   StatCard,
   StatusBadge,
 } from "../components/dashboard";
+import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationStatus,
@@ -806,6 +809,7 @@ function isSplitStaleError(error: unknown) {
 
 export function MemberInvoiceWorkbenchPage() {
   const session = useAuthSession();
+  const { showError, showSuccess, showWarning } = useSnackbar();
   const actorId = session?.actorId ?? "";
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -834,7 +838,6 @@ export function MemberInvoiceWorkbenchPage() {
   const [uploadSubmitError, setUploadSubmitError] = useState<unknown>(null);
   const [uploadResult, setUploadResult] = useState<MaterialBatchUploadResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadFileInputKey, setUploadFileInputKey] = useState(0);
   const [confirmationSubmitError, setConfirmationSubmitError] = useState<unknown>(null);
   const [confirmationFeedback, setConfirmationFeedback] = useState<ConfirmationFeedback | null>(null);
   const [submittingConfirmationSplitId, setSubmittingConfirmationSplitId] = useState<string | null>(null);
@@ -856,7 +859,6 @@ export function MemberInvoiceWorkbenchPage() {
     setUploadSubmitError(null);
     setUploadResult(null);
     setUploadFormState(buildInitialUploadFormState());
-    setUploadFileInputKey((current) => current + 1);
     setConfirmationSubmitError(null);
     setConfirmationFeedback(null);
     setSubmittingConfirmationSplitId(null);
@@ -1208,7 +1210,6 @@ export function MemberInvoiceWorkbenchPage() {
       ...current,
       files: [],
     }));
-    setUploadFileInputKey((current) => current + 1);
   }
 
   async function handleUploadSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1243,6 +1244,12 @@ export function MemberInvoiceWorkbenchPage() {
       if (response.items.length > 0) {
         setWorkbenchReloadVersion((current) => current + 1);
       }
+      if (response.status === "success") {
+        showSuccess(`上传成功：${response.items.length} 个文件已归档到当前任务。`);
+      } else {
+        const failureCount = response.failures?.length ?? 0;
+        showWarning(`上传完成：${response.items.length} 个成功，${failureCount} 个失败。`);
+      }
     } catch (error) {
       const failedBatch = extractFailedBatchUploadResponse(error);
       if (failedBatch) {
@@ -1251,8 +1258,12 @@ export function MemberInvoiceWorkbenchPage() {
         if (failedBatch.items.length > 0) {
           setWorkbenchReloadVersion((current) => current + 1);
         }
+        const failureCount = failedBatch.failures?.length ?? 0;
+        showError(`上传失败：${failureCount} 个文件未通过，请查看逐文件原因。`);
       } else {
         setUploadSubmitError(error);
+        const message = error instanceof ApiError ? error.summary.message : "材料上传失败，请稍后重试。";
+        showError(message);
       }
     } finally {
       setIsUploading(false);
@@ -1629,37 +1640,24 @@ export function MemberInvoiceWorkbenchPage() {
 
                   <label className="field-stack">
                     <span>上传文件</span>
-                    <input
-                      aria-label="工作台上传文件"
-                      key={uploadFileInputKey}
-                      type="file"
-                      multiple
-                      accept={MATERIAL_FILE_ACCEPT}
-                      onChange={(event) => {
-                        updateUploadField("files", Array.from(event.target.files ?? []));
+                    <FileDropZone
+                      files={uploadFormState.files}
+                      onChange={(files) => {
+                        updateUploadField("files", files);
                       }}
+                      accept={MATERIAL_FILE_ACCEPT}
+                      disabled={isUploading}
+                      ariaLabel="工作台上传文件"
+                      fileListAriaLabel="工作台待上传文件列表"
+                      hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会逐文件返回成功或失败结果。"
                     />
                     {uploadValidationErrors.files ? (
                       <span className="field-error">{uploadValidationErrors.files}</span>
-                    ) : (
-                      <span className="field-hint">
-                        支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。批量上传时会逐文件返回成功或失败结果。
-                      </span>
-                    )}
+                    ) : null}
                   </label>
                 </div>
 
-                {uploadFormState.files.length > 0 ? (
-                  <ul className="upload-file-list" aria-label="工作台待上传文件列表">
-                    {uploadFormState.files.map((file) => (
-                      <li key={`${file.name}:${file.size}:${file.lastModified}`}>
-                        <strong>{file.name}</strong>
-                        <span>{file.type || "未知类型"}</span>
-                        <span>{file.size} bytes</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
+                {isUploading ? <LinearProgress aria-label="工作台上传进度" /> : null}
 
                 <div className="admin-form-footer">
                   <p className="field-hint">
