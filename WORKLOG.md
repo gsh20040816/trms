@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-04-29 22:03 - Render scanned PDFs as images and retry text-PDF failures through VLM
+
+### 完成内容
+- 完成新增临时任务“统一用 PyMuPDF 处理 PDF 并在文本失败后回退到 VLM”。
+- 调整依赖 [pyproject.toml](/home/gsh/workspace/TRMS/pyproject.toml) 与 `uv.lock`：
+  - 新增 `pymupdf`
+  - 统一由 Python PDF 渲染库处理 PDF 文本提取与页面转图片，不再依赖“扫描 PDF 直传 file”这一条与 Ark 不兼容的输入路径
+- 重写 [src/trms_backend/application/recognition_preparation.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_preparation.py) 的 PDF 准备逻辑：
+  - 使用 `PyMuPDF` 打开 PDF、读取页面文本
+  - 纯文本 PDF 仍优先生成 `pdf_text` 输入
+  - 扫描 PDF 不再生成 `pdf_file`，而是把页面统一渲染成单张拼接 PNG，生成 `image_file`
+  - 对空白 PDF 仍保留 `blank_pdf` 失败边界
+- 补充 text LLM 失败回退：
+  - 当 PDF 首次以 `pdf_text` 进入识别，但 text LLM 返回 `RecognitionLlmExecutionError` 时
+  - 系统会自动把同一 PDF 渲染成图片，再走一次 VLM
+  - 若第二次成功，则整体任务成功；若第二次失败，则保留 `text_attempt` 与 `image_fallback_attempt` 两次原始上下文
+- 更新说明 [README.md](/home/gsh/workspace/TRMS/README.md)：
+  - 扫描 PDF 现在是“先渲染成图片再送 VLM”
+  - 文本 PDF 首次 AI 失败后会自动回退再走一次 VLM
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)：
+  - 新增并完成“PDF 渲染回退识别”任务
+
+### 根因
+- 当前实例配置的 VLM 是火山 Ark：
+  - `base_url=https://ark.cn-beijing.volces.com/api/v3`
+  - `model=doubao-seed-1-6-flash-250828`
+- 最近失败任务的 `raw_response` 已明确暴露 400 根因：
+  - 请求里扫描 PDF 走的是 `messages.content.type = file`
+  - Ark `/chat/completions` 只接受 `text`、`image_url`、`video_url`
+- 也就是说，问题不在“VLM 配置没生效”，而在“扫描 PDF 直传 file”的协议本身与当前 provider 不兼容。
+
+### 关键改动点
+- 没有继续在 provider 层堆更多 `base_url` 特判。
+- 修复思路是直接把仓库的扫描 PDF 主链路改成 provider 更通用的图像输入：
+  - 扫描 PDF -> 渲染 PNG -> `image_file`
+- 同时，既然已经引入统一 PDF 渲染库，就顺手把“文本 PDF AI 首次失败后再按图片做一次”补成显式链路，而不是让用户手动重试或改传截图。
+
+### 风险与影响面
+- 当前扫描 PDF 会把所有页面渲染并纵向拼接成一张 PNG 后再送 VLM；对于页数很多的 PDF，输入字节数会明显增大，后续可能需要再加页数/尺寸控制。
+- 本轮仍保留 `RecognitionInputSource.PDF_FILE` 兼容定义，但主识别链路已不再生成它；仓库内现有扫描 PDF 调用都改成了 `image_file`。
+- 当前空白 PDF 仍直接返回 `blank_pdf`，不会为了机械地“回退一次 VLM”去渲染全白图像制造无意义请求。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_execution_api.py tests/test_recognition_async_jobs.py`
+    - 21 个用例通过
+- 其中新增/更新覆盖包括：
+  - 扫描 PDF 在未配置 VLM 时，准备阶段会生成 `image_file`
+  - 扫描 PDF 在已配置识别客户端时，传给 fake LLM 的输入源变为 `image_file`
+  - 文本 PDF 在首次 text LLM 失败后，会触发第二次 `image_file` 回退识别
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：451 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-29 21:25 - Split text LLM and VLM configuration with system-level overrides
 
 ### 完成内容

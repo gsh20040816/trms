@@ -209,7 +209,7 @@ OpenAI 兼容文本 LLM / VLM Provider 配置边界：
 - 一旦开始配置某一类 provider 的 `*_BASE_URL` / `*_MODEL` 等字段，该类 provider 的 `*_API_KEY` 和 `*_MODEL` 必填；缺失时服务会在启动阶段直接报错。
 - `TRMS_TEXT_LLM_BASE_URL` 与 `TRMS_VLM_BASE_URL` 默认都是 `https://api.openai.com/v1`，可替换为任何兼容接口地址；尾部 `/` 会被规范化去掉。
 - `TRMS_TEXT_LLM_TIMEOUT_SECONDS`、`TRMS_VLM_TIMEOUT_SECONDS` 默认 `30`，`TRMS_TEXT_LLM_MAX_RETRIES`、`TRMS_VLM_MAX_RETRIES` 默认 `2`。
-- 当前仓库已接入“文本 PDF 提取 + 扫描 PDF / 图片直送 OpenAI 兼容 VLM -> 结构化识别”的执行链；文本 PDF 会优先走本地可抽取文本，纯扫描 PDF 会把 PDF 文件本体直接交给多模态模型，图片会以 base64 data URL 形式直送多模态模型。
+- 当前仓库已接入“文本 PDF 提取 + PDF 页面渲染成图片 + 图片直送 OpenAI 兼容 VLM -> 结构化识别”的执行链；文本 PDF 会优先走本地可抽取文本，扫描 PDF 会先渲染为图片再交给多模态模型，图片会以 base64 data URL 形式直送多模态模型；若文本 PDF 的首次 text LLM 识别失败，系统会再把该 PDF 渲染为图片并回退走一次 VLM。
 - 系统管理员现在可以在系统管理页保存识别 provider 的系统级覆盖项；运行时优先读取系统配置，缺失字段再回退到环境变量，不回显 API key 原文。
 - 未配置对应 provider 时，识别会按材料类型分别显式停在：
   - `text_llm_provider_not_configured`

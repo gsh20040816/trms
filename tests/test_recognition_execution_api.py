@@ -34,9 +34,11 @@ class FakeRecognitionLlmClient(RecognitionLlmClient):
         *,
         result: RecognitionLlmExtractionResult | None = None,
         error: RecognitionLlmExecutionError | None = None,
+        responses: list[RecognitionLlmExtractionResult | RecognitionLlmExecutionError] | None = None,
     ) -> None:
         self._result = result
         self._error = error
+        self._responses = list(responses) if responses is not None else None
         self.calls: list[dict[str, object]] = []
 
     def recognize(self, *, material, document_input) -> RecognitionLlmExtractionResult:
@@ -47,6 +49,13 @@ class FakeRecognitionLlmClient(RecognitionLlmClient):
                 "document_input": document_input.model_dump(mode="json"),
             }
         )
+        if self._responses is not None:
+            if not self._responses:
+                raise AssertionError("fake LLM client ran out of queued responses")
+            next_response = self._responses.pop(0)
+            if isinstance(next_response, RecognitionLlmExecutionError):
+                raise next_response
+            return next_response
         if self._error is not None:
             raise self._error
         if self._result is None:
@@ -231,7 +240,7 @@ def test_execute_recognition_task_extracts_pdf_text_into_preparation_payload(tmp
     assert item["status"] == "failed"
     assert item["failure"] == {
         "stage": "ai",
-        "reason": "text_llm_provider_not_configured",
+        "reason": "vlm_provider_not_configured",
     }
     preparation = item["raw_response"]["preparation"]
     assert preparation["material_id"] == material_id
@@ -243,6 +252,11 @@ def test_execute_recognition_task_extracts_pdf_text_into_preparation_payload(tmp
         "page_count": 1,
         "text_character_count": 47,
     }
+    fallback_input = item["raw_response"]["preparation"]["fallback_recognition_input"]
+    assert fallback_input["source"] == "image_file"
+    assert fallback_input["media_type"] == "image/png"
+    assert fallback_input["file_name"] == "text-invoice.png"
+    assert fallback_input["byte_count"] > 0
 
 
 def test_submit_material_executes_recognition_immediately_in_in_process_mode(tmp_path):
@@ -702,10 +716,24 @@ def test_execute_recognition_task_marks_low_confidence_result_as_needs_confirmat
 
 def test_execute_recognition_task_records_llm_failure_reason(tmp_path):
     fake_llm = FakeRecognitionLlmClient(
-        error=RecognitionLlmExecutionError(
-            failure=RecognitionFailureDetail(stage="ai", reason="llm_output_not_json"),
-            raw_response={"response": {"choices": [{"message": {"content": "not-json"}}]}},
-        )
+        responses=[
+            RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(stage="ai", reason="llm_output_not_json"),
+                raw_response={"response": {"choices": [{"message": {"content": "not-json"}}]}},
+            ),
+            RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(stage="ai", reason="llm_request_failed"),
+                raw_response={"response": {"error": "provider rejected rendered pdf image"}},
+            ),
+            RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(stage="ai", reason="llm_output_not_json"),
+                raw_response={"response": {"choices": [{"message": {"content": "not-json"}}]}},
+            ),
+            RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(stage="ai", reason="llm_request_failed"),
+                raw_response={"response": {"error": "provider rejected rendered pdf image"}},
+            ),
+        ]
     )
     client = make_client(
         tmp_path,
@@ -734,9 +762,12 @@ def test_execute_recognition_task_records_llm_failure_reason(tmp_path):
     assert item["status"] == "failed"
     assert item["failure"] == {
         "stage": "ai",
-        "reason": "llm_output_not_json",
+        "reason": "llm_request_failed",
     }
-    assert item["raw_response"]["llm"]["response"]["choices"][0]["message"]["content"] == "not-json"
+    assert item["raw_response"]["llm"]["text_attempt"]["response"]["choices"][0]["message"]["content"] == "not-json"
+    assert item["raw_response"]["llm"]["image_fallback_attempt"]["response"]["error"] == (
+        "provider rejected rendered pdf image"
+    )
 
 
 def test_execute_recognition_task_prepares_image_input_before_llm_capability_check(tmp_path):
@@ -802,13 +833,11 @@ def test_execute_recognition_task_prepares_scanned_pdf_input_before_llm_capabili
         "stage": "ai",
         "reason": "vlm_provider_not_configured",
     }
-    assert response.json()["item"]["raw_response"]["preparation"]["recognition_input"] == {
-        "source": "pdf_file",
-        "file_name": sample_path.name,
-        "media_type": "application/pdf",
-        "byte_count": len(sample_path.read_bytes()),
-        "page_count": 1,
-    }
+    preparation_input = response.json()["item"]["raw_response"]["preparation"]["recognition_input"]
+    assert preparation_input["source"] == "image_file"
+    assert preparation_input["media_type"] == "image/png"
+    assert preparation_input["file_name"] == "image-only.png"
+    assert preparation_input["byte_count"] > 0
 
 
 def test_execute_recognition_task_records_pdf_parse_failure_for_corrupted_pdf(tmp_path):
@@ -978,8 +1007,74 @@ def test_execute_recognition_task_passes_scanned_pdf_to_vlm_client(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["item"]["status"] == "succeeded"
-    assert fake_llm.calls[0]["document_input"]["source"] == "pdf_file"
-    assert fake_llm.calls[0]["document_input"]["page_count"] == 1
+    assert fake_llm.calls[0]["document_input"]["source"] == "image_file"
+    assert fake_llm.calls[0]["document_input"]["media_type"] == "image/png"
+
+
+def test_execute_recognition_task_falls_back_to_rendered_pdf_image_after_text_llm_failure(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        responses=[
+            RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(stage="ai", reason="llm_request_failed"),
+                raw_response={"response": {"error": "text llm rejected request"}},
+            ),
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-vlm", "attempts": 1},
+                recognized_fields={
+                    "invoice_number": RecognitionFieldResult(
+                        value="FALLBACK-001",
+                        source="ai",
+                        confidence=0.92,
+                    ),
+                },
+            ),
+            RecognitionLlmExecutionError(
+                failure=RecognitionFailureDetail(stage="ai", reason="llm_request_failed"),
+                raw_response={"response": {"error": "text llm rejected request"}},
+            ),
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-vlm", "attempts": 1},
+                recognized_fields={
+                    "invoice_number": RecognitionFieldResult(
+                        value="FALLBACK-001",
+                        source="ai",
+                        confidence=0.92,
+                    ),
+                },
+            ),
+        ]
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path),
+        recognition_llm_client=fake_llm,
+    )
+    sample_path = tmp_path / "text-invoice.pdf"
+    sample_path.write_bytes(build_text_pdf_bytes())
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename=sample_path.name,
+        content=sample_path.read_bytes(),
+        content_type="application/pdf",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    item = response.json()["item"]
+    assert item["status"] == "succeeded"
+    assert len(fake_llm.calls) == 4
+    assert fake_llm.calls[-2]["document_input"]["source"] == "pdf_text"
+    assert fake_llm.calls[-1]["document_input"]["source"] == "image_file"
+    assert fake_llm.calls[-1]["document_input"]["media_type"] == "image/png"
+    assert item["raw_response"]["llm"]["text_attempt"]["response"]["error"] == "text llm rejected request"
+    assert item["raw_response"]["llm"]["image_fallback_attempt"]["provider"] == "fake-vlm"
 
 
 def test_execute_recognition_task_records_vlm_failure_reason_for_image_input(tmp_path):

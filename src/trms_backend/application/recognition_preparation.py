@@ -4,8 +4,8 @@ import base64
 from io import BytesIO
 from pathlib import Path
 
-from pypdf import PdfReader
-from pypdf.errors import FileNotDecryptedError, PdfReadError, PdfStreamError
+import fitz
+from PIL import Image
 
 from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.recognition_llm import (
@@ -166,6 +166,59 @@ class RecognitionPreparationService:
                 document_input=document_input,
             )
         except RecognitionLlmExecutionError as error:
+            if (
+                _is_pdf_material(material)
+                and document_input.source is RecognitionInputSource.PDF_TEXT
+            ):
+                try:
+                    fallback_document_input = _build_rendered_pdf_document_input(
+                        material,
+                        content,
+                        require_visible_content=False,
+                    )
+                except RecognitionPreparationError:
+                    fallback_document_input = None
+                if fallback_document_input is not None:
+                    base_payload["preparation"]["fallback_recognition_input"] = (
+                        fallback_document_input.to_safe_log_payload()
+                    )
+                    try:
+                        extraction = self._recognition_llm_client.recognize(
+                            material=material,
+                            document_input=fallback_document_input,
+                        )
+                    except RecognitionLlmExecutionError as fallback_error:
+                        raw_response = dict(base_payload)
+                        raw_response["llm"] = {
+                            "text_attempt": error.raw_response,
+                            "image_fallback_attempt": fallback_error.raw_response,
+                        }
+                        return self._fail_task(
+                            recognition_task_id=recognition_task_id,
+                            raw_response=raw_response,
+                            failure=fallback_error.failure,
+                            material=material,
+                            actor_id=actor_id,
+                            request_id=request_id,
+                        )
+                    raw_response = dict(base_payload)
+                    raw_response["llm"] = {
+                        "text_attempt": error.raw_response,
+                        "image_fallback_attempt": extraction.raw_response,
+                    }
+                    return self._complete_task(
+                        recognition_task_id=recognition_task_id,
+                        raw_response=raw_response,
+                        recognized_fields=extraction.recognized_fields,
+                        target_status=(
+                            RecognitionTaskStatus.NEEDS_CONFIRMATION
+                            if extraction.has_pending_confirmation()
+                            else RecognitionTaskStatus.SUCCEEDED
+                        ),
+                        material=material,
+                        actor_id=actor_id,
+                        request_id=request_id,
+                    )
             raw_response = dict(base_payload)
             raw_response["llm"] = error.raw_response
             return self._fail_task(
@@ -321,40 +374,22 @@ def _build_pdf_document_input(
     material: MaterialRecord,
     content: bytes,
 ) -> RecognitionDocumentInput:
+    document = _open_pdf_document(content)
     try:
-        reader = PdfReader(BytesIO(content))
-    except (PdfReadError, PdfStreamError, ValueError) as error:
-        raise RecognitionPreparationError(
-            RecognitionFailureDetail(
-                stage=RecognitionFailureStage.PDF,
-                reason="pdf_parse_failed",
-            )
-        ) from error
-
-    if reader.is_encrypted:
-        raise RecognitionPreparationError(
-            RecognitionFailureDetail(
-                stage=RecognitionFailureStage.PDF,
-                reason="encrypted_pdf",
-            )
-        )
-
-    extracted_segments: list[str] = []
-    image_count = 0
-    try:
-        for page in reader.pages:
-            image_count += len(page.images)
-            extracted_text = page.extract_text() or ""
+        extracted_segments: list[str] = []
+        for page in document:
+            extracted_text = page.get_text("text") or ""
             normalized_text = _normalize_extracted_text(extracted_text)
             if normalized_text:
                 extracted_segments.append(normalized_text)
-    except FileNotDecryptedError as error:
-        raise RecognitionPreparationError(
-            RecognitionFailureDetail(
-                stage=RecognitionFailureStage.PDF,
-                reason="encrypted_pdf",
+        extracted_text = "\n\n".join(extracted_segments).strip()
+        if extracted_text:
+            return RecognitionDocumentInput(
+                source=RecognitionInputSource.PDF_TEXT,
+                text=extracted_text,
+                page_count=document.page_count,
+                text_character_count=len(extracted_text),
             )
-        ) from error
     except Exception as error:
         raise RecognitionPreparationError(
             RecognitionFailureDetail(
@@ -362,29 +397,13 @@ def _build_pdf_document_input(
                 reason="pdf_text_extraction_failed",
             )
         ) from error
+    finally:
+        document.close()
 
-    extracted_text = "\n\n".join(extracted_segments).strip()
-    if extracted_text:
-        return RecognitionDocumentInput(
-            source=RecognitionInputSource.PDF_TEXT,
-            text=extracted_text,
-            page_count=len(reader.pages),
-            text_character_count=len(extracted_text),
-        )
-    if image_count > 0 or _pdf_contains_xobject_images(reader):
-        return RecognitionDocumentInput(
-            source=RecognitionInputSource.PDF_FILE,
-            file_name=material.original_filename,
-            media_type="application/pdf",
-            data_url=_build_base64_data_url(content, media_type="application/pdf"),
-            byte_count=len(content),
-            page_count=len(reader.pages),
-        )
-    raise RecognitionPreparationError(
-        RecognitionFailureDetail(
-            stage=RecognitionFailureStage.PDF,
-            reason="blank_pdf",
-        )
+    return _build_rendered_pdf_document_input(
+        material,
+        content,
+        require_visible_content=True,
     )
 
 
@@ -413,32 +432,108 @@ def _build_base64_data_url(content: bytes, *, media_type: str) -> str:
     return f"data:{media_type};base64,{encoded}"
 
 
-def _pdf_contains_xobject_images(reader: PdfReader) -> bool:
+def _build_rendered_pdf_document_input(
+    material: MaterialRecord,
+    content: bytes,
+    *,
+    require_visible_content: bool,
+) -> RecognitionDocumentInput:
+    document = _open_pdf_document(content)
     try:
-        for page in reader.pages:
-            if _page_contains_xobject_images(page.get("/Resources")):
-                return True
+        if require_visible_content and not any(_page_has_visible_content(page) for page in document):
+            raise RecognitionPreparationError(
+                RecognitionFailureDetail(
+                    stage=RecognitionFailureStage.PDF,
+                    reason="blank_pdf",
+                )
+            )
+        rendered_png = _render_pdf_document_to_png(document)
+    finally:
+        document.close()
+    rendered_file_name = f"{Path(material.original_filename).stem}.png"
+    return RecognitionDocumentInput(
+        source=RecognitionInputSource.IMAGE_FILE,
+        file_name=rendered_file_name,
+        media_type="image/png",
+        data_url=_build_base64_data_url(rendered_png, media_type="image/png"),
+        byte_count=len(rendered_png),
+    )
+
+
+def _open_pdf_document(content: bytes) -> fitz.Document:
+    try:
+        document = fitz.open(stream=content, filetype="pdf")
+    except Exception as error:
+        raise RecognitionPreparationError(
+            RecognitionFailureDetail(
+                stage=RecognitionFailureStage.PDF,
+                reason="pdf_parse_failed",
+            )
+        ) from error
+    if document.needs_pass:
+        document.close()
+        raise RecognitionPreparationError(
+            RecognitionFailureDetail(
+                stage=RecognitionFailureStage.PDF,
+                reason="encrypted_pdf",
+            )
+        )
+    return document
+
+
+def _page_has_visible_content(page: fitz.Page) -> bool:
+    try:
+        if page.get_images(full=True):
+            return True
+        if page.get_drawings():
+            return True
     except Exception:
         return False
     return False
 
 
-def _page_contains_xobject_images(resources: object) -> bool:
-    if not hasattr(resources, "get"):
-        return False
-    xobjects = resources.get("/XObject")
-    if not hasattr(xobjects, "items"):
-        return False
-    for _, candidate in xobjects.items():
-        resolved = candidate.get_object() if hasattr(candidate, "get_object") else candidate
-        if not hasattr(resolved, "get"):
-            continue
-        subtype = resolved.get("/Subtype")
-        if subtype == "/Image":
-            return True
-        if subtype == "/Form" and _page_contains_xobject_images(resolved.get("/Resources")):
-            return True
-    return False
+def _render_pdf_document_to_png(document: fitz.Document) -> bytes:
+    page_images: list[Image.Image] = []
+    try:
+        for page in document:
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            page_image = Image.open(BytesIO(pixmap.tobytes("png"))).convert("RGB")
+            page_images.append(page_image)
+        if not page_images:
+            raise RecognitionPreparationError(
+                RecognitionFailureDetail(
+                    stage=RecognitionFailureStage.PDF,
+                    reason="blank_pdf",
+                )
+            )
+        merged_image = _merge_page_images(page_images)
+        buffer = BytesIO()
+        merged_image.save(buffer, format="PNG")
+        merged_image.close()
+        return buffer.getvalue()
+    except RecognitionPreparationError:
+        raise
+    except Exception as error:
+        raise RecognitionPreparationError(
+            RecognitionFailureDetail(
+                stage=RecognitionFailureStage.PDF,
+                reason="pdf_render_failed",
+            )
+        ) from error
+    finally:
+        for image in page_images:
+            image.close()
+
+
+def _merge_page_images(page_images: list[Image.Image]) -> Image.Image:
+    width = max(image.width for image in page_images)
+    height = sum(image.height for image in page_images)
+    merged = Image.new("RGB", (width, height), (255, 255, 255))
+    offset_y = 0
+    for image in page_images:
+        merged.paste(image, (0, offset_y))
+        offset_y += image.height
+    return merged
 
 
 def _resolve_image_media_type(material: MaterialRecord) -> str:
