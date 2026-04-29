@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-29 11:35 - Evaluate Material 3 React adoption plan
+
+### 完成内容
+- 新增 `docs/Material3前端落地方案评估.md`，记录 Web 前端 M3 重写的库选型、新依赖范围、bundle/测试影响面和后续轮次顺序。
+- 在 `TASKS.md` 末尾新增 P5 - 前端 Material 3 重写章节，拆出 10 条单轮可验证子任务（含本轮）。
+- 将 P5 第一条"评估并确认 Material 3 React 落地方案"标记为已完成。
+
+### 根因
+- 用户明确提出"前端实在太丑陋，重新设计前端并重写"，并指定使用 Material 3 设计体系。
+- 当前前端仅靠 1700+ 行原生 `styles.css` 维持视觉，存在两套相互冲突的 token（早期橙金 hero + 后期灰白 dashboard），既无设计系统也无组件库；同时交互层面也存在多处不合理（首页是入口页而非任务驱动、成员端 4 段拆分、管理员任务详情仍依赖跨页跳转、缺少 Snackbar/ConfirmDialog 等统一反馈）。
+- 按 `AGENTS.md` 要求，整体重写属于大块架构变更，必须先拆分到 `TASKS.md` 再单轮推进，本轮负责拆分与方案确认。
+
+### 关键改动点
+- 新增评估文档：
+  - `docs/Material3前端落地方案评估.md`
+- 任务拆分：
+  - `TASKS.md` 新增 `## P5 - 前端 Material 3 重写`，10 条子任务
+- 同步任务状态：
+  - 第一条子任务标记为 `[x]`
+
+### 风险与影响面
+- 本轮只新增评估文档和任务拆分，不安装任何依赖，不改动业务代码、接口语义、数据库结构或测试逻辑。
+- 后续轮次会引入 `@mui/material`、`@emotion/*`、`@mui/icons-material`、`@fontsource/roboto-flex` 等新依赖；对 bundle 体积、测试 polyfill 和现有 `styles.css` 的影响在评估文档中已说明。
+- 拒绝引入 sixui、Actify、material-web、`notistack`、`react-hook-form` 的理由记录在评估文档中。
+
+### 修改文件
+- `docs/Material3前端落地方案评估.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- 本轮仅新增 Markdown 文档与任务拆分；将在本轮 commit 前运行 `./scripts/verify.sh` 确认 Python/Web/Compose 检查未受影响。
+
+### 假设
+- 选择 MUI v7 而不是 sixui 的核心理由是 MUI 的生态、文档、TypeScript 类型、DataGrid/DatePicker/Snackbar/Dialog 等成熟组件可以直接替换当前自造的 `dashboard.tsx`，从而显著减小 `styles.css` 体积。
+- 假设后续轮次允许保留 `styles.css` 直到全部页面迁移完成；本轮不删除任何现有样式。
+
+### 备注
+- 后续轮次顺序固定为 1→10，每轮独立验证；前后存在依赖（例如 Round 2 需在 Round 3 之前完成）。
+
 ## 2026-04-29 05:49 - Evaluate automatic missing-material reminder messaging
 
 ### 完成内容

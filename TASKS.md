@@ -1136,3 +1136,79 @@
     - 记录 Browser Use 自动填报的风险、人工确认点和退出条件
     - 明确第一阶段仍不实现
     - 不保存财务系统登录态
+
+## P5 - 前端 Material 3 重写
+
+本批任务将 Web 前端整体迁移到 Material Design 3 设计体系，并同步优化用户交互逻辑（任务驱动总览、列表-详情联动、单任务闭环、统一反馈）。每条都是单轮可验证的最小任务。
+
+- [x] 评估并确认 Material 3 React 落地方案
+  - Done when:
+    - `WORKLOG.md` 记录最终采用的 M3 库（MUI v7 / sixui / 其它）和拒绝其它方案的理由
+    - 记录引入新依赖的范围、bundle 体积影响和测试改动面预估
+    - 不实际安装任何依赖，不改动业务代码
+
+- [ ] 引入 Material 3 主题与基线依赖
+  - Done when:
+    - `web/` 引入 MUI v7（`@mui/material`、`@emotion/react`、`@emotion/styled`、`@mui/icons-material`）
+    - 建立 `src/theme/m3-theme.ts`，含完整 M3 颜色 token、字体、形状、tonal elevation
+    - `main.tsx` 包裹 ThemeProvider + CssBaseline，支持亮/暗模式跟随系统
+    - 现有 `styles.css` 暂时保留，后续按页迁移
+    - `npm run lint` / `npm test` / `npm run build` 全部通过
+
+- [ ] 重构应用骨架：Top App Bar + Navigation Rail + Snackbar 容器
+  - Done when:
+    - `RootLayout` 改为 M3 Top App Bar（左：菜单 + 品牌；右：账号头像菜单）
+    - 桌面端使用 Navigation Rail，移动端使用 Bottom Navigation
+    - 全局加入 SnackbarProvider 与可全局调用的 `useSnackbar` hook
+    - 顶部菜单含主题切换（亮/暗）、退出登录、角色切换
+    - 既有路由全部沿用，对应 RootLayout 测试同步更新
+
+- [ ] 重写登录/注册页交互
+  - Done when:
+    - 登录与注册分两个 Tab（M3 Tabs 或 SegmentedButton）
+    - 已登录态不再渲染表单，改为显示已登录卡片 + 进入入口
+    - 开发 mock 入口收口为页内可折叠区域，仅 dev 环境显示
+    - 错误提示统一用 Snackbar，不再用页面级红色卡片
+    - `auth.tsx` 与登录相关测试同步更新
+
+- [ ] 重写首页：任务驱动总览
+  - Done when:
+    - 移除"页面边界已收口/可见板块/页面边界"等实现性卡片
+    - 成员首页：KPI 卡（待提交、待确认、已归档）+ "继续上次任务" + 任务列表
+    - 管理员首页：KPI 卡（异常材料、未确认成员、待审核任务、待导出）+ "今日最紧急任务" + 全部任务表
+    - 首页相关测试同步更新
+
+- [ ] 重写成员端任务列表与单任务工作台
+  - Done when:
+    - 任务列表改为 M3 Cards 网格，移动端可用
+    - 单任务工作台 `/member/invoices/workbench` 改为带 Tabs 的单页（发票 / 缺失材料 / 费用确认）
+    - 上传通过 M3 FAB 触发 Dialog（含拖拽、进度、单文件结果）
+    - 操作反馈统一走 Snackbar
+    - 旧的 `/member/materials/upload` `status` `missing` `expenses/confirm` 改为重定向到工作台对应 tab
+    - 相关测试更新或重写
+
+- [ ] 重写管理员任务详情：列表+详情联动
+  - Done when:
+    - `/admin/tasks/:id` 默认右半屏为任务详情、左半屏为材料列表
+    - Navigation Rail 切换"材料审核 / 分摊 / 导出"等子模块时保留列表+详情结构
+    - 单张发票预览、识别字段、校验异常、处理动作集中在右侧详情面板
+    - 相关测试更新
+
+- [ ] 重写表单与上传组件
+  - Done when:
+    - 全部 input / select / textarea 替换为 M3 TextField / Select / Autocomplete
+    - 文件上传改为带拖拽、单文件状态、结果反馈的组件
+    - Form 校验错误使用 helperText / error，不再使用自造 `.field-error`
+    - 表单测试更新
+
+- [ ] 引入 ConfirmDialog 守护破坏性操作
+  - Done when:
+    - 任务状态流转、删除、代确认、强制导出等动作前出现 M3 Dialog 二次确认
+    - 取消时不发起请求，确认时附带操作上下文记录
+    - 测试覆盖确认与取消路径
+
+- [ ] 移除遗留 `styles.css` 与冲突类
+  - Done when:
+    - 所有页面已迁移到 M3 后，删除 `styles.css` 中重复或冲突的 token
+    - 仅保留少量 utility（如 `.sr-only`）或迁移到 MUI 全局样式
+    - `npm run lint` / `npm run build` 通过
