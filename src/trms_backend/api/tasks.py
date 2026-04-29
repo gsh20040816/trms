@@ -9,7 +9,7 @@ from trms_backend.api.request_identity import (
     build_authenticated_request_identity_dependency,
 )
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
-from trms_backend.api.request_task_access import resolve_task_access_scope
+from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.expense_audit import record_split_confirmation_audit
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
@@ -66,6 +66,9 @@ from trms_backend.domain.task_member_status import (
 from trms_backend.domain.task_shared_invoices import (
     TaskSharedInvoiceActorNotAllowedError,
     build_task_shared_invoice_report,
+)
+from trms_backend.domain.task_supporting_material_linkage import (
+    build_task_supporting_material_linkage_report,
 )
 from trms_backend.domain.tasks import (
     TaskCreateInput,
@@ -481,6 +484,46 @@ def build_task_router(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),
             ) from error
+
+    @router.get("/{task_id}/supporting-material-linkage")
+    def get_task_supporting_material_linkage(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view supporting material linkage for this task",
+        )
+        materials = material_repository.list_by_task(task_id)
+        materials_by_id = {material.id: material for material in materials}
+        invoices = invoice_repository.list_by_task(task_id)
+        linked_invoice_ids_by_material_id: dict[str, list[str]] = {}
+        for material in materials:
+            linked_invoice_ids_by_material_id[material.id] = [
+                invoice.id
+                for invoice in invoice_repository.list_by_supporting_material(material.id)
+            ]
+
+        return build_task_supporting_material_linkage_report(
+            task,
+            actor_id=resolved_actor_id,
+            include_all_members=scope is TaskAccessScope.ADMINISTRATOR,
+            materials=materials,
+            invoices=invoices,
+            materials_by_id=materials_by_id,
+            linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
+        )
 
     @router.get("/{task_id}/missing-materials")
     def list_task_missing_materials(

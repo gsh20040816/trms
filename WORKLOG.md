@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-30 00:46 - Add pending supporting-material linkage summary API
+
+### 完成内容
+- 完成任务“建立辅助材料多候选待关联摘要接口”。
+- 新增读模型 [task_supporting_material_linkage.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_supporting_material_linkage.py)：
+  - `no_candidate`
+  - `multiple_candidates`
+  - 候选发票摘要：`invoice_id`、`invoice_number`、`amount_cents`、`expense_type`
+- 调整 [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)：
+  - 新增 `GET /api/tasks/{task_id}/supporting-material-linkage`
+  - 管理员可查看任务内全部待关联辅助材料
+  - 成员只能查看自己提交的待关联辅助材料
+  - 已经单候选自动归票成功的材料不会出现在该接口里
+- 新增测试 [test_supporting_material_linkage_api.py](/home/gsh/workspace/TRMS/tests/test_supporting_material_linkage_api.py)：
+  - 管理员读取 `no_candidate` 与 `multiple_candidates` 摘要
+  - 成员只看到自己的待关联项
+  - 无关成员被拒绝
+
+### 根因
+- 上一轮已经补了“单候选自动归票”，但剩余未自动绑定材料仍然是静默悬空状态。
+- 这会带来两个直接问题：
+  - 多候选场景下，成员和管理员不知道系统为什么没有自动归票
+  - 无候选场景下，成员工作台后续也没有稳定的数据来源去解释“下一步该补什么或该绑定到哪张票”
+
+### 当前接口边界
+- 会返回：
+  - 非 `invoice` 材料
+  - 已归属到任务
+  - 当前尚未绑定到任何发票
+  - 候选发票数为 0 或大于 1
+- 不会返回：
+  - 已自动绑定或已手动绑定的辅助材料
+  - 单候选但已成功自动归票的材料
+  - `invoice` 主材料本身
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_supporting_material_linkage_api.py`
+    - 3 个用例通过
+- 仓库级验证待本轮记录更新后统一执行 `./scripts/verify.sh`。
+
 ## 2026-04-30 00:29 - Add safe single-candidate auto-linking for supporting materials
 
 ### 完成内容
