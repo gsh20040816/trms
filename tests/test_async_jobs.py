@@ -44,6 +44,65 @@ def test_async_job_worker_run_once_aggregates_registered_processors():
     assert result.total_processed == 3
 
 
+def test_async_job_worker_run_once_emits_iteration_logs(monkeypatch):
+    config = load_runtime_config(env={}, async_job_mode="worker")
+    worker = AsyncJobWorker(
+        config.async_jobs,
+        processors=(CountingProcessor("recognition", 2),),
+    )
+    entries: list[str] = []
+    monkeypatch.setattr(
+        "trms_backend.application.async_jobs.LOGGER",
+        type(
+            "Logger",
+            (),
+            {
+                "info": lambda self, message, payload: entries.append(f"{message} {payload}"),
+            },
+        )(),
+    )
+
+    worker.run_once()
+
+    assert any("worker_poll_start" in entry for entry in entries)
+    assert any("worker_poll_complete" in entry for entry in entries)
+    assert any("'processed_counts': {'recognition': 2}" in entry for entry in entries)
+
+
+def test_async_job_worker_run_forever_logs_idle_wait(monkeypatch):
+    config = load_runtime_config(env={}, async_job_mode="worker")
+
+    def stop_sleep(_seconds: float) -> None:
+        raise StopIteration
+
+    worker = AsyncJobWorker(
+        config.async_jobs,
+        processors=(CountingProcessor("recognition", 0),),
+        sleep=stop_sleep,
+    )
+    entries: list[str] = []
+    monkeypatch.setattr(
+        "trms_backend.application.async_jobs.LOGGER",
+        type(
+            "Logger",
+            (),
+            {
+                "info": lambda self, message, payload: entries.append(f"{message} {payload}"),
+            },
+        )(),
+    )
+
+    try:
+        worker.run_forever()
+    except StopIteration:
+        pass
+    else:  # pragma: no cover - defensive branch
+        raise AssertionError("expected custom sleep to stop the worker loop")
+
+    assert any("worker_idle_wait" in entry for entry in entries)
+    assert any("'sleep_seconds': 5.0" in entry for entry in entries)
+
+
 def test_async_job_worker_rejects_in_process_mode():
     config = load_runtime_config(env={})
     worker = AsyncJobWorker(config.async_jobs)
@@ -57,21 +116,45 @@ def test_async_job_worker_rejects_in_process_mode():
 
 
 def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
-    config = load_runtime_config(env={}, async_job_mode="worker")
+    config = load_runtime_config(
+        env={},
+        async_job_mode="worker",
+        llm_api_key="sk-secret",
+        llm_model="gpt-4.1-mini",
+    )
     calls: list[str] = []
 
     class FakeWorker:
+        mode = "worker"
+        poll_interval_seconds = 5.0
+        registered_job_types = ("recognition", "export")
+
         def run_once(self) -> None:
             calls.append("run_once")
 
     monkeypatch.setattr(backend_main, "load_runtime_config", lambda **_: config)
     monkeypatch.setattr(backend_main, "load_runtime_environment_variables", lambda: {})
     monkeypatch.setattr(backend_main, "build_async_job_worker", lambda runtime_config: FakeWorker())
+    entries: list[str] = []
+    monkeypatch.setattr(
+        backend_main,
+        "LOGGER",
+        type(
+            "Logger",
+            (),
+            {
+                "info": lambda self, message, payload: entries.append(f"{message} {payload}"),
+            },
+        )(),
+    )
 
     exit_code = backend_main.main(["worker", "--once"])
 
     assert exit_code == 0
     assert calls == ["run_once"]
+    assert any("worker_startup" in entry for entry in entries)
+    assert any("'registered_job_types': ['recognition', 'export']" in entry for entry in entries)
+    assert all("sk-secret" not in entry for entry in entries)
 
 
 def test_backend_main_keeps_legacy_api_entrypoint(monkeypatch):
@@ -160,6 +243,71 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
         "failed_rule_counts": {},
         "pending_rule_counts": {},
     }
+
+
+def test_recognition_async_processor_logs_processed_and_skipped_jobs(monkeypatch):
+    refresh_calls: list[str] = []
+
+    monkeypatch.setattr(
+        recognition_async_jobs,
+        "refresh_validations_for_material",
+        lambda material_id, **_: refresh_calls.append(material_id),
+    )
+
+    now = datetime.now(timezone.utc)
+    first_task = RecognitionTaskRecord(
+        id="recognition-1",
+        material_id="material-1",
+        status=RecognitionTaskStatus.PENDING,
+        created_at=now,
+        updated_at=now,
+    )
+    second_task = first_task.model_copy(update={"id": "recognition-2", "material_id": "material-2"})
+
+    class FakeRecognitionTaskRepository:
+        def list_pending(self, *, limit: int):
+            assert limit == 10
+            return [first_task, second_task]
+
+    class FakeRecognitionPreparationService:
+        def execute(self, recognition_task_id: str) -> RecognitionTaskRecord:
+            if recognition_task_id == "recognition-2":
+                raise RecognitionTaskExecutionConflictError(
+                    recognition_task_id,
+                    RecognitionTaskStatus.SUCCEEDED,
+                )
+            return first_task.model_copy(update={"status": RecognitionTaskStatus.FAILED})
+
+    entries: list[str] = []
+    monkeypatch.setattr(
+        recognition_async_jobs,
+        "LOGGER",
+        type(
+            "Logger",
+            (),
+            {
+                "info": lambda self, message, payload: entries.append(f"{message} {payload}"),
+                "warning": lambda self, message, payload: entries.append(f"{message} {payload}"),
+            },
+        )(),
+    )
+    processor = RecognitionAsyncJobProcessor(
+        task_repository=object(),
+        material_repository=object(),
+        invoice_repository=object(),
+        validation_repository=object(),
+        recognition_task_repository=FakeRecognitionTaskRepository(),
+        recognition_preparation_service=FakeRecognitionPreparationService(),
+        metrics_collector=InMemoryMetricsCollector(),
+    )
+
+    assert processor.run_once() == 1
+    assert refresh_calls == ["material-1"]
+    assert any("recognition_worker_job_processed" in entry for entry in entries)
+    assert any("recognition_worker_job_skipped" in entry for entry in entries)
+    assert any("recognition-1" in entry for entry in entries)
+    assert any("material-1" in entry for entry in entries)
+    assert any("recognition-2" in entry for entry in entries)
 
 
 def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch):
@@ -251,3 +399,71 @@ def test_export_async_processor_skips_duplicate_delivery_after_claim(monkeypatch
         "running": 1,
         "succeeded": 1,
     }
+
+
+def test_export_async_processor_logs_failure_reason(monkeypatch):
+    now = datetime.now(timezone.utc)
+    job = TaskExportJobRecord(
+        id="export-1",
+        task_id="task-1",
+        requested_by="admin-1",
+        kind="reimbursement_summary",
+        format="csv",
+        status=TaskExportJobStatus.PENDING,
+        parameters={},
+        task_data_version="a" * 64,
+        created_at=now,
+        updated_at=now,
+    )
+
+    class FakeExportJobRepository:
+        def list_pending(self, *, limit: int):
+            assert limit == 10
+            return [job]
+
+        def update_status(
+            self,
+            export_job_id: str,
+            *,
+            target_status: TaskExportJobStatus,
+            failure_reason: str | None = None,
+            artifact: StoredExportArtifactRecord | None = None,
+            expected_current_status: TaskExportJobStatus | None = None,
+        ):
+            return job.model_copy(
+                update={
+                    "status": target_status,
+                    "failure_reason": failure_reason,
+                    "artifact": artifact,
+                }
+            )
+
+    entries: list[str] = []
+    monkeypatch.setattr(
+        "trms_backend.application.export_async_jobs.LOGGER",
+        type(
+            "Logger",
+            (),
+            {
+                "info": lambda self, message, payload: entries.append(f"{message} {payload}"),
+                "warning": lambda self, message, payload: entries.append(f"{message} {payload}"),
+            },
+        )(),
+    )
+    processor = ExportAsyncJobProcessor(
+        task_repository=type("TaskRepo", (), {"get": lambda self, task_id: None})(),
+        export_job_repository=FakeExportJobRepository(),
+        invoice_repository=object(),
+        material_repository=object(),
+        material_file_storage=object(),
+        validation_repository=object(),
+        split_repository=object(),
+        confirmation_repository=object(),
+        audit_log_repository=InMemoryAuditLogRepository(),
+        metrics_collector=InMemoryMetricsCollector(),
+    )
+
+    assert processor.run_once() == 1
+    assert any("export_worker_job_failed" in entry for entry in entries)
+    assert any("export-1" in entry for entry in entries)
+    assert any("task not found" in entry for entry in entries)

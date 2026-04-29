@@ -1438,7 +1438,7 @@
     - 识别失败时保留足够的安全可审计上下文，便于区分“提示词未抽出字段”“模型输出不合法”“文件准备阶段失败”
     - 测试覆盖中文发票样例、字段缺失样例和非法 JSON / schema 失败样例
 
-- [ ] 为独立 worker 增加启动、轮询与任务结果结构化日志
+- [x] 为独立 worker 增加启动、轮询与任务结果结构化日志
   - Done when:
     - `uv run python -m trms_backend worker` 启动时输出运行模式、轮询间隔、已注册处理器和关键配置摘要（脱敏）
     - 每轮轮询、任务成功、任务失败、空闲等待都输出结构化日志，能定位 recognition/export job id、material/task id、failure reason

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from trms_backend.application.async_jobs import AsyncJobProcessor
 from trms_backend.application.merged_pdf_export import render_merged_pdf_bytes
@@ -36,6 +37,9 @@ from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialFileStorage, MaterialRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import ReimbursementTask, TaskRepository
+from trms_backend.logging_safety import sanitize_log_fields
+
+LOGGER = logging.getLogger("trms_backend.worker")
 
 
 class ExportAsyncJobProcessor(AsyncJobProcessor):
@@ -117,6 +121,19 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                     format=updated.format,
                     status=updated.status,
                 )
+                LOGGER.info(
+                    "export_worker_job_processed %s",
+                    sanitize_log_fields(
+                        {
+                            "export_job_id": updated.id,
+                            "task_id": updated.task_id,
+                            "kind": updated.kind,
+                            "format": updated.format,
+                            "status": updated.status,
+                            "artifact_filename": updated.artifact.filename if updated.artifact is not None else None,
+                        }
+                    ),
+                )
                 record_export_job_terminal_status_audit(
                     self._audit_log_repository,
                     actor_id=SYSTEM_EXPORT_ACTOR_ID,
@@ -139,6 +156,19 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                 kind=updated.kind,
                 format=updated.format,
                 status=updated.status,
+            )
+            LOGGER.warning(
+                "export_worker_job_failed %s",
+                sanitize_log_fields(
+                    {
+                        "export_job_id": updated.id,
+                        "task_id": updated.task_id,
+                        "kind": updated.kind,
+                        "format": updated.format,
+                        "status": updated.status,
+                        "failure_reason": updated.failure_reason,
+                    }
+                ),
             )
             record_export_job_terminal_status_audit(
                 self._audit_log_repository,

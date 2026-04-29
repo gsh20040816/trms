@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from collections.abc import Sequence
 
@@ -31,6 +32,8 @@ from trms_backend.runtime_config import (
     load_runtime_config,
     load_runtime_environment_variables,
 )
+
+LOGGER = logging.getLogger("trms_backend.worker")
 
 
 def run_api_command(argv: Sequence[str]) -> int:
@@ -133,6 +136,21 @@ def run_worker_command(argv: Sequence[str]) -> int:
 
     config = load_runtime_config(env=load_runtime_environment_variables())
     worker = build_async_job_worker(config)
+    LOGGER.info(
+        "worker_startup %s",
+        {
+            "mode": worker.mode,
+            "poll_interval_seconds": worker.poll_interval_seconds,
+            "registered_job_types": list(worker.registered_job_types),
+            "environment": config.environment,
+            "file_storage": config.file_storage.to_safe_log_fields(),
+            "llm_provider": (
+                config.llm_provider.to_safe_log_fields()
+                if config.llm_provider is not None
+                else None
+            ),
+        },
+    )
     if args.once:
         worker.run_once()
         return 0

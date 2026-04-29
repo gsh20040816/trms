@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
 from trms_backend.application.async_jobs import AsyncJobProcessor
 from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
@@ -13,6 +15,9 @@ from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import RecognitionTaskRepository
 from trms_backend.domain.tasks import TaskRepository
+from trms_backend.logging_safety import sanitize_log_fields
+
+LOGGER = logging.getLogger("trms_backend.worker")
 
 
 class RecognitionAsyncJobProcessor(AsyncJobProcessor):
@@ -48,7 +53,17 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
                 RecognitionTaskExecutionConflictError,
                 RecognitionTaskExecutionNotFoundError,
                 RecognitionMaterialNotFoundError,
-            ):
+            ) as error:
+                LOGGER.warning(
+                    "recognition_worker_job_skipped %s",
+                    sanitize_log_fields(
+                        {
+                            "recognition_task_id": task.id,
+                            "material_id": task.material_id,
+                            "reason": str(error),
+                        }
+                    ),
+                )
                 continue
 
             refresh_validations_for_material(
@@ -59,6 +74,17 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
                 validation_repository=self._validation_repository,
                 recognition_task_repository=self._recognition_task_repository,
                 metrics_collector=self._metrics_collector,
+            )
+            LOGGER.info(
+                "recognition_worker_job_processed %s",
+                sanitize_log_fields(
+                    {
+                        "recognition_task_id": updated.id,
+                        "material_id": updated.material_id,
+                        "status": updated.status,
+                        "failure_reason": updated.failure.reason if updated.failure is not None else None,
+                    }
+                ),
             )
             processed_count += 1
         return processed_count

@@ -1,5 +1,62 @@
 # WORKLOG
 
+## 2026-04-29 20:11 - Add structured startup and polling logs for async worker
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“为独立 worker 增加启动、轮询与任务结果结构化日志”。
+- 调整 [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py)：
+  - `worker` 入口启动时输出 `worker_startup` 结构化日志
+  - 日志包含运行模式、轮询间隔、已注册处理器、环境、文件存储摘要和 LLM 配置摘要
+  - 继续通过 `to_safe_log_fields()` 保证敏感配置脱敏
+- 调整 [src/trms_backend/application/async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/async_jobs.py)：
+  - 每轮轮询开始输出 `worker_poll_start`
+  - 每轮轮询结束输出 `worker_poll_complete`
+  - 空闲等待前输出 `worker_idle_wait`
+- 调整 [src/trms_backend/application/recognition_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_async_jobs.py)：
+  - 成功处理识别任务时输出 `recognition_worker_job_processed`
+  - 因并发冲突/重复投递/材料不存在而跳过时输出 `recognition_worker_job_skipped`
+  - 日志包含 `recognition_task_id`、`material_id`、`status`、`failure_reason`
+- 调整 [src/trms_backend/application/export_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/export_async_jobs.py)：
+  - 成功完成导出任务时输出 `export_worker_job_processed`
+  - 导出失败时输出 `export_worker_job_failed`
+  - 日志包含 `export_job_id`、`task_id`、`kind`、`format`、`status`、`artifact_filename` / `failure_reason`
+- 调整测试 [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)：
+  - 覆盖 worker 启动日志、轮询日志、空闲等待日志
+  - 覆盖 recognition/export processor 的单任务成功/跳过/失败日志
+  - 覆盖启动日志不泄露 `sk-secret` 等敏感值
+
+### 根因
+- 之前 worker 具备实际消费能力，但启动、轮询、空闲等待和单任务处理过程几乎没有结构化日志。
+- 一旦出现“worker 没启动”“轮询一直空转”“某个 recognition/export job 被跳过或失败”，只能靠数据库状态和事后排查，无法从运行日志快速定位。
+
+### 关键改动点
+- 启动日志放在 `__main__.py`，因为只有这里天然持有运行模式、轮询间隔和脱敏后的运行配置摘要。
+- 轮询级日志放在 `AsyncJobWorker`，而单任务成功/失败日志分别放在 recognition/export processor 内部；这样职责边界最清晰，不需要在 worker 层猜测各 job 的业务标识。
+- 日志测试不再依赖全局 `caplog` 捕获链路，而是直接替换模块级 `LOGGER`，避免全量测试环境下被外部日志配置干扰。
+
+### 风险与影响面
+- 本轮只增加日志，不改 worker 消费语义；已有任务处理结果和审计逻辑不变。
+- 目前日志仍是“结构化文本 + 脱敏字段字典”风格，没有引入新的 JSON logger 依赖；若后续要接入集中式日志平台，可在此基础上再统一格式。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_async_jobs.py`
+    - 10 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：441 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
 ## 2026-04-29 20:01 - Strengthen recognition prompts and diagnostic failure context
 
 ### 完成内容
