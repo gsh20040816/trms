@@ -1837,12 +1837,13 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
+    fireEvent.click(await screen.findByRole("tab", { name: "费用确认" }));
     expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "确认这笔费用" }));
 
     expect(await screen.findByText("已提交确认，工作台已刷新最新确认状态。")).toBeInTheDocument();
-    expect(await screen.findByText("确认状态：已确认")).toBeInTheDocument();
+    expect(await screen.findByText("待确认 0 条")).toBeInTheDocument();
   });
 
   it("shows shared invoice summaries for other task members without exposing raw attachment details", async () => {

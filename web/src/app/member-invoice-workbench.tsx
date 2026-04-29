@@ -1,5 +1,8 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { type FormEvent, type SyntheticEvent, useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { ApiError } from "../lib/api/client";
@@ -67,6 +70,8 @@ type PendingAction = {
   tone: "info" | "warning" | "danger";
   label: string;
 };
+
+type WorkbenchTab = "invoices" | "missing-materials" | "confirmations";
 
 type WorkbenchInvoiceItem = {
   material: TaskMemberMaterialStatusItem;
@@ -138,6 +143,12 @@ const FIELD_LABELS: Record<(typeof FIELD_ORDER)[number], string> = {
   expense_type: "费用类型",
 };
 
+const WORKBENCH_TAB_HASHES: Record<WorkbenchTab, string> = {
+  invoices: "#member-workbench-invoices",
+  "missing-materials": "#member-workbench-missing-materials",
+  confirmations: "#member-workbench-confirmations",
+};
+
 function pickSelectedTaskId(
   tasks: ReimbursementTask[],
   preferredTaskId: string | null,
@@ -192,6 +203,20 @@ function pickDefaultSplitMemberId(taskMemberIds: string[], drafts: SplitDraftRow
 
 function buildWorkbenchTaskAnchor(taskId: string, hash: string) {
   return `/member/invoices/workbench?taskId=${encodeURIComponent(taskId)}${hash}`;
+}
+
+function resolveWorkbenchTab(hash: string): WorkbenchTab {
+  if (hash === WORKBENCH_TAB_HASHES.confirmations) {
+    return "confirmations";
+  }
+  if (hash === WORKBENCH_TAB_HASHES["missing-materials"]) {
+    return "missing-materials";
+  }
+  return "invoices";
+}
+
+function buildWorkbenchTabAnchor(taskId: string, tab: WorkbenchTab) {
+  return buildWorkbenchTaskAnchor(taskId, WORKBENCH_TAB_HASHES[tab]);
 }
 
 function buildInitialUploadFormState(): WorkbenchUploadFormState {
@@ -582,7 +607,10 @@ export function MemberInvoiceWorkbenchPage() {
   const session = useAuthSession();
   const actorId = session?.actorId ?? "";
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const preferredTaskId = searchParams.get("taskId");
+  const activeTab = resolveWorkbenchTab(location.hash);
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [workbenchState, setWorkbenchState] = useState<SelectedTaskWorkbenchState>({ status: "idle" });
@@ -764,6 +792,7 @@ export function MemberInvoiceWorkbenchPage() {
   const pendingActions = workbenchState.status === "ready"
     ? summarizePendingActions(workbenchState.task, workbenchState.report)
     : [];
+  const missingMaterials = workbenchState.status === "ready" ? workbenchState.report.missing_materials : [];
   const sharedInvoices = workbenchState.status === "ready"
     ? workbenchState.sharedInvoices.filter((item) => item.submitter_id !== actorId)
     : [];
@@ -1061,6 +1090,19 @@ export function MemberInvoiceWorkbenchPage() {
     }
   }
 
+  function handleTaskChange(nextTaskId: string) {
+    resetTaskScopedUiState();
+    setSelectedTaskId(nextTaskId);
+    void navigate(buildWorkbenchTabAnchor(nextTaskId, activeTab));
+  }
+
+  function handleTabChange(_event: SyntheticEvent, nextTab: WorkbenchTab) {
+    if (!selectedTaskId) {
+      return;
+    }
+    void navigate(buildWorkbenchTabAnchor(selectedTaskId, nextTab));
+  }
+
   if (!session || session.role !== "member") {
     return null;
   }
@@ -1111,8 +1153,8 @@ export function MemberInvoiceWorkbenchPage() {
 
       {taskState.status === "ready" && visibleTasks.length > 0 ? (
         <SectionCard
-          title="任务范围"
-          description="先选定一个任务，再围绕这一个任务查看待处理事项、异常原因和下一步动作。"
+          title="当前任务上下文"
+          description="先固定在一个任务内处理发票，再在缺失材料和费用确认之间切换，减少上下文丢失。"
           action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
         >
           <div className="admin-form-grid">
@@ -1122,8 +1164,7 @@ export function MemberInvoiceWorkbenchPage() {
                 aria-label="目标任务"
                 value={selectedTaskId}
                 onChange={(event) => {
-                  resetTaskScopedUiState();
-                  setSelectedTaskId(event.target.value);
+                  handleTaskChange(event.target.value);
                 }}
               >
                 {visibleTasks.map((task) => (
@@ -1142,6 +1183,10 @@ export function MemberInvoiceWorkbenchPage() {
                 <div>
                   <dt>截止时间</dt>
                   <dd>{formatDateTime(selectedTask.deadline)}</dd>
+                </div>
+                <div>
+                  <dt>当前成员</dt>
+                  <dd>{session.displayName}{session.memberCode ? `（${session.memberCode}）` : ""}</dd>
                 </div>
               </dl>
             ) : null}
@@ -1177,7 +1222,25 @@ export function MemberInvoiceWorkbenchPage() {
         </SectionCard>
       ) : null}
 
-      {selectedTask ? (
+      {workbenchState.status === "ready" ? (
+        <SectionCard
+          title="单任务处理视图"
+          description="在发票、缺失材料和费用确认三类视图之间切换，不再要求你自己在多个页面之间拼接上下文。"
+        >
+          <Tabs
+            value={activeTab}
+            onChange={handleTabChange}
+            aria-label="成员单任务工作台标签页"
+            sx={{ borderBottom: 1, borderColor: "divider" }}
+          >
+            <Tab value="invoices" label="发票" id="member-workbench-tab-invoices" />
+            <Tab value="missing-materials" label="缺失材料" id="member-workbench-tab-missing-materials" />
+            <Tab value="confirmations" label="费用确认" id="member-workbench-tab-confirmations" />
+          </Tabs>
+        </SectionCard>
+      ) : null}
+
+      {selectedTask && activeTab === "invoices" ? (
         <div id="member-workbench-upload">
           <SectionCard
             title="上传材料与附件"
@@ -1271,9 +1334,9 @@ export function MemberInvoiceWorkbenchPage() {
         </div>
       ) : null}
 
-      {uploadSubmitError ? <ApiErrorNotice error={uploadSubmitError} /> : null}
+      {activeTab === "invoices" && uploadSubmitError ? <ApiErrorNotice error={uploadSubmitError} /> : null}
 
-      {uploadResult ? (
+      {activeTab === "invoices" && uploadResult ? (
         <SectionCard
           title="最近上传结果"
           description="当前工作台直接展示最近一次上传的逐文件结果，不把部分失败伪装成全部成功。"
@@ -1316,7 +1379,7 @@ export function MemberInvoiceWorkbenchPage() {
         </SectionCard>
       ) : null}
 
-      {workbenchState.status === "ready" ? (
+      {workbenchState.status === "ready" && activeTab === "confirmations" ? (
         <div id="member-workbench-confirmations">
           <SectionCard
             title="确认当前分到本人名下的费用"
@@ -1465,7 +1528,7 @@ export function MemberInvoiceWorkbenchPage() {
         </div>
       ) : null}
 
-      {workbenchState.status === "ready" && workbenchState.items.length === 0 ? (
+      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 ? (
         <EmptyState
           title="当前任务下还没有本人已上传发票"
           description="先上传发票材料，系统识别和费用确认才会在这里形成完整工作台。"
@@ -1477,7 +1540,7 @@ export function MemberInvoiceWorkbenchPage() {
         />
       ) : null}
 
-      {workbenchState.status === "ready" && workbenchState.items.length > 0 ? (
+      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length > 0 ? (
         <section id="member-workbench-invoices" className="member-status-list" aria-label="成员发票工作台列表">
           {workbenchState.items.map((item) => {
             const abnormalReasons = collectAbnormalReasons(item);
@@ -1854,7 +1917,62 @@ export function MemberInvoiceWorkbenchPage() {
         </section>
       ) : null}
 
-      {workbenchState.status === "ready" ? (
+      {workbenchState.status === "ready" && activeTab === "missing-materials" ? (
+        <section id="member-workbench-missing-materials" className="member-status-list" aria-label="工作台缺失材料列表">
+          {missingMaterials.length > 0 ? (
+            missingMaterials.map((missingMaterial) => (
+              <article
+                key={`${missingMaterial.invoice_id}:${missingMaterial.required_material_type}:${missingMaterial.source_rule_code}`}
+                className="task-card member-status-card"
+              >
+                <div className="member-status-section-header">
+                  <div>
+                    <p className="task-card-id">缺失材料 / {missingMaterial.invoice_id}</p>
+                    <h2>{missingMaterial.invoice_number}</h2>
+                  </div>
+                  <StatusBadge tone="warning">{formatMaterialType(missingMaterial.required_material_type)}</StatusBadge>
+                </div>
+
+                <dl className="task-meta-grid member-status-meta-grid">
+                  <div>
+                    <dt>费用类型</dt>
+                    <dd>{formatExpenseType(missingMaterial.expense_type)}</dd>
+                  </div>
+                  <div>
+                    <dt>发现时间</dt>
+                    <dd>{formatDateTime(missingMaterial.detected_at)}</dd>
+                  </div>
+                  <div>
+                    <dt>规则来源</dt>
+                    <dd>{formatValidationRule(missingMaterial.source_rule_code)}</dd>
+                  </div>
+                </dl>
+
+                <p className="field-hint">{missingMaterial.message}</p>
+
+                <div className="inline-actions">
+                  <Link className="route-link route-link-secondary" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
+                    去上传区补材料
+                  </Link>
+                  <Link
+                    className="route-link route-link-secondary"
+                    to={buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${missingMaterial.invoice_id}`)}
+                  >
+                    查看对应发票上下文
+                  </Link>
+                </div>
+              </article>
+            ))
+          ) : (
+            <EmptyState
+              title="当前任务没有待补的缺失材料"
+              description="至少在当前聚合结果里，系统没有发现仍阻塞复核的缺失项。"
+            />
+          )}
+        </section>
+      ) : null}
+
+      {workbenchState.status === "ready" && activeTab === "invoices" ? (
         <SectionCard
           title="任务内其他成员已上传发票"
           description="这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。"

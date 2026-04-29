@@ -1,5 +1,51 @@
 # WORKLOG
 
+## 2026-04-29 12:43 - Rewrite member invoice workbench into tabbed single-task workspace
+
+### 完成内容
+- 将 `web/src/app/member-invoice-workbench.tsx` 从“长单页 + hash 锚点堆叠”收口为单任务 Tabs 工作台：
+  - 新增 MUI `Tabs` / `Tab`，固定三类视图：`发票`、`缺失材料`、`费用确认`。
+  - 当前 URL hash 与标签页同步：`#member-workbench-invoices`、`#member-workbench-missing-materials`、`#member-workbench-confirmations`；旧的发票上下文锚点和上传区锚点仍保持可访问。
+  - 任务切换时同步更新 URL 中的 `taskId` 和当前标签页，不再只是本地 state 切换。
+- 顶部“任务范围”卡改为“当前任务上下文”卡，补入当前成员信息，明确这是“固定任务上下文后再切换处理视图”的工作方式。
+- 新增缺失材料独立标签页：
+  - 直接按发票展示 `required_material_type`、费用类型、规则来源、发现时间和补材料动作；
+  - 从缺失材料页可直接跳回上传区或对应发票上下文。
+- 同步更新 `web/src/app/member-invoice-workbench.test.tsx`：
+  - 保持原有任务切换、发票列表、材料类型编辑、分摊编辑、上传、共享发票等断言；
+  - 确认用例改为先切换到“费用确认”标签页，再断言确认提交后的刷新结果。
+- `TASKS.md` 中“重写成员单任务工作台（Tabs 化）”已标记完成。
+
+### 根因
+- 现有成员工作台虽然已经把上传、发票详情和确认收口到同一路由，但仍然是“单页纵向堆叠 + 锚点跳转”，缺失材料没有稳定独立视图，用户仍需要自己判断应该看哪一段。
+- 这与 `docs/UI原型图对照与交互规范补充.md` 中“单任务闭环”“减少跨页面/跨区域上下文丢失”的要求不一致；因此本轮优先改信息组织，而不动后端接口。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/member-invoice-workbench.tsx`
+  - `web/src/app/member-invoice-workbench.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮没有改任何后端 API、数据结构和权限判断，只重组成员工作台前端视图。
+- 仍保留既有 hash 锚点到上传区和发票详情区，避免现有内部链接立刻失效。
+- 工作台内部上传表单、分摊编辑表单仍沿用现有原生表单控件；后续“业务表单整体迁移到 MUI”任务会继续收口这一层。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：420 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 当前仍允许上传区留在“发票”标签页内，而不是单独再拆第 4 个标签页；后续旧二级路由重定向到工作台时，可按“上传 -> 发票页的上传区锚点、缺失材料 -> 缺失材料标签、确认 -> 费用确认标签”收口。
+- 共享发票摘要继续放在“发票”标签页，符合“当前发票上下文”语义；后续若信息量继续膨胀，再评估是否拆成右侧详情或二级面板。
+
 ## 2026-04-29 12:25 - Strip conflicting global tokens from styles.css
 
 ### 完成内容
