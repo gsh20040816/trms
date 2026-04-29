@@ -1,5 +1,35 @@
 # WORKLOG
 
+## 2026-04-29 18:55 - Commit list-detail member invoice workbench round
+
+### 完成内容
+- 对上一轮“重构成员发票工作台为左侧发票列表 + 右侧详情面板”补做收口验证并清理受影响回归：
+  - 修正 [web/src/app/member-legacy-route-redirects.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-legacy-route-redirects.test.tsx) 对旧空态文案的断言
+  - 复跑成员工作台与主流程占位 E2E 的相关测试，确认新结构没有破坏旧路由跳转和主流程占位回归
+- 本轮结束前已准备提交当前轮次改动，提交后继续下一项任务。
+
+### 根因
+- 上一轮完成两栏工作台重构后，仓库级 `verify.sh` 只剩一条旧成员路由重定向测试仍断言旧空态文案“当前任务下还没有本人已上传发票”，与新信息架构下的空态文案不一致。
+- 这不属于新的业务缺陷，而是测试仍绑定旧 UI 文案。
+
+### 关键改动点
+- 仅同步测试断言，不改业务实现。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- src/app/member-legacy-route-redirects.test.tsx src/app/member-invoice-workbench.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+    - 3 个文件、17 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-29 18:49 - Rebuild member invoice workbench into list-detail workspace
 
 ### 完成内容
