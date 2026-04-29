@@ -1,11 +1,21 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import Autocomplete from "@mui/material/Autocomplete";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import FormControl from "@mui/material/FormControl";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormGroup from "@mui/material/FormGroup";
+import FormHelperText from "@mui/material/FormHelperText";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
-import type { ReimbursementTask, TaskStatus } from "../lib/api/types";
-import { formatMemberLabel, formatTaskStatus } from "../lib/ui-text";
+import type { ExpenseType, ReimbursementTask, TaskStatus, TaskUpdateInput } from "../lib/api/types";
+import { formatExpenseType, formatMemberLabel, formatTaskStatus } from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -13,6 +23,22 @@ type TaskDetailState =
   | { status: "loading" }
   | { status: "error"; error: unknown }
   | { status: "ready"; task: ReimbursementTask };
+
+type TaskEditFormState = {
+  competitionName: string;
+  competitionLocation: string;
+  competitionStartDate: string;
+  competitionEndDate: string;
+  deadline: string;
+  memberIds: string[];
+  feeCategories: ExpenseType[];
+  projectInfo: string;
+  reimburserInfo: string;
+  invoiceTitle: string;
+  taxNumber: string;
+};
+
+type ValidationErrorState = Partial<Record<keyof TaskEditFormState, string>>;
 
 const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   draft: ["open"],
@@ -23,14 +49,14 @@ const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   completed: [],
 };
 
-const FEE_CATEGORY_LABELS: Record<string, string> = {
-  registration: "参赛费",
-  railway: "火车票",
-  airfare: "航空费",
-  local_transport: "市内交通",
-  hotel: "住宿费",
-  other: "其他",
-};
+const FEE_CATEGORY_OPTIONS: Array<{ value: ExpenseType; label: string }> = [
+  { value: "registration", label: "参赛费" },
+  { value: "railway", label: "火车票" },
+  { value: "airfare", label: "航空费" },
+  { value: "local_transport", label: "市内交通" },
+  { value: "hotel", label: "住宿费" },
+  { value: "other", label: "其他" },
+];
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -39,19 +65,124 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatFeeCategory(category: string) {
-  return FEE_CATEGORY_LABELS[category] ?? category;
+function toDateTimeLocalValue(value: string) {
+  const date = new Date(value);
+  const pad = (segment: number) => String(segment).padStart(2, "0");
+  return [
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+  ].join("T");
 }
 
 function buildStatusActionLabel(targetStatus: TaskStatus) {
   return `切换为${formatTaskStatus(targetStatus)}`;
 }
 
+function buildFormState(task: ReimbursementTask): TaskEditFormState {
+  return {
+    competitionName: task.competition_name,
+    competitionLocation: task.competition_location,
+    competitionStartDate: task.competition_start_date,
+    competitionEndDate: task.competition_end_date,
+    deadline: toDateTimeLocalValue(task.deadline),
+    memberIds: [...task.member_ids],
+    feeCategories: task.fee_categories as ExpenseType[],
+    projectInfo: task.project_info,
+    reimburserInfo: task.reimburser_info,
+    invoiceTitle: task.invoice_title,
+    taxNumber: task.tax_number,
+  };
+}
+
+function validateForm(formState: TaskEditFormState): {
+  errors: ValidationErrorState;
+  payload: TaskUpdateInput | null;
+} {
+  const errors: ValidationErrorState = {};
+
+  if (formState.competitionName.trim().length === 0) {
+    errors.competitionName = "比赛名称不能为空。";
+  }
+  if (formState.competitionLocation.trim().length === 0) {
+    errors.competitionLocation = "比赛地点不能为空。";
+  }
+  if (formState.competitionStartDate.length === 0) {
+    errors.competitionStartDate = "请选择比赛开始日期。";
+  }
+  if (formState.competitionEndDate.length === 0) {
+    errors.competitionEndDate = "请选择比赛结束日期。";
+  }
+  if (
+    formState.competitionStartDate.length > 0
+    && formState.competitionEndDate.length > 0
+    && formState.competitionEndDate < formState.competitionStartDate
+  ) {
+    errors.competitionEndDate = "比赛结束日期不能早于开始日期。";
+  }
+  if (formState.deadline.length === 0) {
+    errors.deadline = "请选择提交截止时间。";
+  }
+
+  const normalizedMembers = formState.memberIds.map((memberId) => memberId.trim());
+  const hasMember = normalizedMembers.some((memberId) => memberId.length > 0);
+  if (!hasMember) {
+    errors.memberIds = "至少填写一名成员。";
+  } else if (normalizedMembers.some((memberId) => memberId.length === 0)) {
+    errors.memberIds = "成员名单不能包含空成员项。";
+  }
+
+  if (formState.feeCategories.length === 0) {
+    errors.feeCategories = "至少选择一个费用类别。";
+  }
+  if (formState.projectInfo.trim().length === 0) {
+    errors.projectInfo = "项目/课题信息不能为空。";
+  }
+  if (formState.reimburserInfo.trim().length === 0) {
+    errors.reimburserInfo = "报销人信息不能为空。";
+  }
+  if (formState.invoiceTitle.trim().length === 0) {
+    errors.invoiceTitle = "发票抬头不能为空。";
+  }
+  if (formState.taxNumber.trim().length === 0) {
+    errors.taxNumber = "税号不能为空。";
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return {
+      errors,
+      payload: null,
+    };
+  }
+
+  return {
+    errors: {},
+    payload: {
+      competition_name: formState.competitionName.trim(),
+      competition_location: formState.competitionLocation.trim(),
+      competition_start_date: formState.competitionStartDate,
+      competition_end_date: formState.competitionEndDate,
+      deadline: new Date(formState.deadline).toISOString(),
+      member_ids: normalizedMembers,
+      fee_categories: formState.feeCategories,
+      project_info: formState.projectInfo.trim(),
+      reimburser_info: formState.reimburserInfo.trim(),
+      invoice_title: formState.invoiceTitle.trim(),
+      tax_number: formState.taxNumber.trim(),
+    },
+  };
+}
+
 export function AdminTaskDetailPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
   const [state, setState] = useState<TaskDetailState>({ status: "loading" });
+  const [formState, setFormState] = useState<TaskEditFormState | null>(null);
+  const [memberInputValue, setMemberInputValue] = useState("");
+  const [validationErrors, setValidationErrors] = useState<ValidationErrorState>({});
+  const [submitError, setSubmitError] = useState<unknown>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [statusUpdateError, setStatusUpdateError] = useState<unknown>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   useEffect(() => {
@@ -63,7 +194,9 @@ export function AdminTaskDetailPage() {
       }
 
       setState({ status: "loading" });
+      setSubmitError(null);
       setStatusUpdateError(null);
+      setSaveNotice(null);
 
       try {
         const task = await trmsApi.getTask(taskId);
@@ -74,6 +207,9 @@ export function AdminTaskDetailPage() {
           status: "ready",
           task,
         });
+        setFormState(buildFormState(task));
+        setValidationErrors({});
+        setMemberInputValue("");
       } catch (error) {
         if (cancelled) {
           return;
@@ -103,8 +239,8 @@ export function AdminTaskDetailPage() {
         header={(
           <PageHeader
             eyebrow="任务管理"
-            title="任务详情"
-            description="查看任务配置、成员名单和状态流转。"
+            title="任务详情与状态操作"
+            description="查看任务配置、编辑草稿基础信息并推进状态。"
           />
         )}
       >
@@ -121,6 +257,84 @@ export function AdminTaskDetailPage() {
   const allowedTransitions = task ? TASK_STATUS_TRANSITIONS[task.status] : [];
   const isForeignTask = task ? task.administrator_id !== session.actorId : false;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
+  const isDraftEditable = visibleTask?.status === "draft";
+
+  function updateField<Key extends keyof TaskEditFormState>(
+    key: Key,
+    value: TaskEditFormState[Key],
+  ) {
+    setFormState((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: value,
+      };
+    });
+    setValidationErrors((current) => {
+      if (!(key in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setSaveNotice(null);
+  }
+
+  function toggleFeeCategory(category: ExpenseType) {
+    if (!formState) {
+      return;
+    }
+    const nextCategories = formState.feeCategories.includes(category)
+      ? formState.feeCategories.filter((value) => value !== category)
+      : [...formState.feeCategories, category];
+    updateField("feeCategories", nextCategories);
+  }
+
+  function commitMemberInput() {
+    if (!formState) {
+      return;
+    }
+    const normalized = memberInputValue.trim();
+    if (normalized.length === 0) {
+      return;
+    }
+    updateField("memberIds", [...formState.memberIds, normalized]);
+    setMemberInputValue("");
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!visibleTask || !formState || !isDraftEditable) {
+      return;
+    }
+
+    const { errors, payload } = validateForm(formState);
+    setValidationErrors(errors);
+    setSubmitError(null);
+    setSaveNotice(null);
+    if (!payload) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const updatedTask = await trmsApi.updateTask(visibleTask.id, payload);
+      setState({
+        status: "ready",
+        task: updatedTask,
+      });
+      setFormState(buildFormState(updatedTask));
+      setValidationErrors({});
+      setSaveNotice("已保存任务基础配置，当前任务仍保持草稿状态。");
+    } catch (error) {
+      setSubmitError(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   async function handleStatusUpdate(targetStatus: TaskStatus) {
     if (!task) {
@@ -128,6 +342,8 @@ export function AdminTaskDetailPage() {
     }
 
     setStatusUpdateError(null);
+    setSubmitError(null);
+    setSaveNotice(null);
     setIsUpdatingStatus(true);
     try {
       const updatedTask = await trmsApi.updateTaskStatus(task.id, {
@@ -137,6 +353,8 @@ export function AdminTaskDetailPage() {
         status: "ready",
         task: updatedTask,
       });
+      setFormState(buildFormState(updatedTask));
+      setValidationErrors({});
     } catch (error) {
       setStatusUpdateError(error);
     } finally {
@@ -153,7 +371,7 @@ export function AdminTaskDetailPage() {
         <PageHeader
           eyebrow="任务管理"
           title="任务详情与状态操作"
-          description="这里集中查看任务基础配置、成员范围、费用类别和当前可执行的下一步操作。"
+          description="这里集中查看任务基础配置、编辑草稿任务和推进当前可执行的下一步操作。"
           actions={(
             <div className="page-actions">
               <Link className="button button-primary" to={`/admin/tasks/${taskId}/invoices`}>
@@ -167,7 +385,6 @@ export function AdminTaskDetailPage() {
         />
       )}
     >
-
       {state.status === "loading" ? (
         <section className="status-card admin-task-detail-panel">
           <p className="eyebrow">Loading</p>
@@ -177,19 +394,26 @@ export function AdminTaskDetailPage() {
       ) : null}
 
       {state.status === "error" ? <ApiErrorNotice error={state.error} /> : null}
+      {submitError ? <ApiErrorNotice error={submitError} /> : null}
       {statusUpdateError ? <ApiErrorNotice error={statusUpdateError} /> : null}
+
+      {saveNotice ? (
+        <section className="status-card admin-task-detail-panel">
+          <p className="eyebrow">保存完成</p>
+          <h2>任务基础配置已更新</h2>
+          <p>{saveNotice}</p>
+        </section>
+      ) : null}
 
       {state.status === "ready" && isForeignTask ? (
         <section className="status-card admin-task-detail-panel">
           <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
-          <p>
-            你当前没有处理该任务的权限，如需访问请联系对应负责人。
-          </p>
+          <p>你当前没有处理该任务的权限，如需访问请联系对应负责人。</p>
         </section>
       ) : null}
 
-      {visibleTask ? (
+      {visibleTask && formState ? (
         <section className="task-detail-layout">
           <article className="status-card admin-task-detail-panel">
             <div className="task-card-header">
@@ -240,38 +464,271 @@ export function AdminTaskDetailPage() {
             </dl>
           </article>
 
-          <article className="status-card admin-task-detail-panel">
+          <article className="status-card admin-form-card">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Members</p>
-                <h2>成员名单</h2>
+                <p className="eyebrow">Task Config</p>
+                <h2>任务基础配置</h2>
               </div>
-              <span className="status-chip">{visibleTask.member_ids.length} 名成员</span>
+              <span className="status-chip">
+                {isDraftEditable ? "草稿中，可编辑" : `当前状态：${formatTaskStatus(visibleTask.status)}`}
+              </span>
             </div>
-            <ul className="token-list" aria-label="任务成员名单">
-              {visibleTask.member_ids.map((memberId) => (
-                <li key={memberId} className="token-chip">
-                  {formatMemberLabel(memberId)}
-                </li>
-              ))}
-            </ul>
-          </article>
 
-          <article className="status-card admin-task-detail-panel">
-            <div className="admin-form-header">
-              <div>
-                <p className="eyebrow">Fee Categories</p>
-                <h2>允许费用类别</h2>
-              </div>
-              <span className="status-chip">{visibleTask.fee_categories.length} 类费用</span>
-            </div>
-            <ul className="token-list" aria-label="任务费用类别">
-              {visibleTask.fee_categories.map((category) => (
-                <li key={category} className="token-chip">
-                  {formatFeeCategory(category)}
-                </li>
-              ))}
-            </ul>
+            {!isDraftEditable ? (
+              <p className="field-hint">
+                当前任务已不在草稿状态，基础配置仅供查看；如需调整，请先处理状态回退或重新创建任务。
+              </p>
+            ) : (
+              <p className="field-hint">
+                仅草稿任务允许修改基础配置。保存成功后不会自动发布，仍需你手动推进状态。
+              </p>
+            )}
+
+            <form
+              className="page-stack"
+              onSubmit={(event) => {
+                void handleSubmit(event);
+              }}
+              noValidate
+            >
+              <section className="admin-form-card">
+                <div className="admin-form-header">
+                  <div>
+                    <p className="eyebrow">Competition</p>
+                    <h3>比赛与时间信息</h3>
+                  </div>
+                </div>
+                <div className="admin-form-grid">
+                  <TextField
+                    label="比赛名称"
+                    value={formState.competitionName}
+                    onChange={(event) => {
+                      updateField("competitionName", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.competitionName)}
+                    helperText={validationErrors.competitionName}
+                    disabled={!isDraftEditable}
+                    fullWidth
+                  />
+                  <TextField
+                    label="比赛地点"
+                    value={formState.competitionLocation}
+                    onChange={(event) => {
+                      updateField("competitionLocation", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.competitionLocation)}
+                    helperText={validationErrors.competitionLocation}
+                    disabled={!isDraftEditable}
+                    fullWidth
+                  />
+                  <TextField
+                    label="比赛开始日期"
+                    type="date"
+                    value={formState.competitionStartDate}
+                    onChange={(event) => {
+                      updateField("competitionStartDate", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.competitionStartDate)}
+                    helperText={validationErrors.competitionStartDate}
+                    disabled={!isDraftEditable}
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true } }}
+                  />
+                  <TextField
+                    label="比赛结束日期"
+                    type="date"
+                    value={formState.competitionEndDate}
+                    onChange={(event) => {
+                      updateField("competitionEndDate", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.competitionEndDate)}
+                    helperText={validationErrors.competitionEndDate}
+                    disabled={!isDraftEditable}
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true } }}
+                  />
+                  <TextField
+                    label="提交截止时间"
+                    type="datetime-local"
+                    value={formState.deadline}
+                    onChange={(event) => {
+                      updateField("deadline", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.deadline)}
+                    helperText={validationErrors.deadline}
+                    disabled={!isDraftEditable}
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true } }}
+                  />
+                </div>
+              </section>
+
+              <section className="admin-form-card">
+                <div className="admin-form-header">
+                  <div>
+                    <p className="eyebrow">Members</p>
+                    <h3>成员名单与费用类别</h3>
+                  </div>
+                </div>
+
+                <Stack spacing={3}>
+                  <Autocomplete
+                    multiple
+                    freeSolo
+                    options={[]}
+                    value={formState.memberIds}
+                    inputValue={memberInputValue}
+                    readOnly={!isDraftEditable}
+                    onInputChange={(_event, value, reason) => {
+                      if (reason === "reset") {
+                        setMemberInputValue("");
+                        return;
+                      }
+                      setMemberInputValue(value);
+                    }}
+                    onChange={(_event, value) => {
+                      updateField(
+                        "memberIds",
+                        value
+                          .map((memberId) => memberId.trim())
+                          .filter((memberId) => memberId.length > 0),
+                      );
+                    }}
+                    onKeyDown={(event) => {
+                      if ((event.key === "Enter" || event.key === ",") && memberInputValue.trim().length > 0) {
+                        event.preventDefault();
+                        commitMemberInput();
+                      }
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="成员名单"
+                        placeholder="输入成员姓名或学号后按回车添加"
+                        error={Boolean(validationErrors.memberIds)}
+                        helperText={validationErrors.memberIds ?? "当前阶段请填写成员姓名或学号字符串，不要填写内部数据库 ID。"}
+                      />
+                    )}
+                  />
+
+                  <ul className="token-list" aria-label="任务成员名单">
+                    {formState.memberIds.map((memberId) => (
+                      <li key={memberId} className="token-chip">
+                        {formatMemberLabel(memberId)}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <FormControl error={Boolean(validationErrors.feeCategories)} component="fieldset" variant="standard">
+                    <FormGroup className="checkbox-grid" aria-label="费用类别">
+                      {FEE_CATEGORY_OPTIONS.map((option) => (
+                        <FormControlLabel
+                          key={option.value}
+                          className="checkbox-card"
+                          control={(
+                            <Checkbox
+                              checked={formState.feeCategories.includes(option.value)}
+                              onChange={() => {
+                                toggleFeeCategory(option.value);
+                              }}
+                              disabled={!isDraftEditable}
+                            />
+                          )}
+                          label={option.label}
+                        />
+                      ))}
+                    </FormGroup>
+                    <FormHelperText>
+                      {validationErrors.feeCategories ?? "请选择当前任务允许的费用类别。"}
+                    </FormHelperText>
+                  </FormControl>
+
+                  <ul className="token-list" aria-label="任务费用类别">
+                    {formState.feeCategories.map((category) => (
+                      <li key={category} className="token-chip">
+                        {formatExpenseType(category)}
+                      </li>
+                    ))}
+                  </ul>
+                </Stack>
+              </section>
+
+              <section className="admin-form-card">
+                <div className="admin-form-header">
+                  <div>
+                    <p className="eyebrow">Reimbursement</p>
+                    <h3>项目与报销信息</h3>
+                  </div>
+                </div>
+                <div className="admin-form-grid">
+                  <TextField
+                    label="项目/课题信息"
+                    value={formState.projectInfo}
+                    onChange={(event) => {
+                      updateField("projectInfo", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.projectInfo)}
+                    helperText={validationErrors.projectInfo}
+                    disabled={!isDraftEditable}
+                    multiline
+                    minRows={3}
+                    fullWidth
+                  />
+                  <TextField
+                    label="报销人信息"
+                    value={formState.reimburserInfo}
+                    onChange={(event) => {
+                      updateField("reimburserInfo", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.reimburserInfo)}
+                    helperText={validationErrors.reimburserInfo}
+                    disabled={!isDraftEditable}
+                    multiline
+                    minRows={3}
+                    fullWidth
+                  />
+                  <TextField
+                    label="发票抬头"
+                    value={formState.invoiceTitle}
+                    onChange={(event) => {
+                      updateField("invoiceTitle", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.invoiceTitle)}
+                    helperText={validationErrors.invoiceTitle}
+                    disabled={!isDraftEditable}
+                    fullWidth
+                  />
+                  <TextField
+                    label="税号"
+                    value={formState.taxNumber}
+                    onChange={(event) => {
+                      updateField("taxNumber", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.taxNumber)}
+                    helperText={validationErrors.taxNumber}
+                    disabled={!isDraftEditable}
+                    fullWidth
+                  />
+                </div>
+              </section>
+
+              <section className="admin-form-card admin-form-footer">
+                <div>
+                  <p className="eyebrow">保存</p>
+                  <h3>更新草稿任务配置</h3>
+                  <p>保存会覆盖当前草稿任务的基础信息，但不会改变状态。</p>
+                </div>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                  <Button component={Link} to="/admin" variant="outlined" color="inherit">
+                    返回任务列表
+                  </Button>
+                  <Button type="submit" variant="contained" disabled={!isDraftEditable || isSubmitting}>
+                    {isSubmitting ? "正在保存..." : "保存任务基础配置"}
+                  </Button>
+                </Stack>
+              </section>
+            </form>
           </article>
 
           <article className="status-card admin-task-detail-panel">

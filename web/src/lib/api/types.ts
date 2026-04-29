@@ -160,6 +160,20 @@ export type TaskCreateInput = {
   tax_number?: string | null;
 };
 
+export type TaskUpdateInput = {
+  competition_name: string;
+  competition_location: string;
+  competition_start_date: ApiDate;
+  competition_end_date: ApiDate;
+  deadline: ApiDateTime;
+  member_ids: string[];
+  fee_categories: string[];
+  project_info: string;
+  reimburser_info: string;
+  invoice_title: string;
+  tax_number: string;
+};
+
 export type TaskStatusUpdate = {
   target_status: TaskStatus;
 };

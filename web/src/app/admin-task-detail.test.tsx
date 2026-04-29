@@ -76,7 +76,7 @@ describe("admin task detail page", () => {
 
     expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
     expect(screen.getAllByText("全国邀请赛").length).toBeGreaterThan(0);
-    expect(screen.getByText("Project A")).toBeInTheDocument();
+    expect(screen.getAllByText("Project A").length).toBeGreaterThan(0);
     expect(screen.getAllByText("张管理员").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
@@ -172,9 +172,121 @@ describe("admin task detail page", () => {
     const openButton = await screen.findByRole("button", { name: "切换为收集中" });
     fireEvent.click(openButton);
 
-    expect(await screen.findByText("当前状态：收集中")).toBeInTheDocument();
+    expect((await screen.findAllByText("当前状态：收集中")).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "切换为草稿" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为已截止" })).toBeInTheDocument();
+  });
+
+  it("allows saving draft task basic configuration", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-DRAFT-EDIT" && init?.method === "PUT") {
+        expect(init.body).toBe(JSON.stringify({
+          competition_name: "已更新任务",
+          competition_location: "上海",
+          competition_start_date: "2026-08-01",
+          competition_end_date: "2026-08-03",
+          deadline: "2026-08-10T10:00:00.000Z",
+          member_ids: ["2250001", "2250002"],
+          fee_categories: ["registration", "hotel"],
+          project_info: "Project After",
+          reimburser_info: "张管理员",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+        }));
+        return Promise.resolve(jsonResponse({
+          id: "TASK-DRAFT-EDIT",
+          status: "draft",
+          competition_name: "已更新任务",
+          competition_location: "上海",
+          competition_start_date: "2026-08-01",
+          competition_end_date: "2026-08-03",
+          deadline: "2026-08-10T10:00:00.000Z",
+          member_ids: ["2250001", "2250002"],
+          fee_categories: ["registration", "hotel"],
+          administrator_id: "admin-1",
+          project_info: "Project After",
+          reimburser_info: "张管理员",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+          created_at: "2026-04-20T09:00:00+08:00",
+          updated_at: "2026-04-26T10:00:00+08:00",
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-DRAFT-EDIT") {
+        return Promise.resolve(jsonResponse({
+          id: "TASK-DRAFT-EDIT",
+          status: "draft",
+          competition_name: "待编辑任务",
+          competition_location: "上海",
+          competition_start_date: "2026-08-01",
+          competition_end_date: "2026-08-03",
+          deadline: "2026-08-10T18:00:00+08:00",
+          member_ids: ["2250001", "2250002"],
+          fee_categories: ["registration", "hotel"],
+          administrator_id: "admin-1",
+          project_info: "Project Before",
+          reimburser_info: "张管理员",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+          created_at: "2026-04-20T09:00:00+08:00",
+          updated_at: "2026-04-25T10:00:00+08:00",
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in detail edit test: ${url}`);
+    });
+
+    renderAdminTaskDetailRoute("TASK-DRAFT-EDIT");
+
+    expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("比赛名称"), {
+      target: { value: "已更新任务" },
+    });
+    fireEvent.change(screen.getByLabelText("项目/课题信息"), {
+      target: { value: "Project After" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存任务基础配置" }));
+
+    expect(await screen.findByRole("heading", { name: "任务基础配置已更新" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("已更新任务")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Project After")).toBeInTheDocument();
+  });
+
+  it("shows task config as read-only once the task is no longer draft", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-CLOSED") {
+        return Promise.resolve(jsonResponse({
+          id: "TASK-CLOSED",
+          status: "closed",
+          competition_name: "已截止任务",
+          competition_location: "南京",
+          competition_start_date: "2026-09-01",
+          competition_end_date: "2026-09-03",
+          deadline: "2026-09-10T18:00:00+08:00",
+          member_ids: ["2250001"],
+          fee_categories: ["registration"],
+          administrator_id: "admin-1",
+          project_info: "Closed Project",
+          reimburser_info: "张管理员",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+          created_at: "2026-04-20T09:00:00+08:00",
+          updated_at: "2026-04-25T10:00:00+08:00",
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in detail read-only test: ${url}`);
+    });
+
+    renderAdminTaskDetailRoute("TASK-CLOSED");
+
+    expect(await screen.findByText("当前任务已不在草稿状态，基础配置仅供查看；如需调整，请先处理状态回退或重新创建任务。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存任务基础配置" })).toBeDisabled();
   });
 
   it("shows a page-level error when the backend rejects a status transition", async () => {

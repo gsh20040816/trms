@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-29 17:04 - Allow admins to update draft task configuration
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“允许管理员更新已创建任务的基础配置”。
+- 后端新增草稿任务基础配置更新接口：
+  - `PUT /api/tasks/{task_id}`
+  - 仅任务负责人可调用
+  - 仅 `draft` 状态允许更新
+- 更新范围覆盖：
+  - 比赛名称、地点、起止日期、截止时间
+  - 成员名单
+  - 费用类别
+  - 项目/课题信息、报销人信息
+  - 发票抬头、税号
+- 管理员任务详情页不再只是查看和状态流转入口，现已支持在草稿任务内直接编辑并保存上述基础配置。
+- 非草稿任务在详情页明确显示为只读，避免前端伪装可编辑但提交后失败。
+- 补充前后端回归测试：
+  - 后端覆盖草稿任务更新成功、非负责人拒绝、非草稿拒绝
+  - 前端覆盖草稿任务保存成功和非草稿只读展示
+
+### 根因
+- 原系统只有创建任务、更新成员名单和状态流转接口，没有“更新已创建任务基础配置”的完整后端能力。
+- 管理员任务详情页此前只能查看配置并执行状态切换，无法在发现成员名单、费用类别或报销信息填错后在原任务上修正。
+
+### 关键改动点
+- 修改：
+  - `src/trms_backend/api/tasks.py`
+  - `src/trms_backend/domain/tasks.py`
+  - `src/trms_backend/infrastructure/repositories.py`
+  - `tests/test_tasks_api.py`
+  - `web/src/app/admin-task-detail.tsx`
+  - `web/src/app/admin-task-detail.test.tsx`
+  - `web/src/lib/api/trms.ts`
+  - `web/src/lib/api/types.ts`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮刻意把更新能力收口在 `draft` 任务，避免对已开放提交、已复核或已导出的任务产生成员确认、校验结果和导出版本的一致性回滚问题。
+- 本轮没有额外开放管理员跨任务越权编辑，也没有把“修改负责人”纳入同一次更新接口。
+
+### 验证结果
+- 已通过定向后端回归：
+  - `uv run pytest tests/test_tasks_api.py`
+- 已通过定向前端回归：
+  - `cd web && npm test -- admin-task-detail.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：428 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、86 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
+### 假设
+- 当前“允许管理员更新已创建任务的基础配置”的最小闭环定义为：仅允许任务负责人在草稿阶段修改基础字段；一旦任务进入非草稿状态，页面和接口都明确收口为只读/拒绝，而不是隐式放宽到已提交数据的在线回写。
+
 ## 2026-04-29 16:47 - Replace dev quick role entry with a real backend-backed session
 
 ### 完成内容

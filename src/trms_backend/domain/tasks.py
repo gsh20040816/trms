@@ -91,6 +91,58 @@ class TaskCreate(_TaskCreateBase):
     tax_number: str = Field(min_length=1)
 
 
+class TaskUpdateInput(BaseModel):
+    competition_name: str = Field(min_length=1)
+    competition_location: str = Field(min_length=1)
+    competition_start_date: date
+    competition_end_date: date
+    deadline: datetime
+    member_ids: list[str] = Field(min_length=1)
+    fee_categories: list[str] = Field(min_length=1)
+    project_info: str = Field(min_length=1)
+    reimburser_info: str = Field(min_length=1)
+    invoice_title: str = Field(min_length=1)
+    tax_number: str = Field(min_length=1)
+
+    @field_validator(
+        "competition_name",
+        "competition_location",
+        "project_info",
+        "reimburser_info",
+        "invoice_title",
+        "tax_number",
+    )
+    @classmethod
+    def reject_blank_strings(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+    @field_validator("member_ids", "fee_categories")
+    @classmethod
+    def reject_blank_items(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(not value for value in normalized):
+            raise ValueError("list items must not be blank")
+        return normalized
+
+    @field_validator("fee_categories")
+    @classmethod
+    def validate_supported_fee_categories(cls, values: list[str]) -> list[str]:
+        invalid_categories = [value for value in values if value not in _SUPPORTED_FEE_CATEGORIES]
+        if invalid_categories:
+            joined_categories = ", ".join(invalid_categories)
+            raise ValueError(f"unsupported fee categories: {joined_categories}")
+        return values
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "TaskUpdateInput":
+        if self.competition_end_date < self.competition_start_date:
+            raise ValueError("competition_end_date must not be earlier than competition_start_date")
+        return self
+
+
 class TaskStatusUpdate(BaseModel):
     target_status: TaskStatus
 
@@ -192,6 +244,13 @@ class TaskRepository(Protocol):
         raise NotImplementedError
 
     def update_member_ids(self, task_id: str, member_ids: list[str]) -> ReimbursementTask | None:
+        raise NotImplementedError
+
+    def update_task(
+        self,
+        task_id: str,
+        payload: TaskUpdateInput,
+    ) -> ReimbursementTask | None:
         raise NotImplementedError
 
 
@@ -438,6 +497,25 @@ class InMemoryTaskRepository:
             updated = task.model_copy(
                 update={
                     "member_ids": member_ids,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            )
+            self._tasks[task_id] = updated
+            return updated
+
+    def update_task(
+        self,
+        task_id: str,
+        payload: TaskUpdateInput,
+    ) -> ReimbursementTask | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+
+            updated = task.model_copy(
+                update={
+                    **payload.model_dump(),
                     "updated_at": datetime.now(timezone.utc),
                 }
             )

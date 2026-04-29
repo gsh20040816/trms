@@ -86,6 +86,7 @@ from trms_backend.domain.tasks import (
     ReimbursementTask,
     TaskCreate,
     TaskStatus,
+    TaskUpdateInput,
 )
 from trms_backend.domain.telegram_bindings import (
     TelegramAccountBindingConflictError,
@@ -350,6 +351,30 @@ class SqlAlchemyTaskRepository:
             if row is None:
                 return None
             row.member_ids = member_ids
+            row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+        return _task_from_row(row)
+
+    def update_task(
+        self,
+        task_id: str,
+        payload: TaskUpdateInput,
+    ) -> ReimbursementTask | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(TaskRow, task_id)
+            if row is None:
+                return None
+            row.competition_name = payload.competition_name
+            row.competition_location = payload.competition_location
+            row.competition_start_date = payload.competition_start_date
+            row.competition_end_date = payload.competition_end_date
+            row.deadline = payload.deadline
+            row.member_ids = payload.member_ids
+            row.fee_categories = payload.fee_categories
+            row.project_info = payload.project_info
+            row.reimburser_info = payload.reimburser_info
+            row.invoice_title = payload.invoice_title
+            row.tax_number = payload.tax_number
             row.updated_at = datetime.now(timezone.utc)
             session.add(row)
         return _task_from_row(row)

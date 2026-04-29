@@ -37,6 +37,7 @@ import type {
   TaskMembersUpdate,
   TaskReviewSummary,
   TaskStatusUpdate,
+  TaskUpdateInput,
   ValidationResult,
 } from "./types";
 
@@ -161,6 +162,13 @@ export const trmsApi = {
   createTask(payload: TaskCreateInput) {
     return apiClient.request<ReimbursementTask>("/tasks", {
       method: "POST",
+      body: payload,
+    });
+  },
+
+  updateTask(taskId: string, payload: TaskUpdateInput) {
+    return apiClient.request<ReimbursementTask>(`/tasks/${encodeSegment(taskId)}`, {
+      method: "PUT",
       body: payload,
     });
   },

@@ -113,6 +113,22 @@ def valid_task_payload():
     }
 
 
+def valid_task_update_payload(**overrides):
+    return {
+        "competition_name": "Updated ICPC Asia Regional",
+        "competition_location": "Hangzhou",
+        "competition_start_date": "2026-11-05",
+        "competition_end_date": "2026-11-07",
+        "deadline": "2026-12-10T00:00:00Z",
+        "member_ids": ["2250001", "2250099"],
+        "fee_categories": ["registration", "hotel"],
+        "project_info": "Updated ACM competition project",
+        "reimburser_info": "Updated reimbursement owner",
+        "invoice_title": "更新后的同济大学",
+        "tax_number": "91310000UPDATED0001",
+    } | overrides
+
+
 def upload_material(client: TestClient, task_id: str, filename: str = "ticket.pdf") -> str:
     response = client.post(
         f"/api/tasks/{task_id}/materials",
@@ -613,6 +629,77 @@ def test_update_task_members_allows_replace_in_draft(tmp_path):
     )
     assert fetched.status_code == 200
     assert fetched.json()["member_ids"] == ["2250001", "2250003", "2250999"]
+
+
+def test_update_task_allows_replace_in_draft(tmp_path):
+    client = make_client(tmp_path)
+    created = create_task(client)
+
+    response = client.put(
+        f"/api/tasks/{created['id']}",
+        json=valid_task_update_payload(),
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["competition_name"] == "Updated ICPC Asia Regional"
+    assert body["competition_location"] == "Hangzhou"
+    assert body["member_ids"] == ["2250001", "2250099"]
+    assert body["fee_categories"] == ["registration", "hotel"]
+    assert body["project_info"] == "Updated ACM competition project"
+    assert body["reimburser_info"] == "Updated reimbursement owner"
+    assert body["invoice_title"] == "更新后的同济大学"
+    assert body["tax_number"] == "91310000UPDATED0001"
+
+    fetched = client.get(
+        f"/api/tasks/{created['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["competition_name"] == "Updated ICPC Asia Regional"
+
+
+def test_update_task_rejects_non_draft_task(tmp_path):
+    client = make_client(tmp_path)
+    created = create_task(client)
+    client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+
+    response = client.put(
+        f"/api/tasks/{created['id']}",
+        json=valid_task_update_payload(),
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "task can only be updated while it is draft"
+
+
+def test_update_task_rejects_non_owner(tmp_path):
+    client = make_client(tmp_path)
+    created = create_task(client)
+    outsider_admin_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="other-admin",
+            role="admin",
+            actor_id="admin-2",
+            member_code=None,
+        )
+    )
+
+    response = client.put(
+        f"/api/tasks/{created['id']}",
+        json=valid_task_update_payload(),
+        headers=outsider_admin_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "actor is not allowed to update this task"
 
 
 def test_update_task_members_rejects_non_draft_task(tmp_path):

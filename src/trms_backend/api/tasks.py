@@ -77,6 +77,7 @@ from trms_backend.domain.tasks import (
     TaskReviewValidationError,
     TaskStatus,
     TaskStatusUpdate,
+    TaskUpdateInput,
     can_transition,
     close_expired_open_tasks,
     ensure_task_can_enter_ready_to_export,
@@ -744,6 +745,30 @@ def build_task_router(
         if updated is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         return {"items": updated.member_ids}
+
+    @router.put("/{task_id}")
+    def update_task(
+        task_id: str,
+        payload: TaskUpdateInput,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        if identity.actor_id != task.administrator_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to update this task",
+            )
+        if task.status != TaskStatus.DRAFT:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="task can only be updated while it is draft",
+            )
+        updated = repository.update_task(task_id, payload)
+        if updated is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        return updated
 
     @router.patch("/{task_id}/status")
     def update_task_status(
