@@ -14,6 +14,9 @@ from trms_backend.application.expense_audit import record_split_confirmation_aud
 from trms_backend.application.invoice_member_submission import (
     InvoiceMemberSubmissionService,
 )
+from trms_backend.application.invoice_member_submission_withdrawal import (
+    InvoiceMemberSubmissionWithdrawalService,
+)
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
     AutomaticReminderTaskGenerate,
@@ -146,6 +149,11 @@ def build_task_router(
         auth_repository
     )
     invoice_member_submission_service = InvoiceMemberSubmissionService(
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        audit_log_repository=audit_log_repository,
+    )
+    invoice_member_submission_withdrawal_service = InvoiceMemberSubmissionWithdrawalService(
         material_repository=material_repository,
         invoice_repository=invoice_repository,
         audit_log_repository=audit_log_repository,
@@ -554,6 +562,46 @@ def build_task_router(
             validations_by_invoice_id=validations_by_invoice_id,
             splits_by_invoice_id=splits_by_invoice_id,
             confirmations_by_split_id=confirmations_by_split_id,
+            request_id=ensure_request_id(request),
+        )
+        return {
+            "status": result.status,
+            "items": result.items,
+            "failures": result.failures,
+        }
+
+    @router.post("/{task_id}/invoice-submission-withdrawals")
+    def withdraw_task_invoice_submissions(
+        task_id: str,
+        request: Request,
+        payload: InvoiceMemberSubmissionBatchRequest,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            payload.actor_id,
+            field_name="actor_id",
+        )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to withdraw invoice submissions for this task",
+        )
+        if scope is not TaskAccessScope.MEMBER or identity.role is not UserRole.MEMBER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to withdraw invoice submissions for this task",
+            )
+
+        result = invoice_member_submission_withdrawal_service.withdraw_batch(
+            task=task,
+            actor_id=resolved_actor_id,
+            actor_role=identity.role,
+            invoice_ids=payload.invoice_ids,
             request_id=ensure_request_id(request),
         )
         return {

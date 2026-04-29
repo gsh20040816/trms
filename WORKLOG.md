@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-04-30 02:01 - Add member invoice submission withdrawal workflow
+
+### 完成内容
+- 完成任务“建立成员侧发票撤回规则与批量撤回 API”。
+- 新增后端服务 [invoice_member_submission_withdrawal.py](/home/gsh/workspace/TRMS/src/trms_backend/application/invoice_member_submission_withdrawal.py)：
+  - 批量撤回已提交发票
+  - 对每张发票分别校验并返回逐票失败原因
+  - 对成功/拒绝撤回都写审计日志
+- 调整 [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)：
+  - 新增 `POST /api/tasks/{task_id}/invoice-submission-withdrawals`
+  - 仅任务成员可调用
+  - 返回：
+    - `status`
+    - `items`
+    - `failures`
+- 新增测试 [test_invoice_member_submission_withdrawal_api.py](/home/gsh/workspace/TRMS/tests/test_invoice_member_submission_withdrawal_api.py)：
+  - 已提交发票在任务仍为 `open` 时可批量撤回
+  - 任务离开 `open` 后不可撤回
+  - 无关成员越权失败
+
+### 撤回边界
+- 当前允许撤回：
+  - 发票当前状态为 `submitted`
+  - 调用方是任务成员，且是该发票主材料提交人
+  - 提交记录的 `submitted_by_member_id` 就是当前调用方
+  - 任务状态仍然是 `open`
+- 当前拒绝撤回：
+  - 发票未提交
+  - 调用方不是该发票提交人
+  - 任务已经离开 `open`，例如进入 `closed / reviewing / ready_to_export / completed`
+
+### 为什么这样设计
+- 这轮的目标不是“任何时候都允许成员反悔”，而是只给成员保留一个明确、可控的撤回窗口：
+  - 在管理员还没进入后续处理阶段前，成员可以撤回自己刚刚提交的发票
+  - 一旦任务离开 `open`，就认为已经进入后续管理员处理边界，成员不能再通过撤回绕开流程
+- 这样才能避免成员在 `reviewing` 甚至 `ready_to_export` 阶段重新把已交接材料抽走，污染后续状态。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_invoice_member_submission_api.py tests/test_invoice_member_submission_withdrawal_api.py tests/test_tasks_api.py`
+    - 51 个用例通过
+- 仓库级验证待本轮记录更新后统一执行 `./scripts/verify.sh`。
+
 ## 2026-04-30 01:42 - Add member invoice submission status model and batch submit API
 
 ### 完成内容
