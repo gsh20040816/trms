@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-29 15:43 - Evaluate when the invoice validation module should move toward configurable policy or DSL
+
+### 完成内容
+- 新增评估文档 [docs/复杂财务规则引擎评估.md](/home/gsh/workspace/TRMS/docs/复杂财务规则引擎评估.md)，基于当前规则实现给出结论：
+  - 第一阶段当前不应直接引入 DSL，也不应为了“将来可能复杂”提前上独立规则引擎；
+  - 当前更合理的方向是继续保留“纯函数规则 + 统一结果模型”，未来若出现差异化需求，先把阈值、字段组和适用范围上提为可注入的策略对象。
+- 文档已明确两层触发条件：
+  - 何时应从模块常量迁移到“配置化策略”；
+  - 何时才值得从配置化策略继续升级到 DSL。
+- `TASKS.md` 中“评估更复杂财务规则引擎”已标记完成。
+
+### 根因
+- 当前仓库虽然已有较完整的规则层，但“何时继续保持代码规则、何时需要配置化、何时才该引入 DSL”一直没有被显式记录。
+- 如果不先把迁移边界写清楚，后续很容易因为规则数量增加一点点，就过早引入解释器、YAML 规则文件或第三方规则引擎，反而把排障和审计复杂度抬高。
+
+### 关键改动点
+- 新增：
+  - `docs/复杂财务规则引擎评估.md`
+- 修改：
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只补文档和任务记录，不改 `src/trms_backend/domain/invoice_validation.py` 的现有业务规则、接口契约或测试语义。
+- 文档中的触发条件属于当前阶段的工程判断，不是不可变制度；如果后续出现真实多组织差异化规则需求，应按当时代码和运营方式重新复核。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、78 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 当前默认“更复杂财务规则引擎”指的是可配置策略层或 DSL，而不是简单增加几条 Python 规则函数。
+
 ## 2026-04-29 15:13 - Restore member-side manual invoice entry and retry recognition inside the current workbench
 
 ### 完成内容
