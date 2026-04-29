@@ -1,5 +1,106 @@
 # WORKLOG
 
+## 2026-04-29 23:59 - Finalize per-category extraction schema inventory
+
+### 完成内容
+- 完成临时任务“建立按类别提取字段的 schema 清单”。
+- 本轮未改动业务代码；确认并收口上一轮已经落地的 schema 事实：
+  - [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py) 已按材料类别拆成独立输出模型，而不是继续共用单一字段集合
+  - `TASKS.md` 与 `WORKLOG.md` 现在明确把这些 schema 和规则字段映射记录为已完成状态
+
+### 分类 schema 清单
+- `invoice`
+  - `invoice_number`
+  - `amount_cents`
+  - `buyer_name`
+  - `tax_number`
+  - `transaction_time`
+  - `location`
+  - `expense_type`
+  - `trip_route`
+  - `transport_mode`
+  - `cabin_class`
+- `competition_notice`
+  - `transaction_time`
+  - `location`
+  - `expense_type`
+  - `trip_route`
+- `payment_record`
+  - `amount_cents`
+  - `transaction_time`
+  - `location`
+  - `expense_type`
+  - `trip_route`
+  - `transport_mode`
+- `order_screenshot`
+  - `amount_cents`
+  - `transaction_time`
+  - `location`
+  - `expense_type`
+  - `trip_route`
+  - `transport_mode`
+- `itinerary`
+  - `transaction_time`
+  - `location`
+  - `expense_type`
+  - `trip_route`
+  - `transport_mode`
+  - `cabin_class`
+- `other_attachment`
+  - `transaction_time`
+  - `location`
+  - `expense_type`
+  - `trip_route`
+  - `transport_mode`
+
+### 规则 -> 材料类别 -> 所需识别字段
+- `invoice_title_match`
+  - 材料类别：`invoice`
+  - 所需字段：`buyer_name`
+- `invoice_tax_number_match`
+  - 材料类别：`invoice`
+  - 所需字段：`tax_number`
+- `invoice_number_unique`
+  - 材料类别：`invoice`
+  - 所需字段：`invoice_number`
+- `invoice_payment_record_required`
+  - 材料类别：`invoice` + `payment_record`
+  - 所需字段：无新增识别字段；依赖 `invoice.amount_cents` 与支付记录材料是否存在
+- `invoice_payment_record_amount_match`
+  - 材料类别：`payment_record`
+  - 所需字段：`amount_cents`
+- `invoice_competition_notice_required`
+  - 材料类别：`competition_notice`
+  - 所需字段：无新增识别字段；依赖比赛通知材料是否存在
+- `invoice_airfare_itinerary_required`
+  - 材料类别：`itinerary`
+  - 所需字段：无新增识别字段；依赖航空行程单材料是否存在
+- `invoice_airfare_cabin_proof_required`
+  - 材料类别：`invoice` / `itinerary` / `order_screenshot`
+  - 所需字段：`cabin_class`
+- `invoice_local_transport_rideshare_trip_required`
+  - 材料类别：`invoice` / `payment_record` / `order_screenshot`
+  - 所需字段：`trip_route`、`transport_mode`
+- `invoice_competition_time_range`
+  - 材料类别：`invoice`
+  - 所需字段：`transaction_time`
+- `invoice_competition_location_range`
+  - 材料类别：`invoice` / `payment_record` / `order_screenshot` / `itinerary` / `other_attachment`
+  - 所需字段：`location`、`trip_route`
+
+### 当前判断
+- “按类别拆 schema”这一层已经具备闭环：
+  - 代码里有独立模型
+  - 第一阶段会选择 schema
+  - `WORKLOG.md` 已明确列出规则字段依赖
+- 下一步未完成的重点已经不是“有没有 schema 清单”，而是：
+  - 成员侧辅助材料如何安全自动归票
+  - 成员侧如何批量提交与撤回发票
+
+### 验证结果
+- 本轮只更新任务与文档记录，没有新增业务代码。
+- 仓库规则要求每轮仍执行统一验证；本轮文档更新后将继续运行 `./scripts/verify.sh`。
+
 ## 2026-04-29 23:49 - Solidify invoice classification rule for tax-seal vouchers
 
 ### 完成内容
