@@ -5,7 +5,6 @@ from enum import StrEnum
 import json
 from datetime import datetime
 from typing import Any, Protocol
-from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -605,23 +604,7 @@ def _extract_safe_user_prompt(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _build_response_format(provider_base_url: str) -> dict[str, Any]:
-    if _uses_deepseek_json_object(provider_base_url):
-        return {"type": "json_object"}
-
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "name": "trms_structured_recognition",
-            "strict": True,
-            "schema": RecognitionLlmResponse.model_json_schema(),
-        },
-    }
-
-
-def _uses_deepseek_json_object(provider_base_url: str) -> bool:
-    hostname = urlparse(provider_base_url).hostname or ""
-    normalized_hostname = hostname.strip().lower()
-    return normalized_hostname == "api.deepseek.com" or normalized_hostname.endswith(".deepseek.com")
+    return {"type": "json_object"}
 
 
 def _normalize_llm_response_payload(payload: Any) -> Any:

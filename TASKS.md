@@ -90,6 +90,14 @@
     - 纯文本 PDF 在 text LLM 首次失败后，会自动渲染为图片并再走一次 VLM
     - 测试覆盖扫描 PDF -> image_file、文本 PDF 失败后回退 VLM，以及相关失败原因与原始上下文
 
+## 临时任务 - 2026-04-29 统一识别响应格式
+
+- [x] 统一对主流 provider 使用 json_object 响应格式
+  - Done when:
+    - OpenAI / DeepSeek 与当前火山 Ark VLM 路径都确认可接受 `response_format: { type: \"json_object\" }`
+    - 仓库识别客户端不再对单个 provider 维持额外的 `json_schema` / `json_object` 分支判断
+    - 继续保留服务端对模型输出的 JSON 解析和 Pydantic 结构化校验，不因为切到 `json_object` 放松约束
+
 - [ ] 建立成员侧辅助材料自动归票与待关联提示
   - Done when:
     - 辅助材料与具体发票的绑定规则在“同批上传”“发票后补传”“存在多张候选发票”三类场景下明确可验证

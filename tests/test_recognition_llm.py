@@ -62,7 +62,7 @@ def build_document_input() -> RecognitionDocumentInput:
     )
 
 
-def test_openai_compatible_recognition_client_parses_json_schema_response():
+def test_openai_compatible_recognition_client_uses_json_object_response_format():
     captured_request = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -112,7 +112,7 @@ def test_openai_compatible_recognition_client_parses_json_schema_response():
 
     assert captured_request["path"] == "/v1/chat/completions"
     assert captured_request["authorization"] == "Bearer sk-test"
-    assert captured_request["payload"]["response_format"]["type"] == "json_schema"
+    assert captured_request["payload"]["response_format"] == {"type": "json_object"}
     assert "Prompt version: trms-recognition-v2." in captured_request["payload"]["messages"][0]["content"]
     assert "Do not guess missing fields." in captured_request["payload"]["messages"][0]["content"]
     assert result.recognized_fields["invoice_number"].value == "INV-001"

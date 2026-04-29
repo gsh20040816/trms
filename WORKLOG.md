@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-29 22:15 - Unify structured recognition response_format to json_object
+
+### 完成内容
+- 完成新增临时任务“统一对主流 provider 使用 `json_object` 响应格式”。
+- 调整 [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - `_build_response_format(...)` 现在统一返回 `{"type": "json_object"}`
+  - 删除原先仅对 DeepSeek 走 `json_object`、其它 provider 默认走 `json_schema` 的分支判断
+- 调整测试 [tests/test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)：
+  - OpenAI 兼容客户端测试更新为断言统一使用 `json_object`
+  - DeepSeek 相关断言保持成立
+
+### 根因
+- 当前实例已经不再走“扫描 PDF 直传 `file`”的旧路径，但火山 Ark VLM 仍然返回 400。
+- 复查失败任务与现场重放后，真正被 Ark 拒绝的是 `response_format.type=json_schema` 对应的 schema 内容，而不是图像输入本身。
+- 现场重放同一份请求、仅把 `response_format` 改成 `{"type":"json_object"}` 后：
+  - 当前 Ark VLM 配置返回 `200`
+  - 因此问题不需要继续做 provider 特判，而是可以直接统一切换到 `json_object`
+
+### 关键改动点
+- 这次没有放弃后端结构化校验。
+- 虽然请求给模型的是 `json_object`，但返回后仍然继续经过：
+  - JSON 解析
+  - 规范化
+  - `RecognitionLlmResponse` 的 Pydantic 校验
+- 所以只是把“让 provider 按 schema 约束生成”的责任收回到我们后端自己做，而不是放松输出要求。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_llm.py tests/test_recognition_execution_api.py`
+    - 31 个用例通过
+- 已通过当前实例现场验证：
+  - 使用当前系统管理员配置里的 Ark VLM `base_url/model/api_key`
+  - 对同一份扫描 PDF 图像输入重放请求
+  - `response_format={"type":"json_object"}` 返回 `200`
+- 该现场验证结论说明：
+  - 当前 Ark VLM 支持 `json_object`
+  - 400 的直接根因就是此前的 `json_schema` 路径
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：451 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-29 22:03 - Render scanned PDFs as images and retry text-PDF failures through VLM
 
 ### 完成内容
