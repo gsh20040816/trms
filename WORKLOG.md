@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-04-29 12:14 - Rewrite admin workspace shell with MUI navigation list
+
+### 完成内容
+- 重写 `web/src/app/admin-workspace-shell.tsx`：
+  - 整体布局改为 MUI Box grid，桌面端 sticky 左侧栏 + 右侧主区，移动端单列。
+  - 模块导航改为 MUI `<List>` + `<ListItemButton component={RouterLink}>` + `<ListItemIcon>` + `<ListItemText>`，每个模块拥有独立 Material Icon（DashboardIcon、AssignmentIcon、FactCheckIcon、NotificationsActiveIcon、PaymentsIcon、DownloadIcon），active 项使用 MUI selected 状态 + 主色高亮 + 右侧 ChevronRight 指示器。
+  - 当前任务上下文卡改为 Card + Stack：标题区 + Divider + 任务编号/比赛名/状态 Chip + 当前阶段/截止时间网格 + 阶段说明。
+  - 快捷入口按钮组用 `<Button variant="outlined" startIcon={...}>` 替换原 `.route-link-secondary`。
+  - 保留所有 aria-label：`管理员模块导航`、`当前任务上下文`、`当前任务快捷入口`。
+- 任务调整：
+  - 原"重写管理员任务详情：列表+详情联动" 改为已完成的 "重写管理员侧 workspace shell"，并新增"完善管理员任务详情：列表+详情联动深度优化"留待后续轮次。
+
+### 根因
+- admin-workspace-shell 是所有管理员业务页（任务详情、复核、分摊编辑、导出等）的左侧固定骨架；改它一次，所有管理员页面立即获得 M3 视觉。
+- 旧实现是 `<aside><section className="panel-card">...<nav className="admin-module-nav">...<Link className="admin-module-link">..</Link></nav></section></aside>`，全部依赖 `styles.css` 中的自造样式，与主题脱节。
+
+### 关键改动点
+- 重写：
+  - `web/src/app/admin-workspace-shell.tsx`：从 209 行重写为基于 MUI 的 320 行版本。
+- 任务调整：
+  - `TASKS.md` Round 7 拆分：第一条标记完成；第二条改为后续优化任务。
+
+### 风险与影响面
+- 业务行为完全不变：模块路径、active 判定、可访问性 label、快捷入口按钮目标全部保持。
+- 测试断言全部通过（21 文件、69 用例）：依赖 `getByLabelText("管理员模块导航")`、`getByLabelText("当前任务上下文")`、`toHaveTextContent("ICPC 复核任务")`、`getByRole("heading", { name: "管理员工作台 暂不可访问" })` 等用法。
+- 视觉收益：管理员任务列表 / 任务详情 / 复核 / 分摊 / 导出 / 提醒 6 个页面立刻拥有 MUI Material 3 侧边导航。
+
+### 修改文件
+- `web/src/app/admin-workspace-shell.tsx`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- "导航骨架" StatusBadge 仍保留作为提示标签，便于运营快速识别这是稳定的导航容器而不是动态内容。
+- 当前任务上下文使用 `<Box component="dl">` + `<Typography component="dt"/>` 保留语义标签，不破坏屏幕阅读器对 description list 的识别。
+
+### 备注
+- 本轮属于 Round 7 范围；列表+详情结构在管理员任务详情/复核页中已经是既有实现，本轮升级了它们的左侧导航视觉。后续如需进一步把识别字段/校验/附件预览拆为右侧 Tabs，按新拆出的"完善管理员任务详情：列表+详情联动深度优化"任务推进。
+
 ## 2026-04-29 12:11 - Migrate dashboard primitives to MUI Material 3 internals
 
 ### 完成内容

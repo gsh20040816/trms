@@ -1228,10 +1228,17 @@
     - 不破坏现有外部链接（旧 URL 仍可访问，自动跳转）
     - 相关测试更新
 
-- [ ] 重写管理员任务详情：列表+详情联动
+- [x] 重写管理员侧 workspace shell（Material 3 化导航与任务上下文）
   - Done when:
-    - `/admin/tasks/:id` 默认右半屏为任务详情、左半屏为材料列表
-    - Navigation Rail 切换"材料审核 / 分摊 / 导出"等子模块时保留列表+详情结构
+    - `web/src/app/admin-workspace-shell.tsx` 改为基于 MUI 的 List + ListItemButton + Card 实现
+    - 模块导航使用 ListItemIcon + selected 高亮 + 图标，每项有标题与说明
+    - 当前任务上下文卡用 Card + Stack + Chip + dl/dt/dd 网格 + 快捷入口按钮组
+    - aria-label "管理员模块导航"、"当前任务上下文" 与 "当前任务快捷入口" 全部保留
+    - 现有 admin-task-list / admin-task-detail / admin-export-tasks / admin-review-overview 等测试通过
+
+- [ ] 完善管理员任务详情：列表+详情联动深度优化
+  - Done when:
+    - `/admin/tasks/:id/review` 与 `/admin/tasks/:id/invoices` 在已是列表+详情的基础上，进一步用 M3 Tabs 区分识别字段、校验异常、附件预览
     - 单张发票预览、识别字段、校验异常、处理动作集中在右侧详情面板
     - 相关测试更新
 
