@@ -7,6 +7,7 @@ from trms_backend.domain.materials import MaterialStatus
 from trms_backend.infrastructure.database import build_session_factory
 from trms_backend.infrastructure.repositories import (
     SqlAlchemyAuditLogRepository,
+    SqlAlchemyInvoiceRepository,
     SqlAlchemyMaterialRepository,
 )
 from trms_backend.domain.materials import MAX_MATERIAL_UPLOAD_SIZE_BYTES
@@ -60,6 +61,13 @@ def get_material_record(tmp_path, material_id: str):
         build_session_factory(f"sqlite:///{tmp_path}/test.db")
     )
     return repository.get(material_id)
+
+
+def list_linked_invoice_ids_for_supporting_material(tmp_path, material_id: str) -> list[str]:
+    repository = SqlAlchemyInvoiceRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return [invoice.id for invoice in repository.list_by_supporting_material(material_id)]
 
 
 def assert_single_completed_recognition_task(client: TestClient, material_id: str) -> None:
@@ -147,6 +155,37 @@ def test_submit_material_defaults_material_type_when_client_omits_it(tmp_path):
     audit_logs = list_material_audit_logs(tmp_path, material["id"])
     assert len(audit_logs) == 1
     assert audit_logs[0].detail["material_type"] == "other_attachment"
+
+
+def test_submit_supporting_material_auto_links_to_single_candidate_invoice(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    invoice_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+    invoice_id = create_invoice(client, invoice_material_id)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-proof", "image/png")},
+    )
+
+    assert response.status_code == 201
+    supporting_material_id = response.json()["items"][0]["id"]
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, supporting_material_id) == [
+        invoice_id
+    ]
 
 
 def test_submit_pending_assignment_material_without_resolved_identity(tmp_path):

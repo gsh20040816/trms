@@ -12,7 +12,10 @@ from trms_backend.domain.invoice_validation import (
     PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
 )
 from trms_backend.infrastructure.database import build_session_factory
-from trms_backend.infrastructure.repositories import SqlAlchemyAuditLogRepository
+from trms_backend.infrastructure.repositories import (
+    SqlAlchemyAuditLogRepository,
+    SqlAlchemyInvoiceRepository,
+)
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
@@ -143,6 +146,13 @@ def list_recognition_task_audit_logs(tmp_path, recognition_task_id: str):
     )
 
 
+def list_linked_invoice_ids_for_supporting_material(tmp_path, material_id: str) -> list[str]:
+    repository = SqlAlchemyInvoiceRepository(
+        build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    )
+    return [invoice.id for invoice in repository.list_by_supporting_material(material_id)]
+
+
 def set_recognition_amount_cents(
     client: TestClient,
     material_id: str,
@@ -191,6 +201,19 @@ def manual_corrections_by_field(recognition_task: dict, field_name: str) -> list
         for item in recognition_task["manual_corrections"]
         if item["field_name"] == field_name
     ]
+
+
+def create_invoice_for_material(
+    client: TestClient,
+    material_id: str,
+    **overrides,
+) -> str:
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload() | overrides,
+    )
+    assert response.status_code == 201
+    return response.json()["invoice"]["id"]
 
 
 def test_create_invoice_and_pass_basic_validations(tmp_path):
@@ -1979,6 +2002,38 @@ def test_attach_supporting_material_allows_same_attachment_for_multiple_invoices
     assert [item["id"] for item in listed_second.json()["items"]] == [supporting_material_id]
 
 
+def test_create_invoice_auto_links_existing_same_submitter_supporting_materials_when_single_candidate(tmp_path):
+    client = make_client(tmp_path)
+    task_id, invoice_material_id = create_material(client)
+    payment_record_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="payment_record",
+        filename="payment.png",
+    )
+    competition_notice_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="competition_notice",
+        filename="notice.pdf",
+        content_type="application/pdf",
+    )
+
+    response = client.post(
+        f"/api/materials/{invoice_material_id}/invoice",
+        json=valid_invoice_payload(),
+    )
+
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+    listed = client.get(f"/api/invoices/{invoice_id}/supporting-materials")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [
+        payment_record_material_id,
+        competition_notice_material_id,
+    ]
+
+
 def test_detach_supporting_material_removes_invoice_association(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)
@@ -1998,6 +2053,52 @@ def test_detach_supporting_material_removes_invoice_association(tmp_path):
 
     assert listed.status_code == 200
     assert listed.json()["items"] == []
+
+
+def test_upload_supporting_material_keeps_unlinked_when_no_invoice_candidate(tmp_path):
+    client = make_client(tmp_path)
+    task = create_admin_task(client)
+    client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+
+    response = client.post(
+        f"/api/tasks/{task['id']}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-proof", "image/png")},
+    )
+
+    assert response.status_code == 201
+    material_id = response.json()["items"][0]["id"]
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, material_id) == []
+
+
+def test_upload_supporting_material_keeps_unlinked_when_multiple_invoice_candidates_exist(tmp_path):
+    client = make_client(tmp_path)
+    task_id, first_material_id = create_material(client)
+    second_material_id = upload_material(client, task_id, "ticket-2.pdf")
+    create_invoice_for_material(client, first_material_id)
+    create_invoice_for_material(client, second_material_id, invoice_number="INV-002")
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-proof", "image/png")},
+    )
+
+    assert response.status_code == 201
+    material_id = response.json()["items"][0]["id"]
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, material_id) == []
 
 
 def test_attach_supporting_material_rejects_invoice_type_material(tmp_path):

@@ -14,6 +14,9 @@ from trms_backend.api.request_identity_http import resolve_required_actor_reques
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.recognition_audit import record_manual_recognition_corrections_audit
+from trms_backend.application.supporting_material_auto_link import (
+    SupportingMaterialAutoLinkService,
+)
 from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.invoice_validation import validate_invoice
@@ -89,6 +92,10 @@ def build_invoice_router(
     router = APIRouter(tags=["invoices"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
     metrics = metrics_collector or NoOpMetricsCollector()
+    supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+    )
 
     def load_supporting_materials(invoice_id: str) -> list:
         supporting_materials = []
@@ -175,6 +182,7 @@ def build_invoice_router(
             material_id,
             invoice_data,
         )
+        supporting_material_auto_link_service.auto_link_for_invoice(invoice)
         supporting_materials = load_supporting_materials(invoice.id)
         supporting_material_recognitions = load_supporting_material_recognitions(
             supporting_materials

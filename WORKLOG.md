@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-30 00:29 - Add safe single-candidate auto-linking for supporting materials
+
+### 完成内容
+- 完成任务“建立辅助材料单候选自动归票后端规则”。
+- 新增后端服务 [supporting_material_auto_link.py](/home/gsh/workspace/TRMS/src/trms_backend/application/supporting_material_auto_link.py)：
+  - 只在以下安全边界满足时自动绑定辅助材料到发票：
+    - 材料已归属到任务
+    - 材料不是 `invoice`
+    - 材料当前尚未绑定到任何发票
+    - 候选发票与材料处于同一任务、同一提交人
+    - 当前候选发票数量恰好为 1
+- 调整 [invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py)：
+  - 成员/管理员创建发票后，会尝试把同任务同提交人的未绑定辅助材料自动挂到这张发票
+  - 这覆盖“同批上传后再创建唯一发票”的主路径
+- 调整 [materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)：
+  - 成员后补传辅助材料时，如果同任务同提交人下当前只有 1 张候选发票，会自动绑定
+  - 自动绑定后会立即刷新该发票校验结果，避免前端继续看到过期缺失状态
+
+### 根因
+- 仓库之前只有手动 `attach supporting material` 能力，没有“安全自动归票”的后端规则。
+- 结果是两类本来边界很清楚的场景仍然要求成员或管理员手工处理：
+  - 同批上传发票和附件，但任务里只有这一张发票
+  - 发票已经存在，后面又补传支付记录/比赛通知等附件，而且也只有这一张候选发票
+- 如果直接靠模糊猜测去自动绑，会把多张候选发票场景下的附件静默绑错，因此本轮只实现“单候选”这一条安全主路径。
+
+### 关键规则
+- 会自动绑定：
+  - 同任务
+  - 同提交人
+  - 附件尚未绑定
+  - 候选发票数量恰好为 1
+- 不会自动绑定：
+  - 没有候选发票
+  - 候选发票多于 1
+  - 附件已经被人工或自动绑定过
+  - 材料本身是 `invoice`
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_invoices_api.py tests/test_materials_api.py`
+    - 72 个用例通过
+- 其中新增覆盖包括：
+  - 创建唯一发票后，已上传未绑定附件会自动挂到该发票
+  - 后补传附件且只有一个候选发票时，会自动挂到该发票
+  - 无候选发票时不绑定
+  - 多候选发票时不绑定
+- 仓库级验证待本轮记录更新后统一执行 `./scripts/verify.sh`。
+
 ## 2026-04-30 00:12 - Split auto-linking and pending-linkage task
 
 ### 完成内容

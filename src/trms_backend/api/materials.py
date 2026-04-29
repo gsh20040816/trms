@@ -5,7 +5,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from pydantic import BaseModel, Field
 
 from trms_backend.api.error_responses import ensure_request_id
-from trms_backend.api.invoice_validation_refresh import refresh_validations_for_material
+from trms_backend.api.invoice_validation_refresh import (
+    refresh_invoice_validations,
+    refresh_validations_for_material,
+)
 from trms_backend.api.material_submission_http import build_batch_response, read_uploaded_files
 from trms_backend.api.request_identity import (
     RequestIdentity,
@@ -39,6 +42,9 @@ from trms_backend.application.recognition_preparation import (
     RecognitionPreparationService,
     RecognitionTaskExecutionConflictError,
     RecognitionTaskExecutionNotFoundError,
+)
+from trms_backend.application.supporting_material_auto_link import (
+    SupportingMaterialAutoLinkService,
 )
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.auth import AuthRepository
@@ -93,6 +99,10 @@ def build_material_router(
         auth_repository
     )
     metrics = metrics_collector or NoOpMetricsCollector()
+    supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+    )
 
     def dispatch_recognition_tasks_for_uploaded_materials(
         *,
@@ -189,6 +199,21 @@ def build_material_router(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(error),
             ) from error
+
+        auto_linked_invoice_ids: set[str] = set()
+        for record in result.records:
+            for link in supporting_material_auto_link_service.auto_link_for_material(record):
+                auto_linked_invoice_ids.add(link.invoice_id)
+        for invoice_id in auto_linked_invoice_ids:
+            refresh_invoice_validations(
+                invoice_id,
+                task_repository=task_repository,
+                material_repository=material_repository,
+                invoice_repository=invoice_repository,
+                validation_repository=validation_repository,
+                recognition_task_repository=recognition_task_repository,
+                metrics_collector=metrics,
+            )
 
         recognition_status_by_material_id, recognition_dispatch = dispatch_recognition_tasks_for_uploaded_materials(
             material_ids=[record.id for record in result.records],
