@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-04-30 00:40 - Add member workbench batch submit and withdrawal panel
+
+### 完成内容
+- 完成任务“在成员工作台展示批量提交与撤回区”。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 在成员工作台发票队列顶部新增稳定的“批量提交与撤回”区块；
+  - 支持选择全部本人发票、清空选择、批量提交选中发票、批量撤回选中发票；
+  - 在本人发票卡片中新增可勾选入口，并显式展示 `已提交管理员 / 未提交管理员` 状态；
+  - 对提交/撤回结果回显成功摘要与逐票失败原因。
+- 调整前端 API 类型与调用：
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 新增成员发票提交状态与批量提交/撤回响应类型；
+  - [trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts) 新增工作台批量提交与批量撤回 API 封装。
+- 新增测试 [member-invoice-workbench-submission.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-submission.test.tsx)：
+  - 覆盖批量区状态展示；
+  - 覆盖勾选与选择摘要更新；
+  - 覆盖批量提交部分成功与失败原因展示；
+  - 覆盖批量撤回成功反馈。
+
+### 根因
+- 后端已经具备成员侧批量提交/撤回 API 和独立发票提交状态，但成员工作台仍缺少承接这些能力的稳定交互区。
+- 成员此前只能逐张查看发票详情，无法明确知道哪些发票已经正式交给管理员，也无法在同一任务视图内批量交接或撤回。
+
+### 保守假设
+- 本轮批量区只作用于“本人且已形成发票主记录”的条目：
+  - 共享发票摘要不进入批量交接区；
+  - 尚未形成发票主记录的材料只允许继续补录，不允许伪装成可提交发票。
+- 这与当前后端权限和接口语义一致；若后续产品要求允许对其他聚合对象做批量交接，应新增独立任务而不是继续在本轮上叠补丁。
+
+### 影响范围
+- 仅修改成员工作台前端、前端 API 类型和相关测试。
+- 不改动后端业务逻辑、数据库迁移、导出链路或管理员页面。
+
+### 验证结果
+- 已通过：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 465 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 00:17 - Split reimbursement UX simplification plan into tasks
 
 ### 完成内容

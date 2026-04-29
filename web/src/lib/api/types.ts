@@ -59,6 +59,7 @@ export type RecognitionFieldSource = "ocr" | "pdf_text" | "ai" | "manual";
 export type RecognitionFieldStatus = "recognized" | "needs_confirmation";
 export type RecognitionFailureStage = "ocr" | "pdf" | "ai";
 export type UserRole = "member" | "admin" | "system_admin";
+export type InvoiceMemberSubmissionStatus = "unsubmitted" | "submitted";
 
 export type AuthenticatedUser = {
   id: string;
@@ -320,8 +321,28 @@ export type InvoiceRecord = {
   seller_name: string | null;
   amount_cents: number;
   expense_type: ExpenseType;
+  member_submission_status: InvoiceMemberSubmissionStatus;
+  submitted_by_member_id: string | null;
+  submitted_at: ApiDateTime | null;
   created_at: ApiDateTime;
   updated_at: ApiDateTime;
+};
+
+export type InvoiceMemberSubmissionBatchRequest = {
+  actor_id?: string | null;
+  invoice_ids: string[];
+};
+
+export type InvoiceMemberSubmissionBatchFailure = {
+  invoice_id: string;
+  error_code: string;
+  detail: string;
+};
+
+export type InvoiceMemberSubmissionBatchResponse = {
+  status: "success" | "partial_success" | "failed";
+  items: InvoiceRecord[];
+  failures: InvoiceMemberSubmissionBatchFailure[];
 };
 
 export type ManualInvoiceEntry = {

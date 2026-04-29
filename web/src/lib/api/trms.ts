@@ -12,6 +12,8 @@ import type {
   FinanceDraftExport,
   GlobalInvoiceConfig,
   InvoiceRecord,
+  InvoiceMemberSubmissionBatchRequest,
+  InvoiceMemberSubmissionBatchResponse,
   LoginPayload,
   ManualInvoiceEntry,
   ManualInvoiceEntryResponse,
@@ -338,6 +340,26 @@ export const trmsApi = {
   listTaskInvoices(taskId: string) {
     return apiClient.request<ApiListResponse<InvoiceRecord>>(
       `/tasks/${encodeSegment(taskId)}/invoices`,
+    );
+  },
+
+  submitTaskInvoices(taskId: string, payload: InvoiceMemberSubmissionBatchRequest) {
+    return apiClient.request<InvoiceMemberSubmissionBatchResponse>(
+      `/tasks/${encodeSegment(taskId)}/invoice-submissions`,
+      {
+        method: "POST",
+        body: buildActorScopedBody(payload, ["actor_id"]),
+      },
+    );
+  },
+
+  withdrawTaskInvoiceSubmissions(taskId: string, payload: InvoiceMemberSubmissionBatchRequest) {
+    return apiClient.request<InvoiceMemberSubmissionBatchResponse>(
+      `/tasks/${encodeSegment(taskId)}/invoice-submission-withdrawals`,
+      {
+        method: "POST",
+        body: buildActorScopedBody(payload, ["actor_id"]),
+      },
     );
   },
 

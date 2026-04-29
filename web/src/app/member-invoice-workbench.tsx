@@ -29,6 +29,9 @@ import type {
   ExpenseType,
   ExpenseDetailItem,
   ExpenseSplitRecord,
+  InvoiceMemberSubmissionBatchFailure,
+  InvoiceMemberSubmissionBatchResponse,
+  InvoiceMemberSubmissionStatus,
   InvoiceRecord,
   MaterialBatchUploadResponse,
   MaterialRecord,
@@ -147,6 +150,12 @@ type MaterialActionFeedback = {
   materialId: string;
   tone: "success" | "warning" | "error";
   message: string;
+};
+
+type InvoiceBatchAction = "submit" | "withdraw";
+
+type InvoiceBatchActionFeedback = InvoiceMemberSubmissionBatchResponse & {
+  action: InvoiceBatchAction;
 };
 
 type InvoiceWorkbenchSelection =
@@ -711,6 +720,40 @@ function formatPendingSupportingMaterialLinkageReason(
   return "当前存在多张候选发票，系统不会自动绑定";
 }
 
+function formatInvoiceMemberSubmissionStatus(status: InvoiceMemberSubmissionStatus) {
+  return status === "submitted" ? "已提交管理员" : "未提交管理员";
+}
+
+function formatInvoiceBatchActionLabel(action: InvoiceBatchAction) {
+  return action === "submit" ? "批量提交" : "批量撤回";
+}
+
+function describeWorkbenchInvoice(item: WorkbenchInvoiceItem) {
+  return item.invoice?.invoice_number ?? item.material.original_filename;
+}
+
+function buildInvoiceBatchFeedbackMessage(feedback: InvoiceBatchActionFeedback) {
+  const succeededCount = feedback.items.length;
+  const failedCount = feedback.failures.length;
+  const actionLabel = formatInvoiceBatchActionLabel(feedback.action);
+  if (feedback.status === "success") {
+    return `${actionLabel}成功：共处理 ${succeededCount} 张发票。`;
+  }
+  if (feedback.status === "partial_success") {
+    return `${actionLabel}部分成功：已处理 ${succeededCount} 张，另有 ${failedCount} 张失败。`;
+  }
+  return `${actionLabel}失败：选中的 ${failedCount} 张发票都没有处理成功。`;
+}
+
+function buildInvoiceBatchFailureMessage(
+  failure: InvoiceMemberSubmissionBatchFailure,
+  items: WorkbenchInvoiceItem[],
+) {
+  const matchedItem = items.find((item) => item.invoice?.id === failure.invoice_id);
+  const invoiceLabel = matchedItem ? describeWorkbenchInvoice(matchedItem) : failure.invoice_id;
+  return `${invoiceLabel}：${failure.detail}`;
+}
+
 function buildAllowedExpenseTypes(task: ReimbursementTask): ExpenseType[] {
   const taskExpenseTypes = task.fee_categories.filter(isExpenseType);
   return taskExpenseTypes.length > 0 ? taskExpenseTypes : ["other"];
@@ -932,6 +975,7 @@ export function MemberInvoiceWorkbenchPage() {
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedInvoiceWorkbenchKey, setSelectedInvoiceWorkbenchKey] = useState<string | null>(null);
+  const [selectedBatchInvoiceIds, setSelectedBatchInvoiceIds] = useState<string[]>([]);
   const [workbenchState, setWorkbenchState] = useState<SelectedTaskWorkbenchState>({ status: "idle" });
   const [materialTypeDrafts, setMaterialTypeDrafts] = useState<Record<string, MaterialType>>({});
   const [materialTypeErrors, setMaterialTypeErrors] = useState<Record<string, string>>({});
@@ -958,6 +1002,9 @@ export function MemberInvoiceWorkbenchPage() {
   const [staleConfirmationSplitId, setStaleConfirmationSplitId] = useState<string | null>(null);
   const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
   const [disputeErrors, setDisputeErrors] = useState<Record<string, string>>({});
+  const [invoiceBatchActionError, setInvoiceBatchActionError] = useState<unknown>(null);
+  const [invoiceBatchActionFeedback, setInvoiceBatchActionFeedback] = useState<InvoiceBatchActionFeedback | null>(null);
+  const [runningInvoiceBatchAction, setRunningInvoiceBatchAction] = useState<InvoiceBatchAction | null>(null);
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
 
   function resetTaskScopedUiState() {
@@ -980,6 +1027,10 @@ export function MemberInvoiceWorkbenchPage() {
     setDisputeReasons({});
     setDisputeErrors({});
     setSelectedInvoiceWorkbenchKey(null);
+    setSelectedBatchInvoiceIds([]);
+    setInvoiceBatchActionError(null);
+    setInvoiceBatchActionFeedback(null);
+    setRunningInvoiceBatchAction(null);
   }
 
   useEffect(() => {
@@ -1177,6 +1228,30 @@ export function MemberInvoiceWorkbenchPage() {
     return workbenchState.items.reduce((count, item) => count + collectAbnormalReasons(item).length, 0);
   }, [workbenchState]);
   const pendingActionCount = pendingActions.filter((action) => action.id !== "done").length;
+  const ownInvoiceItems = useMemo(
+    () => (
+      workbenchState.status === "ready"
+        ? workbenchState.items.filter((item) => item.invoice !== null)
+        : []
+    ),
+    [workbenchState],
+  );
+  const selectedBatchInvoiceIdSet = useMemo(
+    () => new Set(selectedBatchInvoiceIds),
+    [selectedBatchInvoiceIds],
+  );
+  const selectedBatchInvoiceItems = useMemo(
+    () => ownInvoiceItems.filter((item) => item.invoice && selectedBatchInvoiceIdSet.has(item.invoice.id)),
+    [ownInvoiceItems, selectedBatchInvoiceIdSet],
+  );
+  const selectedSubmittedInvoiceCount = selectedBatchInvoiceItems.filter(
+    (item) => item.invoice?.member_submission_status === "submitted",
+  ).length;
+  const selectedUnsubmittedInvoiceCount = selectedBatchInvoiceItems.length - selectedSubmittedInvoiceCount;
+  const allOwnInvoiceIds = ownInvoiceItems.map((item) => item.invoice!.id);
+  const allOwnInvoicesSelected = allOwnInvoiceIds.length > 0 && allOwnInvoiceIds.every(
+    (invoiceId) => selectedBatchInvoiceIdSet.has(invoiceId),
+  );
 
   function handlePendingSupportingMaterialCandidateSelect(invoiceId: string) {
     if (workbenchState.status !== "ready") {
@@ -1198,6 +1273,68 @@ export function MemberInvoiceWorkbenchPage() {
         invoiceId: sharedMatch.invoice_id,
       }));
       void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-invoices"));
+    }
+  }
+
+  function handleBatchInvoiceSelectionChange(invoiceId: string, checked: boolean) {
+    setSelectedBatchInvoiceIds((current) => {
+      if (checked) {
+        if (current.includes(invoiceId)) {
+          return current;
+        }
+        return [...current, invoiceId];
+      }
+      return current.filter((currentInvoiceId) => currentInvoiceId !== invoiceId);
+    });
+  }
+
+  function handleBatchSelectAllInvoices() {
+    setSelectedBatchInvoiceIds(allOwnInvoiceIds);
+  }
+
+  function handleBatchClearInvoiceSelection() {
+    setSelectedBatchInvoiceIds([]);
+  }
+
+  async function handleInvoiceBatchAction(action: InvoiceBatchAction) {
+    if (!session || !selectedTask || selectedBatchInvoiceIds.length === 0) {
+      return;
+    }
+
+    setInvoiceBatchActionError(null);
+    setInvoiceBatchActionFeedback(null);
+    setRunningInvoiceBatchAction(action);
+
+    try {
+      const response = action === "submit"
+        ? await trmsApi.submitTaskInvoices(selectedTask.id, {
+          actor_id: session.actorId,
+          invoice_ids: selectedBatchInvoiceIds,
+        })
+        : await trmsApi.withdrawTaskInvoiceSubmissions(selectedTask.id, {
+          actor_id: session.actorId,
+          invoice_ids: selectedBatchInvoiceIds,
+        });
+      const feedback = {
+        action,
+        ...response,
+      } satisfies InvoiceBatchActionFeedback;
+      setInvoiceBatchActionFeedback(feedback);
+      if (response.items.length > 0) {
+        setWorkbenchReloadVersion((current) => current + 1);
+      }
+      const feedbackMessage = buildInvoiceBatchFeedbackMessage(feedback);
+      if (response.status === "success") {
+        showSuccess(feedbackMessage);
+      } else {
+        showWarning(feedbackMessage);
+      }
+    } catch (error) {
+      setInvoiceBatchActionError(error);
+      const message = error instanceof ApiError ? error.summary.message : "批量提交状态更新失败，请稍后重试。";
+      showError(message);
+    } finally {
+      setRunningInvoiceBatchAction(null);
     }
   }
 
@@ -2686,6 +2823,108 @@ export function MemberInvoiceWorkbenchPage() {
               左侧固定选择当前发票，右侧保持完整上下文和操作区，避免在长列表里上下滚动寻找同一张票据。
             </p>
 
+            <section
+              id="member-workbench-batch-submission"
+              className="member-status-section"
+              aria-label="批量提交与撤回区"
+            >
+              <div className="member-status-section-header">
+                <div>
+                  <h4>批量提交与撤回</h4>
+                  <p className="field-hint">
+                    这里专门处理“把哪些发票正式交给管理员”和“在管理员进入后续阶段前撤回自己刚提交的发票”。
+                  </p>
+                </div>
+                <StatusBadge tone={selectedBatchInvoiceItems.length > 0 ? "info" : "neutral"}>
+                  已选 {selectedBatchInvoiceItems.length} 张
+                </StatusBadge>
+              </div>
+              <dl className="task-meta-grid member-status-meta-grid">
+                <div>
+                  <dt>本人发票</dt>
+                  <dd>{ownInvoiceItems.length} 张</dd>
+                </div>
+                <div>
+                  <dt>已选发票</dt>
+                  <dd>{selectedBatchInvoiceItems.length} 张</dd>
+                </div>
+                <div>
+                  <dt>已提交</dt>
+                  <dd>{selectedSubmittedInvoiceCount} 张</dd>
+                </div>
+                <div>
+                  <dt>未提交</dt>
+                  <dd>{selectedUnsubmittedInvoiceCount} 张</dd>
+                </div>
+                <div>
+                  <dt>任务状态</dt>
+                  <dd>{formatTaskStatus(workbenchState.task.status)}</dd>
+                </div>
+              </dl>
+              <div className="inline-actions">
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  disabled={ownInvoiceItems.length === 0 || allOwnInvoicesSelected}
+                  onClick={handleBatchSelectAllInvoices}
+                >
+                  选择全部本人发票
+                </Button>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  disabled={selectedBatchInvoiceItems.length === 0}
+                  onClick={handleBatchClearInvoiceSelection}
+                >
+                  清空选择
+                </Button>
+              </div>
+              <div className="inline-actions">
+                <Button
+                  type="button"
+                  variant="contained"
+                  disabled={selectedBatchInvoiceItems.length === 0 || runningInvoiceBatchAction !== null || workbenchState.task.status !== "open"}
+                  onClick={() => {
+                    void handleInvoiceBatchAction("submit");
+                  }}
+                >
+                  {runningInvoiceBatchAction === "submit" ? "批量提交中..." : "批量提交选中发票"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  disabled={selectedBatchInvoiceItems.length === 0 || runningInvoiceBatchAction !== null || workbenchState.task.status !== "open"}
+                  onClick={() => {
+                    void handleInvoiceBatchAction("withdraw");
+                  }}
+                >
+                  {runningInvoiceBatchAction === "withdraw" ? "批量撤回中..." : "批量撤回选中发票"}
+                </Button>
+              </div>
+              {workbenchState.task.status !== "open" ? (
+                <p className="field-hint">
+                  当前任务已不在开放提交阶段，因此成员不能再批量提交或撤回；如需调整，请联系管理员重新开放任务。
+                </p>
+              ) : null}
+              {invoiceBatchActionError ? <ApiErrorNotice error={invoiceBatchActionError} /> : null}
+              {invoiceBatchActionFeedback ? (
+                <div className="page-stack">
+                  <p className="field-hint">{buildInvoiceBatchFeedbackMessage(invoiceBatchActionFeedback)}</p>
+                  {invoiceBatchActionFeedback.failures.length > 0 ? (
+                    <ul className="member-status-message-list" aria-label="批量提交与撤回失败原因列表">
+                      {invoiceBatchActionFeedback.failures.map((failure) => (
+                        <li key={`${invoiceBatchActionFeedback.action}:${failure.invoice_id}:${failure.error_code}`}>
+                          {buildInvoiceBatchFailureMessage(failure, workbenchState.items)}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+
             {pendingSupportingMaterialLinkageItems.length > 0 ? (
               <section
                 id="member-workbench-pending-linkage"
@@ -2756,47 +2995,79 @@ export function MemberInvoiceWorkbenchPage() {
                     materialId: item.material.material_id,
                   });
                   const abnormalReasons = collectAbnormalReasons(item);
+                  const canBatchSelect = item.invoice !== null;
+                  const isBatchSelected = item.invoice ? selectedBatchInvoiceIdSet.has(item.invoice.id) : false;
                   return (
                     <li key={item.material.material_id}>
-                      <button
-                        type="button"
-                        className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
-                        aria-pressed={isSelected}
-                        onClick={() => {
-                          setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-                            kind: "own",
-                            materialId: item.material.material_id,
-                          }));
-                        }}
-                      >
-                        <div className="task-card-header">
-                          <div>
-                            <p className="task-card-id">本人发票 / {item.material.material_id}</p>
-                            <h3>{item.invoice?.invoice_number ?? item.material.original_filename}</h3>
-                          </div>
-                          <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>
-                            {abnormalReasons.length > 0 ? `${abnormalReasons.length} 条待处理` : "状态稳定"}
-                          </StatusBadge>
+                      <div className="page-stack">
+                        <div className="inline-actions">
+                          <label>
+                            <input
+                              type="checkbox"
+                              aria-label={`批量选择发票 ${describeWorkbenchInvoice(item)}`}
+                              checked={isBatchSelected}
+                              disabled={!canBatchSelect}
+                              onChange={(event) => {
+                                if (!item.invoice) {
+                                  return;
+                                }
+                                handleBatchInvoiceSelectionChange(item.invoice.id, event.target.checked);
+                              }}
+                            />
+                            <span> 纳入批量区</span>
+                          </label>
+                          {item.invoice ? (
+                            <StatusBadge tone={item.invoice.member_submission_status === "submitted" ? "success" : "neutral"}>
+                              {formatInvoiceMemberSubmissionStatus(item.invoice.member_submission_status)}
+                            </StatusBadge>
+                          ) : (
+                            <StatusBadge tone="warning">尚未形成发票</StatusBadge>
+                          )}
                         </div>
-                        <dl className="task-meta-grid invoice-editor-summary-grid">
-                          <div>
-                            <dt>识别状态</dt>
-                            <dd>{getRecognitionStatus(item) ? formatRecognitionStatus(getRecognitionStatus(item)!) : "暂无识别"}</dd>
+                        <button
+                          type="button"
+                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
+                          aria-pressed={isSelected}
+                          onClick={() => {
+                            setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+                              kind: "own",
+                              materialId: item.material.material_id,
+                            }));
+                          }}
+                        >
+                          <div className="task-card-header">
+                            <div>
+                              <p className="task-card-id">本人发票 / {item.material.material_id}</p>
+                              <h3>{item.invoice?.invoice_number ?? item.material.original_filename}</h3>
+                            </div>
+                            <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>
+                              {abnormalReasons.length > 0 ? `${abnormalReasons.length} 条待处理` : "状态稳定"}
+                            </StatusBadge>
                           </div>
-                          <div>
-                            <dt>校验状态</dt>
-                            <dd>{formatValidationStatus(item.material.validation_status)}</dd>
-                          </div>
-                          <div>
-                            <dt>分摊记录</dt>
-                            <dd>{item.splits.length > 0 ? `${item.splits.length} 条` : "待分摊"}</dd>
-                          </div>
-                          <div>
-                            <dt>附件 / 缺失</dt>
-                            <dd>{item.supportingMaterials.length} / {item.missingMaterials.length}</dd>
-                          </div>
-                        </dl>
-                      </button>
+                          <dl className="task-meta-grid invoice-editor-summary-grid">
+                            <div>
+                              <dt>识别状态</dt>
+                              <dd>{getRecognitionStatus(item) ? formatRecognitionStatus(getRecognitionStatus(item)!) : "暂无识别"}</dd>
+                            </div>
+                            <div>
+                              <dt>校验状态</dt>
+                              <dd>{formatValidationStatus(item.material.validation_status)}</dd>
+                            </div>
+                            <div>
+                              <dt>分摊记录</dt>
+                              <dd>{item.splits.length > 0 ? `${item.splits.length} 条` : "待分摊"}</dd>
+                            </div>
+                            <div>
+                              <dt>提交状态</dt>
+                              <dd>{item.invoice ? formatInvoiceMemberSubmissionStatus(item.invoice.member_submission_status) : "未形成发票"}</dd>
+                            </div>
+                            <div>
+                              <dt>附件 / 缺失</dt>
+                              <dd>{item.supportingMaterials.length} / {item.missingMaterials.length}</dd>
+                            </div>
+                          </dl>
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
