@@ -194,6 +194,26 @@ type PendingSupportingMaterialLinkageAction = {
   invoiceId: string;
 };
 
+type UploadProcessingStageKey =
+  | "received"
+  | "recognition_pending"
+  | "recognized"
+  | "linked"
+  | "action_required";
+
+type UploadProcessingStageTone = "neutral" | "info" | "warning" | "danger" | "success";
+
+type UploadProcessingSnapshot = {
+  stage: UploadProcessingStageKey;
+  tone: UploadProcessingStageTone;
+  label: string;
+  detail: string;
+  steps: UploadProcessingStageKey[];
+  transitioning: boolean;
+  actionLabel: string | null;
+  actionHref: string | null;
+};
+
 const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
   { value: "invoice", label: "发票" },
   { value: "payment_record", label: "支付记录" },
@@ -204,6 +224,8 @@ const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
 ];
 
 const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
+const RECENT_UPLOAD_AUTO_REFRESH_INTERVAL_MS = 2000;
+const RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS = 10;
 
 const FIELD_ORDER = [
   "invoice_number",
@@ -264,6 +286,14 @@ const INVOICE_QUEUE_GROUP_METADATA: Record<Exclude<InvoiceQueueGroupKey, "ready"
     description: "这些发票已经形成分摊，但相关成员确认还没全部完成，不能视为真正闭环。",
     tone: "warning",
   },
+};
+
+const UPLOAD_PROCESSING_STAGE_LABELS: Record<UploadProcessingStageKey, string> = {
+  received: "已接收",
+  recognition_pending: "识别排队中",
+  recognized: "识别完成",
+  linked: "已归票",
+  action_required: "需要处理",
 };
 
 function isExpenseType(value: string): value is ExpenseType {
@@ -987,6 +1017,20 @@ function findPendingSupportingMaterialLinkageMatches(
   ));
 }
 
+function isRecognitionProviderNotConfiguredFailure(
+  failure: RecognitionFailureDetail | null,
+) {
+  if (!failure || failure.stage !== "ai") {
+    return false;
+  }
+  return (
+    failure.reason === "llm_provider_not_configured"
+    || failure.reason === "text_llm_provider_not_configured"
+    || failure.reason === "vlm_provider_not_configured"
+    || failure.reason === "structured_recognition_not_configured"
+  );
+}
+
 function hasSplitCoverageGap(item: WorkbenchInvoiceItem) {
   if (!item.invoice) {
     return false;
@@ -1187,6 +1231,205 @@ function pickInvoiceWorkbenchSelection(
   return null;
 }
 
+function findWorkbenchItemBySupportingMaterialId(
+  materialId: string,
+  items: WorkbenchInvoiceItem[],
+) {
+  return items.find((item) => item.supportingMaterials.some((material) => material.id === materialId)) ?? null;
+}
+
+function buildUploadProcessingSnapshot(
+  uploadedItem: MaterialBatchUploadResponse["items"][number],
+  taskId: string,
+  workbenchState: SelectedTaskWorkbenchState,
+  recognitionDispatch: MaterialBatchUploadResponse["recognition_dispatch"],
+): UploadProcessingSnapshot {
+  const fallbackRecognitionStatus = uploadedItem.recognition_status ?? null;
+  if (workbenchState.status !== "ready" || workbenchState.task.id !== taskId) {
+    if (fallbackRecognitionStatus === "pending") {
+      return {
+        stage: "recognition_pending",
+        tone: "info",
+        label: UPLOAD_PROCESSING_STAGE_LABELS.recognition_pending,
+        detail: recognitionDispatch?.status === "queued"
+          ? "材料已接收，识别任务正在等待 worker 消费；工作台会继续自动刷新。"
+          : "材料已接收，系统正在刷新识别状态。",
+        steps: ["received", "recognition_pending"],
+        transitioning: true,
+        actionLabel: null,
+        actionHref: null,
+      };
+    }
+    return {
+      stage: "received",
+      tone: "info",
+      label: UPLOAD_PROCESSING_STAGE_LABELS.received,
+      detail: "材料已接收，工作台正在同步这份材料的识别、归票和待办状态。",
+      steps: ["received"],
+      transitioning: true,
+      actionLabel: null,
+      actionHref: null,
+    };
+  }
+
+  const directWorkbenchItem = workbenchState.items.find(
+    (item) => item.material.material_id === uploadedItem.id,
+  ) ?? null;
+  const linkedWorkbenchItem = findWorkbenchItemBySupportingMaterialId(uploadedItem.id, workbenchState.items);
+  const pendingLinkageItem = workbenchState.pendingSupportingMaterialLinkageItems.find(
+    (item) => item.material_id === uploadedItem.id,
+  ) ?? null;
+  const recognitionStatus = directWorkbenchItem
+    ? (getRecognitionStatus(directWorkbenchItem) ?? fallbackRecognitionStatus)
+    : fallbackRecognitionStatus;
+  const recognitionFailure = directWorkbenchItem ? getRecognitionFailure(directWorkbenchItem) : null;
+  const linkedInvoice = directWorkbenchItem?.invoice ?? linkedWorkbenchItem?.invoice ?? null;
+  const queueGroup = directWorkbenchItem?.queueGroup;
+
+  if (recognitionStatus === "pending") {
+    return {
+      stage: "recognition_pending",
+      tone: "info",
+      label: UPLOAD_PROCESSING_STAGE_LABELS.recognition_pending,
+      detail: recognitionDispatch?.status === "queued"
+        ? "识别任务已入队等待 worker 消费；系统会继续刷新下面的待处理事项。"
+        : "系统正在识别这份材料，识别完成后会继续刷新归票和待办结果。",
+      steps: ["received", "recognition_pending"],
+      transitioning: true,
+      actionLabel: null,
+      actionHref: null,
+    };
+  }
+
+  if (recognitionStatus === "failed") {
+    return {
+      stage: "action_required",
+      tone: isRecognitionProviderNotConfiguredFailure(recognitionFailure) ? "warning" : "danger",
+      label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
+      detail: isRecognitionProviderNotConfiguredFailure(recognitionFailure)
+        ? "当前环境未配置识别服务；请联系管理员配置 provider，或直接在下面工作台手动补录发票字段。"
+        : describeRecognitionFailure(recognitionFailure),
+      steps: ["received", "action_required"],
+      transitioning: false,
+      actionLabel: "去工作台处理",
+      actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-invoices"),
+    };
+  }
+
+  if (recognitionStatus === "needs_confirmation") {
+    return {
+      stage: "action_required",
+      tone: "warning",
+      label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
+      detail: "识别结果已经生成，但仍有关键字段待确认；系统已把相关待办刷新到下面发票区。",
+      steps: ["received", "recognized", "action_required"],
+      transitioning: false,
+      actionLabel: "去核对字段",
+      actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-invoices"),
+    };
+  }
+
+  if (pendingLinkageItem) {
+    return {
+      stage: "action_required",
+      tone: "warning",
+      label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
+      detail: pendingLinkageItem.pending_reason === "multiple_candidates"
+        ? "系统已经识别出这份辅助材料，但存在多张候选发票，需要你在下面选择归属发票。"
+        : "系统已经识别出这份辅助材料，但当前还没有安全候选发票；请先补传或补录发票。",
+      steps: ["received", "recognized", "action_required"],
+      transitioning: false,
+      actionLabel: pendingLinkageItem.pending_reason === "multiple_candidates"
+        ? "去选择候选发票"
+        : "去上传区补发票",
+      actionHref: buildWorkbenchTaskAnchor(
+        taskId,
+        pendingLinkageItem.pending_reason === "multiple_candidates"
+          ? "#member-workbench-pending-linkage"
+          : "#member-workbench-upload",
+      ),
+    };
+  }
+
+  if (directWorkbenchItem && queueGroup && queueGroup !== "ready") {
+    if (queueGroup === "missing_materials") {
+      return {
+        stage: "action_required",
+        tone: "warning",
+        label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
+        detail: "系统已经识别并生成发票，但当前还缺少必传附件；待处理事项已刷新到下面列表。",
+        steps: ["received", "recognized", "linked", "action_required"],
+        transitioning: false,
+        actionLabel: "去上传区补材料",
+        actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-upload"),
+      };
+    }
+    if (queueGroup === "split_incomplete") {
+      return {
+        stage: "action_required",
+        tone: "warning",
+        label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
+        detail: "系统已经识别并形成发票，但分摊金额还没有闭合；请在下面继续处理分摊。",
+        steps: ["received", "recognized", "linked", "action_required"],
+        transitioning: false,
+        actionLabel: "去处理分摊",
+        actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-invoices"),
+      };
+    }
+    if (queueGroup === "confirmation_incomplete") {
+      return {
+        stage: "action_required",
+        tone: "warning",
+        label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
+        detail: "系统已经识别并形成发票，但相关费用确认还没有完成；确认区已同步刷新。",
+        steps: ["received", "recognized", "linked", "action_required"],
+        transitioning: false,
+        actionLabel: "去确认区处理",
+        actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-confirmations"),
+      };
+    }
+  }
+
+  if (linkedInvoice) {
+    return {
+      stage: "linked",
+      tone: "success",
+      label: UPLOAD_PROCESSING_STAGE_LABELS.linked,
+      detail: directWorkbenchItem?.invoice
+        ? "系统已形成对应发票并把待办同步到当前工作台，可继续查看是否已进入可提交队列。"
+        : `系统已把这份辅助材料归到发票 ${linkedInvoice.invoice_number}。`,
+      steps: ["received", "recognized", "linked"],
+      transitioning: false,
+      actionLabel: "查看当前发票",
+      actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-invoices"),
+    };
+  }
+
+  if (recognitionStatus === "succeeded") {
+    return {
+      stage: "recognized",
+      tone: "success",
+      label: UPLOAD_PROCESSING_STAGE_LABELS.recognized,
+      detail: "识别已经完成，系统正在把归票结果和待处理事项收口到当前工作台。",
+      steps: ["received", "recognized"],
+      transitioning: true,
+      actionLabel: null,
+      actionHref: null,
+    };
+  }
+
+  return {
+    stage: "received",
+    tone: "info",
+    label: UPLOAD_PROCESSING_STAGE_LABELS.received,
+    detail: "材料已接收，系统正在合并最新状态。",
+    steps: ["received"],
+    transitioning: true,
+    actionLabel: null,
+    actionHref: null,
+  };
+}
+
 export function MemberInvoiceWorkbenchPage() {
   const session = useAuthSession();
   const { showError, showSuccess, showWarning } = useSnackbar();
@@ -1222,6 +1465,7 @@ export function MemberInvoiceWorkbenchPage() {
   const [uploadValidationErrors, setUploadValidationErrors] = useState<WorkbenchUploadValidationErrors>({});
   const [uploadSubmitError, setUploadSubmitError] = useState<unknown>(null);
   const [uploadResult, setUploadResult] = useState<MaterialBatchUploadResponse | null>(null);
+  const [uploadProcessingRefreshAttempts, setUploadProcessingRefreshAttempts] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [confirmationSubmitError, setConfirmationSubmitError] = useState<unknown>(null);
   const [confirmationFeedback, setConfirmationFeedback] = useState<ConfirmationFeedback | null>(null);
@@ -1248,6 +1492,7 @@ export function MemberInvoiceWorkbenchPage() {
     setUploadValidationErrors({});
     setUploadSubmitError(null);
     setUploadResult(null);
+    setUploadProcessingRefreshAttempts(0);
     setUploadFormState(buildInitialUploadFormState());
     setConfirmationSubmitError(null);
     setConfirmationFeedback(null);
@@ -1528,6 +1773,41 @@ export function MemberInvoiceWorkbenchPage() {
   const allOwnInvoicesSelected = allOwnInvoiceIds.length > 0 && allOwnInvoiceIds.every(
     (invoiceId) => selectedBatchInvoiceIdSet.has(invoiceId),
   );
+  const recentUploadProcessingSnapshots = useMemo(
+    () => (
+      uploadResult && selectedTask
+        ? uploadResult.items.map((item) => buildUploadProcessingSnapshot(
+          item,
+          selectedTask.id,
+          workbenchState,
+          uploadResult.recognition_dispatch,
+        ))
+        : []
+    ),
+    [selectedTask, uploadResult, workbenchState],
+  );
+  const hasRecentUploadTransitioningItems = recentUploadProcessingSnapshots.some((item) => item.transitioning);
+  const canAutoRefreshRecentUploadStatus = (
+    activeTab === "invoices"
+    && uploadResult !== null
+    && hasRecentUploadTransitioningItems
+    && uploadProcessingRefreshAttempts < RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS
+  );
+
+  useEffect(() => {
+    if (!canAutoRefreshRecentUploadStatus) {
+      return undefined;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setUploadProcessingRefreshAttempts((current) => current + 1);
+      setWorkbenchReloadVersion((current) => current + 1);
+    }, RECENT_UPLOAD_AUTO_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [canAutoRefreshRecentUploadStatus]);
 
   function handlePendingSupportingMaterialCandidateSelect(invoiceId: string) {
     if (workbenchState.status !== "ready") {
@@ -1842,6 +2122,7 @@ export function MemberInvoiceWorkbenchPage() {
 
     setUploadSubmitError(null);
     setUploadResult(null);
+    setUploadProcessingRefreshAttempts(0);
 
     const errors = validateWorkbenchUploadForm(selectedTask, uploadFormState);
     setUploadValidationErrors(errors);
@@ -1860,6 +2141,7 @@ export function MemberInvoiceWorkbenchPage() {
     try {
       const response = await trmsApi.submitTaskMaterials(selectedTask.id, requestBody);
       setUploadResult(response);
+      setUploadProcessingRefreshAttempts(0);
       resetUploadSelectedFiles();
       if (response.items.length > 0) {
         setWorkbenchReloadVersion((current) => current + 1);
@@ -1879,6 +2161,7 @@ export function MemberInvoiceWorkbenchPage() {
       const failedBatch = extractFailedBatchUploadResponse(error);
       if (failedBatch) {
         setUploadResult(failedBatch);
+        setUploadProcessingRefreshAttempts(0);
         resetUploadSelectedFiles();
         if (failedBatch.items.length > 0) {
           setWorkbenchReloadVersion((current) => current + 1);
@@ -3005,31 +3288,78 @@ export function MemberInvoiceWorkbenchPage() {
 
       {activeTab === "invoices" && uploadResult ? (
         <SectionCard
-          title="最近上传结果"
-          description="当前工作台直接展示最近一次上传的逐文件结果，不把部分失败伪装成全部成功。"
+          title="最近上传处理状态"
+          description="这里不仅保留逐文件上传结果，还会继续展示系统对这批材料的识别、归票和后续待办状态。"
           action={(
-            <StatusBadge tone={uploadResult.status === "failed" ? "warning" : "success"}>
-              {uploadResult.status === "success"
-                ? "全部成功"
-                : uploadResult.status === "partial_success"
-                  ? "部分成功"
-                  : "全部失败"}
-            </StatusBadge>
+            <div className="inline-actions">
+              <StatusBadge tone={uploadResult.status === "failed" ? "warning" : "success"}>
+                {uploadResult.status === "success"
+                  ? "全部成功"
+                  : uploadResult.status === "partial_success"
+                    ? "部分成功"
+                    : "全部失败"}
+              </StatusBadge>
+              <Button
+                type="button"
+                variant="outlined"
+                size="small"
+                onClick={() => {
+                  setWorkbenchReloadVersion((current) => current + 1);
+                }}
+              >
+                刷新处理状态
+              </Button>
+            </div>
           )}
         >
           {uploadResult.recognition_dispatch ? (
             <p className="field-hint">{uploadResult.recognition_dispatch.message}</p>
           ) : null}
+          {canAutoRefreshRecentUploadStatus ? (
+            <>
+              <LinearProgress aria-label="工作台上传处理状态刷新中" sx={{ mb: 1.5 }} />
+              <p className="field-hint">
+                系统正在自动刷新这批材料的识别和归票状态；下面的待处理事项会随状态变化同步更新。
+              </p>
+            </>
+          ) : null}
+          {!canAutoRefreshRecentUploadStatus
+          && hasRecentUploadTransitioningItems
+          && uploadProcessingRefreshAttempts >= RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS ? (
+            <p className="field-hint">
+              这批材料仍在自动处理中；如果当前环境使用独立 worker，可稍后手动刷新查看最新状态。
+            </p>
+          ) : null}
           {uploadResult.items.length > 0 ? (
             <ul className="member-status-message-list" aria-label="工作台上传成功列表">
-              {uploadResult.items.map((item) => (
+              {uploadResult.items.map((item, index) => {
+                const snapshot = recentUploadProcessingSnapshots[index];
+                return (
                 <li key={item.id}>
                   <strong>{item.original_filename}</strong>
                   <span>材料编号：{item.id}</span>
                   <span>材料类型：{formatMaterialType(item.material_type)}</span>
                   <span>{item.duplicate_of ? `重复文件：${item.duplicate_of}` : "已归档到当前任务"}</span>
+                  {snapshot ? (
+                    <>
+                      <span>当前阶段：{snapshot.label}</span>
+                      <span>处理轨迹：{snapshot.steps.map((step) => UPLOAD_PROCESSING_STAGE_LABELS[step]).join(" -> ")}</span>
+                      <span>{snapshot.detail}</span>
+                      {snapshot.actionLabel && snapshot.actionHref ? (
+                        <Button
+                          component={Link}
+                          variant="outlined"
+                          size="small"
+                          to={snapshot.actionHref}
+                        >
+                          {snapshot.actionLabel}
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : null}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           ) : (
             <p className="field-hint">本次没有成功归档的新材料。</p>

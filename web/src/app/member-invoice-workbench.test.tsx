@@ -1886,6 +1886,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
             submitter_id_hint: null,
             channel: "web",
             material_type: "payment_record",
+            recognition_status: "pending",
             storage_key: "TASK-OPEN/pay.png",
             original_filename: "pay.png",
             content_type: "image/png",
@@ -1901,10 +1902,12 @@ describe("MemberInvoiceWorkbenchPage", () => {
       }));
     });
 
-    expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
+    expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
     expect(await screen.findByText((content) => content.includes("上传成功：1 个文件已归档到当前任务。"))).toBeInTheDocument();
     expect(screen.getByText("识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。")).toBeInTheDocument();
     expect(screen.getByText("材料编号：MAT-UP-001")).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("当前阶段：") && content.includes("识别排队中"))).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("处理轨迹：") && content.includes("已接收 -> 识别排队中"))).toBeInTheDocument();
     expect(await screen.findByText("支付记录 / MAT-UP-001")).toBeInTheDocument();
   });
 
@@ -2001,6 +2004,579 @@ describe("MemberInvoiceWorkbenchPage", () => {
       resolveRequestUrl(input) === "/api/tasks/TASK-OPEN/materials"
       && resolveRequestMethod(input, init) === "POST"
     ))).toBe(false);
+  });
+
+  it("shows linked success stages after upload refreshes the workbench", async () => {
+    let uploadCompleted = false;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      const emptySupportingMaterialLinkageResponse = buildEmptySupportingMaterialLinkageResponse(url);
+      if (emptySupportingMaterialLinkageResponse) {
+        return Promise.resolve(jsonResponse(emptySupportingMaterialLinkageResponse));
+      }
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 18800,
+          counts: {
+            material_count: uploadCompleted ? 1 : 0,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: uploadCompleted ? 1 : 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: uploadCompleted ? 1 : 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: uploadCompleted ? [
+            {
+              material_id: "MAT-UP-SUCCESS-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "hotel.pdf",
+              material_status: "assigned",
+              recognition_status: "succeeded",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: "INV-UP-SUCCESS-001",
+              invoice_number: "HOTEL-188",
+              validation_status: "passed",
+              validation_messages: [],
+              created_at: "2026-04-28T14:30:00+08:00",
+            },
+          ] : [],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({
+          items: uploadCompleted ? [
+            {
+              id: "INV-UP-SUCCESS-001",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-UP-SUCCESS-001",
+              invoice_number: "HOTEL-188",
+              issue_date: "2026-04-25",
+              transaction_time: "2026-04-25T09:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "锦江酒店",
+              amount_cents: 18800,
+              expense_type: "hotel",
+              created_at: "2026-04-28T14:30:00+08:00",
+              updated_at: "2026-04-28T14:31:00+08:00",
+            },
+          ] : [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-UP-SUCCESS-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: {
+            id: "REC-UP-SUCCESS-001",
+            material_id: "MAT-UP-SUCCESS-001",
+            status: "succeeded",
+            is_final_fact: false,
+            failure: null,
+            raw_response: {},
+            recognized_fields: {
+              invoice_number: {
+                value: "HOTEL-188",
+                source: "ai",
+                confidence: 0.98,
+                status: "recognized",
+                updated_at: "2026-04-28T14:30:30+08:00",
+              },
+            },
+            manual_corrections: [],
+            created_at: "2026-04-28T14:30:30+08:00",
+            updated_at: "2026-04-28T14:30:30+08:00",
+          },
+        }));
+      }
+
+      if (url === "/api/invoices/INV-UP-SUCCESS-001/validations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-UP-SUCCESS-001/supporting-materials") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-UP-SUCCESS-001/splits") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-UP-SUCCESS-001/confirmations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/materials" && method === "POST") {
+        uploadCompleted = true;
+        return Promise.resolve(jsonResponse({
+          status: "success",
+          recognition_dispatch: {
+            mode: "in_process",
+            status: "executed",
+            message: "识别已执行，系统正在刷新识别与归票状态。",
+          },
+          items: [
+            {
+              id: "MAT-UP-SUCCESS-001",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "invoice",
+              recognition_status: "succeeded",
+              storage_key: "TASK-OPEN/hotel.pdf",
+              original_filename: "hotel.pdf",
+              content_type: "application/pdf",
+              size_bytes: 256,
+              sha256: "c".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T14:30:00+08:00",
+            },
+          ],
+          failures: [],
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in workbench upload success stage test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("工作台上传文件"), {
+      target: {
+        files: [new File(["invoice"], "hotel.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+
+    expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
+    expect(await screen.findByText("当前阶段：已归票")).toBeInTheDocument();
+    expect(screen.getByText("处理轨迹：已接收 -> 识别完成 -> 已归票")).toBeInTheDocument();
+    expect(screen.getByText(/系统已形成对应发票并把待办同步到当前工作台/)).toBeInTheDocument();
+  });
+
+  it("shows a targeted action when recognition fails because providers are not configured", async () => {
+    let uploadCompleted = false;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      const emptySupportingMaterialLinkageResponse = buildEmptySupportingMaterialLinkageResponse(url);
+      if (emptySupportingMaterialLinkageResponse) {
+        return Promise.resolve(jsonResponse(emptySupportingMaterialLinkageResponse));
+      }
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: uploadCompleted ? 1 : 0,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: uploadCompleted ? 1 : 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: uploadCompleted ? 1 : 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: uploadCompleted ? [
+            {
+              material_id: "MAT-UP-FAIL-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "scan.pdf",
+              material_status: "assigned",
+              recognition_status: "failed",
+              recognition_failure_stage: "ai",
+              recognition_failure_reason: "vlm_provider_not_configured",
+              invoice_id: null,
+              invoice_number: null,
+              validation_status: "not_applicable",
+              validation_messages: [],
+              created_at: "2026-04-28T14:40:00+08:00",
+            },
+          ] : [],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/materials/MAT-UP-FAIL-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: null,
+          items: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/materials" && method === "POST") {
+        uploadCompleted = true;
+        return Promise.resolve(jsonResponse({
+          status: "success",
+          recognition_dispatch: {
+            mode: "in_process",
+            status: "executed",
+            message: "识别已执行，但当前环境没有可用的多模态 provider。",
+          },
+          items: [
+            {
+              id: "MAT-UP-FAIL-001",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "invoice",
+              recognition_status: "failed",
+              storage_key: "TASK-OPEN/scan.pdf",
+              original_filename: "scan.pdf",
+              content_type: "application/pdf",
+              size_bytes: 256,
+              sha256: "d".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T14:40:00+08:00",
+            },
+          ],
+          failures: [],
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in workbench upload failure stage test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("工作台上传文件"), {
+      target: {
+        files: [new File(["scan"], "scan.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+
+    expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
+    expect(await screen.findByText((content) => content.includes("当前阶段：") && content.includes("需要处理"))).toBeInTheDocument();
+    expect(screen.getAllByText(/当前环境未配置识别服务/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "去工作台处理" })).toHaveAttribute(
+      "href",
+      "/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices",
+    );
+  });
+
+  it("keeps per-file failure reasons visible when the upload only partially succeeds", async () => {
+    let uploadCompleted = false;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      const emptySupportingMaterialLinkageResponse = buildEmptySupportingMaterialLinkageResponse(url);
+      if (emptySupportingMaterialLinkageResponse) {
+        return Promise.resolve(jsonResponse(emptySupportingMaterialLinkageResponse));
+      }
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 18800,
+          counts: {
+            material_count: uploadCompleted ? 1 : 0,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: uploadCompleted ? 1 : 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: uploadCompleted ? 1 : 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: uploadCompleted ? [
+            {
+              material_id: "MAT-UP-PARTIAL-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "hotel.pdf",
+              material_status: "assigned",
+              recognition_status: "succeeded",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: "INV-UP-PARTIAL-001",
+              invoice_number: "HOTEL-188",
+              validation_status: "passed",
+              validation_messages: [],
+              created_at: "2026-04-28T15:00:00+08:00",
+            },
+          ] : [],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({
+          items: uploadCompleted ? [
+            {
+              id: "INV-UP-PARTIAL-001",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-UP-PARTIAL-001",
+              invoice_number: "HOTEL-188",
+              issue_date: "2026-04-25",
+              transaction_time: "2026-04-25T09:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "锦江酒店",
+              amount_cents: 18800,
+              expense_type: "hotel",
+              created_at: "2026-04-28T15:00:00+08:00",
+              updated_at: "2026-04-28T15:01:00+08:00",
+            },
+          ] : [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-UP-PARTIAL-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: {
+            id: "REC-UP-PARTIAL-001",
+            material_id: "MAT-UP-PARTIAL-001",
+            status: "succeeded",
+            is_final_fact: false,
+            failure: null,
+            raw_response: {},
+            recognized_fields: {
+              invoice_number: {
+                value: "HOTEL-188",
+                source: "ai",
+                confidence: 0.98,
+                status: "recognized",
+                updated_at: "2026-04-28T15:00:30+08:00",
+              },
+            },
+            manual_corrections: [],
+            created_at: "2026-04-28T15:00:30+08:00",
+            updated_at: "2026-04-28T15:00:30+08:00",
+          },
+        }));
+      }
+
+      if (url === "/api/invoices/INV-UP-PARTIAL-001/validations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-UP-PARTIAL-001/supporting-materials") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-UP-PARTIAL-001/splits") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-UP-PARTIAL-001/confirmations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/materials" && method === "POST") {
+        uploadCompleted = true;
+        return Promise.resolve(jsonResponse({
+          status: "partial_success",
+          recognition_dispatch: {
+            mode: "in_process",
+            status: "executed",
+            message: "部分文件已接收，系统正在继续刷新成功材料的识别状态。",
+          },
+          items: [
+            {
+              id: "MAT-UP-PARTIAL-001",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "invoice",
+              recognition_status: "succeeded",
+              storage_key: "TASK-OPEN/hotel.pdf",
+              original_filename: "hotel.pdf",
+              content_type: "application/pdf",
+              size_bytes: 256,
+              sha256: "e".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T15:00:00+08:00",
+            },
+          ],
+          failures: [
+            {
+              original_filename: "notes.txt",
+              error_code: "unsupported_content_type",
+              detail: "unsupported material content type: text/plain",
+            },
+          ],
+        }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in workbench partial upload test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("工作台上传文件"), {
+      target: {
+        files: [
+          new File(["invoice"], "hotel.pdf", { type: "application/pdf" }),
+          new File(["notes"], "notes.txt", { type: "text/plain" }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+
+    expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
+    expect(screen.getByText("材料编号：MAT-UP-PARTIAL-001")).toBeInTheDocument();
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    expect(screen.getByText("unsupported material content type: text/plain")).toBeInTheDocument();
+    expect(screen.getByText("部分成功")).toBeInTheDocument();
   });
 
   it("submits confirmations directly from the workbench and refreshes current statuses", async () => {

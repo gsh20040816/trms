@@ -781,7 +781,7 @@ describe("frontend main flow e2e placeholder", () => {
       });
       fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
 
-      expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
+      expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
       expect(screen.getByText("材料编号：MAT-001")).toBeInTheDocument();
 
       cleanup();

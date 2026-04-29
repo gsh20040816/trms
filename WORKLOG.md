@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-30 01:57 - Refresh automatic upload processing states in member workbench
+
+### 完成内容
+- 完成任务“上传成功后展示材料自动处理状态刷新”。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 把上传区下方的“最近上传结果”改为“最近上传处理状态”，不再只停留在一次性的逐文件归档反馈；
+  - 基于最近上传材料、当前工作台读模型和待关联摘要，推导“已接收 / 识别排队中 / 识别完成 / 已归票 / 需要处理”处理阶段；
+  - 对识别服务未配置、worker 排队等待、识别失败、待人工归票、缺失材料等场景给出不同说明和下一步入口；
+  - 为仍处于过渡态的最近上传材料增加有限次自动刷新，状态变化时会继续刷新下面的待处理事项，而不是要求成员自己手动拼接上传结果和工作台变化。
+- 更新 [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)：
+  - 覆盖上传后排队等待；
+  - 覆盖上传后成功形成并归票；
+  - 覆盖识别服务未配置导致的失败提示；
+  - 覆盖部分上传失败时仍保留成功材料状态与逐文件失败原因。
+- 更新 [main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx) 中成员上传后的断言标题，使其与新处理状态区保持一致。
+
+### 根因
+- 成员工作台此前在上传完成后只展示一次“最近上传结果”，主流程到此就断开了。
+- 结果是成员还要自己去下面发票区判断“系统现在处理到哪一步、是否还在识别、是否已经归票、是否已经冒出新的待办”，上传反馈和工作台状态没有形成闭环。
+
+### 保守假设
+- 本轮自动刷新只对最近上传且仍处于过渡态的材料进行有限次轮询，而不是长期高频刷新整个工作台。
+- 原因是当前第一阶段仍以轮询为主，没有引入新的事件推送或 WebSocket；先把上传后的关键几步状态闭环起来，避免为这一个任务扩散到新的实时基础设施。
+
+### 影响范围
+- 仅修改成员工作台上传反馈区域和相关前端测试。
+- 不改动后端接口、数据库 schema、管理员页面、导出链路或成员提交/撤回规则。
+
+### 验证结果
+- 已通过定向验证：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx`
+    - 19 个用例通过
+  - `cd web && npm test -- main-flow-e2e-placeholder.test.tsx`
+    - 1 个用例通过
+  - `cd web && npm run build`
+    - 通过；存在既有 Vite chunk size 警告
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 474 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 01:40 - Add aggregated member workbench read model
 
 ### 完成内容
