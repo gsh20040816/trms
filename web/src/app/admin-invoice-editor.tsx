@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
 import MenuItem from "@mui/material/MenuItem";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExpenseType,
@@ -697,9 +700,9 @@ export function AdminInvoiceEditorPage() {
           在这里根据已有识别结果补录或修正发票信息，并查看保存后的校验反馈。
         </p>
         <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
+          <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}`}>
             返回任务详情
-          </Link>
+          </Button>
         </div>
       </section>
 
@@ -731,7 +734,7 @@ export function AdminInvoiceEditorPage() {
                   <p className="eyebrow">Invoice Materials</p>
                   <h2>待录入或可更正的发票材料</h2>
                 </div>
-                <span className="status-chip">{invoiceMaterialItems.length} 份发票材料</span>
+                <StatusBadge tone="info">{invoiceMaterialItems.length} 份发票材料</StatusBadge>
               </div>
 
               {invoiceMaterialItems.length === 0 ? (
@@ -747,8 +750,7 @@ export function AdminInvoiceEditorPage() {
                     const isSelected = material.id === selectedMaterialId;
                     return (
                       <li key={material.id}>
-                        <button
-                          type="button"
+                        <ButtonBase
                           className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
                           onClick={() => {
                             setSelectedMaterialId(material.id);
@@ -757,15 +759,16 @@ export function AdminInvoiceEditorPage() {
                             setSubmitError(null);
                             setSaveFeedback(null);
                           }}
+                          sx={{ display: "block", width: "100%", textAlign: "left", borderRadius: 2 }}
                         >
                           <div className="task-card-header">
                             <div>
                               <p className="task-card-id">材料编号 {material.id}</p>
                               <h3>{material.original_filename}</h3>
                             </div>
-                            <span className="status-chip">
+                            <StatusBadge tone={invoice ? "success" : "warning"}>
                               {invoice ? "已存在发票记录" : "待录入"}
-                            </span>
+                            </StatusBadge>
                           </div>
                           <dl className="task-meta-grid invoice-editor-summary-grid">
                             <div>
@@ -787,7 +790,7 @@ export function AdminInvoiceEditorPage() {
                               </dd>
                             </div>
                           </dl>
-                        </button>
+                        </ButtonBase>
                       </li>
                     );
                   })}
@@ -802,9 +805,9 @@ export function AdminInvoiceEditorPage() {
                     <p className="eyebrow">Selected Material</p>
                     <h2>录入或更正发票字段</h2>
                   </div>
-                  <span className="status-chip">
+                  <StatusBadge tone="info">
                     {selectedInvoice ? `当前发票号 ${selectedInvoice.invoice_number}` : "尚无发票记录"}
-                  </span>
+                  </StatusBadge>
                 </div>
 
                 <dl className="task-meta-grid invoice-editor-summary-grid">
@@ -852,7 +855,7 @@ export function AdminInvoiceEditorPage() {
                           先在这里核对原始票据，再决定是否需要进入人工更正。
                         </p>
                       </div>
-                      <span className="status-chip">{selectedItem.materialItem.material.content_type ?? "未知类型"}</span>
+                      <StatusBadge tone="info">{selectedItem.materialItem.material.content_type ?? "未知类型"}</StatusBadge>
                     </div>
                     {previewState.status === "loading" ? (
                       <p className="field-hint">正在拉取原始材料内容，请稍候。</p>
@@ -895,9 +898,9 @@ export function AdminInvoiceEditorPage() {
                           当前服务端会把人工更正写回最新有效识别记录，因此这里直接展示字段来源、置信度和待确认提示，而不是只显示最终发票值。
                         </p>
                       </div>
-                      <span className={`status-chip member-status-chip-${selectedRecognition?.status ?? "pending"}`}>
+                      <StatusBadge tone={selectedRecognition?.status === "failed" ? "danger" : selectedRecognition?.status === "succeeded" ? "success" : "warning"}>
                         {formatRecognitionStatus(selectedRecognition?.status ?? "pending")}
-                      </span>
+                      </StatusBadge>
                     </div>
 
                     {selectedRecognition?.status === "failed" && selectedRecognition.failure ? (
@@ -933,11 +936,11 @@ export function AdminInvoiceEditorPage() {
                                       : "该字段暂无识别建议，可按需补录。"}
                                 </p>
                               </div>
-                              <span className={`status-chip member-status-chip-${recognizedField?.status ?? "not_ready"}`}>
+                              <StatusBadge tone={recognizedField?.status === "recognized" ? "success" : "warning"}>
                                 {recognizedField
                                   ? formatRecognitionFieldStatus(recognizedField.status)
                                   : "暂无识别建议"}
-                              </span>
+                              </StatusBadge>
                             </div>
 
                             {recognizedField ? (
@@ -993,9 +996,9 @@ export function AdminInvoiceEditorPage() {
                           保存后这里会根据服务端返回和任务摘要刷新结果更新，不把“应该已重新校验”当作结论。
                         </p>
                       </div>
-                      <span className="status-chip">
+                      <StatusBadge tone="info">
                         共 {selectedValidations.length} 条
-                      </span>
+                      </StatusBadge>
                     </div>
 
                     {selectedValidations.length === 0 ? (
@@ -1008,9 +1011,9 @@ export function AdminInvoiceEditorPage() {
                           <li key={validation.id}>
                             <div className="task-card-header">
                               <strong>{formatValidationRule(validation.rule_code)}</strong>
-                              <span className={`status-chip member-status-chip-${validation.status}`}>
+                              <StatusBadge tone={validation.status === "failed" ? "danger" : validation.status === "pending" ? "warning" : "success"}>
                                 {formatValidationStatus(validation.status)}
-                              </span>
+                              </StatusBadge>
                             </div>
                             <span>
                               严重级别：{formatValidationSeverity(validation.severity)}
@@ -1034,7 +1037,7 @@ export function AdminInvoiceEditorPage() {
                               发票 {saveFeedback.invoiceNumber} 当前共有 {saveFeedback.validationCount} 条校验结果，其中失败 {saveFeedback.failedValidationCount} 条、待确认 {saveFeedback.pendingValidationCount} 条。
                             </p>
                           </div>
-                          <span className="status-chip member-status-chip-pending">已重新加载摘要</span>
+                          <StatusBadge tone="success">已重新加载摘要</StatusBadge>
                         </div>
                       </section>
                     ) : null}
@@ -1151,9 +1154,9 @@ export function AdminInvoiceEditorPage() {
                         <p className="field-hint">
                           保存后请继续根据校验结果补充材料或回到复核页处理剩余问题。
                         </p>
-                        <button className="route-link" type="submit" disabled={isSubmitting}>
+                        <Button variant="contained" type="submit" disabled={isSubmitting}>
                           {isSubmitting ? "正在保存并刷新摘要" : "保存发票字段"}
-                        </button>
+                        </Button>
                       </div>
                     </form>
                   </>

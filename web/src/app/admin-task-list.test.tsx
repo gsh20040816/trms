@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -175,18 +175,27 @@ describe("admin task list page", () => {
     expect(screen.getAllByText("区域赛报销").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "补材料" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("基础搜索"), {
-      target: { value: "区域赛" },
+    await act(async () => {
+      fireEvent.change(screen.getByRole("searchbox", { name: "搜索任务" }), {
+        target: { value: "区域赛" },
+      });
+      await Promise.resolve();
     });
 
     expect(await screen.findAllByText("区域赛报销")).not.toHaveLength(0);
     expect(screen.queryByText("全国邀请赛")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("基础搜索"), {
-      target: { value: "" },
+    await act(async () => {
+      fireEvent.change(screen.getByRole("searchbox", { name: "搜索任务" }), {
+        target: { value: "" },
+      });
+      await Promise.resolve();
     });
-    fireEvent.change(screen.getByLabelText("状态筛选"), {
-      target: { value: "reviewing" },
+    await act(async () => {
+      fireEvent.change(screen.getByRole("combobox", { name: "任务状态" }), {
+        target: { value: "reviewing" },
+      });
+      await Promise.resolve();
     });
 
     expect(await screen.findAllByText("全国邀请赛")).not.toHaveLength(0);

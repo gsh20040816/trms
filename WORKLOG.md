@@ -1,5 +1,65 @@
 # WORKLOG
 
+## 2026-04-29 19:30 - Migrate remaining admin task/detail/invoice/split controls to Material 3
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“收口管理员任务列表/详情/发票录入/分摊编辑剩余非 M3 控件”。
+- 调整 [web/src/app/admin-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.tsx)：
+  - 创建任务、优先任务入口、表格操作入口切到 MUI `Button`
+  - 搜索与状态筛选改为 MUI `TextField`
+  - 清除该页残余 `.button-*`、原生 `input` / `select`
+- 调整 [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)：
+  - 页头快捷入口、状态流转按钮改为 MUI `Button`
+  - 任务状态与“草稿中，可编辑”等提示改为 `StatusBadge`
+  - 返回任务列表按钮统一到 `RouterLink + Button`
+- 调整 [web/src/app/admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx)：
+  - 页头返回按钮、发票材料列表项、当前发票状态、识别/校验结果状态、保存动作统一改为 MUI `Button` / `ButtonBase` / `StatusBadge`
+  - 保留现有标签页结构和人工录入逻辑
+- 调整 [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)：
+  - 页头返回按钮、发票列表项、当前分摊状态、确认状态、分摊行新增/删除和保存动作统一改为 MUI 组件
+  - 保留现有确认对话框和金额差额可视化逻辑
+- 同步更新测试 [web/src/app/admin-task-list.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.test.tsx)：
+  - 适配 MUI `searchbox` / `combobox` 语义
+  - 将筛选交互包进 `act`
+
+### 根因
+- 管理员工作台前两轮已经完成导航、复核、导出、提醒页的 M3 收口，但任务列表、任务详情、发票录入和分摊编辑仍残留旧交互样式：
+  - `.button-*`
+  - `.route-link`
+  - `.status-chip`
+  - 原生 `input` / `select`
+- 这些页面恰好又是管理员最常驻的主工作面，导致整个后台仍存在明显的组件语义断层。
+
+### 关键改动点
+- `admin-task-list.tsx` 的状态筛选使用 MUI `TextField`，但保持 native select 风格交互，避免无意义扩大测试面。
+- `admin-invoice-editor.tsx` 与 `admin-split-editor.tsx` 的列表项改成 MUI `ButtonBase`，保留既有“左侧列表 / 右侧详情”与“发票列表 / 分摊表单”结构，不重做信息架构。
+- 本轮没有改动发票保存、分摊保存、状态流转、任务编辑的后端协议，只替换交互底座和状态展示。
+
+### 风险与影响面
+- 管理员任务列表测试现在依赖 `searchbox` 与 `combobox` 角色；若后续把筛选控件切到别的组件，需要同步更新断言。
+- 发票录入与分摊编辑的列表项仍复用既有自定义布局类，只把点击底座切到 MUI `ButtonBase`；后续若再做纯视觉重绘，可以在不影响当前行为的前提下独立推进。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- src/app/admin-task-list.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-invoice-editor.test.tsx src/app/admin-split-editor.test.tsx`
+    - 4 个文件、17 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/app/admin-task-list.tsx src/app/admin-task-detail.tsx src/app/admin-invoice-editor.tsx src/app/admin-split-editor.tsx src/app/admin-task-list.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-invoice-editor.test.tsx src/app/admin-split-editor.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
 ## 2026-04-29 19:23 - Migrate admin review/export/corrections pages to Material 3 controls
 
 ### 完成内容

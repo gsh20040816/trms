@@ -1420,7 +1420,7 @@
     - 复核列表/详情联动结构保持不变，但视觉、状态与操作反馈统一到 Material 3
     - 相关测试同步更新
 
-- [ ] 收口管理员任务列表/详情/发票录入/分摊编辑剩余非 M3 控件
+- [x] 收口管理员任务列表/详情/发票录入/分摊编辑剩余非 M3 控件
   - Done when:
     - `admin-task-list.tsx`、`admin-task-detail.tsx`、`admin-invoice-editor.tsx`、`admin-split-editor.tsx` 的残余 legacy 按钮、状态标签、原生输入完全切换为 MUI
     - 页面仅保留必要布局辅助类，不再依赖 `.button-*`、`.route-link`、`.status-chip` 等旧交互样式

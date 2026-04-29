@@ -1,5 +1,8 @@
 import { useDeferredValue, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link as RouterLink } from "react-router-dom";
+
+import Button from "@mui/material/Button";
+import TextField from "@mui/material/TextField";
 
 import { EmptyState, PageHeader, SectionCard, StatCard, StatusBadge, TaskTable } from "../components/dashboard";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
@@ -215,9 +218,9 @@ export function AdminTaskListPage() {
           meta={`当前身份：${session.displayName}`}
           actions={(
             <div className="page-actions">
-              <Link className="button button-primary" to="/admin/tasks/new">
+              <Button component={RouterLink} variant="contained" to="/admin/tasks/new">
                 创建任务
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -261,49 +264,48 @@ export function AdminTaskListPage() {
             </div>
           </div>
           <div className="page-actions">
-            <Link
-              className="button button-primary"
+            <Button
+              component={RouterLink}
+              variant="contained"
               to={buildTaskActionPath(highlightedItem.task, highlightedItem.reviewSummary, highlightedItem.overdueSummary)}
             >
               进入当前优先任务
-            </Link>
-            <Link className="button button-secondary" to={`/admin/tasks/${highlightedItem.task.id}`}>
+            </Button>
+            <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${highlightedItem.task.id}`}>
               查看任务详情
-            </Link>
+            </Button>
           </div>
         </SectionCard>
       ) : null}
 
       <SectionCard title="筛选任务" description="通过任务名称和状态快速定位要处理的事项。">
         <div className="filter-grid">
-          <label className="field-stack">
-            <span>搜索任务</span>
-            <input
-              aria-label="基础搜索"
-              type="search"
-              value={searchQuery}
-              placeholder="输入任务名称"
-              onChange={(event) => {
-                setSearchQuery(event.target.value);
-              }}
-            />
-          </label>
-          <label className="field-stack">
-            <span>任务状态</span>
-            <select
-              aria-label="状态筛选"
-              value={statusFilter}
-              onChange={(event) => {
-                setStatusFilter(event.target.value as TaskStatusFilter);
-              }}
-            >
+          <TextField
+            label="搜索任务"
+            aria-label="基础搜索"
+            type="search"
+            value={searchQuery}
+            placeholder="输入任务名称"
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+            }}
+          />
+          <TextField
+            select
+            label="任务状态"
+            aria-label="状态筛选"
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value as TaskStatusFilter);
+            }}
+            SelectProps={{ native: true }}
+          >
               {TASK_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
+          </TextField>
         </div>
       </SectionCard>
 
@@ -318,9 +320,9 @@ export function AdminTaskListPage() {
           title="当前管理员名下还没有任务"
           description="可以先创建一个新的报销任务，随后回到这里查看收集、复核和导出进度。"
           action={(
-            <Link className="button button-primary" to="/admin/tasks/new">
+            <Button component={RouterLink} variant="contained" to="/admin/tasks/new">
               创建新任务
-            </Link>
+            </Button>
           )}
         />
       ) : null}
@@ -385,15 +387,17 @@ export function AdminTaskListPage() {
                   </td>
                   <td>
                     <div className="table-actions">
-                      <Link
-                        className="button button-primary button-small"
+                      <Button
+                        component={RouterLink}
+                        variant="contained"
+                        size="small"
                         to={buildTaskActionPath(task, reviewSummary, overdueSummary)}
                       >
                         {buildTaskAction(task, reviewSummary, overdueSummary)}
-                      </Link>
-                      <Link className="button button-secondary button-small" to={`/admin/tasks/${task.id}`}>
+                      </Button>
+                      <Button component={RouterLink} variant="outlined" size="small" to={`/admin/tasks/${task.id}`}>
                         查看详情
-                      </Link>
+                      </Button>
                     </div>
                   </td>
                 </tr>

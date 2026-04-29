@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
+import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
-import { PageHeader } from "../components/dashboard";
+import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationStatus,
@@ -486,12 +488,12 @@ export function AdminSplitEditorPage() {
           description="在这里为单张发票维护归属成员和分摊金额，并检查总额是否一致。"
           actions={(
             <div className="page-actions">
-              <Link className="button button-secondary" to={`/admin/tasks/${taskId}`}>
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}`}>
                 返回任务详情
-              </Link>
-              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/invoices`}>
+              </Button>
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/invoices`}>
                 返回发票录入
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -525,7 +527,7 @@ export function AdminSplitEditorPage() {
                 <p className="eyebrow">Invoices</p>
                 <h2>可编辑分摊的发票</h2>
               </div>
-              <span className="status-chip">{splitInvoiceItems.length} 张发票</span>
+              <StatusBadge tone="info">{splitInvoiceItems.length} 张发票</StatusBadge>
             </div>
 
             {splitInvoiceItems.length === 0 ? (
@@ -540,21 +542,21 @@ export function AdminSplitEditorPage() {
                   const isSelected = invoice.id === selectedInvoiceId;
                   return (
                     <li key={invoice.id}>
-                      <button
-                        type="button"
+                      <ButtonBase
                         className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
                         onClick={() => {
                           handleSelectInvoice(item);
                         }}
+                        sx={{ display: "block", width: "100%", textAlign: "left", borderRadius: 2 }}
                       >
                         <div className="task-card-header">
                           <div>
                             <p className="task-card-id">发票编号 {invoice.id}</p>
                             <h3>{invoice.invoice_number}</h3>
                           </div>
-                          <span className="status-chip">
+                          <StatusBadge tone={item.invoiceItem.splits.length > 0 ? "info" : "warning"}>
                             {item.invoiceItem.splits.length > 0 ? `${item.invoiceItem.splits.length} 条分摊` : "待分摊"}
-                          </span>
+                          </StatusBadge>
                         </div>
 
                         <dl className="task-meta-grid invoice-editor-summary-grid">
@@ -577,7 +579,7 @@ export function AdminSplitEditorPage() {
                             </dd>
                           </div>
                         </dl>
-                      </button>
+                      </ButtonBase>
                     </li>
                   );
                 })}
@@ -592,9 +594,9 @@ export function AdminSplitEditorPage() {
                   <p className="eyebrow">Selected Invoice</p>
                   <h2>编辑当前发票的费用分摊</h2>
                 </div>
-                <span className="status-chip">
+                <StatusBadge tone="info">
                   当前发票号 {selectedInvoice.invoice_number}
-                </span>
+                </StatusBadge>
               </div>
 
               <dl className="task-meta-grid invoice-editor-summary-grid">
@@ -633,7 +635,7 @@ export function AdminSplitEditorPage() {
                         已保存 {saveFeedback.splitCount} 条分摊，合计 {formatCurrencyFromCents(saveFeedback.totalAmountCents)}。任务摘要已重新拉取，当前确认状态以下方最新数据为准。
                       </p>
                     </div>
-                    <span className="status-chip member-status-chip-passed">已刷新</span>
+                    <StatusBadge tone="success">已刷新</StatusBadge>
                   </div>
                 </section>
               ) : null}
@@ -652,13 +654,13 @@ export function AdminSplitEditorPage() {
                         允许为一张发票配置一个或多个归属成员。前端会持续显示与发票金额的差额，但不会擅自替你修正数据。
                       </p>
                     </div>
-                    <button
-                      className="route-link route-link-secondary"
+                    <Button
                       type="button"
+                      variant="outlined"
                       onClick={handleAddRow}
                     >
                       新增分摊行
-                    </button>
+                    </Button>
                   </div>
 
                   <ul className="split-row-list" aria-label="分摊编辑列表">
@@ -671,16 +673,16 @@ export function AdminSplitEditorPage() {
                       >
                         <div className="split-row-header">
                           <strong>分摊行 {index + 1}</strong>
-                          <button
-                            className="route-link route-link-secondary"
+                          <Button
                             type="button"
+                            variant="outlined"
                             onClick={() => {
                               void handleRemoveRow(row.rowId, index + 1);
                             }}
                             disabled={formRows.length <= 1}
                           >
                             删除
-                          </button>
+                          </Button>
                         </div>
 
                         <div className="admin-form-grid split-editor-form-grid">
@@ -769,9 +771,9 @@ export function AdminSplitEditorPage() {
                         服务端会按最新分摊版本维护成员确认状态。若管理员修改金额或归属成员，部分成员的确认可能被重置为待确认。
                       </p>
                     </div>
-                    <span className="status-chip">
+                    <StatusBadge tone="info">
                       已确认 {countCurrentConfirmationStatus(selectedInvoiceItem.invoiceItem, "confirmed")} / {selectedInvoiceItem.invoiceItem.splits.length}
-                    </span>
+                    </StatusBadge>
                   </div>
 
                   {selectedInvoiceItem.invoiceItem.splits.length === 0 ? (
@@ -786,13 +788,11 @@ export function AdminSplitEditorPage() {
                             <strong>
                               {split.member_id} · {formatCurrencyFromCents(split.amount_cents)}
                             </strong>
-                            <span
-                              className={`status-chip member-status-chip-${confirmation?.status ?? "pending"}`}
-                            >
+                            <StatusBadge tone={confirmation?.status === "confirmed" ? "success" : confirmation?.status === "disputed" ? "danger" : "warning"}>
                               {confirmation?.is_current
                                 ? formatConfirmationStatus(confirmation.status)
                                 : "待确认"}
-                            </span>
+                            </StatusBadge>
                           </div>
                           <span>当前版本：v{split.version}</span>
                           <span>{split.note ? `备注：${split.note}` : "无备注"}</span>
@@ -814,9 +814,9 @@ export function AdminSplitEditorPage() {
                   <p className="field-hint">
                     若差额不为 0，服务端会继续按真实规则拒绝保存，并返回明确错误；本页只负责把该错误原样展示出来。
                   </p>
-                  <button className="route-link" type="submit" disabled={isSubmitting}>
+                  <Button variant="contained" type="submit" disabled={isSubmitting}>
                     {isSubmitting ? "正在保存并刷新摘要" : "保存费用分摊"}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </article>

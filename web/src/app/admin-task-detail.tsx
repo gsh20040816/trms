@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 
 import Autocomplete from "@mui/material/Autocomplete";
 import Button from "@mui/material/Button";
@@ -13,7 +13,7 @@ import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
-import { PageHeader } from "../components/dashboard";
+import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type { ExpenseType, ReimbursementTask, TaskStatus, TaskUpdateInput } from "../lib/api/types";
 import { formatExpenseType, formatMemberLabel, formatTaskStatus } from "../lib/ui-text";
@@ -388,12 +388,12 @@ export function AdminTaskDetailPage() {
           description="这里集中查看任务基础配置、编辑草稿任务和推进当前可执行的下一步操作。"
           actions={(
             <div className="page-actions">
-              <Link className="button button-primary" to={`/admin/tasks/${taskId}/invoices`}>
+              <Button component={RouterLink} variant="contained" to={`/admin/tasks/${taskId}/invoices`}>
                 录入或更正发票
-              </Link>
-              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/missing-materials`}>
+              </Button>
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/missing-materials`}>
                 查看缺失材料
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -435,9 +435,7 @@ export function AdminTaskDetailPage() {
                 <p className="task-card-id">任务编号 {visibleTask.id}</p>
                 <h2>{visibleTask.competition_name}</h2>
               </div>
-              <span className={`status-chip task-status-chip task-status-${visibleTask.status}`}>
-                {formatTaskStatus(visibleTask.status)}
-              </span>
+              <StatusBadge tone="info">{formatTaskStatus(visibleTask.status)}</StatusBadge>
             </div>
 
             <dl className="task-detail-grid">
@@ -484,9 +482,9 @@ export function AdminTaskDetailPage() {
                 <p className="eyebrow">Task Config</p>
                 <h2>任务基础配置</h2>
               </div>
-              <span className="status-chip">
+              <StatusBadge tone={isDraftEditable ? "warning" : "info"}>
                 {isDraftEditable ? "草稿中，可编辑" : `当前状态：${formatTaskStatus(visibleTask.status)}`}
-              </span>
+              </StatusBadge>
             </div>
 
             {!isDraftEditable ? (
@@ -734,7 +732,7 @@ export function AdminTaskDetailPage() {
                   <p>保存会覆盖当前草稿任务的基础信息，但不会改变状态。</p>
                 </div>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                  <Button component={Link} to="/admin" variant="outlined" color="inherit">
+                  <Button component={RouterLink} to="/admin" variant="outlined" color="inherit">
                     返回任务列表
                   </Button>
                   <Button type="submit" variant="contained" disabled={!isDraftEditable || isSubmitting}>
@@ -751,9 +749,9 @@ export function AdminTaskDetailPage() {
                 <p className="eyebrow">Status Actions</p>
                 <h2>状态流转操作</h2>
               </div>
-              <span className={`status-chip task-status-chip task-status-${visibleTask.status}`}>
+              <StatusBadge tone="info">
                 当前状态：{formatTaskStatus(visibleTask.status)}
-              </span>
+              </StatusBadge>
             </div>
             {allowedTransitions.length > 0 ? (
               <>
@@ -762,17 +760,17 @@ export function AdminTaskDetailPage() {
                 </p>
                 <div className="status-action-grid">
                   {allowedTransitions.map((targetStatus) => (
-                    <button
+                    <Button
                       key={targetStatus}
                       type="button"
-                      className="route-link"
+                      variant="contained"
                       disabled={isUpdatingStatus}
                       onClick={() => {
                         void handleStatusUpdate(targetStatus);
                       }}
                     >
                       {isUpdatingStatus ? "正在提交状态更新..." : buildStatusActionLabel(targetStatus)}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </>
