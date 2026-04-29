@@ -15,6 +15,19 @@ function resolveRequestUrl(input: string | URL | Request) {
   return input.url;
 }
 
+function resolveRequestMethod(
+  input: string | URL | Request,
+  init: RequestInit | undefined,
+) {
+  if (init?.method) {
+    return init.method.toUpperCase();
+  }
+  if (input instanceof Request) {
+    return input.method.toUpperCase();
+  }
+  return "GET";
+}
+
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
     status: init.status ?? 200,
@@ -3004,5 +3017,405 @@ describe("MemberInvoiceWorkbenchPage", () => {
     await waitFor(() => {
       expect(screen.getAllByRole("heading", { name: "INV-ALT-002" }).length).toBeGreaterThan(0);
     });
+  });
+
+  it("allows members to attach a pending supporting material to a chosen candidate invoice and refreshes invoice details", async () => {
+    let linkedInvoiceId: string | null = null;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+
+      if (url === "/api/tasks" && method === "GET") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["railway", "hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 30000,
+          counts: {
+            material_count: 2,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 2,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 2,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-INV-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "first.pdf",
+              material_status: "assigned",
+              recognition_status: "succeeded",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: "INV-ALT-001",
+              invoice_number: "INV-ALT-001",
+              validation_status: "passed",
+              validation_messages: [],
+              created_at: "2026-04-28T10:00:00+08:00",
+            },
+            {
+              material_id: "MAT-INV-002",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "second.pdf",
+              material_status: "assigned",
+              recognition_status: "succeeded",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: "INV-ALT-002",
+              invoice_number: "INV-ALT-002",
+              validation_status: "passed",
+              validation_messages: [],
+              created_at: "2026-04-28T11:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/shared-invoices?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/supporting-material-linkage?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: linkedInvoiceId === null ? [
+            {
+              material_id: "MAT-PENDING-001",
+              submitter_id: "2250001",
+              material_type: "payment_record",
+              original_filename: "pay.png",
+              pending_reason: "multiple_candidates",
+              candidate_invoices: [
+                {
+                  invoice_id: "INV-ALT-001",
+                  invoice_number: "INV-ALT-001",
+                  amount_cents: 10000,
+                  expense_type: "railway",
+                },
+                {
+                  invoice_id: "INV-ALT-002",
+                  invoice_number: "INV-ALT-002",
+                  amount_cents: 20000,
+                  expense_type: "hotel",
+                },
+              ],
+              created_at: "2026-04-28T12:00:00+08:00",
+            },
+          ] : [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "INV-ALT-001",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-INV-001",
+              invoice_number: "INV-ALT-001",
+              issue_date: "2026-04-26",
+              transaction_time: "2026-04-26T08:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "12306",
+              amount_cents: 10000,
+              expense_type: "railway",
+              created_at: "2026-04-28T10:00:00+08:00",
+              updated_at: "2026-04-28T10:00:00+08:00",
+            },
+            {
+              id: "INV-ALT-002",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-INV-002",
+              invoice_number: "INV-ALT-002",
+              issue_date: "2026-04-27",
+              transaction_time: "2026-04-27T08:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "酒店",
+              amount_cents: 20000,
+              expense_type: "hotel",
+              created_at: "2026-04-28T11:00:00+08:00",
+              updated_at: "2026-04-28T11:00:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-INV-001/recognition-tasks" || url === "/api/materials/MAT-INV-002/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: null,
+          items: [],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-001/validations" || url === "/api/invoices/INV-ALT-002/validations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-001/supporting-materials" && method === "GET") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-002/supporting-materials" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          items: linkedInvoiceId === "INV-ALT-002" ? [
+            {
+              id: "MAT-PENDING-001",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              material_type: "payment_record",
+              status: "assigned",
+              original_filename: "pay.png",
+              file_path: "TASK-OPEN/pay.png",
+              channel: "web",
+              created_at: "2026-04-28T12:00:00+08:00",
+              updated_at: "2026-04-28T12:00:00+08:00",
+            },
+          ] : [],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-001/splits" || url === "/api/invoices/INV-ALT-002/splits") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-001/confirmations" || url === "/api/invoices/INV-ALT-002/confirmations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-002/supporting-materials/MAT-PENDING-001" && method === "PUT") {
+        linkedInvoiceId = "INV-ALT-002";
+        return Promise.resolve(jsonResponse({
+          item: {
+            id: "MAT-PENDING-001",
+            task_id: "TASK-OPEN",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            status: "assigned",
+            original_filename: "pay.png",
+            file_path: "TASK-OPEN/pay.png",
+            channel: "web",
+            created_at: "2026-04-28T12:00:00+08:00",
+            updated_at: "2026-04-28T12:00:00+08:00",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in pending linkage attach success test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "关联到发票 INV-ALT-002" }));
+
+    await waitFor(() => {
+      expect(linkedInvoiceId).toBe("INV-ALT-002");
+      expect(screen.queryByRole("heading", { name: "待关联辅助材料" })).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
+  });
+
+  it("shows a clear failure message when attaching a pending supporting material fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001"],
+            fee_categories: ["railway", "hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 10000,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 1,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 1,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-INV-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "first.pdf",
+              material_status: "assigned",
+              recognition_status: "succeeded",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: "INV-ALT-001",
+              invoice_number: "INV-ALT-001",
+              validation_status: "passed",
+              validation_messages: [],
+              created_at: "2026-04-28T10:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/shared-invoices?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/supporting-material-linkage?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [
+            {
+              material_id: "MAT-PENDING-001",
+              submitter_id: "2250001",
+              material_type: "payment_record",
+              original_filename: "pay.png",
+              pending_reason: "multiple_candidates",
+              candidate_invoices: [
+                {
+                  invoice_id: "INV-ALT-001",
+                  invoice_number: "INV-ALT-001",
+                  amount_cents: 10000,
+                  expense_type: "railway",
+                },
+              ],
+              created_at: "2026-04-28T12:00:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "INV-ALT-001",
+              task_id: "TASK-OPEN",
+              material_id: "MAT-INV-001",
+              invoice_number: "INV-ALT-001",
+              issue_date: "2026-04-26",
+              transaction_time: "2026-04-26T08:00:00+08:00",
+              buyer_name: "同济大学",
+              tax_number: "91310113666007253C",
+              seller_name: "12306",
+              amount_cents: 10000,
+              expense_type: "railway",
+              created_at: "2026-04-28T10:00:00+08:00",
+              updated_at: "2026-04-28T10:00:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-INV-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: null,
+          items: [],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-001/validations" || url === "/api/invoices/INV-ALT-001/supporting-materials" || url === "/api/invoices/INV-ALT-001/splits" || url === "/api/invoices/INV-ALT-001/confirmations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-ALT-001/supporting-materials/MAT-PENDING-001" && method === "PUT") {
+        return Promise.resolve(jsonResponse(
+          { detail: "supporting material belongs to a different task" },
+          { status: 409 },
+        ));
+      }
+
+      throw new Error(`Unhandled fetch URL in pending linkage attach failure test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "关联到发票 INV-ALT-001" }));
+
+    expect((await screen.findAllByText("supporting material belongs to a different task")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
   });
 });

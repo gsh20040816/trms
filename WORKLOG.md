@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-04-30 01:00 - Add candidate invoice attachment action in member workbench
+
+### 完成内容
+- 完成任务“在成员工作台待关联辅助材料区支持选择候选发票并关联”。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 在“待关联辅助材料”区为多候选材料新增“关联到发票”明确动作；
+  - 关联进行中会禁用同一材料的其它候选按钮，避免重复提交；
+  - 关联成功后会刷新当前工作台数据，并切换到目标发票上下文，带出最新附件状态；
+  - 关联失败时会在待关联项下方展示明确失败原因，而不是只保留跳转查看入口。
+- 调整 [trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)：
+  - 新增前端 `attachInvoiceSupportingMaterial(...)` API 封装，复用现有 `PUT /api/invoices/{invoice_id}/supporting-materials/{material_id}`。
+- 更新 [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)：
+  - 保留原有“查看候选发票”覆盖；
+  - 新增多候选关联成功后待关联项消失、目标发票附件区刷新的测试；
+  - 新增关联失败时展示明确原因的测试。
+
+### 根因
+- 成员工作台此前只能告诉用户“这份辅助材料有多个候选发票”或“没有候选发票”，但没有把后端已存在的手动关联能力接到当前主工作台。
+- 结果是多候选场景下成员仍需要自己推断下一步，待关联提示无法形成实际处理闭环，也无法在同一页看到关联后的附件状态刷新。
+
+### 保守假设
+- 本轮在关联成功后选择整页工作台重载，而不是在前端本地做乐观更新。
+- 原因是关联成功后不仅附件列表会变化，还可能连带影响缺失材料、校验结果和待处理摘要；统一重载能保持这些聚合状态一致，避免局部补丁制造前端脏状态。
+
+### 影响范围
+- 仅修改成员工作台前端交互、前端 API 封装和成员工作台测试。
+- 不改动后端权限规则、自动归票规则、数据库 schema、管理员页面或导出链路。
+
+### 验证结果
+- 已通过定向测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx`
+    - 16 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 470 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 01:59 - Restrict supporting material linkage write permissions
 
 ### 完成内容

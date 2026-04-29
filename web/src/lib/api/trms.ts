@@ -385,6 +385,15 @@ export const trmsApi = {
     );
   },
 
+  attachInvoiceSupportingMaterial(invoiceId: string, materialId: string) {
+    return apiClient.request<ApiItemResponse<MaterialRecord>>(
+      `/invoices/${encodeSegment(invoiceId)}/supporting-materials/${encodeSegment(materialId)}`,
+      {
+        method: "PUT",
+      },
+    );
+  },
+
   listInvoiceSplits(invoiceId: string) {
     return apiClient.request<ApiListResponse<ExpenseSplitRecord>>(
       `/invoices/${encodeSegment(invoiceId)}/splits`,
