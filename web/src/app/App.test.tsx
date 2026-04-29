@@ -94,10 +94,11 @@ describe("web app account auth", () => {
 
     render(<RouterProvider router={router} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
-    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "admin" } });
-    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "password123" } });
-    fireEvent.change(screen.getByLabelText("角色"), { target: { value: "admin" } });
+    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    fireEvent.change(screen.getByLabelText(/用户名/), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText(/密码/), { target: { value: "password123" } });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "角色" }));
+    fireEvent.click(screen.getByRole("option", { name: "管理员" }));
     fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "张管理员" } });
     fireEvent.change(screen.getByLabelText("身份编号"), { target: { value: "admin-1" } });
     fireEvent.click(screen.getByRole("button", { name: "注册并登录" }));
@@ -158,10 +159,10 @@ describe("web app account auth", () => {
 
     render(<RouterProvider router={router} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
+    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
 
-    expect(screen.queryByLabelText("角色")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("开发调试角色入口")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "角色" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "开发调试角色入口" })).not.toBeInTheDocument();
     expect(
       screen.getByText("当前环境仅开放成员自注册；管理员与系统管理员账号必须通过受控初始化或后续邀请/审批流程创建。"),
     ).toBeInTheDocument();

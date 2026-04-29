@@ -1,5 +1,71 @@
 # WORKLOG
 
+## 2026-04-29 11:55 - Rewrite login/register interaction with M3 components
+
+### 完成内容
+- 用 MUI v7 重写 `web/src/app/auth.tsx`：
+  - `MockLoginPage` 改为：标题区 + Card 内 M3 Tabs（登录 / 注册）+ Stack 表单（TextField / Select MenuItem）+ 提交按钮带 LoginIcon / PersonAddAltIcon。
+  - 错误统一通过 `useSnackbar().showError(...)` 推送，并在表单内同步显示一个可关闭的 `<Alert severity="error">`，不再依赖页面级红色 ApiErrorNotice 卡片。
+  - 成功登录/注册/退出/切换身份均通过 `showSuccess(...)` 即时反馈。
+  - 已登录卡片用 `<Collapse>` 包裹，登录后才出现，并展示当前身份、可切换身份组按钮、进入入口与退出登录。
+  - 开发调试角色入口收口为单张 dashed outlined Card，内含 3 张 outlined 子 Card + 标题区域 DEV chip；`uiConfig.enableDevRoleEntries=false` 时整张隐藏。
+  - 注册时角色受限场景用 `<Alert severity="info">` 提示当前环境只允许成员自注册。
+  - 登录后 `<TextField select label="角色">` 仍保留 `<input type="hidden" name="role">` 用于提交语义不变。
+- `ProtectedRoleRoute` 从原 `RoleShell` 重写为 `<Card><CardContent>`：身份切换中、不可访问、切换失败三种状态都用 MUI Alert + Button 表达，链接全部改用 `<Button component={RouterLink}>`。
+- 新增本地 `describeError(error)` 工具（`auth.tsx` 内），从 `ApiError` / `summarizeUnknownError` 提取一句话错误信息，喂给 Snackbar。
+- 把 `useSnackbar()` 在 Provider 之外的退化行为调整为静默 noop，避免单元测试为单组件单独包裹 SnackbarProvider；生产构建仍始终包裹。
+- 同步更新 `web/src/app/App.test.tsx`：
+  - 注册 Tab 切换断言改为 `getByRole("tab", { name: "注册" })`。
+  - MUI TextField label 在 required 字段后会自动追加 `*`，`getByLabelText` 改为 regex 匹配；Select 用 `getByRole("combobox", { name: "角色" })` + `getByRole("option", { name: "管理员" })`。
+  - 受限注册场景下"角色"不可见的断言改为 `queryByRole("combobox", { name: "角色" })`，开发调试入口断言改为 `queryByRole("group", { name: "开发调试角色入口" })`。
+  - 全部 8 个用例通过，断言语义没有弱化。
+
+### 根因
+- 原登录页是一整页"标题卡 + 登录注册卡 + 错误卡 + 调试卡 + 已登录卡"五张并列的自造卡片，靠原生 `<input>` + `<button>` 渲染，没有任何 M3 视觉、缺少操作反馈、登录态与表单同时渲染，长期信息过载。
+- 用户在 P5 重写计划中明确要求登录页采用 M3 组件、Tab 切换、Snackbar 反馈、登录态隐藏表单、调试入口收口为可折叠区域。
+
+### 关键改动点
+- 重写：
+  - `web/src/app/auth.tsx`：从原 396 行重写为基于 MUI 的版本。
+- 调整：
+  - `web/src/components/use-snackbar.ts`：`useSnackbar` 在 Provider 之外退化为 noop，方便单元测试。
+  - `web/src/app/App.test.tsx`：同步更新 8 个 case 中的断言到 M3 组件语义。
+- 任务状态：
+  - `TASKS.md` P5 第四条标记完成。
+
+### 风险与影响面
+- 业务行为没有变化：登录、注册、Mock 登录、登录后切换身份、退出登录、跳转 next path、生产受限场景隐藏调试入口 - 这些路径全部保持原契约。
+- bundle gzipped 从 228.39 kB 增至 248.72 kB（+20.33 kB），新增 Tabs / Tab / Card / Collapse / Chip / Stack / Alert / Divider / TextField / Select 等组件代码。
+- `MockLoginPage` 不再保留对原 `ApiErrorNotice` 与 `RoleShell` 的引用，但这两个组件仍被其他业务页面使用，保留不动。
+- 已登录卡片用 `<Collapse>` 切换可见性，避免登录瞬间布局抖动。
+
+### 修改文件
+- `web/src/app/auth.tsx`
+- `web/src/app/App.test.tsx`
+- `web/src/components/use-snackbar.ts`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic upgrade/downgrade/upgrade 通过
+  - pytest 全量通过
+  - Web `npm run lint` 0 error 0 warning
+  - Web `npm test` 21 文件、69 用例全部通过
+  - Web `npm run build` 成功；bundle gzipped 248.72 kB
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 默认 mode 仍是 `"login"`；切换到注册 tab 后字段顺序与旧版保持一致，便于现有用户路径直觉。
+- 调试入口标题区出现 "DEV" warning chip，让运维一眼识别出当前是非生产构建。
+- 测试中 fireEvent.mouseDown + 点击 option 是 MUI Select 在 jsdom 下被广泛使用的可靠交互模拟。
+
+### 备注
+- 本轮没有删除旧 `ApiErrorNotice` / `RoleShell` 等组件；它们仍被其他业务页使用，将在后续轮次按页迁移时再决定是否退役。
+- `Collapse` 在已登录卡片不存在时作为占位 `<Box />` 返回，避免 transition 在空内容上闪烁。
+
 ## 2026-04-29 11:48 - Replace app shell with M3 top app bar, navigation rail and global snackbar
 
 ### 完成内容
