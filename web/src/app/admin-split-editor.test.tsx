@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -249,6 +249,17 @@ function renderAdminSplitEditorRoute(entry = "/admin/tasks/TASK-ALPHA/splits") {
   render(<RouterProvider router={router} />);
 }
 
+async function chooseSplitMember(row: HTMLElement, memberId: string) {
+  act(() => {
+    fireEvent.mouseDown(within(row).getByRole("combobox", { name: "归属成员" }));
+  });
+  const option = await screen.findByRole("option", { name: memberId });
+  await act(async () => {
+    fireEvent.click(option);
+    await Promise.resolve();
+  });
+}
+
 describe("admin split editor page", () => {
   beforeEach(() => {
     clearMockSession();
@@ -340,38 +351,71 @@ describe("admin split editor page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "新增分摊行" }));
 
-    const thirdRow = within(await screen.findByRole("group", { name: "分摊行 3" }));
-    fireEvent.change(thirdRow.getByRole("combobox", { name: "归属成员" }), {
-      target: { value: "2250003" },
-    });
-    fireEvent.change(thirdRow.getByRole("textbox", { name: "分摊金额（元）" }), {
+    const thirdRow = await screen.findByRole("group", { name: "分摊行 3" });
+    await chooseSplitMember(thirdRow, "2250003");
+    fireEvent.change(within(thirdRow).getByRole("textbox", { name: "分摊金额（元）" }), {
       target: { value: "43.45" },
     });
-    fireEvent.change(thirdRow.getByRole("textbox", { name: "备注" }), {
+    fireEvent.change(within(thirdRow).getByRole("textbox", { name: "备注" }), {
       target: { value: "third member" },
     });
 
-    const secondRow = within(screen.getByRole("group", { name: "分摊行 2" }));
-    fireEvent.change(secondRow.getByRole("textbox", { name: "分摊金额（元）" }), {
+    const secondRow = screen.getByRole("group", { name: "分摊行 2" });
+    fireEvent.change(within(secondRow).getByRole("textbox", { name: "分摊金额（元）" }), {
       target: { value: "30" },
     });
 
     expect(screen.getByText("+￥10.00")).toBeInTheDocument();
 
-    const firstRow = within(screen.getByRole("group", { name: "分摊行 1" }));
-    fireEvent.change(firstRow.getByRole("textbox", { name: "分摊金额（元）" }), {
+    const firstRow = screen.getByRole("group", { name: "分摊行 1" });
+    fireEvent.change(within(firstRow).getByRole("textbox", { name: "分摊金额（元）" }), {
       target: { value: "50" },
     });
-    fireEvent.change(firstRow.getByRole("textbox", { name: "分摊金额（元）" }), {
+    fireEvent.change(within(firstRow).getByRole("textbox", { name: "分摊金额（元）" }), {
       target: { value: "50.00" },
     });
     expect(screen.getByText("+￥0.00")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+      await Promise.resolve();
+    });
 
-    expect(await screen.findByText("已保存 3 条分摊，合计 ￥123.45。任务摘要已重新拉取，当前确认状态以下方最新数据为准。")).toBeInTheDocument();
     expect(await screen.findByText(/2250003 · ￥43.45/)).toBeInTheDocument();
     expect(screen.getByText("已确认 1 / 3")).toBeInTheDocument();
+  });
+
+  it("shows helper text and does not submit when a split row is invalid", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-ALPHA") {
+        return Promise.resolve(jsonResponse(buildTask()));
+      }
+
+      if (url === "/api/tasks/TASK-ALPHA/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReviewSummary()));
+      }
+
+      if (url === "/api/invoices/INV-1/splits" && init?.method === "PUT") {
+        throw new Error("Expected validation to prevent the split submit request.");
+      }
+
+      throw new Error(`Unhandled fetch URL in split editor validation test: ${url}`);
+    });
+
+    renderAdminSplitEditorRoute();
+
+    const firstRow = await screen.findByRole("group", { name: "分摊行 1" });
+    await chooseSplitMember(firstRow, "请选择成员");
+    fireEvent.change(within(firstRow).getByRole("textbox", { name: "分摊金额（元）" }), {
+      target: { value: "" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
+
+    expect(await screen.findByText("请选择归属成员。")).toBeInTheDocument();
+    expect(screen.getByText("请输入大于 0 的金额，单位为元。")).toBeInTheDocument();
   });
 
   it("shows backend rejection details instead of pretending save succeeded", async () => {

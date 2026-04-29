@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader } from "../components/dashboard";
@@ -654,52 +656,49 @@ export function AdminSplitEditorPage() {
                         </div>
 
                         <div className="admin-form-grid split-editor-form-grid">
-                          <label className="field-stack">
-                            <span>归属成员</span>
-                            <select
-                              name={`member-${row.rowId}`}
-                              value={row.memberId}
-                              onChange={(event) => {
-                                updateRow(row.rowId, "memberId", event.target.value);
-                              }}
-                            >
-                              <option value="">请选择成员</option>
-                              {visibleTask.member_ids.map((memberId) => (
-                                <option key={memberId} value={memberId}>
-                                  {memberId}
-                                </option>
-                              ))}
-                            </select>
-                            {formErrors[row.rowId]?.memberId ? (
-                              <span className="field-error">{formErrors[row.rowId]?.memberId}</span>
-                            ) : null}
-                          </label>
+                          <TextField
+                            select
+                            label="归属成员"
+                            name={`member-${row.rowId}`}
+                            value={row.memberId}
+                            onChange={(event) => {
+                              updateRow(row.rowId, "memberId", event.target.value);
+                            }}
+                            error={Boolean(formErrors[row.rowId]?.memberId)}
+                            helperText={formErrors[row.rowId]?.memberId}
+                            fullWidth
+                          >
+                            <MenuItem value="">请选择成员</MenuItem>
+                            {visibleTask.member_ids.map((memberId) => (
+                              <MenuItem key={memberId} value={memberId}>
+                                {memberId}
+                              </MenuItem>
+                            ))}
+                          </TextField>
 
-                          <label className="field-stack">
-                            <span>分摊金额（元）</span>
-                            <input
-                              name={`amount-${row.rowId}`}
-                              inputMode="decimal"
-                              value={row.amountYuan}
-                              onChange={(event) => {
-                                updateRow(row.rowId, "amountYuan", event.target.value);
-                              }}
-                            />
-                            {formErrors[row.rowId]?.amountYuan ? (
-                              <span className="field-error">{formErrors[row.rowId]?.amountYuan}</span>
-                            ) : null}
-                          </label>
+                          <TextField
+                            label="分摊金额（元）"
+                            name={`amount-${row.rowId}`}
+                            value={row.amountYuan}
+                            onChange={(event) => {
+                              updateRow(row.rowId, "amountYuan", event.target.value);
+                            }}
+                            error={Boolean(formErrors[row.rowId]?.amountYuan)}
+                            helperText={formErrors[row.rowId]?.amountYuan}
+                            inputProps={{ inputMode: "decimal" }}
+                            fullWidth
+                          />
 
-                          <label className="field-stack split-editor-note-field">
-                            <span>备注</span>
-                            <input
-                              name={`note-${row.rowId}`}
-                              value={row.note}
-                              onChange={(event) => {
-                                updateRow(row.rowId, "note", event.target.value);
-                              }}
-                            />
-                          </label>
+                          <TextField
+                            className="split-editor-note-field"
+                            label="备注"
+                            name={`note-${row.rowId}`}
+                            value={row.note}
+                            onChange={(event) => {
+                              updateRow(row.rowId, "note", event.target.value);
+                            }}
+                            fullWidth
+                          />
                         </div>
                       </li>
                     ))}

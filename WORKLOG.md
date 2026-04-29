@@ -1,5 +1,56 @@
 # WORKLOG
 
+## 2026-04-29 16:22 - Migrate the admin split editor form to MUI TextField and Select
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“迁移管理员分摊编辑表单到 MUI TextField / Select”。
+- 将 [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx) 中分摊编辑表单的原生控件替换为 MUI 表单控件：
+  - 归属成员改为 `TextField select` + `MenuItem`
+  - 分摊金额改为 `TextField`
+  - 备注改为 `TextField`
+  - 行级校验统一通过 `error` / `helperText` 展示，不再输出自造 `.field-error`
+- 同步更新前端测试 [web/src/app/admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx)：
+  - 适配 MUI `Select` 交互
+  - 新增“分摊行无效时阻止提交并显示 helperText”覆盖
+- `TASKS.md` 中该任务已标记完成。
+
+### 根因
+- 管理员分摊编辑页仍沿用原生 `select` / `input`，与同批次已迁移到 Material 3 的任务创建页、管理员发票录入页不一致。
+- 行级校验仍依赖手写 `.field-error` 文案节点，导致“表单迁移到 MUI 体系”的任务在分摊编辑页上没有真正落地。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/admin-split-editor.tsx`
+  - `web/src/app/admin-split-editor.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只改管理员分摊编辑页的输入控件和对应测试，不改分摊保存 API、金额汇总逻辑、确认状态刷新规则或管理员其他页面。
+- 保存按钮、列表 + 详情结构、差额摘要和确认状态展示保持原样；本轮没有顺带迁移缺失材料筛选页或接入新的破坏性动作确认框。
+
+### 验证结果
+- 已通过相关前端回归：
+  - `cd web && npm test -- admin-split-editor.test.tsx`
+  - `cd web && npm run lint && npm test`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：421 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：22 文件、80 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 中仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警；
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning；
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功。
+
+### 假设
+- 本轮保守只迁移分摊行内部的成员、金额、备注输入和校验展示，不把“管理员分摊编辑表单迁移”扩展成保存按钮、摘要卡片或确认状态区块的整体重构。
+
 ## 2026-04-29 16:05 - Migrate the admin invoice editor form to MUI TextField and Select
 
 ### 完成内容

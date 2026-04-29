@@ -1306,7 +1306,7 @@
     - 校验错误不再依赖自造 `.field-error`
     - 相关测试同步更新
 
-- [ ] 迁移管理员分摊编辑表单到 MUI TextField / Select
+- [x] 迁移管理员分摊编辑表单到 MUI TextField / Select
   - Done when:
     - `web/src/app/admin-split-editor.tsx` 的成员选择、金额和备注输入改用 MUI 表单控件
     - 行级校验通过 `helperText` / `error` 呈现，而不是继续手写错误标签
