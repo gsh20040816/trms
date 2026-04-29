@@ -1375,7 +1375,7 @@
     - 由 MUI CssBaseline 统一接管 body 字体、背景、字色
     - `npm run lint` / `npm run build` / `npm test` 全部通过
 
-- [ ] 进一步收缩 `styles.css` 死代码
+- [x] 进一步收缩 `styles.css` 死代码
   - Done when:
     - 排查并删除 `.workflow-*`、`.kpi-*`、`.dashboard-grid`、`.workspace-meta-grid`、`.task-insight*`、`.task-stage-line`、`.anomaly-chip*`、`.task-workflow*` 等当前 .tsx 中未被引用的死类
     - 保留仍被业务页 `<article className="task-card">` 等引用的辅助类

@@ -40,11 +40,7 @@
 .route-card p,
 .status-card p,
 .session-banner p,
-.boundary-grid dd,
-.workspace-meta-grid dd,
-.task-insight p,
-.kpi-card p,
-.workflow-board-card p {
+.boundary-grid dd {
   margin: 0;
   color: #48637f;
 }
@@ -59,71 +55,6 @@
   gap: 22px;
 }
 
-.workspace-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin: 20px 0 0;
-}
-
-.workspace-meta-grid div {
-  border-radius: 18px;
-  padding: 16px;
-  background: rgba(244, 239, 228, 0.66);
-}
-
-.workspace-meta-grid dt {
-  margin-bottom: 6px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #132238;
-}
-
-.workflow-strip {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-  margin: 22px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.workflow-step {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  border-radius: 22px;
-  padding: 16px;
-  background: rgba(245, 239, 226, 0.72);
-}
-
-.workflow-step strong,
-.workflow-board-card h3,
-.kpi-label,
-.task-insight strong {
-  color: #132238;
-}
-
-.workflow-step span {
-  display: block;
-  color: #48637f;
-}
-
-.workflow-step-index,
-.workflow-board-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: rgba(19, 34, 56, 0.92);
-  color: #f8fafc;
-  font-weight: 800;
-}
-
-.dashboard-grid,
 .card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -141,50 +72,9 @@
   max-width: none;
 }
 
-.workflow-board,
-.dashboard-kpi-grid,
-.task-insight-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.workflow-board {
-  margin-top: 20px;
-}
-
-.workflow-board-card,
-.kpi-card,
-.task-insight {
-  border-radius: 22px;
-  padding: 18px;
-  background: rgba(244, 239, 228, 0.72);
-}
-
-.workflow-board-card h3 {
-  margin: 14px 0 10px;
-  font-size: 1.15rem;
-}
-
 .route-card-accent {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 249, 252, 0.84));
-}
-
-.kpi-card {
-  display: grid;
-  gap: 8px;
-}
-
-.kpi-value {
-  color: #132238;
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
-  line-height: 1;
-}
-
-.kpi-label {
-  font-size: 0.95rem;
-  font-weight: 800;
 }
 
 .task-card-top {
@@ -192,72 +82,6 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-}
-
-.task-stage-line {
-  margin-top: 16px;
-  color: #29415d;
-  font-weight: 700;
-}
-
-.task-insight-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 18px;
-}
-
-.task-insight {
-  display: grid;
-  gap: 6px;
-}
-
-.task-insight-label {
-  color: #8e4e1d;
-  font-size: 0.84rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.task-workflow-list,
-.anomaly-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.task-workflow-item,
-.anomaly-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #29415d;
-  font-weight: 700;
-}
-
-.anomaly-chip {
-  justify-content: space-between;
-  min-width: 148px;
-}
-
-.anomaly-chip strong {
-  color: inherit;
-}
-
-.anomaly-chip-failed {
-  background: rgba(191, 53, 41, 0.12);
-  color: #9a261b;
-}
-
-.anomaly-chip-pending {
-  background: rgba(184, 118, 16, 0.14);
-  color: #8a4d08;
 }
 
 .route-card {
@@ -1151,19 +975,13 @@
 
 @media (max-width: 900px) {
   .workspace-hero,
-  .workspace-meta-grid,
-  .workflow-strip,
-  .workflow-board,
-  .dashboard-grid,
   .card-grid,
-  .dashboard-kpi-grid,
   .admin-filter-grid,
   .admin-form-grid,
   .task-detail-layout,
   .task-card-grid,
   .task-meta-grid,
   .task-detail-grid,
-  .task-insight-grid,
   .invoice-editor-layout,
   .split-editor-layout,
   .admin-review-summary-grid,
@@ -1560,15 +1378,13 @@
 
 .stat-grid,
 .feature-grid,
-.dashboard-kpi-grid,
 .card-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
-.stat-card,
-.kpi-card {
+.stat-card {
   min-height: 138px;
   padding: 18px;
   background: #ffffff;
@@ -1576,16 +1392,14 @@
   border-radius: 14px;
 }
 
-.stat-card-label,
-.kpi-label {
+.stat-card-label {
   margin: 0 0 8px;
   color: #64748b;
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.stat-card-value,
-.kpi-value {
+.stat-card-value {
   display: block;
   margin-bottom: 8px;
   font-size: 1.9rem;
@@ -1593,8 +1407,7 @@
   color: #0f172a;
 }
 
-.stat-card-description,
-.kpi-card p {
+.stat-card-description {
   margin: 0;
   color: #475569;
   font-size: 0.92rem;
@@ -1949,7 +1762,6 @@ select:focus {
 
   .stat-grid,
   .feature-grid,
-  .dashboard-kpi-grid,
   .card-grid,
   .admin-workspace-shell,
   .filter-grid,

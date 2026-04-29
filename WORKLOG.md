@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-04-29 17:40 - Shrink unused styles.css selectors
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“进一步收缩 `styles.css` 死代码”。
+- 调整 [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)：
+  - 删除 `.workflow-*`、`.kpi-*`、`.dashboard-grid`、`.workspace-meta-grid`、`.task-insight*`、`.task-stage-line`、`.anomaly-chip*`、`.task-workflow*` 以及与之配套但同样未被引用的 `dashboard-kpi-grid` 样式
+  - 收窄混合选择器，只保留当前 `.tsx` 仍在使用的选择器，避免为了保留活代码继续携带死选择器
+  - 同步清理针对上述死类的响应式媒体查询分支
+
+### 根因
+- `styles.css` 在上一轮移除旧顶栏和全局 token 后，仍残留一批来自旧工作台/仪表盘布局的类名。
+- 这些类在当前 `web/src/**/*.tsx` 中已经没有任何引用，但依然留在全局样式表中，继续增加维护噪音，也会干扰后续判断哪些页面还依赖旧 CSS。
+
+### 关键改动点
+- 修改：
+  - `web/src/styles.css`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只删除静态检索确认未被当前 `.tsx` 引用的样式类，不修改业务组件结构、不改页面行为，也不调整仍在使用的 `.task-card`、`.status-card`、`.stat-grid` 等辅助类。
+- 由于删除的是全局 CSS，风险主要在于“是否存在隐藏引用”。本轮通过全仓库文本检索和整仓构建/测试回归共同收口该风险。
+
+### 验证结果
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、87 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
+### 假设
+- 本轮将“当前 .tsx 中未被引用的死类”保守定义为：在 `web/src` 范围内文本检索不到调用、且删除后整仓 `lint/test/build` 通过的选择器；不顺带处理未列入本轮任务的其他潜在样式清理项。
+
 ## 2026-04-29 17:33 - Attach destructive business actions to ConfirmDialog
 
 ### 完成内容
