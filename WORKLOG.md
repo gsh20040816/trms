@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-04-29 15:13 - Restore member-side manual invoice entry and retry recognition inside the current workbench
+
+### 完成内容
+- 在当前成员主工作台 [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 收口两项原本只在旧专项页里存在的能力：
+  - 本人发票材料可直接展开“手动填写或更正发票”表单，补录或修正发票号码、日期、抬头、税号、金额和费用类型；
+  - 本人材料可直接触发重新识别，并在按钮状态里看到“重新识别中...”反馈。
+- 页面文案显式说明边界：
+  - 只允许操作本人材料；
+  - 手动补录只更新当前发票字段并保留更正痕迹；
+  - 重新识别会新建识别任务，不允许成员直接写入任意识别原始结果。
+- 前端测试已补齐：
+  - 本人材料可在当前工作台打开并提交手动补录表单；
+  - 共享发票摘要维持只读，不暴露重新识别或手动补录按钮；
+  - 重新识别动作会显示“重新识别中...”并在请求完成后恢复可再次触发状态。
+- `TASKS.md` 中“按 UX 实测恢复成员端手动补录发票信息与重新识别入口”已标记完成。
+
+### 根因
+- 旧代码里这两项能力并没有完全缺失，而是留在 [web/src/app/member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx) 这个已退居次入口的专项页中。
+- 当前成员真实主路径已经切到单任务工作台，但工作台只保留了材料类型、分摊和确认入口，导致成员一旦识别不准，只能被动等待管理员或后台异步链路，而不能在主路径里自助闭环。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/member-invoice-workbench.tsx`
+  - `web/src/app/member-invoice-workbench.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只改成员前端入口与状态表达，不改后端权限判定、识别执行器或发票写入 API。
+- 重新识别在当前实现里复用既有 `createRecognitionTask + executeRecognitionTask` 调用链；如果后续需要更细的“已入队 / 执行中 / 失败原因”分层反馈，仍应在识别任务模型上继续细化，而不是在前端再堆特判。
+- 共享发票区域继续保持只读摘要，本轮没有放宽为可编辑他人材料。
+
+### 验证结果
+- `npm test -- member-invoice-workbench.test.tsx` 通过：13 tests passed。
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、78 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 本轮按现有后端语义处理“重新识别”为重新创建并执行一次识别任务，不额外新增成员侧撤销、取消或查看完整历史重试次数的界面。
+
 ## 2026-04-29 14:42 - Queue newly confirmed UX gap for member-side manual invoice entry and re-recognition
 
 ### 完成内容

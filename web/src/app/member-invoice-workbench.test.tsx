@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
+import type { RecognitionTaskRecord } from "../lib/api/types";
 import { routes } from "./routes";
 
 function resolveRequestUrl(input: string | URL | Request) {
@@ -2179,6 +2180,422 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByText("待确认 0 条")).toBeInTheDocument();
   });
 
+  it("lets the member manually fill invoice fields from the current workbench path", async () => {
+    let currentInvoice: Record<string, unknown> | null = null;
+    let currentValidations: Array<Record<string, unknown>> = [];
+    let currentRecognition: RecognitionTaskRecord = {
+      id: "REC-MANUAL-001",
+      material_id: "MAT-MANUAL-001",
+      status: "needs_confirmation",
+      is_final_fact: false,
+      failure: null,
+      raw_response: {},
+      recognized_fields: {
+        invoice_number: {
+          value: "AI-001",
+          source: "ai",
+          confidence: 0.42,
+          status: "needs_confirmation",
+          updated_at: "2026-04-28T09:01:00+08:00",
+        },
+        buyer_name: {
+          value: "同济大学",
+          source: "ai",
+          confidence: 0.9,
+          status: "recognized",
+          updated_at: "2026-04-28T09:01:00+08:00",
+        },
+        tax_number: {
+          value: "91310113666007253C",
+          source: "ai",
+          confidence: 0.91,
+          status: "recognized",
+          updated_at: "2026-04-28T09:01:00+08:00",
+        },
+        amount_cents: {
+          value: 4567,
+          source: "ai",
+          confidence: 0.88,
+          status: "recognized",
+          updated_at: "2026-04-28T09:01:00+08:00",
+        },
+        expense_type: {
+          value: "railway",
+          source: "ai",
+          confidence: 0.95,
+          status: "recognized",
+          updated_at: "2026-04-28T09:01:00+08:00",
+        },
+      },
+      manual_corrections: [],
+      created_at: "2026-04-28T09:00:00+08:00",
+      updated_at: "2026-04-28T09:01:00+08:00",
+    };
+    let receivedPayload: Record<string, unknown> | null = null;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway", "hotel"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: currentInvoice ? 4567 : 0,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: 1,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: currentValidations.length,
+            validation_not_applicable_count: currentInvoice ? 0 : 1,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-MANUAL-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "manual.pdf",
+              material_status: "assigned",
+              recognition_status: "needs_confirmation",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: currentInvoice?.id ?? null,
+              invoice_number: currentInvoice?.invoice_number ?? null,
+              validation_status: currentInvoice ? "pending" : "not_applicable",
+              validation_messages: currentValidations.map((item) => (
+                typeof item.message === "string" ? item.message : ""
+              )),
+              created_at: "2026-04-28T09:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({
+          items: currentInvoice ? [currentInvoice] : [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-MANUAL-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: currentRecognition,
+          items: [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-MANUAL-001/invoice" && method === "POST") {
+        if (typeof init?.body !== "string") {
+          throw new Error("expected invoice payload to be serialized JSON");
+        }
+        receivedPayload = JSON.parse(init.body) as Record<string, unknown>;
+        currentInvoice = {
+          id: "INV-MANUAL-001",
+          task_id: "TASK-OPEN",
+          material_id: "MAT-MANUAL-001",
+          invoice_number: receivedPayload.invoice_number,
+          issue_date: receivedPayload.issue_date,
+          transaction_time: receivedPayload.transaction_time,
+          buyer_name: receivedPayload.buyer_name,
+          tax_number: receivedPayload.tax_number,
+          seller_name: receivedPayload.seller_name,
+          amount_cents: receivedPayload.amount_cents,
+          expense_type: receivedPayload.expense_type,
+          created_at: "2026-04-28T09:02:00+08:00",
+          updated_at: "2026-04-28T09:03:00+08:00",
+        };
+        currentValidations = [
+          {
+            id: "VAL-MANUAL-001",
+            rule_code: "invoice_transaction_time_range",
+            target_type: "invoice",
+            target_id: "INV-MANUAL-001",
+            severity: "warning",
+            status: "pending",
+            message: "交易时间需要管理员确认。",
+            evidence: {},
+            created_at: "2026-04-28T09:04:00+08:00",
+          },
+        ];
+        currentRecognition = {
+          ...currentRecognition,
+          manual_corrections: [
+            {
+              id: "CORR-MANUAL-001",
+              field_name: "invoice_number",
+              actor_id: "2250001",
+              before: currentRecognition.recognized_fields.invoice_number ?? null,
+              after: {
+                value: receivedPayload.invoice_number,
+                source: "manual",
+                confidence: 1,
+                status: "recognized",
+                updated_at: "2026-04-28T09:03:00+08:00",
+              },
+              revalidation_status: "triggered",
+              corrected_at: "2026-04-28T09:03:00+08:00",
+            },
+          ],
+        };
+        return Promise.resolve(jsonResponse({
+          invoice: currentInvoice,
+          validations: currentValidations,
+        }, { status: 201 }));
+      }
+
+      if (url === "/api/invoices/INV-MANUAL-001/validations") {
+        return Promise.resolve(jsonResponse({ items: currentValidations }));
+      }
+
+      if (url === "/api/invoices/INV-MANUAL-001/supporting-materials") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-MANUAL-001/splits") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-MANUAL-001/confirmations") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench manual entry test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    expect(await screen.findByRole("heading", { name: "manual.pdf" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "手动填写或更正发票" }));
+
+    const form = await screen.findByRole("form", { name: "MAT-MANUAL-001 发票手动补录表单" });
+    expect(within(form).getByLabelText("MAT-MANUAL-001 发票号码")).toHaveValue("AI-001");
+    expect(within(form).getByLabelText("MAT-MANUAL-001 金额")).toHaveValue("45.67");
+
+    fireEvent.change(within(form).getByLabelText("MAT-MANUAL-001 发票号码"), {
+      target: { value: "MANUAL-001" },
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "保存发票字段" }));
+
+    expect(receivedPayload).toMatchObject({
+      actor_id: "2250001",
+      invoice_number: "MANUAL-001",
+      buyer_name: "同济大学",
+      tax_number: "91310113666007253C",
+      amount_cents: 4567,
+      expense_type: "railway",
+    });
+    expect(await screen.findByRole("heading", { name: "MANUAL-001" })).toBeInTheDocument();
+    expect(
+      await screen.findByText("已保存发票 MANUAL-001；当前共有 1 条校验结果，其中失败 0 条、待确认 1 条。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "MAT-MANUAL-001 发票手动补录表单" })).not.toBeInTheDocument();
+  });
+
+  it("shows retrying feedback when the member re-runs recognition", async () => {
+    const latestRecognition: Record<string, unknown> = {
+      id: "REC-RETRY-BASE",
+      material_id: "MAT-RETRY-001",
+      status: "failed",
+      is_final_fact: false,
+      failure: {
+        stage: "ai",
+        reason: "initial extraction failed",
+      },
+      raw_response: {},
+      recognized_fields: {},
+      manual_corrections: [],
+      created_at: "2026-04-28T10:00:00+08:00",
+      updated_at: "2026-04-28T10:01:00+08:00",
+    };
+    let resolveExecute: ((value: Response) => void) | null = null;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+
+      if (url === "/api/tasks") {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "TASK-OPEN",
+            status: "open",
+            competition_name: "ICPC Xi'an Regional",
+            competition_location: "西安",
+            competition_start_date: "2026-05-01",
+            competition_end_date: "2026-05-03",
+            deadline: "2026-05-10T12:00:00+08:00",
+            member_ids: ["2250001", "2250002"],
+            fee_categories: ["railway"],
+            administrator_id: "admin-1",
+            project_info: "ACM 竞赛项目",
+            reimburser_info: "张管理员",
+            invoice_title: "同济大学",
+            tax_number: "91310113666007253C",
+            created_at: "2026-04-28T08:00:00+08:00",
+            updated_at: "2026-04-28T08:00:00+08:00",
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          total_expense_amount_cents: 0,
+          counts: {
+            material_count: 1,
+            missing_material_count: 0,
+            expense_detail_count: 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: 0,
+            recognition_failed_count: 1,
+            recognition_needs_confirmation_count: 0,
+            validation_passed_count: 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 1,
+            confirmed_expense_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: [
+            {
+              material_id: "MAT-RETRY-001",
+              submitter_id: "2250001",
+              material_type: "payment_record",
+              original_filename: "retry.png",
+              material_status: "assigned",
+              recognition_status: "failed",
+              recognition_failure_stage: "ai",
+              recognition_failure_reason: "initial extraction failed",
+              invoice_id: null,
+              invoice_number: null,
+              validation_status: "not_applicable",
+              validation_messages: [],
+              created_at: "2026-04-28T10:00:00+08:00",
+            },
+          ],
+          missing_materials: [],
+          expense_details: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-OPEN/invoices") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/materials/MAT-RETRY-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: latestRecognition,
+          items: [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-RETRY-001/recognition-tasks" && method === "POST") {
+        return Promise.resolve(jsonResponse({
+          item: {
+            id: "REC-RETRY-1",
+            material_id: "MAT-RETRY-001",
+            status: "pending",
+            is_final_fact: false,
+            failure: null,
+            raw_response: null,
+            recognized_fields: {},
+            manual_corrections: [],
+            created_at: "2026-04-28T10:02:00+08:00",
+            updated_at: "2026-04-28T10:02:00+08:00",
+          },
+        }, { status: 201 }));
+      }
+
+      if (url === "/api/recognition-tasks/REC-RETRY-1/execute" && method === "POST") {
+        return new Promise((resolve) => {
+          resolveExecute = resolve;
+        });
+      }
+
+      if (url.includes("/shared-invoices?actor_id=2250001")) {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-OPEN",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member invoice workbench retry feedback test: ${url}`);
+    });
+
+    renderWorkbenchRoute();
+
+    const firstRetryButton = await screen.findByRole("button", { name: "运行重新识别" });
+    fireEvent.click(firstRetryButton);
+    expect(await screen.findByRole("button", { name: "重新识别中..." })).toBeInTheDocument();
+
+    act(() => {
+      resolveExecute?.(jsonResponse({
+        item: {
+          id: "REC-RETRY-1",
+          material_id: "MAT-RETRY-001",
+          status: "pending",
+          is_final_fact: false,
+          failure: null,
+          raw_response: null,
+          recognized_fields: {},
+          manual_corrections: [],
+          created_at: "2026-04-28T10:02:00+08:00",
+          updated_at: "2026-04-28T10:02:00+08:00",
+        },
+      }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
+    });
+  });
+
   it("shows shared invoice summaries for other task members without exposing raw attachment details", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
       const url = resolveRequestUrl(input);
@@ -2285,5 +2702,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(within(sharedCard as HTMLElement).getByText("￥120.00")).toBeInTheDocument();
     expect(within(sharedCard as HTMLElement).getByText("￥80.00")).toBeInTheDocument();
     expect(within(sharedCard as HTMLElement).queryByText("member-two-order.png")).not.toBeInTheDocument();
+    expect(within(sharedCard as HTMLElement).queryByRole("button", { name: "运行重新识别" })).not.toBeInTheDocument();
+    expect(within(sharedCard as HTMLElement).queryByRole("button", { name: "手动填写或更正发票" })).not.toBeInTheDocument();
+    expect(within(sharedCard as HTMLElement).queryByRole("button", { name: "保存发票字段" })).not.toBeInTheDocument();
   });
 });
