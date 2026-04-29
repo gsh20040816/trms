@@ -1414,7 +1414,7 @@
     - 页面只保留必要布局辅助类，不再依赖 legacy 操作样式类
     - 相关测试同步更新
 
-- [ ] 收口管理员复核、导出与提醒页剩余非 M3 控件
+- [x] 收口管理员复核、导出与提醒页剩余非 M3 控件
   - Done when:
     - `admin-review-overview.tsx`、`admin-export-tasks.tsx`、`admin-corrections-reminders.tsx` 中残余 `route-link`、手写 `status-chip`、原生表单控件替换为 MUI 组件
     - 复核列表/详情联动结构保持不变，但视觉、状态与操作反馈统一到 Material 3

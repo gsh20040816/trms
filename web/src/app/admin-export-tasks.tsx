@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
+
+import Button from "@mui/material/Button";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
-import { PageHeader } from "../components/dashboard";
+import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExportArtifactFormat,
@@ -98,12 +100,12 @@ function sortJobsByCreatedAtDesc(jobs: TaskExportJobRecord[]) {
 
 function buildJobStatusTone(status: TaskExportJobStatus) {
   if (status === "succeeded") {
-    return "member-status-chip-passed";
+    return "success" as const;
   }
   if (status === "failed") {
-    return "member-status-chip-failed";
+    return "danger" as const;
   }
-  return "member-status-chip-pending";
+  return "warning" as const;
 }
 
 function buildPreviewDescriptor(capability: TaskExportCapability) {
@@ -392,12 +394,12 @@ export function AdminExportTasksPage() {
           description="这里用于生成汇总表、成员明细、缺失材料清单和提交草稿，并查看最近一次导出状态。"
           actions={(
             <div className="page-actions">
-              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/review`}>
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
                 返回复核总览
-              </Link>
-              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/corrections`}>
+              </Button>
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/corrections`}>
                 返回更正与提醒
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -423,9 +425,7 @@ export function AdminExportTasksPage() {
                 <p className="task-card-id">任务编号 {pageState.task.id}</p>
                 <h2>{pageState.task.competition_name}</h2>
               </div>
-              <span className={`status-chip task-status-chip task-status-${pageState.task.status}`}>
-                {formatTaskStatus(pageState.task.status)}
-              </span>
+              <StatusBadge tone="info">{formatTaskStatus(pageState.task.status)}</StatusBadge>
             </div>
 
             <dl className="admin-review-summary-grid export-summary-grid">
@@ -452,7 +452,7 @@ export function AdminExportTasksPage() {
                     <p className="task-card-id">导出门禁</p>
                     <h4>当前任务尚未满足导出前置条件</h4>
                   </div>
-                  <span className="status-chip member-status-chip-failed">已阻止导出</span>
+                  <StatusBadge tone="danger">已阻止导出</StatusBadge>
                 </div>
                 <ul className="admin-review-list" aria-label="导出阻塞原因">
                   {pageState.boundary.blocking_reasons.map((reason) => (
@@ -485,53 +485,49 @@ export function AdminExportTasksPage() {
                       </p>
                       <h3>{formatExportKind(capability.kind)}</h3>
                     </div>
-                    <span
-                      className={`status-chip ${
-                        capability.implemented ? "member-status-chip-passed" : "member-status-chip-pending"
-                      }`}
-                    >
+                    <StatusBadge tone={capability.implemented ? "success" : "warning"}>
                       {capability.implemented ? "已有即时输出" : "占位能力"}
-                    </span>
+                    </StatusBadge>
                   </div>
 
                   <p>{EXPORT_KIND_DESCRIPTIONS[capability.kind]}</p>
 
                   <div className="admin-review-inline-metadata">
-                    <span className="status-chip">
+                    <StatusBadge tone="info">
                       允许格式：{capability.formats.map(formatExportFormat).join(" / ")}
-                    </span>
-                    <span className="status-chip">
+                    </StatusBadge>
+                    <StatusBadge tone="info">
                       在线预览：{previewDescriptor.placeholderLabel}
-                    </span>
+                    </StatusBadge>
                     {latestJob ? (
-                      <span className={`status-chip ${buildJobStatusTone(latestJob.status)}`}>
+                      <StatusBadge tone={buildJobStatusTone(latestJob.status)}>
                         最近任务：{formatExportJobStatus(latestJob.status)}
-                      </span>
+                      </StatusBadge>
                     ) : null}
                   </div>
 
                   <div className="inline-actions export-action-row">
-                    <button
-                      className="route-link"
+                    <Button
                       type="button"
+                      variant="contained"
                       disabled={!pageState.boundary.export_allowed || isCreating}
                       onClick={() => {
                         void handleCreateJob(capability.kind);
                       }}
                     >
                       {isCreating ? "正在创建..." : `创建${formatExportKind(capability.kind)}任务`}
-                    </button>
+                    </Button>
                     {previewDescriptor.available ? (
-                      <button
-                        className="route-link route-link-secondary"
+                      <Button
                         type="button"
+                        variant="outlined"
                         disabled={!pageState.boundary.export_allowed || isPreviewing}
                         onClick={() => {
                           void handlePreview(capability.kind);
                         }}
                       >
                         {isPreviewing ? "正在加载预览..." : previewDescriptor.buttonLabel}
-                      </button>
+                      </Button>
                     ) : (
                       <span className="field-hint">
                         当前还没有可预览的在线内容，可先创建导出任务。
@@ -572,7 +568,7 @@ export function AdminExportTasksPage() {
                 <p className="task-card-id">导出任务</p>
                 <h2>导出任务历史</h2>
               </div>
-              <span className="status-chip">{pageState.jobs.length} 条记录</span>
+              <StatusBadge tone="info">{pageState.jobs.length} 条记录</StatusBadge>
             </div>
 
             {pageState.jobs.length === 0 ? (
@@ -590,9 +586,9 @@ export function AdminExportTasksPage() {
                         </p>
                         <h3>{job.id}</h3>
                       </div>
-                      <span className={`status-chip ${buildJobStatusTone(job.status)}`}>
+                      <StatusBadge tone={buildJobStatusTone(job.status)}>
                         {formatExportJobStatus(job.status)}
-                      </span>
+                      </StatusBadge>
                     </div>
 
                     <dl className="task-detail-grid export-job-grid">
@@ -629,16 +625,16 @@ export function AdminExportTasksPage() {
                           </p>
                         </div>
                         <div className="inline-actions export-action-row">
-                          <button
-                            className="route-link route-link-secondary"
+                          <Button
                             type="button"
+                            variant="outlined"
                             disabled={activeDownloadJobId === job.id}
                             onClick={() => {
                               void handleDownload(job.id);
                             }}
                           >
                             {activeDownloadJobId === job.id ? "正在下载..." : "下载导出文件"}
-                          </button>
+                          </Button>
                         </div>
                       </>
                     ) : (

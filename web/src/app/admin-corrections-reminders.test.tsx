@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -285,13 +285,18 @@ describe("AdminCorrectionsRemindersPage", () => {
     const reminderList = within(await screen.findByLabelText("补材料提醒列表"));
     expect(reminderList.getByText("请补充支付记录。")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("提醒对象成员"), {
-      target: { value: "2250002" },
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
+      await Promise.resolve();
     });
+    fireEvent.click(await screen.findByRole("option", { name: "2250002" }));
     fireEvent.change(screen.getByLabelText("提醒内容"), {
       target: { value: "请补充比赛通知，并在补交后重新确认金额。" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
+      await Promise.resolve();
+    });
 
     expect(await screen.findByText("已保存对成员 2250002 的内部提醒记录；系统不会自动发送消息。")).toBeInTheDocument();
     const updatedReminderList = within(screen.getByLabelText("补材料提醒列表"));
@@ -328,13 +333,18 @@ describe("AdminCorrectionsRemindersPage", () => {
 
     await screen.findByRole("heading", { name: "管理员人工更正与补材料提醒" });
 
-    fireEvent.change(screen.getByLabelText("提醒对象成员"), {
-      target: { value: "2250002" },
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
+      await Promise.resolve();
     });
+    fireEvent.click(await screen.findByRole("option", { name: "2250002" }));
     fireEvent.change(screen.getByLabelText("提醒内容"), {
       target: { value: "请补交材料。" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
+      await Promise.resolve();
+    });
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
     expect(screen.getByText("成员 2250002 不在当前任务成员名单中。")).toBeInTheDocument();

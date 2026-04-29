@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-04-29 19:23 - Migrate admin review/export/corrections pages to Material 3 controls
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“收口管理员复核、导出与提醒页剩余非 M3 控件”。
+- 调整 [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)：
+  - 复核总览页头按钮切到 MUI `Button`
+  - 任务状态、风险数量、待归属数量、识别/校验/确认状态统一切到 `StatusBadge`
+  - 材料列表项改为 MUI `ButtonBase`，保留原有列表-详情联动结构
+  - 详情动作区“更正金额与字段 / 调整分摊 / 查看关联发票 / 处理更正与提醒”统一收口到 MUI 按钮
+- 调整 [web/src/app/admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx)：
+  - 页头返回按钮、导出创建/预览/下载按钮切到 MUI `Button`
+  - 导出门禁、能力实现状态、最近任务状态、历史任务状态统一改为 `StatusBadge`
+- 调整 [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)：
+  - 页面切入 `AdminWorkspaceShell + PageHeader`
+  - 更正入口按钮、提醒表单、提醒统计状态统一改为 MUI `Button` / `TextField` / `MenuItem` / `StatusBadge`
+  - 保留“只保存内部提醒记录、不自动发送消息”的产品边界文案
+- 同步更新测试 [web/src/app/admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)：
+  - 适配 MUI `combobox` 交互
+  - 将触发菜单与提交的交互包进 `act`
+
+### 根因
+- 管理员工作台导航与部分页面主骨架已经 M3 化，但复核、导出和提醒页里仍混用旧按钮/状态样式：
+  - `route-link`
+  - `button-primary` / `button-secondary`
+  - 手写 `status-chip`
+  - 原生 `select` / `textarea`
+- 这导致管理员主链路在同一工作台里出现明显的设计断层，测试语义也仍绑定旧控件行为。
+
+### 关键改动点
+- `admin-review-overview.tsx` 保持“左侧材料列表 + 右侧详情标签页”的结构不变，只替换交互控件与状态呈现。
+- `admin-export-tasks.tsx` 不改导出能力和任务创建逻辑，只统一状态和操作入口。
+- `admin-corrections-reminders.tsx` 补进 `AdminWorkspaceShell`，因为它本身属于管理员模块的一环；如果只替换表单控件而不接入统一 shell，导航语义仍会断裂。
+
+### 风险与影响面
+- 管理员提醒页测试现在依赖 MUI `combobox` 的菜单打开语义；后续若更换为 `Autocomplete` 或 native select，需要同步改测试。
+- `admin-review-overview.tsx` 的材料列表仍保留既有自定义布局类，只把交互底座换成 MUI `ButtonBase`；如果后续继续做视觉重绘，可在不影响本轮行为的前提下单独收口。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- src/app/admin-review-overview.test.tsx src/app/admin-export-tasks.test.tsx src/app/admin-corrections-reminders.test.tsx`
+    - 3 个文件、6 个用例通过
+- 已通过相关前端 lint：
+  - `cd web && npm run lint -- src/app/admin-review-overview.tsx src/app/admin-export-tasks.tsx src/app/admin-corrections-reminders.tsx src/app/admin-review-overview.test.tsx src/app/admin-export-tasks.test.tsx src/app/admin-corrections-reminders.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
 ## 2026-04-29 19:15 - Migrate member material status and expense confirmation pages to Material 3 controls
 
 ### 完成内容

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
+
+import Button from "@mui/material/Button";
+import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExpenseType,
@@ -11,6 +16,7 @@ import type {
   TaskReviewSummary,
   ValidationResult,
 } from "../lib/api/types";
+import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
 type CorrectionReminderPageState =
@@ -304,23 +310,28 @@ export function AdminCorrectionsRemindersPage() {
   }
 
   return (
-    <div className="page-stack">
-      <section className="status-card admin-review-hero">
-        <p className="eyebrow">更正与提醒</p>
-        <h2>管理员人工更正与补材料提醒</h2>
-        <p>
-          这里集中处理两件事：跳转到需要补录或更正的发票，以及记录对成员的补材料提醒。
-        </p>
-        <div className="inline-actions">
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/review`}>
-            返回复核总览
-          </Link>
-          <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}`}>
-            返回任务详情
-          </Link>
-        </div>
-      </section>
-
+    <AdminWorkspaceShell
+      activeModule="corrections"
+      taskId={taskId}
+      task={visibleTask}
+      header={(
+        <PageHeader
+          eyebrow="更正与提醒"
+          title="管理员人工更正与补材料提醒"
+          description="这里集中处理两件事：跳转到需要补录或更正的发票，以及记录对成员的补材料提醒。"
+          actions={(
+            <div className="page-actions">
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
+                返回复核总览
+              </Button>
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}`}>
+                返回任务详情
+              </Button>
+            </div>
+          )}
+        />
+      )}
+    >
       {pageState.status === "loading" ? (
         <section className="status-card admin-review-panel">
           <p className="eyebrow">更正与提醒</p>
@@ -348,9 +359,9 @@ export function AdminCorrectionsRemindersPage() {
                 <p className="eyebrow">Corrections</p>
                 <h2>待人工更正项</h2>
               </div>
-              <span className="status-chip">
+              <StatusBadge tone="info">
                 {recognitionActions.length + invoiceActions.length} 个处理入口
-              </span>
+              </StatusBadge>
             </div>
 
             <div className="admin-review-subsection">
@@ -364,9 +375,9 @@ export function AdminCorrectionsRemindersPage() {
                           <p className="task-card-id">材料编号 {item.materialId}</p>
                           <h3>{item.filename}</h3>
                         </div>
-                        <span className="status-chip">
+                        <StatusBadge tone={item.recognitionStatus === "failed" ? "danger" : "warning"}>
                           {formatRecognitionStatus(item.recognitionStatus)}
-                        </span>
+                        </StatusBadge>
                       </div>
                       <div className="admin-review-inline-metadata">
                         <span className="token-chip">提交人 {item.submitterId ?? "未解析"}</span>
@@ -393,12 +404,14 @@ export function AdminCorrectionsRemindersPage() {
                         <p className="field-hint">识别失败原因：{item.failureReason}</p>
                       ) : null}
                       <div className="inline-actions">
-                        <Link
-                          className="route-link"
+                        <Button
+                          component={RouterLink}
+                          variant="contained"
+                          size="small"
                           to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.materialId)}`}
                         >
                           更正识别字段与金额
-                        </Link>
+                        </Button>
                       </div>
                     </li>
                   ))}
@@ -419,7 +432,7 @@ export function AdminCorrectionsRemindersPage() {
                           <p className="task-card-id">发票编号 {item.invoiceId}</p>
                           <h3>{item.invoiceNumber}</h3>
                         </div>
-                        <span className="status-chip">{formatCurrencyFromCents(item.amountCents)}</span>
+                        <StatusBadge tone="info">{formatCurrencyFromCents(item.amountCents)}</StatusBadge>
                       </div>
                       <div className="admin-review-inline-metadata">
                         <span className="token-chip">{formatExpenseType(item.expenseType)}</span>
@@ -451,18 +464,22 @@ export function AdminCorrectionsRemindersPage() {
                         ) : null}
                       </ul>
                       <div className="inline-actions">
-                        <Link
-                          className="route-link"
+                        <Button
+                          component={RouterLink}
+                          variant="contained"
+                          size="small"
                           to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.materialId)}`}
                         >
                           更正发票金额与字段
-                        </Link>
-                        <Link
-                          className="route-link route-link-secondary"
+                        </Button>
+                        <Button
+                          component={RouterLink}
+                          variant="outlined"
+                          size="small"
                           to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(item.invoiceId)}`}
                         >
                           调整当前发票分摊
-                        </Link>
+                        </Button>
                       </div>
                     </li>
                   ))}
@@ -479,57 +496,54 @@ export function AdminCorrectionsRemindersPage() {
                 <p className="eyebrow">Reminders</p>
                 <h2>记录补材料提醒</h2>
               </div>
-              <span className="status-chip">{visibleReminders.length} 条已记录提醒</span>
+              <StatusBadge tone="info">{visibleReminders.length} 条已记录提醒</StatusBadge>
             </div>
 
             <form onSubmit={handleReminderSubmit}>
               <div className="admin-form-grid">
-                <label className="field-stack">
-                  <span>提醒对象成员</span>
-                  <select
-                    aria-label="提醒对象成员"
-                    value={memberId}
-                    onChange={(event) => {
-                      setMemberId(event.target.value);
-                      setFormErrors((current) => ({ ...current, memberId: undefined }));
-                    }}
-                  >
-                    {visibleTask.member_ids.length > 0 ? (
-                      visibleTask.member_ids.map((taskMemberId) => (
-                        <option key={taskMemberId} value={taskMemberId}>
-                          {taskMemberId}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">当前任务没有可提醒成员</option>
-                    )}
-                  </select>
-                  {formErrors.memberId ? <span className="field-error">{formErrors.memberId}</span> : null}
-                </label>
+                <TextField
+                  select
+                  label="提醒对象成员"
+                  value={memberId}
+                  error={Boolean(formErrors.memberId)}
+                  helperText={formErrors.memberId}
+                  onChange={(event) => {
+                    setMemberId(event.target.value);
+                    setFormErrors((current) => ({ ...current, memberId: undefined }));
+                  }}
+                >
+                  {visibleTask.member_ids.length > 0 ? (
+                    visibleTask.member_ids.map((taskMemberId) => (
+                      <MenuItem key={taskMemberId} value={taskMemberId}>
+                        {taskMemberId}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    <MenuItem value="">当前任务没有可提醒成员</MenuItem>
+                  )}
+                </TextField>
 
-                <label className="field-stack admin-form-field-full">
-                  <span>提醒内容</span>
-                  <textarea
-                    aria-label="提醒内容"
-                    value={content}
-                    placeholder="例如：请补充支付记录和比赛通知，并在补交后重新确认金额。"
-                    onChange={(event) => {
-                      setContent(event.target.value);
-                      setFormErrors((current) => ({ ...current, content: undefined }));
-                    }}
-                  />
-                  {formErrors.content ? <span className="field-error">{formErrors.content}</span> : null}
-                  <span className="field-hint">
-                    当前只记录管理员提醒内容与时间，不接入真实短信、邮件或 Telegram 发送。
-                  </span>
-                </label>
+                <TextField
+                  className="admin-form-field-full"
+                  label="提醒内容"
+                  multiline
+                  minRows={4}
+                  value={content}
+                  placeholder="例如：请补充支付记录和比赛通知，并在补交后重新确认金额。"
+                  error={Boolean(formErrors.content)}
+                  helperText={formErrors.content ?? "当前只记录管理员提醒内容与时间，不接入真实短信、邮件或 Telegram 发送。"}
+                  onChange={(event) => {
+                    setContent(event.target.value);
+                    setFormErrors((current) => ({ ...current, content: undefined }));
+                  }}
+                />
               </div>
 
               <div className="admin-form-footer">
                 <p className="field-hint">这里只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。</p>
-                <button className="route-link" type="submit" disabled={isSubmitting || visibleTask.member_ids.length === 0}>
+                <Button variant="contained" type="submit" disabled={isSubmitting || visibleTask.member_ids.length === 0}>
                   {isSubmitting ? "保存中..." : "保存内部提醒记录"}
-                </button>
+                </Button>
               </div>
             </form>
 
@@ -554,6 +568,6 @@ export function AdminCorrectionsRemindersPage() {
           </article>
         </section>
       ) : null}
-    </div>
+    </AdminWorkspaceShell>
   );
 }

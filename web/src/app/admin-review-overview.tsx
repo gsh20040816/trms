@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { PageHeader } from "../components/dashboard";
+import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationRecord,
@@ -216,37 +218,37 @@ function pickSelectedMaterialId(
   return firstInvoiceMaterial?.materialItem.material.id ?? items[0]?.materialItem.material.id ?? "";
 }
 
-function buildRecognitionBadgeClass(recognition: RecognitionTaskRecord | null) {
+function buildRecognitionBadgeTone(recognition: RecognitionTaskRecord | null) {
   if (recognition === null) {
-    return "member-status-chip-pending";
+    return "warning" as const;
   }
   if (recognition.status === "succeeded") {
-    return "member-status-chip-succeeded";
+    return "success" as const;
   }
   if (recognition.status === "failed") {
-    return "member-status-chip-failed";
+    return "danger" as const;
   }
-  return "member-status-chip-needs_confirmation";
+  return "warning" as const;
 }
 
-function buildValidationBadgeClass(validation: ValidationResult) {
+function buildValidationBadgeTone(validation: ValidationResult) {
   if (validation.status === "failed") {
-    return "member-status-chip-failed";
+    return "danger" as const;
   }
   if (validation.status === "pending") {
-    return "member-status-chip-pending";
+    return "warning" as const;
   }
-  return "member-status-chip-passed";
+  return "success" as const;
 }
 
-function buildConfirmationBadgeClass(confirmation: ConfirmationRecord | null) {
+function buildConfirmationBadgeTone(confirmation: ConfirmationRecord | null) {
   if (confirmation === null || confirmation.status === "pending") {
-    return "member-status-chip-pending";
+    return "warning" as const;
   }
   if (confirmation.status === "disputed") {
-    return "member-status-chip-failed";
+    return "danger" as const;
   }
-  return "member-status-chip-passed";
+  return "success" as const;
 }
 
 function isPreviewableContentType(contentType: string | null) {
@@ -442,12 +444,12 @@ export function AdminReviewOverviewPage() {
           description="在同一任务上下文里筛选当前材料、查看原件与识别结果，并决定下一步更正或分摊处理动作。"
           actions={(
             <div className="page-actions">
-              <Link className="button button-primary" to={`/admin/tasks/${taskId}/corrections`}>
+              <Button component={RouterLink} variant="contained" to={`/admin/tasks/${taskId}/corrections`}>
                 处理更正与提醒
-              </Link>
-              <Link className="button button-secondary" to={`/admin/tasks/${taskId}/invoices`}>
+              </Button>
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/invoices`}>
                 打开发票录入页
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -479,9 +481,7 @@ export function AdminReviewOverviewPage() {
                 <p className="task-card-id">任务编号 {visibleTask.id}</p>
                 <h2>{visibleTask.competition_name}</h2>
               </div>
-              <span className={`status-chip task-status-chip task-status-${visibleTask.status}`}>
-                {formatTaskStatus(visibleTask.status)}
-              </span>
+              <StatusBadge tone="info">{formatTaskStatus(visibleTask.status)}</StatusBadge>
             </div>
             <div className="admin-review-summary-grid">
               <div>
@@ -523,20 +523,16 @@ export function AdminReviewOverviewPage() {
                 <p className="eyebrow">Review Risks</p>
                 <h2>本任务待处理风险</h2>
               </div>
-              <span className="status-chip">{anomalyItems.length} 类重点项</span>
+              <StatusBadge tone="info">{anomalyItems.length} 类重点项</StatusBadge>
             </div>
             {anomalyItems.length > 0 ? (
               <ul className="task-anomaly-list" aria-label="复核风险摘要">
                 {anomalyItems.map((item) => (
                   <li key={item.label}>
                     <strong>{item.label}</strong>
-                    <span
-                      className={`status-chip ${
-                        item.tone === "failed" ? "member-status-chip-failed" : "member-status-chip-pending"
-                      }`}
-                    >
+                    <StatusBadge tone={item.tone === "failed" ? "danger" : "warning"}>
                       {item.count}
-                    </span>
+                    </StatusBadge>
                   </li>
                 ))}
               </ul>
@@ -591,15 +587,9 @@ export function AdminReviewOverviewPage() {
                 <p className="eyebrow">Pending Assignment</p>
                 <h2>待归属材料</h2>
               </div>
-              <span
-                className={`status-chip ${
-                  visibleSummary.pending_assignment_materials.length > 0
-                    ? "member-status-chip-failed"
-                    : "member-status-chip-passed"
-                }`}
-              >
+              <StatusBadge tone={visibleSummary.pending_assignment_materials.length > 0 ? "danger" : "success"}>
                 {visibleSummary.pending_assignment_materials.length} 份
-              </span>
+              </StatusBadge>
             </div>
             {visibleSummary.pending_assignment_materials.length > 0 ? (
               <ul className="admin-review-record-list" aria-label="待归属材料列表">
@@ -610,7 +600,7 @@ export function AdminReviewOverviewPage() {
                         <p className="task-card-id">材料编号 {material.id}</p>
                         <h3>{material.original_filename}</h3>
                       </div>
-                      <span className="status-chip member-status-chip-failed">待归属</span>
+                      <StatusBadge tone="danger">待归属</StatusBadge>
                     </div>
                     <div className="admin-review-inline-metadata">
                       <span className="token-chip">{formatMaterialType(material.material_type)}</span>
@@ -649,7 +639,7 @@ export function AdminReviewOverviewPage() {
                   <p className="eyebrow">Materials</p>
                   <h2>材料审核列表</h2>
                 </div>
-                <span className="status-chip">{detailItems.length} 份材料</span>
+                <StatusBadge tone="info">{detailItems.length} 份材料</StatusBadge>
               </div>
               <p className="field-hint">
                 先从左侧选中当前要处理的材料，再在右侧同页查看原件、识别字段、校验异常和分摊去向。
@@ -668,22 +658,22 @@ export function AdminReviewOverviewPage() {
                     const isSelected = material.id === selectedMaterialId;
                     return (
                       <li key={material.id}>
-                        <button
-                          type="button"
+                        <ButtonBase
                           className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
                           aria-pressed={isSelected}
                           onClick={() => {
                             setSelectedMaterialId(material.id);
                           }}
+                          sx={{ display: "block", width: "100%", textAlign: "left", borderRadius: 2 }}
                         >
                           <div className="task-card-header">
                             <div>
                               <p className="task-card-id">材料编号 {material.id}</p>
                               <h3>{material.original_filename}</h3>
                             </div>
-                            <span className={`status-chip ${buildRecognitionBadgeClass(recognition)}`}>
+                            <StatusBadge tone={buildRecognitionBadgeTone(recognition)}>
                               {recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}
-                            </span>
+                            </StatusBadge>
                           </div>
                           <div className="admin-review-inline-metadata">
                             <span className="token-chip">{formatMaterialType(material.material_type)}</span>
@@ -708,7 +698,7 @@ export function AdminReviewOverviewPage() {
                               <dd>{formatDateTime(material.created_at)}</dd>
                             </div>
                           </dl>
-                        </button>
+                        </ButtonBase>
                       </li>
                     );
                   })}
@@ -726,9 +716,9 @@ export function AdminReviewOverviewPage() {
                       <p className="eyebrow">Selected Material</p>
                       <h2>当前材料详情</h2>
                     </div>
-                    <span className={`status-chip ${buildRecognitionBadgeClass(selectedRecognition)}`}>
+                    <StatusBadge tone={buildRecognitionBadgeTone(selectedRecognition)}>
                       {selectedRecognition ? formatRecognitionStatus(selectedRecognition.status) : "未触发识别"}
-                    </span>
+                    </StatusBadge>
                   </div>
 
                   <div className="task-card-header">
@@ -736,9 +726,9 @@ export function AdminReviewOverviewPage() {
                       <p className="task-card-id">材料编号 {selectedMaterial.id}</p>
                       <h3>{selectedMaterial.original_filename}</h3>
                     </div>
-                    <span className="status-chip">
+                    <StatusBadge tone="info">
                       {selectedInvoice ? `当前发票 ${selectedInvoice.invoice.invoice_number}` : "尚未形成主发票"}
-                    </span>
+                    </StatusBadge>
                   </div>
 
                   <div className="admin-review-inline-metadata">
@@ -930,9 +920,9 @@ export function AdminReviewOverviewPage() {
                                       <strong>
                                         {formatValidationSeverity(validation.severity)} / {formatValidationRule(validation.rule_code)}
                                       </strong>
-                                      <span className={`status-chip ${buildValidationBadgeClass(validation)}`}>
+                                      <StatusBadge tone={buildValidationBadgeTone(validation)}>
                                         {formatValidationStatus(validation.status)}
-                                      </span>
+                                      </StatusBadge>
                                       <span>{validation.message}</span>
                                     </li>
                                   ))
@@ -983,9 +973,9 @@ export function AdminReviewOverviewPage() {
                                   <strong>
                                     {formatMemberLabel(split.member_id)} / {formatCurrencyFromCents(split.amount_cents)}
                                   </strong>
-                                  <span className={`status-chip ${buildConfirmationBadgeClass(confirmation)}`}>
+                                  <StatusBadge tone={buildConfirmationBadgeTone(confirmation)}>
                                     {confirmation ? formatConfirmationStatus(confirmation.status) : "未提交确认"}
-                                  </span>
+                                  </StatusBadge>
                                   <span>版本 {split.version}</span>
                                   {split.note ? <span>备注：{split.note}</span> : null}
                                   {confirmation?.dispute_reason ? <span>异议原因：{confirmation.dispute_reason}</span> : null}
@@ -1003,45 +993,60 @@ export function AdminReviewOverviewPage() {
                       <div className="inline-actions admin-review-action-row">
                         {selectedInvoice ? (
                           <>
-                            <Link
-                              className="route-link"
+                            <Button
+                              component={RouterLink}
+                              variant="contained"
+                              size="small"
                               to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedInvoice.invoice.material_id)}`}
                             >
                               更正金额与字段
-                            </Link>
-                            <Link
-                              className="route-link route-link-secondary"
+                            </Button>
+                            <Button
+                              component={RouterLink}
+                              variant="outlined"
+                              size="small"
                               to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(selectedInvoice.invoice.id)}`}
                             >
                               调整分摊
-                            </Link>
+                            </Button>
                           </>
                         ) : selectedMaterial.material_type === "invoice" ? (
-                          <Link
-                            className="route-link"
+                          <Button
+                            component={RouterLink}
+                            variant="contained"
+                            size="small"
                             to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedMaterial.id)}`}
                           >
                             补录当前发票
-                          </Link>
+                          </Button>
                         ) : relatedInvoices[0] ? (
                           <>
-                            <Link
-                              className="route-link"
+                            <Button
+                              component={RouterLink}
+                              variant="contained"
+                              size="small"
                               to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(relatedInvoices[0].invoice.material_id)}`}
                             >
                               查看关联发票
-                            </Link>
-                            <Link
-                              className="route-link route-link-secondary"
+                            </Button>
+                            <Button
+                              component={RouterLink}
+                              variant="outlined"
+                              size="small"
                               to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(relatedInvoices[0].invoice.id)}`}
                             >
                               调整关联分摊
-                            </Link>
+                            </Button>
                           </>
                         ) : null}
-                        <Link className="route-link route-link-secondary" to={`/admin/tasks/${taskId}/corrections`}>
+                        <Button
+                          component={RouterLink}
+                          variant="outlined"
+                          size="small"
+                          to={`/admin/tasks/${taskId}/corrections`}
+                        >
                           处理更正与提醒
-                        </Link>
+                        </Button>
                       </div>
                     </>
                   ) : null}
