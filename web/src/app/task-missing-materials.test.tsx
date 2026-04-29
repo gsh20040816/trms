@@ -210,7 +210,8 @@ describe("task missing materials pages", () => {
     expect(await screen.findByLabelText("目标任务")).toHaveValue("TASK-OPEN");
     expect(screen.getByLabelText("查看维度")).toHaveValue("invoice");
     const groupedList = await screen.findByLabelText("缺失材料分组列表");
-    expect(await screen.findByLabelText("缺失材料摘要")).toHaveTextContent("缺失项 2 条");
+    expect(await screen.findByLabelText("缺失材料摘要")).toHaveTextContent("缺失项");
+    expect(screen.getByLabelText("缺失材料摘要")).toHaveTextContent("2");
     expect(groupedList).toHaveTextContent("发票 REG-001");
     expect(groupedList).toHaveTextContent("参赛费缺少比赛通知");
     expect(screen.queryByText("2250002")).not.toBeInTheDocument();

@@ -624,7 +624,7 @@ describe("frontend main flow e2e placeholder", () => {
     }
     fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
 
-    expect(await within(detailCard).findByText("已提交确认，页面已刷新最新确认状态。")).toBeInTheDocument();
+    expect(await screen.findByText("已提交确认，页面已刷新最新确认状态。")).toBeInTheDocument();
 
     cleanup();
     setMockSession("admin");

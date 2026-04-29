@@ -188,7 +188,7 @@ describe("MemberExpenseConfirmationPage", () => {
 
     fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
 
-    expect(await within(detailCard).findByText("已提交确认，页面已刷新最新确认状态。")).toBeInTheDocument();
+    expect(await screen.findByText("已提交确认，页面已刷新最新确认状态。")).toBeInTheDocument();
     expect(await screen.findByText("已确认")).toBeInTheDocument();
   });
 
@@ -297,7 +297,7 @@ describe("MemberExpenseConfirmationPage", () => {
     });
     fireEvent.click(within(detailCard).getByRole("button", { name: "提交异议" }));
 
-    expect(await within(detailCard).findByText("已提交异议，页面已刷新最新确认状态。")).toBeInTheDocument();
+    expect(await screen.findByText("已提交异议，页面已刷新最新确认状态。")).toBeInTheDocument();
   });
 
   it("shows a refresh prompt when the split version has become stale", async () => {
@@ -469,7 +469,6 @@ describe("MemberExpenseConfirmationPage", () => {
 
     fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
 
-    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
-    expect(screen.getByText("当前操作未完成，请检查填写内容后重试。")).toBeInTheDocument();
+    expect(await screen.findByText("confirmation window has been locked")).toBeInTheDocument();
   });
 });

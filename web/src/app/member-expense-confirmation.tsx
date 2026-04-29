@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import {
+  EmptyState,
+  PageHeader,
+  RoleWorkspace,
+  SectionCard,
+  StatCard,
+  StatusBadge,
+} from "../components/dashboard";
+import { useSnackbar } from "../components/use-snackbar";
 import { ApiError } from "../lib/api/client";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -30,11 +39,6 @@ type SelectedTaskExpenseState =
 type ExpenseConfirmationItem = {
   detail: ExpenseDetailItem;
   supportingMaterials: MaterialRecord[];
-};
-
-type SubmitFeedback = {
-  splitId: string;
-  status: Extract<ConfirmationStatus, "confirmed" | "disputed">;
 };
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
@@ -155,14 +159,13 @@ function isSplitStaleError(error: unknown) {
 
 export function MemberExpenseConfirmationPage() {
   const session = useAuthSession();
+  const { showError, showSuccess, showWarning } = useSnackbar();
   const [searchParams] = useSearchParams();
   const preferredTaskId = searchParams.get("taskId");
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [expenseState, setExpenseState] = useState<SelectedTaskExpenseState>({ status: "idle" });
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const [submitError, setSubmitError] = useState<unknown>(null);
-  const [submitFeedback, setSubmitFeedback] = useState<SubmitFeedback | null>(null);
   const [submittingSplitId, setSubmittingSplitId] = useState<string | null>(null);
   const [staleSplitId, setStaleSplitId] = useState<string | null>(null);
   const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
@@ -209,7 +212,6 @@ export function MemberExpenseConfirmationPage() {
 
     async function loadSelectedTaskExpenses(task: ReimbursementTask) {
       setExpenseState({ status: "loading", task });
-      setSubmitError(null);
 
       try {
         const details = await trmsApi.listTaskExpenseDetails(task.id, session!.actorId);
@@ -273,6 +275,28 @@ export function MemberExpenseConfirmationPage() {
   const pendingCount = countItemsByStatus(readyItems, "pending");
   const confirmedCount = countItemsByStatus(readyItems, "confirmed");
   const disputedCount = countItemsByStatus(readyItems, "disputed");
+  const summaryCards = expenseState.status === "ready" ? [
+    {
+      label: "本人费用",
+      value: readyItems.length,
+      description: "当前任务下与你相关的费用明细条数。",
+    },
+    {
+      label: "总金额",
+      value: formatCurrencyFromCents(totalAmountCents),
+      description: "当前任务下分到你名下的费用合计。",
+    },
+    {
+      label: "待确认",
+      value: pendingCount,
+      description: "仍需你确认或提出异议的费用条数。",
+    },
+    {
+      label: "已处理",
+      value: `${confirmedCount + disputedCount}/${readyItems.length}`,
+      description: "已确认或已提出异议的费用条数。",
+    },
+  ] : [];
 
   async function submitConfirmation(
     item: ExpenseConfirmationItem,
@@ -287,8 +311,6 @@ export function MemberExpenseConfirmationPage() {
       return;
     }
 
-    setSubmitError(null);
-    setSubmitFeedback(null);
     setStaleSplitId(null);
     setDisputeErrors((current) => {
       if (!(item.detail.split_id in current)) {
@@ -307,10 +329,11 @@ export function MemberExpenseConfirmationPage() {
         status,
         dispute_reason: status === "disputed" ? disputeReason : null,
       });
-      setSubmitFeedback({
-        splitId: item.detail.split_id,
-        status,
-      });
+      if (status === "confirmed") {
+        showSuccess("已提交确认，页面已刷新最新确认状态。");
+      } else {
+        showWarning("已提交异议，页面已刷新最新确认状态。");
+      }
       if (status === "disputed") {
         setDisputeReasons((current) => ({
           ...current,
@@ -323,74 +346,64 @@ export function MemberExpenseConfirmationPage() {
         setStaleSplitId(item.detail.split_id);
         return;
       }
-      setSubmitError(error);
+      showError(error instanceof Error ? error.message : "费用确认提交失败，请稍后重试。");
     } finally {
       setSubmittingSplitId(null);
     }
   }
 
   return (
-    <div className="page-stack">
-      <section className="status-card auth-panel">
-        <p className="eyebrow">费用确认</p>
-        <h2>成员费用确认</h2>
-        <p>
-          当前页是单任务发票工作台下的专项确认入口，用于核对并确认分到自己名下的费用。
-        </p>
-        <div className="inline-actions">
-          <Link
-            className="route-link"
-            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
-          >
-            返回当前任务工作台
-          </Link>
-          <Link className="route-link route-link-secondary" to="/member">
-            返回成员任务列表
-          </Link>
-          {selectedTask ? (
-            <Link
-              className="route-link route-link-secondary"
-              to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
-            >
-              查看材料状态
-            </Link>
-          ) : null}
-          <span className="status-chip">当前可见任务 {visibleTasks.length} 个</span>
-        </div>
-      </section>
-
-      {taskState.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">费用确认</p>
-          <h2>正在加载可见任务</h2>
-          <p>正在读取当前成员可访问的报销任务，以便定位待确认的费用明细。</p>
+    <RoleWorkspace
+      header={(
+        <PageHeader
+          eyebrow="费用确认"
+          title="成员费用确认"
+          description="在单任务上下文中核对当前分到自己名下的费用、关联附件和确认状态。"
+          meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
+          actions={(
+            <div className="page-actions">
+              <Link
+                className="button button-secondary"
+                to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+              >
+                返回当前任务工作台
+              </Link>
+            </div>
+          )}
+        />
+      )}
+      summary={summaryCards.length > 0 ? (
+        <section className="stat-grid" aria-label="费用确认摘要">
+          {summaryCards.map((item) => (
+            <StatCard
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              description={item.description}
+            />
+          ))}
         </section>
+      ) : undefined}
+    >
+      {taskState.status === "loading" ? (
+        <SectionCard title="正在加载可见任务" description="正在读取当前成员可访问的报销任务，以便定位待确认的费用明细。" />
       ) : null}
 
       {taskState.status === "error" ? <ApiErrorNotice error={taskState.error} /> : null}
-      {submitError ? <ApiErrorNotice error={submitError} /> : null}
 
       {taskState.status === "ready" && visibleTasks.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">暂无任务</p>
-          <h2>当前没有可确认费用的报销任务</h2>
-          <p>管理员创建并发布相关任务后，你可以在这里确认个人费用。</p>
-        </section>
+        <EmptyState
+          title="当前没有可确认费用的报销任务"
+          description="管理员创建并发布相关任务后，你可以在这里确认个人费用。"
+        />
       ) : null}
 
       {taskState.status === "ready" && visibleTasks.length > 0 ? (
-        <section className="status-card auth-panel">
-          <div className="admin-form-header">
-            <div>
-              <p className="eyebrow">Task Scope</p>
-              <h2>选择要确认的任务</h2>
-            </div>
-            {selectedTask ? (
-              <span className={`status-chip task-status-chip task-status-${selectedTask.status}`}>
-                {formatTaskStatus(selectedTask.status)}
-              </span>
-            ) : null}
-          </div>
+        <SectionCard
+          title="当前任务上下文"
+          description="先固定在一个任务里处理费用确认，再查看单张费用的发票和附件细节。"
+          action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
+        >
           <div className="admin-form-grid">
             <label className="field-stack">
               <span>目标任务</span>
@@ -399,7 +412,6 @@ export function MemberExpenseConfirmationPage() {
                 value={selectedTaskId}
                 onChange={(event) => {
                   setSelectedTaskId(event.target.value);
-                  setSubmitFeedback(null);
                   setStaleSplitId(null);
                 }}
               >
@@ -411,6 +423,22 @@ export function MemberExpenseConfirmationPage() {
               </select>
               <span className="field-hint">这里只列出你可以查看和确认的任务。</span>
             </label>
+            <div className="field-stack">
+              <span>相关入口</span>
+              <div className="inline-actions">
+                <Link className="route-link route-link-secondary" to="/member">
+                  返回成员任务列表
+                </Link>
+                {selectedTask ? (
+                  <Link
+                    className="route-link route-link-secondary"
+                    to={`/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`}
+                  >
+                    查看材料状态
+                  </Link>
+                ) : null}
+              </div>
+            </div>
             {selectedTask ? (
               <dl className="task-meta-grid member-status-meta-grid">
                 <div>
@@ -421,37 +449,27 @@ export function MemberExpenseConfirmationPage() {
                   <dt>截止时间</dt>
                   <dd>{formatDateTime(selectedTask.deadline)}</dd>
                 </div>
+                <div>
+                  <dt>当前成员</dt>
+                  <dd>{session.displayName}{session.memberCode ? `（${session.memberCode}）` : ""}</dd>
+                </div>
               </dl>
             ) : null}
           </div>
-          {expenseState.status === "ready" ? (
-            <div className="token-list" aria-label="费用确认摘要">
-              <span className="token-chip">本人费用 {readyItems.length} 条</span>
-              <span className="token-chip">总金额 {formatCurrencyFromCents(totalAmountCents)}</span>
-              <span className="token-chip">待确认 {pendingCount} 条</span>
-              <span className="token-chip">已确认 {confirmedCount} 条</span>
-              <span className="token-chip">有异议 {disputedCount} 条</span>
-            </div>
-          ) : null}
-        </section>
+        </SectionCard>
       ) : null}
 
       {selectedTask && expenseState.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">Loading</p>
-          <h2>正在汇总个人费用明细</h2>
-          <p>正在读取当前任务下与你相关的分摊、确认状态和关联附件摘要。</p>
-        </section>
+        <SectionCard title="正在汇总个人费用明细" description="正在读取当前任务下与你相关的分摊、确认状态和关联附件摘要。" />
       ) : null}
 
       {selectedTask && expenseState.status === "error" ? <ApiErrorNotice error={expenseState.error} /> : null}
 
       {expenseState.status === "ready" && readyItems.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">暂无费用</p>
-          <h2>当前任务下没有待展示的个人费用</h2>
-          <p>当前还没有分配到你名下的费用，管理员完成分摊后会在这里显示。</p>
-        </section>
+        <EmptyState
+          title="当前任务下没有待展示的个人费用"
+          description="当前还没有分配到你名下的费用，管理员完成分摊后会在这里显示。"
+        />
       ) : null}
 
       {expenseState.status === "ready" && readyItems.length > 0 ? (
@@ -462,7 +480,6 @@ export function MemberExpenseConfirmationPage() {
             const disputeError = disputeErrors[item.detail.split_id];
             const isSubmitting = submittingSplitId === item.detail.split_id;
             const isStale = staleSplitId === item.detail.split_id;
-            const hasFeedback = submitFeedback?.splitId === item.detail.split_id;
 
             return (
               <article key={item.detail.split_id} className="status-card member-confirmation-card">
@@ -609,11 +626,6 @@ export function MemberExpenseConfirmationPage() {
                       </button>
                     ) : null}
                   </div>
-                  {hasFeedback ? (
-                    <p className="confirmation-feedback">
-                      {submitFeedback.status === "confirmed" ? "已提交确认，页面已刷新最新确认状态。" : "已提交异议，页面已刷新最新确认状态。"}
-                    </p>
-                  ) : null}
                   {isStale ? (
                     <p className="field-error-block">
                       当前费用明细版本已失效，通常是管理员刚修改了分摊金额或成员归属；请刷新后再确认。
@@ -625,6 +637,6 @@ export function MemberExpenseConfirmationPage() {
           })}
         </section>
       ) : null}
-    </div>
+    </RoleWorkspace>
   );
 }

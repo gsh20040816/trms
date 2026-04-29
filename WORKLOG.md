@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-04-29 13:07 - Rewrite member confirmation and missing-material pages into M3 workspace cards
+
+### 完成内容
+- 重写 `web/src/app/member-expense-confirmation.tsx`：
+  - 页面壳层切到 `RoleWorkspace + PageHeader + SectionCard + StatCard + EmptyState + StatusBadge`；
+  - 顶部形成稳定的“当前任务上下文”卡，不再用旧的 `status-card auth-panel` 堆页面；
+  - 费用确认摘要改为 4 张统计卡：本人费用、总金额、待确认、已处理；
+  - 确认/异议成功提示改为 Snackbar，不再在费用卡内部插入成功提示文案；
+  - 非 stale 的提交失败也改为 Snackbar；只有“明细版本失效”继续留在对应费用卡内，避免失去对象上下文。
+- 重写 `web/src/app/task-missing-materials.tsx` 的成员视图：
+  - 成员缺失材料页切到 `RoleWorkspace + PageHeader + SectionCard + StatCard + EmptyState + StatusBadge`；
+  - 摘要改为统计卡，保留原有按发票 / 费用类型查看的列表能力；
+  - 当前任务上下文卡中加入返回成员任务列表、去补充材料等稳定入口。
+- 同步更新测试：
+  - `web/src/app/member-expense-confirmation.test.tsx` 改为断言 Snackbar 成功/失败反馈；
+  - `web/src/app/task-missing-materials.test.tsx` 改为断言统计卡摘要；
+  - `web/src/app/main-flow-e2e-placeholder.test.tsx` 同步更新确认成功路径的反馈断言。
+- `TASKS.md` 中“重写成员费用确认页与缺失材料页”已标记完成。
+
+### 根因
+- 这两个页面虽然功能已通，但都仍停留在旧的“独立专项页 + 历史卡片样式 + 局部反馈文案”阶段，和前几轮已经收口好的成员工作台、上传页、材料状态页不一致。
+- 成员端主问题不是缺功能，而是流程被拆散且交互语义不统一；因此本轮优先统一为同一套 M3 工作台壳层与反馈方式。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/member-expense-confirmation.tsx`
+  - `web/src/app/member-expense-confirmation.test.tsx`
+  - `web/src/app/task-missing-materials.tsx`
+  - `web/src/app/task-missing-materials.test.tsx`
+  - `web/src/app/main-flow-e2e-placeholder.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮没有改任何后端接口、确认规则或缺失材料聚合逻辑，只改前端信息组织和反馈方式。
+- 成功/失败反馈从页内卡片转到 Snackbar 后，页面主体更干净，但用户仍能看到 stale 明细这种必须挂在具体对象上的异常。
+- 成员缺失材料页仍保留原生 select 与现有列表样式；后续“业务表单整体迁移到 MUI”任务会继续处理控件层。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：420 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：21 文件、69 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 旧的成员专项页仍暂时保留，因为下一轮会把这些旧二级路由统一收口到工作台跳转；本轮只先保证它们本身已经具备一致的 M3 信息架构。
+- 缺失材料页继续沿用分组列表而不是再拆详情面板，原因是成员端缺失项本身更适合“补什么”导向，而不是复杂审查导向。
+
 ## 2026-04-29 12:56 - Convert member material status page to list-detail workspace
 
 ### 完成内容

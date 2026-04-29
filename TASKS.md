@@ -1215,7 +1215,7 @@
     - 重新识别和状态刷新动作走 Snackbar 反馈
     - `member-material-status.test.tsx` 测试通过
 
-- [ ] 重写成员费用确认页与缺失材料页
+- [x] 重写成员费用确认页与缺失材料页
   - Done when:
     - `/member/expenses/confirm` 改为 M3 表单 + Stepper 或分卡组织
     - `/member/materials/missing` 改为 M3 列表

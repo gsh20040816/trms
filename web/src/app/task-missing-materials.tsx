@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { PageHeader } from "../components/dashboard";
+import { EmptyState, PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   MissingMaterialItem,
@@ -468,67 +468,77 @@ export function MemberMissingMaterialsPage() {
   const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
   const visibleList = listState.status === "ready" ? listState.list : null;
   const summary = visibleList ? buildMissingMaterialSummary(visibleList.items) : null;
+  const summaryCards = summary ? [
+    {
+      label: "缺失项",
+      value: summary.totalItems,
+      description: "当前任务下与你相关的待补材料条数。",
+    },
+    {
+      label: "涉及发票",
+      value: summary.invoiceCount,
+      description: "命中缺失规则的发票数量。",
+    },
+    {
+      label: "费用类型",
+      value: summary.expenseTypeCount,
+      description: "当前缺失项覆盖的费用类型数量。",
+    },
+  ] : [];
 
   return (
-    <div className="page-stack">
-      <section className="status-card auth-panel">
-        <p className="eyebrow">我的待补材料</p>
-        <h2>我的缺失材料</h2>
-        <p>
-          当前页是单任务发票工作台下的专项补材料视图，只展示当前成员本人需要补充的材料。
-        </p>
-        <div className="inline-actions">
-          <Link
-            className="route-link"
-            to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
-          >
-            返回当前任务工作台
-          </Link>
-          <Link className="route-link route-link-secondary" to="/member">
-            返回成员任务列表
-          </Link>
-          {selectedTask?.status === "open" ? (
-            <Link
-              className="route-link route-link-secondary"
-              to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
-            >
-              去补充材料
-            </Link>
-          ) : null}
-        </div>
-      </section>
+    <RoleWorkspace
+      header={(
+        <PageHeader
+          eyebrow="我的待补材料"
+          title="我的缺失材料"
+          description="在单任务上下文中查看当前仍需补充的材料，并快速跳回上传入口。"
+          meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
+          actions={(
+            <div className="page-actions">
+              <Link
+                className="button button-secondary"
+                to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
+              >
+                返回当前任务工作台
+              </Link>
+            </div>
+          )}
+        />
+      )}
+      summary={summaryCards.length > 0 ? (
+        <section className="stat-grid" aria-label="缺失材料摘要">
+          {summaryCards.map((item) => (
+            <StatCard
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              description={item.description}
+            />
+          ))}
+        </section>
+      ) : undefined}
+    >
 
       {taskState.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">Loading</p>
-          <h2>正在加载可见任务</h2>
-          <p>正在读取当前成员可访问的任务，以便定位你自己的缺失材料。</p>
-        </section>
+        <SectionCard title="正在加载可见任务" description="正在读取当前成员可访问的任务，以便定位你自己的缺失材料。" />
       ) : null}
 
       {taskState.status === "error" ? <ApiErrorNotice error={taskState.error} /> : null}
 
       {taskState.status === "ready" && visibleTasks.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">暂无任务</p>
-          <h2>当前没有可查看的报销任务</h2>
-          <p>管理员创建并发布相关任务后，你可以在这里查看待补材料。</p>
-        </section>
+        <EmptyState
+          title="当前没有可查看的报销任务"
+          description="管理员创建并发布相关任务后，你可以在这里查看待补材料。"
+        />
       ) : null}
 
       {taskState.status === "ready" && visibleTasks.length > 0 ? (
-        <section className="status-card auth-panel">
-          <div className="admin-form-header">
-            <div>
-              <p className="eyebrow">Task Scope</p>
-              <h2>选择要查看的任务</h2>
-            </div>
-            {selectedTask ? (
-              <span className={`status-chip task-status-chip task-status-${selectedTask.status}`}>
-                {formatTaskStatus(selectedTask.status)}
-              </span>
-            ) : null}
-          </div>
+        <SectionCard
+          title="当前任务上下文"
+          description="先固定一个任务，再按发票或费用类型查看待补材料。"
+          action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
+        >
           <div className="admin-form-grid">
             <label className="field-stack">
               <span>目标任务</span>
@@ -547,6 +557,22 @@ export function MemberMissingMaterialsPage() {
               </select>
               <span className="field-hint">这里只列出你可以查看的任务，并只显示与你相关的待补材料。</span>
             </label>
+            <div className="field-stack">
+              <span>相关入口</span>
+              <div className="inline-actions">
+                <Link className="route-link route-link-secondary" to="/member">
+                  返回成员任务列表
+                </Link>
+                {selectedTask?.status === "open" ? (
+                  <Link
+                    className="route-link route-link-secondary"
+                    to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
+                  >
+                    去补充材料
+                  </Link>
+                ) : null}
+              </div>
+            </div>
             <label className="field-stack">
               <span>查看维度</span>
               <select
@@ -562,37 +588,25 @@ export function MemberMissingMaterialsPage() {
               <span className="field-hint">成员视角不显示其他成员的信息。</span>
             </label>
           </div>
-          {selectedTask && visibleList ? (
-            <div className="token-list" aria-label="缺失材料摘要">
-              <span className="token-chip">缺失项 {summary?.totalItems ?? 0} 条</span>
-              <span className="token-chip">涉及发票 {summary?.invoiceCount ?? 0} 张</span>
-              <span className="token-chip">涉及费用类型 {summary?.expenseTypeCount ?? 0} 类</span>
-            </div>
-          ) : null}
-        </section>
+        </SectionCard>
       ) : null}
 
       {selectedTask && listState.status === "loading" ? (
-        <section className="status-card">
-          <p className="eyebrow">Loading</p>
-          <h2>正在加载我的缺失材料</h2>
-          <p>正在读取当前任务下与你本人相关的缺失材料项，请稍候。</p>
-        </section>
+        <SectionCard title="正在加载我的缺失材料" description="正在读取当前任务下与你本人相关的缺失材料项，请稍候。" />
       ) : null}
 
       {selectedTask && listState.status === "error" ? <ApiErrorNotice error={listState.error} /> : null}
 
       {selectedTask && listState.status === "ready" && listState.list.items.length === 0 ? (
-        <section className="status-card">
-          <p className="eyebrow">已补齐</p>
-          <h2>当前任务下你没有待补材料</h2>
-          <p>当前任务下没有与你相关的待补材料记录，如有新提醒会在这里显示。</p>
-        </section>
+        <EmptyState
+          title="当前任务下你没有待补材料"
+          description="当前任务下没有与你相关的待补材料记录，如有新提醒会在这里显示。"
+        />
       ) : null}
 
       {selectedTask && listState.status === "ready" && listState.list.items.length > 0 ? (
         <MissingMaterialGroupList groups={readyGroups} />
       ) : null}
-    </div>
+    </RoleWorkspace>
   );
 }
