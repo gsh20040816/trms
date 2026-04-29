@@ -21,6 +21,7 @@ from trms_backend.domain.recognitions import (
 from trms_backend.runtime_config import LLMProviderConfig
 
 LOW_CONFIDENCE_THRESHOLD = 0.8
+PROMPT_VERSION = "trms-recognition-v2"
 
 
 class RecognitionInputSource(StrEnum):
@@ -344,6 +345,7 @@ def _build_chat_completions_payload(
     document_input: RecognitionDocumentInput,
 ) -> dict[str, Any]:
     user_prompt = {
+        "prompt_version": PROMPT_VERSION,
         "material_id": material.id,
         "material_type": material.material_type.value,
         "original_filename": material.original_filename,
@@ -355,6 +357,9 @@ def _build_chat_completions_payload(
             "Use amount_cents as integer cents.",
             "Use ISO 8601 with timezone for transaction_time when available.",
             "Use TRMS enums for expense_type and material_type.",
+            "For Chinese invoices, only extract buyer_name and tax_number when they are explicitly visible on the document.",
+            "If the document only shows a date but not a complete time, keep transaction_time absent instead of inventing a time.",
+            "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
         ],
     }
     user_prompt_json = json.dumps(user_prompt, ensure_ascii=False)
@@ -365,13 +370,22 @@ def _build_chat_completions_payload(
             {
                 "role": "system",
                 "content": (
-                    "You extract structured reimbursement metadata from reimbursement documents. "
-                    "Return only JSON. "
+                    "You extract structured reimbursement metadata from Chinese university reimbursement materials. "
+                    f"Prompt version: {PROMPT_VERSION}. "
+                    "Return JSON only. "
                     "The top-level object must contain an 'output' field. "
-                    "Inside 'output', only use these known field names when the document supports them: "
+                    "Inside 'output', only use these known field names when the document explicitly supports them: "
                     "invoice_number, amount_cents, buyer_name, tax_number, transaction_time, "
                     "location, expense_type, material_type, trip_route, transport_mode, cabin_class. "
-                    "Each populated field must be an object with 'value' and 'confidence'."
+                    "Each populated field must be an object with 'value' and 'confidence'. "
+                    "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "
+                    "train or flight itineraries, rideshare receipts, hotel invoices, competition notices and payment records. "
+                    "Do not guess missing fields. If a field is blurred, absent, ambiguous, or contradicted, omit it. "
+                    "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible. "
+                    "For amount_cents, convert RMB yuan to integer cents and ignore currency symbols or separators. "
+                    "For transaction_time, use the clearest transaction or issue timestamp on the document; if only a date is present, leave the field absent. "
+                    "For expense_type and material_type, choose only TRMS enum values that are directly supported by the document evidence. "
+                    "For scanned PDFs or photos, rely only on the visible content in the supplied file, not on filename guesses."
                 ),
             },
             {
@@ -455,7 +469,38 @@ def _safe_request_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "model": payload.get("model"),
         "response_format": payload.get("response_format"),
         "message_count": len(payload.get("messages", [])),
+        "user_prompt": _extract_safe_user_prompt(payload),
     }
+
+
+def _extract_safe_user_prompt(payload: dict[str, Any]) -> dict[str, Any] | None:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return None
+
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
+                return {"raw_text": content}
+            return parsed if isinstance(parsed, dict) else {"raw_value": parsed}
+        if isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict) or item.get("type") != "text":
+                    continue
+                text = item.get("text")
+                if not isinstance(text, str):
+                    continue
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError:
+                    return {"raw_text": text}
+                return parsed if isinstance(parsed, dict) else {"raw_value": parsed}
+    return None
 
 
 def _build_response_format(provider_base_url: str) -> dict[str, Any]:

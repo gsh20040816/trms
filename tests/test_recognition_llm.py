@@ -113,10 +113,89 @@ def test_openai_compatible_recognition_client_parses_json_schema_response():
     assert captured_request["path"] == "/v1/chat/completions"
     assert captured_request["authorization"] == "Bearer sk-test"
     assert captured_request["payload"]["response_format"]["type"] == "json_schema"
+    assert "Prompt version: trms-recognition-v2." in captured_request["payload"]["messages"][0]["content"]
+    assert "Do not guess missing fields." in captured_request["payload"]["messages"][0]["content"]
     assert result.recognized_fields["invoice_number"].value == "INV-001"
     assert result.recognized_fields["location"].status is RecognitionFieldStatus.NEEDS_CONFIRMATION
     assert result.recognized_fields["material_type"].value == "invoice"
     assert result.raw_response["attempts"] == 1
+    assert result.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
+    assert result.raw_response["request"]["user_prompt"]["recognition_input"]["source"] == "pdf_text"
+
+
+def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_prompt():
+    captured_request = {}
+    chinese_text = "电子发票 发票号码 12345678 购买方名称 同济大学 纳税人识别号 12100000425006117D 价税合计￥123.45"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request["payload"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "buyer_name": {
+                                            "value": "同济大学",
+                                            "confidence": 0.96,
+                                        }
+                                    }
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    chinese_input = RecognitionDocumentInput(
+        source="pdf_text",
+        text=chinese_text,
+        page_count=1,
+        text_character_count=len(chinese_text),
+    )
+
+    client.recognize(material=build_material(), document_input=chinese_input)
+
+    system_prompt = captured_request["payload"]["messages"][0]["content"]
+    user_prompt = json.loads(captured_request["payload"]["messages"][1]["content"])
+    assert "VAT electronic invoices" in system_prompt
+    assert "For amount_cents, convert RMB yuan to integer cents" in system_prompt
+    assert "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible." in system_prompt
+    assert user_prompt == {
+        "material_id": "material-1",
+        "material_type": "invoice",
+        "original_filename": "invoice.pdf",
+        "content_type": "application/pdf",
+        "recognition_input": {
+            "source": "pdf_text",
+            "text": chinese_text,
+            "page_count": 1,
+            "text_character_count": len(chinese_text),
+        },
+        "instructions": [
+            "Return JSON only.",
+            "Do not fabricate fields that are not supported by the provided document.",
+            "Use amount_cents as integer cents.",
+            "Use ISO 8601 with timezone for transaction_time when available.",
+            "Use TRMS enums for expense_type and material_type.",
+            "For Chinese invoices, only extract buyer_name and tax_number when they are explicitly visible on the document.",
+            "If the document only shows a date but not a complete time, keep transaction_time absent instead of inventing a time.",
+            "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
+        ],
+        "prompt_version": "trms-recognition-v2",
+    }
 
 
 def test_openai_compatible_recognition_client_sends_pdf_file_input_for_scanned_pdf():
@@ -333,6 +412,8 @@ def test_openai_compatible_recognition_client_rejects_non_json_content():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_not_json"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
+    assert error.value.raw_response["raw_content"] == "not-json"
 
 
 def test_openai_compatible_recognition_client_rejects_missing_fields_output():
@@ -353,6 +434,56 @@ def test_openai_compatible_recognition_client_rejects_missing_fields_output():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_missing_fields"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
+    assert error.value.raw_response["parsed_content"]["output"]["invoice_number"] is None
+    assert error.value.raw_response["parsed_content"]["output"]["amount_cents"] is None
+
+
+def test_openai_compatible_recognition_client_reports_invalid_schema_details():
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": json.dumps(
+                                        {
+                                            "output": {
+                                                "amount_cents": {
+                                                    "value": "not-an-integer",
+                                                    "confidence": 0.91,
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        ]
+                    },
+                )
+            ),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+
+    with pytest.raises(RecognitionLlmExecutionError) as error:
+        client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert error.value.failure.reason == "llm_output_invalid"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v2"
+    assert error.value.raw_response["parsed_content"] == {
+        "output": {
+            "amount_cents": {
+                "value": "not-an-integer",
+                "confidence": 0.91,
+            }
+        }
+    }
+    assert error.value.raw_response["validation_errors"][0]["type"] == "int_parsing"
 
 
 def test_openai_compatible_recognition_client_reports_timeout_after_retries():

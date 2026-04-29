@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-04-29 20:01 - Strengthen recognition prompts and diagnostic failure context
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“强化发票识别提示词与失败可诊断信息”。
+- 调整 [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - 增加 `PROMPT_VERSION=trms-recognition-v2`
+  - 扩展 system prompt，明确覆盖：
+    - 中文高校报销材料语境
+    - 中国大陆电子/纸质发票、行程单、网约车小票、比赛通知、支付记录等常见材料
+    - `amount_cents` 的人民币元转分规则
+    - `buyer_name` / `tax_number` 只在文档明确出现时才提取
+    - 时间字段只在文档明确给出时间时才写入，不臆造
+    - 缺失/模糊/矛盾字段直接省略，不瞎猜
+  - 扩展 user prompt 元数据，补入 `prompt_version` 和更明确的逐项 instructions
+  - `_safe_request_summary()` 不再只保留 `message_count`，而是额外提取安全的 `user_prompt` 元数据，便于审计时还原提示词上下文
+- 同步增强测试 [tests/test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)：
+  - 校验 system prompt 中中文发票抽取规则与 anti-guess 边界
+  - 校验 user prompt 元数据包含 `prompt_version` 与中文发票样例输入
+  - 校验非法 JSON、缺字段输出、非法 schema 输出三类失败都保留足够上下文
+
+### 根因
+- 原提示词过于泛化，只说明“抽结构化字段并返回 JSON”，没有明确：
+  - 中文电子发票/纸票常见字段边界
+  - 人民币金额单位处理
+  - 抬头/税号/时间“缺失就省略、不瞎猜”的原则
+- 同时，失败上下文里只有很薄的 request summary，排查时难区分到底是：
+  - 提示词没把规则说清
+  - 模型输出了非 JSON
+  - 模型输出了不符合 schema 的 JSON
+  - 输出结构合法但一个字段都没抽出来
+
+### 关键改动点
+- 没有改动识别执行器、字段 schema 或状态机，只强化 prompt 与错误上下文。
+- 失败上下文继续保持“安全可审计”边界：只保留无二进制的 `user_prompt` 元数据，不把完整文件 data URL 塞进日志摘要。
+
+### 风险与影响面
+- Prompt 更严格后，模型在边界模糊场景下更可能返回“缺字段”而不是勉强猜值；这会增加 `llm_output_missing_fields` 或低置信度待确认比例，但这是有意为之。
+- 由于本轮只修改 prompt 和失败上下文，若后续想进一步提升字段覆盖率，还需要配合更细的 few-shot 或 schema 拆分策略。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_llm.py`
+    - 10 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：437 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、89 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
 ## 2026-04-29 19:42 - Close recognition dispatch loop for in-process and worker modes
 
 ### 完成内容
