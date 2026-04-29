@@ -138,6 +138,8 @@ describe("admin task create page", () => {
     renderAdminCreateRoute();
 
     expect(screen.getByRole("heading", { name: "创建报销任务" })).toBeInTheDocument();
+    expect(screen.getByText("当前阶段请填写成员姓名或学号字符串，系统会把它作为该任务内的成员标识；不要填写内部数据库 ID。")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("输入成员姓名或学号")).toBeInTheDocument();
 
     fillRequiredTaskForm();
     fireEvent.change(screen.getByLabelText("发票抬头"), {

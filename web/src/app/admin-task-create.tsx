@@ -336,11 +336,11 @@ export function AdminTaskCreatePage() {
             {formState.memberIds.map((memberId, index) => (
               <div key={`member-${index}`} className="member-row">
                 <label className="field-stack member-field">
-                  <span>成员 {index + 1}</span>
+                  <span>成员 {index + 1}（姓名或学号）</span>
                   <input
                     aria-label={`成员 ${index + 1}`}
                     value={memberId}
-                    placeholder="输入学号或成员标识"
+                    placeholder="输入成员姓名或学号"
                     onChange={(event) => {
                       updateMember(index, event.target.value);
                     }}
@@ -361,7 +361,7 @@ export function AdminTaskCreatePage() {
           {validationErrors.memberIds ? (
             <p className="field-error field-error-block">{validationErrors.memberIds}</p>
           ) : (
-            <p className="field-hint">成员名单不能为空，也不能保留空白成员项。</p>
+            <p className="field-hint">当前阶段请填写成员姓名或学号字符串，系统会把它作为该任务内的成员标识；不要填写内部数据库 ID。</p>
           )}
 
           <fieldset className="checkbox-group">

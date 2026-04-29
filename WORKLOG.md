@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-04-29 14:33 - Clarify task member input semantics on admin create form
+
+### 完成内容
+- 调整管理员创建任务页的成员名单填写提示：
+  - 输入行标题从“成员 N”改为“成员 N（姓名或学号）”；
+  - 输入框占位文案从“输入学号或成员标识”改为“输入成员姓名或学号”；
+  - 成员名单区域提示明确说明：当前阶段应填写姓名或学号字符串，系统会把它作为任务内成员标识，不应填写内部数据库 ID。
+- 前端测试同步补断言，锁住上述提示文案。
+- `TASKS.md` 中“按 UX 实测明确任务创建页成员名单填写语义”已标记完成。
+
+### 根因
+- UX 实测暴露的问题不是表单无法提交，而是表单把成员字段描述成了“成员标识”，迫使管理员去猜这里究竟要填姓名、学号还是系统内部 ID。
+- 当前实现的真实语义其实只是“任务内成员标识字符串”，但界面没有把这个限制讲清楚，导致真实名单录入时认知成本过高，也容易误填。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/admin-task-create.tsx`
+  - `web/src/app/admin-task-create.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 本轮只改前端提示文案，不改任务创建 payload、成员匹配规则或后端数据模型。
+- 新文案刻意避免承诺“历史成员选择 / 批量导入”这类还未实现的能力，只把当前真实可用的填写语义讲清楚。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：421 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、74 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 本轮只收口“当前该怎么填”的文案问题，不等同于已经实现姓名/学号双字段建模、历史成员补全或批量导入能力。
+- 如果后续成员身份模型改成显式“姓名 + 学号 + 系统账号绑定”，这里的提示还需要再跟着真实模型调整。
+
 ## 2026-04-29 14:31 - Fix member workbench recognition blocking states from UX test
 
 ### 完成内容
