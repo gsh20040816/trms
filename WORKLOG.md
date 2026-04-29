@@ -1,5 +1,58 @@
 # WORKLOG
 
+## 2026-04-29 17:15 - Migrate missing materials filters to MUI Select
+
+### 完成内容
+- 完成 `TASKS.md` 中当前第一个未完成任务“迁移缺失材料筛选表单到 MUI Select”。
+- 将 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 中缺失材料页面的筛选表单迁移到 MUI：
+  - 管理员页“查看维度”改为 `FormControl + InputLabel + Select + MenuItem`
+  - 成员页“目标任务”和“查看维度”改为同一套 MUI 选择控件
+- 保持原有边界不变：
+  - 缺失材料列表分组结构未改
+  - 成员侧仍只展示本人相关缺失项
+  - “返回成员任务列表 / 去补充材料 / 返回当前任务工作台”跳转语义未改
+- 同步更新前端测试 [web/src/app/task-missing-materials.test.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.test.tsx)：
+  - 断言从原生 `select` 的 `value` 检查改为 MUI `combobox` 文本检查
+  - 交互改为 `mouseDown + click option`，覆盖管理员和成员两条筛选路径
+
+### 根因
+- 缺失材料页面仍保留原生 `<select>`，与当前前端其余已迁移到 Material 3 的表单页不一致。
+- 当前 `TASKS.md` 已明确将“前端剩余风格不协调界面”收口到若干最小任务，本页筛选表单正是其中仍未迁移的一块。
+
+### 关键改动点
+- 修改：
+  - `web/src/app/task-missing-materials.tsx`
+  - `web/src/app/task-missing-materials.test.tsx`
+  - `TASKS.md`
+  - `WORKLOG.md`
+
+### 风险与影响面
+- 本轮只替换筛选控件实现，不改缺失材料查询接口、权限过滤、分组算法、摘要统计或页面布局结构。
+- MUI `Select` 的测试交互与原生 `select` 不同；本轮已用显式下拉交互测试覆盖，避免仅靠静态渲染断言造成假通过。
+
+### 验证结果
+- 已通过定向前端回归：
+  - `cd web && npm test -- task-missing-materials.test.tsx`
+- 已通过定向前端 lint：
+  - `cd web && npm run lint -- src/app/task-missing-materials.tsx src/app/task-missing-materials.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic `upgrade -> downgrade -> upgrade` 通过
+    - `pytest`：432 passed，3 warnings
+    - Web `npm run lint` 通过
+    - Web `npm test`：23 文件、86 用例全部通过
+    - Web `npm run build` 成功
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+- 仍存在未导致失败的现有 warning：
+  - `pytest` 仍有 3 条 `HTTP_422_UNPROCESSABLE_ENTITY` 弃用告警
+  - Web `vitest` 运行时仍打印多条 `--localstorage-file` 路径 warning
+  - Vite build 仍提示主 chunk 超过 500 kB，但当前构建成功
+
+### 假设
+- 本轮把“迁移缺失材料筛选表单到 MUI Select”保守定义为：仅替换筛选控件及其测试交互，不顺带改写缺失材料列表信息架构、成员入口流转或额外样式系统。
+
 ## 2026-04-29 17:08 - Stop codex-nightly by pending task state instead of max rounds
 
 ### 完成内容

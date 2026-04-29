@@ -1343,7 +1343,7 @@
     - 每轮开始前和每轮结束后都通过 `TASKS.md` 中是否还存在 `- [ ]` 判断是否继续
     - 保留 `.codex-nightly/STOP` 的人工停止能力和现有 dirty working tree 防护
 
-- [ ] 迁移缺失材料筛选表单到 MUI Select
+- [x] 迁移缺失材料筛选表单到 MUI Select
   - Done when:
     - `web/src/app/task-missing-materials.tsx` 中任务选择与查看维度筛选改用 MUI `Select`
     - 筛选表单保持现有成员侧权限与跳转语义，不顺带改动列表展示结构

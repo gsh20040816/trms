@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
@@ -332,21 +336,25 @@ export function AdminMissingMaterialsPage() {
               <span className="status-chip">{GROUP_MODE_LABELS[groupMode]}</span>
             </div>
             <div className="admin-form-grid">
-              <label className="field-stack">
-                <span>查看维度</span>
-                <select
-                  aria-label="查看维度"
-                  value={groupMode}
-                  onChange={(event) => {
-                    setGroupMode(event.target.value as GroupMode);
-                  }}
-                >
-                  <option value="member">按成员查看</option>
-                  <option value="invoice">按发票查看</option>
-                  <option value="expense_type">按费用类型查看</option>
-                </select>
+              <div className="field-stack">
+                <FormControl fullWidth>
+                  <InputLabel id="admin-missing-materials-group-mode-label">查看维度</InputLabel>
+                  <Select
+                    labelId="admin-missing-materials-group-mode-label"
+                    label="查看维度"
+                    aria-label="查看维度"
+                    value={groupMode}
+                    onChange={(event) => {
+                      setGroupMode(event.target.value);
+                    }}
+                  >
+                    <MenuItem value="member">按成员查看</MenuItem>
+                    <MenuItem value="invoice">按发票查看</MenuItem>
+                    <MenuItem value="expense_type">按费用类型查看</MenuItem>
+                  </Select>
+                </FormControl>
                 <span className="field-hint">这里用于梳理待补材料，提醒和更正可在其他工作页继续处理。</span>
-              </label>
+              </div>
             </div>
           </section>
 
@@ -540,23 +548,27 @@ export function MemberMissingMaterialsPage() {
           action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
         >
           <div className="admin-form-grid">
-            <label className="field-stack">
-              <span>目标任务</span>
-              <select
-                aria-label="目标任务"
-                value={selectedTaskId}
-                onChange={(event) => {
-                  setSelectedTaskId(event.target.value);
-                }}
-              >
-                {visibleTasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.competition_name}（{task.id}）
-                  </option>
-                ))}
-              </select>
+            <div className="field-stack">
+              <FormControl fullWidth>
+                <InputLabel id="member-missing-materials-task-label">目标任务</InputLabel>
+                <Select
+                  labelId="member-missing-materials-task-label"
+                  label="目标任务"
+                  aria-label="目标任务"
+                  value={selectedTaskId}
+                  onChange={(event) => {
+                    setSelectedTaskId(event.target.value);
+                  }}
+                >
+                  {visibleTasks.map((task) => (
+                    <MenuItem key={task.id} value={task.id}>
+                      {task.competition_name}（{task.id}）
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
               <span className="field-hint">这里只列出你可以查看的任务，并只显示与你相关的待补材料。</span>
-            </label>
+            </div>
             <div className="field-stack">
               <span>相关入口</span>
               <div className="inline-actions">
@@ -573,20 +585,24 @@ export function MemberMissingMaterialsPage() {
                 ) : null}
               </div>
             </div>
-            <label className="field-stack">
-              <span>查看维度</span>
-              <select
-                aria-label="查看维度"
-                value={groupMode}
-                onChange={(event) => {
-                  setGroupMode(event.target.value as GroupMode);
-                }}
-              >
-                <option value="invoice">按发票查看</option>
-                <option value="expense_type">按费用类型查看</option>
-              </select>
+            <div className="field-stack">
+              <FormControl fullWidth>
+                <InputLabel id="member-missing-materials-group-mode-label">查看维度</InputLabel>
+                <Select
+                  labelId="member-missing-materials-group-mode-label"
+                  label="查看维度"
+                  aria-label="查看维度"
+                  value={groupMode}
+                  onChange={(event) => {
+                    setGroupMode(event.target.value);
+                  }}
+                >
+                  <MenuItem value="invoice">按发票查看</MenuItem>
+                  <MenuItem value="expense_type">按费用类型查看</MenuItem>
+                </Select>
+              </FormControl>
               <span className="field-hint">成员视角不显示其他成员的信息。</span>
-            </label>
+            </div>
           </div>
         </SectionCard>
       ) : null}
