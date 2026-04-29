@@ -367,6 +367,8 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
             "Always populate document_family, material_type, expense_type_candidate, is_reimbursement_voucher, and classification_confidence.",
             "Use only TRMS enums for document_family, material_type, and expense_type_candidate.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
+            "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
+            "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
             "classification_confidence.value must be a float between 0 and 1 describing the overall confidence of the classification result.",
         ],
         "prompt_version": "trms-recognition-v3",
@@ -387,6 +389,98 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
         "transport_mode",
         "cabin_class",
     ]
+
+
+def test_openai_classification_prompt_includes_tax_seal_and_direct_voucher_rules():
+    captured_requests = []
+    railway_text = (
+        "铁路电子客票 报销凭证 乘车日期 2026-04-01 发票号码 1234567890 "
+        "税务监制章 票价合计 553.00"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    build_classification_output(
+                                        document_family="invoice",
+                                        material_type="invoice",
+                                        expense_type_candidate="railway",
+                                        is_reimbursement_voucher=True,
+                                        classification_confidence=0.98,
+                                    ),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "invoice_number": {
+                                            "value": "1234567890",
+                                            "confidence": 0.96,
+                                        }
+                                    }
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    railway_input = RecognitionDocumentInput(
+        source="pdf_text",
+        text=railway_text,
+        page_count=1,
+        text_character_count=len(railway_text),
+    )
+
+    result = client.recognize(material=build_material(), document_input=railway_input)
+
+    classification_system_prompt = captured_requests[0]["messages"][0]["content"]
+    classification_user_prompt = json.loads(captured_requests[0]["messages"][1]["content"])
+    assert (
+        "If a document shows a tax authority seal or an equivalent tax-supervision mark, classify it as invoice."
+        in classification_system_prompt
+    )
+    assert (
+        "Railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers must be classified as invoice"
+        in classification_system_prompt
+    )
+    assert "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice." in classification_user_prompt["instructions"]
+    assert (
+        "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers."
+        in classification_user_prompt["instructions"]
+    )
+    assert result.recognized_fields["document_family"].value == "invoice"
+    assert result.recognized_fields["material_type"].value == "invoice"
+    assert result.recognized_fields["expense_type_candidate"].value == "railway"
+    assert result.recognized_fields["is_reimbursement_voucher"].value is True
 
 
 def test_openai_compatible_recognition_client_sends_pdf_file_input_for_scanned_pdf():

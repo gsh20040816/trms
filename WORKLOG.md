@@ -1,5 +1,33 @@
 # WORKLOG
 
+## 2026-04-29 23:49 - Solidify invoice classification rule for tax-seal vouchers
+
+### 完成内容
+- 完成临时任务“固化‘税局盖章材料归发票类别’的分类规则”。
+- 调整 [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py) 的第一阶段分类 prompt：
+  - 显式要求：只要材料上出现税局盖章或等价税务监制特征，就归入 `invoice`
+  - 显式要求：铁路电子客票、铁路电子行程单、航空电子客票报销凭证等若本身可作为直接报销凭证，必须按 `invoice` 分类，而不是 `itinerary` 或 `other_attachment`
+- 调整测试 [test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)：
+  - 新增铁路电子客票/税务监制章规则回归测试
+  - 断言第一阶段 system prompt 与 user instructions 都明确包含上述分类规则
+
+### 根因
+- 上一轮虽然已经把识别拆成两阶段，但第一阶段分类 prompt 还只是一般性的“材料类型判断”。
+- 对“税局盖章即发票主链路”“直接报销凭证型铁路/航空票据不能误归辅助材料”这两类高优先级规则，之前没有在 prompt 里显式表达，只能依赖模型自行推断，容易把本该走发票链路的材料误分到 `itinerary` 或 `other_attachment`。
+
+### 风险与影响面
+- 本轮只固化了分类规则表达，没有改第二阶段字段 schema，也没有新增基于版式/盖章检测的硬编码后处理。
+- 也就是说，本轮解决的是“分类规则未显式声明”的问题，不是“所有 provider 对这些票据都已达到稳定高召回”的问题。
+- 下一步仍应继续完成“按类别提取字段的 schema 清单”，把这些材料进入 `invoice` 主链路后需要的字段边界继续补齐。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_llm.py`
+    - 12 个用例通过
+  - `uv run pytest tests/test_recognition_llm.py tests/test_recognition_execution_api.py`
+    - 32 个用例通过
+- 仓库级验证待本轮文档更新后统一执行 `./scripts/verify.sh`。
+
 ## 2026-04-29 23:32 - Establish two-stage recognition pipeline
 
 ### 完成内容

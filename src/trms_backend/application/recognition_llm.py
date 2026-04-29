@@ -692,6 +692,8 @@ def _build_classification_chat_completions_payload(
             "Always populate document_family, material_type, expense_type_candidate, is_reimbursement_voucher, and classification_confidence.",
             "Use only TRMS enums for document_family, material_type, and expense_type_candidate.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
+            "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
+            "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
             "classification_confidence.value must be a float between 0 and 1 describing the overall confidence of the classification result.",
         ],
     }
@@ -716,6 +718,8 @@ def _build_classification_chat_completions_payload(
                     "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "
                     "payment records, competition notices, travel itineraries, train or flight documents, rideshare receipts, "
                     "hotel invoices, and platform order screenshots. "
+                    "If a document shows a tax authority seal or an equivalent tax-supervision mark, classify it as invoice. "
+                    "Railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers must be classified as invoice when they function as direct reimbursement vouchers, not as itinerary or other_attachment. "
                     "Do not extract detailed invoice metadata in this stage. "
                     "Do not guess unsupported categories. "
                     "For scanned PDFs or photos, rely only on the visible content in the supplied file, not on filename guesses."
