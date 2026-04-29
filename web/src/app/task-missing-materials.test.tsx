@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearMockSession, setMockSession } from "./auth-store";
 import { routes } from "./routes";
+import { MemberMissingMaterialsPage } from "./task-missing-materials";
 
 function resolveRequestUrl(input: string | URL | Request) {
   if (typeof input === "string") {
@@ -27,6 +28,19 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 
 function renderRoute(entry: string) {
   const router = createMemoryRouter(routes, {
+    initialEntries: [entry],
+  });
+
+  act(() => {
+    render(<RouterProvider router={router} />);
+  });
+}
+
+function renderMemberRoute(entry: string) {
+  const router = createMemoryRouter([{
+    path: "/member/materials/missing",
+    element: <MemberMissingMaterialsPage />,
+  }], {
     initialEntries: [entry],
   });
 
@@ -204,7 +218,7 @@ describe("task missing materials pages", () => {
       throw new Error(`Unhandled fetch URL in missing materials member test: ${url}`);
     });
 
-    renderRoute("/member/materials/missing?taskId=TASK-OPEN");
+    renderMemberRoute("/member/materials/missing?taskId=TASK-OPEN");
 
     expect(await screen.findByRole("heading", { name: "我的缺失材料" })).toBeInTheDocument();
     expect(await screen.findByLabelText("目标任务")).toHaveValue("TASK-OPEN");

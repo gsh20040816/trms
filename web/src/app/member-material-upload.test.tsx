@@ -2,7 +2,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
-import { routes } from "./routes";
+import { SnackbarProvider } from "../components/AppSnackbar";
+import { MemberMaterialUploadPage } from "./member-material-upload";
 
 function resolveRequestUrl(input: string | URL | Request) {
   if (typeof input === "string") {
@@ -25,11 +26,18 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 function renderMemberUploadRoute(entry = "/member/materials/upload") {
-  const router = createMemoryRouter(routes, {
+  const router = createMemoryRouter([{
+    path: "/member/materials/upload",
+    element: <MemberMaterialUploadPage />,
+  }], {
     initialEntries: [entry],
   });
 
-  render(<RouterProvider router={router} />);
+  render(
+    <SnackbarProvider>
+      <RouterProvider router={router} />
+    </SnackbarProvider>,
+  );
 }
 
 describe("MemberMaterialUploadPage", () => {

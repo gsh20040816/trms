@@ -358,6 +358,114 @@ describe("frontend main flow e2e placeholder", () => {
         return Promise.resolve(jsonResponse(buildTask(workflowState.taskStatus)));
       }
 
+      if (url === "/api/tasks/TASK-E2E/member-status?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-E2E",
+          actor_id: "2250001",
+          total_expense_amount_cents: workflowState.splitSaved ? 12345 : 0,
+          counts: {
+            material_count: workflowState.materialUploaded ? 1 : 0,
+            missing_material_count: 0,
+            expense_detail_count: workflowState.splitSaved ? 1 : 0,
+            recognition_pending_count: 0,
+            recognition_succeeded_count: workflowState.invoiceSaved ? 1 : 0,
+            recognition_failed_count: 0,
+            recognition_needs_confirmation_count: workflowState.materialUploaded && !workflowState.invoiceSaved ? 1 : 0,
+            validation_passed_count: workflowState.invoiceSaved ? 2 : 0,
+            validation_failed_count: 0,
+            validation_pending_count: 0,
+            validation_not_applicable_count: 0,
+            confirmed_expense_count: workflowState.confirmed ? 1 : 0,
+            pending_confirmation_count: workflowState.splitSaved && !workflowState.confirmed ? 1 : 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+          },
+          materials: workflowState.materialUploaded ? [
+            {
+              material_id: "MAT-001",
+              submitter_id: "2250001",
+              material_type: "invoice",
+              original_filename: "ticket.pdf",
+              material_status: "assigned",
+              recognition_status: workflowState.invoiceSaved ? "succeeded" : "needs_confirmation",
+              recognition_failure_stage: null,
+              recognition_failure_reason: null,
+              invoice_id: workflowState.invoiceSaved ? "INV-001" : null,
+              invoice_number: workflowState.invoiceSaved ? "INV-E2E-001" : null,
+              validation_status: workflowState.invoiceSaved ? "passed" : "pending",
+              validation_messages: [],
+              created_at: "2026-04-28T12:05:00+08:00",
+            },
+          ] : [],
+          missing_materials: [],
+          expense_details: workflowState.splitSaved ? [
+            {
+              split_id: "SPLIT-001",
+              split_version: 1,
+              member_id: "2250001",
+              amount_cents: 12345,
+              note: "self paid",
+              created_at: "2026-04-28T12:15:00+08:00",
+              updated_at: "2026-04-28T12:15:00+08:00",
+              invoice: buildInvoice(),
+              confirmation: workflowState.confirmed
+                ? {
+                    id: "CONF-001",
+                    member_id: "2250001",
+                    split_version: 1,
+                    status: "confirmed",
+                    dispute_reason: null,
+                    confirmed_at: "2026-04-28T12:20:00+08:00",
+                    updated_at: "2026-04-28T12:20:00+08:00",
+                  }
+                : null,
+            },
+          ] : [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-E2E/shared-invoices?actor_id=2250001") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-E2E",
+          actor_id: "2250001",
+          items: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-E2E/invoices") {
+        return Promise.resolve(jsonResponse({
+          items: workflowState.invoiceSaved ? [buildInvoice()] : [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-001/recognition-tasks") {
+        return Promise.resolve(jsonResponse({
+          latest_effective: workflowState.materialUploaded
+            ? {
+                id: "REC-001",
+                material_id: "MAT-001",
+                status: workflowState.invoiceSaved ? "succeeded" : "needs_confirmation",
+                is_final_fact: false,
+                failure: null,
+                raw_response: { provider: "placeholder-ai" },
+                recognized_fields: {
+                  invoice_number: {
+                    value: "INV-E2E-001",
+                    source: "ai",
+                    confidence: 0.95,
+                    status: "recognized",
+                    updated_at: "2026-04-28T12:06:00+08:00",
+                  },
+                },
+                manual_corrections: [],
+                created_at: "2026-04-28T12:05:30+08:00",
+                updated_at: "2026-04-28T12:10:00+08:00",
+              }
+            : null,
+          items: [],
+        }));
+      }
+
       if (url === "/api/tasks/TASK-E2E/status" && init?.method === "PATCH") {
         const body = parseRequestJsonBody(init);
         const targetStatus = body["target_status"];
@@ -404,6 +512,17 @@ describe("frontend main flow e2e placeholder", () => {
             buildValidation("invoice_title_match", "发票抬头匹配"),
             buildValidation("invoice_tax_number_match", "税号匹配"),
           ],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-001/validations") {
+        return Promise.resolve(jsonResponse({
+          items: workflowState.invoiceSaved
+            ? [
+                buildValidation("invoice_title_match", "发票抬头匹配"),
+                buildValidation("invoice_tax_number_match", "税号匹配"),
+              ]
+            : [],
         }));
       }
 
@@ -468,6 +587,48 @@ describe("frontend main flow e2e placeholder", () => {
 
       if (url === "/api/invoices/INV-001/supporting-materials") {
         return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url === "/api/invoices/INV-001/splits") {
+        return Promise.resolve(jsonResponse({
+          items: workflowState.splitSaved
+            ? [
+                {
+                  id: "SPLIT-001",
+                  invoice_id: "INV-001",
+                  member_id: "2250001",
+                  amount_cents: 12345,
+                  note: "self paid",
+                  version: 1,
+                  is_active: true,
+                  created_at: "2026-04-28T12:15:00+08:00",
+                  updated_at: "2026-04-28T12:15:00+08:00",
+                },
+              ]
+            : [],
+        }));
+      }
+
+      if (url === "/api/invoices/INV-001/confirmations") {
+        return Promise.resolve(jsonResponse({
+          items: workflowState.confirmed
+            ? [
+                {
+                  id: "CONF-001",
+                  split_id: "SPLIT-001",
+                  member_id: "2250001",
+                  split_version: 1,
+                  split_amount_cents: 12345,
+                  split_note: "self paid",
+                  is_current: true,
+                  status: "confirmed",
+                  dispute_reason: null,
+                  confirmed_at: "2026-04-28T12:20:00+08:00",
+                  updated_at: "2026-04-28T12:20:00+08:00",
+                },
+              ]
+            : [],
+        }));
       }
 
       if (url === "/api/splits/SPLIT-001/confirmation" && init?.method === "PUT") {
@@ -576,16 +737,17 @@ describe("frontend main flow e2e placeholder", () => {
     setMockSession("member");
     renderRoute("/member/materials/upload?taskId=TASK-E2E");
 
-    expect(await screen.findByRole("heading", { name: "成员材料上传" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("上传文件"), {
+    expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
+    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
         files: [new File(["fake-pdf"], "ticket.pdf", { type: "application/pdf" })],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
+    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
 
-    expect(await screen.findByRole("heading", { name: "上传结果" })).toBeInTheDocument();
-    expect(screen.getByText("材料编号 MAT-001")).toBeInTheDocument();
+    expect(await screen.findByText("最近上传结果")).toBeInTheDocument();
+    expect(screen.getByText("材料编号：MAT-001")).toBeInTheDocument();
 
     cleanup();
     setMockSession("admin");
@@ -616,15 +778,16 @@ describe("frontend main flow e2e placeholder", () => {
     setMockSession("member");
     renderRoute("/member/expenses/confirm?taskId=TASK-E2E");
 
-    expect(await screen.findByRole("heading", { name: "成员费用确认" })).toBeInTheDocument();
-    const detailList = await screen.findByLabelText("成员费用明细列表");
+    expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
+    expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
+    const detailList = await screen.findByLabelText("工作台费用确认列表");
     const detailCard = within(detailList).getByRole("heading", { name: "INV-E2E-001" }).closest("article");
     if (!detailCard) {
       throw new Error("Expected expense detail card for INV-E2E-001.");
     }
     fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
 
-    expect(await screen.findByText("已提交确认，页面已刷新最新确认状态。")).toBeInTheDocument();
+    expect(await screen.findByText("待确认 0 条")).toBeInTheDocument();
 
     cleanup();
     setMockSession("admin");

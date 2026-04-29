@@ -1222,7 +1222,7 @@
     - 确认与异议提交走 Snackbar 反馈
     - 相关测试通过
 
-- [ ] 收口成员端旧二级路由为工作台跳转
+- [x] 收口成员端旧二级路由为工作台跳转
   - Done when:
     - `/member/materials/upload` `status` `missing` `expenses/confirm` 在工作台 Tabs 完成后改为重定向到 `/member/invoices/workbench` 对应 tab
     - 不破坏现有外部链接（旧 URL 仍可访问，自动跳转）

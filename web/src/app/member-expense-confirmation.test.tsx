@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
-import { routes } from "./routes";
+import { SnackbarProvider } from "../components/AppSnackbar";
+import { MemberExpenseConfirmationPage } from "./member-expense-confirmation";
 
 function resolveRequestUrl(input: string | URL | Request) {
   if (typeof input === "string") {
@@ -25,12 +26,19 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 function renderMemberExpenseConfirmationRoute(entry = "/member/expenses/confirm?taskId=TASK-OPEN") {
-  const router = createMemoryRouter(routes, {
+  const router = createMemoryRouter([{
+    path: "/member/expenses/confirm",
+    element: <MemberExpenseConfirmationPage />,
+  }], {
     initialEntries: [entry],
   });
 
   act(() => {
-    render(<RouterProvider router={router} />);
+    render(
+      <SnackbarProvider>
+        <RouterProvider router={router} />
+      </SnackbarProvider>,
+    );
   });
 }
 

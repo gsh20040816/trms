@@ -5,16 +5,14 @@ import { AdminExportTasksPage } from "./admin-export-tasks";
 import { AdminTaskDetailPage } from "./admin-task-detail";
 import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminInvoiceEditorPage } from "./admin-invoice-editor";
-import { AdminMissingMaterialsPage, MemberMissingMaterialsPage } from "./task-missing-materials";
+import { AdminMissingMaterialsPage } from "./task-missing-materials";
 import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
 import { AdminTaskListPage } from "./admin-task-list";
-import { MemberExpenseConfirmationPage } from "./member-expense-confirmation";
 import { MemberInvoiceWorkbenchPage } from "./member-invoice-workbench";
-import { MemberMaterialStatusPage } from "./member-material-status";
-import { MemberMaterialUploadPage } from "./member-material-upload";
 import { MemberTaskListPage } from "./member-task-list";
 import { MockLoginPage, ProtectedRoleRoute } from "./auth";
+import { LegacyMemberWorkbenchRedirect } from "./legacy-member-workbench-redirect";
 import { HomePage, NotFoundPage, RootLayout } from "./pages";
 import { findRoleRouteByRole, roleRoutes, type UserRole } from "./role-routes";
 import { SystemAdminDashboardPage } from "./system-admin-dashboard";
@@ -53,11 +51,11 @@ export const routes: RouteObject[] = [
           },
           {
             path: "materials/upload",
-            element: <MemberMaterialUploadPage />,
+            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-upload" />,
           },
           {
             path: "materials/status",
-            element: <MemberMaterialStatusPage />,
+            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-invoices" />,
           },
           {
             path: "invoices/workbench",
@@ -65,11 +63,11 @@ export const routes: RouteObject[] = [
           },
           {
             path: "materials/missing",
-            element: <MemberMissingMaterialsPage />,
+            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-missing-materials" />,
           },
           {
             path: "expenses/confirm",
-            element: <MemberExpenseConfirmationPage />,
+            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-confirmations" />,
           },
         ],
       },

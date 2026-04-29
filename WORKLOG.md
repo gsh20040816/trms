@@ -1,5 +1,60 @@
 # WORKLOG
 
+## 2026-04-29 13:18 - Redirect legacy member subroutes into the invoice workbench
+
+### 完成内容
+- 收口成员端旧二级路由：
+  - `/member/materials/upload` -> `/member/invoices/workbench#member-workbench-upload`
+  - `/member/materials/status` -> `/member/invoices/workbench#member-workbench-invoices`
+  - `/member/materials/missing` -> `/member/invoices/workbench#member-workbench-missing-materials`
+  - `/member/expenses/confirm` -> `/member/invoices/workbench#member-workbench-confirmations`
+- 新增 `web/src/app/legacy-member-workbench-redirect.tsx`：
+  - 统一保留 `taskId` 查询参数；
+  - 使用 `Navigate replace` 自动跳转，不破坏旧链接可访问性。
+- `web/src/app/routes.tsx` 改为在成员路由层使用上述重定向组件，而不是继续把 4 个旧专项页暴露为一级业务入口。
+- 测试层同步收口：
+  - 原上传/状态/确认/缺失材料页的功能测试改为“直接渲染组件”以保留逻辑覆盖；
+  - 新增 `web/src/app/member-legacy-route-redirects.test.tsx`，显式覆盖 4 个旧 URL 到工作台的跳转；
+  - `web/src/app/main-flow-e2e-placeholder.test.tsx` 改为适配重定向后的工作台上传/确认交互。
+- `TASKS.md` 中“收口成员端旧二级路由为工作台跳转”已标记完成。
+
+### 根因
+- 前几轮已经把成员工作台收口为单任务闭环，如果旧的 `/materials/upload`、`/status`、`/missing`、`/expenses/confirm` 仍然作为主路由存在，就会持续把成员流程拆回多个弱关联页面。
+- 任务要求明确指出：旧 URL 仍需可访问，但应该自动落到工作台对应视图，而不是继续停留在历史入口。
+
+### 关键改动点
+- 新增：
+  - `web/src/app/legacy-member-workbench-redirect.tsx`
+  - `web/src/app/member-legacy-route-redirects.test.tsx`
+- 修改：
+  - `web/src/app/routes.tsx`
+  - `web/src/app/member-material-upload.test.tsx`
+  - `web/src/app/member-material-status.test.tsx`
+  - `web/src/app/member-expense-confirmation.test.tsx`
+  - `web/src/app/task-missing-materials.test.tsx`
+  - `web/src/app/main-flow-e2e-placeholder.test.tsx`
+  - `TASKS.md`
+
+### 风险与影响面
+- 旧页面组件文件仍然保留，但已不再由正式路由直接暴露；后续若完全移除，需要先确认没有其他内部直接引用。
+- 本轮没有改工作台本身的业务逻辑，只改变入口层；因此风险主要集中在测试和链接兼容性，已通过重定向测试覆盖。
+- 由于主业务入口收口到工作台，后续成员端相关改动会更集中，不再需要在多个旧页面重复铺 UI。
+
+### 验证结果
+- `./scripts/verify.sh` 通过：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 通过
+  - `pytest`：420 passed，3 warnings
+  - Web `npm run lint` 通过
+  - Web `npm test`：22 文件、72 用例全部通过
+  - Web `npm run build` 成功
+  - Docker Compose 配置检查通过
+  - `git diff --check` 通过
+
+### 假设
+- 旧成员专项页的保留价值现在只剩组件逻辑测试与后续过渡期兜底；如果后续没有额外直接消费场景，可以在更后面的清理轮次进一步删减。
+- `materials/status` 目前落到工作台默认“发票”视图而不是单独 Tab，这是因为状态信息已经被并入发票详情视图，不再单独保留一级主入口。
+
 ## 2026-04-29 13:07 - Rewrite member confirmation and missing-material pages into M3 workspace cards
 
 ### 完成内容

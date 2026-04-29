@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
-import { routes } from "./routes";
+import { MemberMaterialStatusPage } from "./member-material-status";
 
 function resolveRequestUrl(input: string | URL | Request) {
   if (typeof input === "string") {
@@ -25,7 +25,10 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 function renderMemberStatusRoute(entry = "/member/materials/status") {
-  const router = createMemoryRouter(routes, {
+  const router = createMemoryRouter([{
+    path: "/member/materials/status",
+    element: <MemberMaterialStatusPage />,
+  }], {
     initialEntries: [entry],
   });
 
