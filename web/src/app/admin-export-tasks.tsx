@@ -169,6 +169,46 @@ function formatFileSize(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function buildPackageJobSummary(job: TaskExportJobRecord | null) {
+  if (!job) {
+    return {
+      badge: "尚未生成完整材料包",
+      tone: "warning" as const,
+      note: "当前还没有完整材料包记录。主流程应先生成一个 ZIP 材料包，再决定是否需要单项导出排障。",
+    };
+  }
+
+  if (job.status === "failed") {
+    return {
+      badge: "最近一次完整材料包生成失败",
+      tone: "danger" as const,
+      note: "最近一次完整材料包生成失败。处理失败原因后，需要重新生成一个新的完整材料包。",
+    };
+  }
+
+  if (job.status === "pending" || job.status === "running") {
+    return {
+      badge: "完整材料包生成中",
+      tone: "warning" as const,
+      note: "后台正在生成最新完整材料包。生成完成后，这里会提供下载入口并标记是否仍是最新任务数据版本。",
+    };
+  }
+
+  if (job.is_latest_for_task) {
+    return {
+      badge: "已生成最新完整材料包",
+      tone: "success" as const,
+      note: "最近一次完整材料包已经生成，并且对应当前最新任务数据版本。",
+    };
+  }
+
+  return {
+    badge: "最近一次完整材料包不是最新版本",
+    tone: "warning" as const,
+    note: "最近一次完整材料包虽然可下载，但任务数据已经变化。继续下载只适合排障或临时比对，主流程应重新生成。",
+  };
+}
+
 function triggerBrowserDownload(blob: Blob, filename: string) {
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -249,6 +289,12 @@ export function AdminExportTasksPage() {
     }
     return latest;
   }, [pageState]);
+
+  const latestPackageJob =
+    pageState.status === "ready"
+      ? latestJobsByKind.get("reimbursement_package") ?? null
+      : null;
+  const packageJobSummary = buildPackageJobSummary(latestPackageJob);
 
   if (!session || session.role !== "admin") {
     return null;
@@ -407,7 +453,7 @@ export function AdminExportTasksPage() {
         <PageHeader
           eyebrow="导出打印"
           title="导出任务页面"
-          description="这里用于生成汇总表、成员明细、缺失材料清单和提交草稿，并查看最近一次导出状态。"
+          description="主流程优先生成完整材料包，单项导出仅保留为高级排障和临时下载入口。"
           actions={(
             <div className="page-actions">
               <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
@@ -441,25 +487,108 @@ export function AdminExportTasksPage() {
                 <p className="task-card-id">任务编号 {pageState.task.id}</p>
                 <h2>{pageState.task.competition_name}</h2>
               </div>
-              <StatusBadge tone="info">{formatTaskStatus(pageState.task.status)}</StatusBadge>
+              <StatusBadge tone={packageJobSummary.tone}>{packageJobSummary.badge}</StatusBadge>
             </div>
 
             <dl className="admin-review-summary-grid export-summary-grid">
               <div>
-                <dt>导出门禁</dt>
+                <dt>材料包就绪度</dt>
                 <dd>{pageState.boundary.export_allowed ? "已满足" : "未满足"}</dd>
               </div>
               <div>
-                <dt>导出方式</dt>
-                <dd>{pageState.boundary.execution_mode === "worker" ? "后台生成" : "立即生成"}</dd>
+                <dt>最近完整包状态</dt>
+                <dd>{latestPackageJob ? formatExportJobStatus(latestPackageJob.status) : "尚未生成"}</dd>
               </div>
               <div>
-                <dt>导出任务数</dt>
-                <dd>{pageState.jobs.length}</dd>
+                <dt>数据版本</dt>
+                <dd>
+                  {latestPackageJob
+                    ? latestPackageJob.is_latest_for_task
+                      ? "当前最新版本"
+                      : "任务数据已更新"
+                    : "暂无完整包"}
+                </dd>
+              </div>
+              <div>
+                <dt>生成方式</dt>
+                <dd>{pageState.boundary.execution_mode === "worker" ? "后台生成" : "立即生成"}</dd>
               </div>
             </dl>
 
+            <p className="status-note">{packageJobSummary.note}</p>
             <p className="status-note">{pageState.boundary.note}</p>
+
+            {latestPackageJob ? (
+              <section className="admin-review-subsection">
+                <div className="task-card-header">
+                  <div>
+                    <p className="task-card-id">最近完整材料包</p>
+                    <h4>{latestPackageJob.id}</h4>
+                  </div>
+                  <StatusBadge tone={buildJobStatusTone(latestPackageJob.status)}>
+                    {formatExportJobStatus(latestPackageJob.status)}
+                  </StatusBadge>
+                </div>
+
+                <dl className="task-detail-grid export-job-grid">
+                  <div>
+                    <dt>创建时间</dt>
+                    <dd>{formatDateTime(latestPackageJob.created_at)}</dd>
+                  </div>
+                  <div>
+                    <dt>更新时间</dt>
+                    <dd>{formatDateTime(latestPackageJob.updated_at)}</dd>
+                  </div>
+                </dl>
+
+                {latestPackageJob.failure_reason ? (
+                  <div className="status-note">
+                    <p>失败原因：{latestPackageJob.failure_reason}</p>
+                  </div>
+                ) : null}
+
+                {latestPackageJob.artifact ? (
+                  <div className="status-note">
+                    <p>
+                      下载产物：{latestPackageJob.artifact.filename} ·{" "}
+                      {latestPackageJob.artifact.content_type ?? "未知类型"} ·{" "}
+                      {formatFileSize(latestPackageJob.artifact.size_bytes)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="field-hint">当前完整材料包尚未生成可下载产物。</p>
+                )}
+              </section>
+            ) : null}
+
+            <div className="inline-actions export-action-row">
+              <Button
+                type="button"
+                variant="contained"
+                disabled={!pageState.boundary.export_allowed || activeCreateKind === "reimbursement_package"}
+                onClick={() => {
+                  void handleCreateJob("reimbursement_package");
+                }}
+              >
+                {activeCreateKind === "reimbursement_package" ? "正在生成..." : "生成完整材料包"}
+              </Button>
+              {latestPackageJob?.artifact ? (
+                <Button
+                  type="button"
+                  variant="outlined"
+                  disabled={activeDownloadJobId === latestPackageJob.id}
+                  onClick={() => {
+                    void handleDownload(latestPackageJob.id);
+                  }}
+                >
+                  {activeDownloadJobId === latestPackageJob.id ? "正在下载..." : "下载最近完整材料包"}
+                </Button>
+              ) : (
+                <span className="field-hint">
+                  生成成功后，这里会提供完整材料包下载入口。
+                </span>
+              )}
+            </div>
 
             {!pageState.boundary.export_allowed ? (
               <section className="admin-review-subsection">
@@ -484,8 +613,26 @@ export function AdminExportTasksPage() {
             {actionFeedback ? <p className="confirmation-feedback">{actionFeedback}</p> : null}
           </section>
 
-          <section className="admin-review-record-list export-capability-grid" aria-label="导出能力列表">
-            {pageState.boundary.supported_exports.map((capability) => {
+          <section
+            id="advanced-export-options"
+            className="status-card admin-review-panel"
+            aria-label="高级单项导出"
+          >
+            <div className="task-card-header">
+              <div>
+                <p className="task-card-id">高级操作</p>
+                <h2>高级单项导出</h2>
+              </div>
+              <StatusBadge tone="info">仅用于排障或临时下载</StatusBadge>
+            </div>
+            <p className="status-note">
+              默认主流程请优先生成完整材料包。下面的单项导出保留给排查问题、核对局部内容或临时下载使用。
+            </p>
+
+            <div className="admin-review-record-list export-capability-grid">
+              {pageState.boundary.supported_exports
+                .filter((capability) => capability.kind !== "reimbursement_package")
+                .map((capability) => {
               const latestJob = latestJobsByKind.get(capability.kind) ?? null;
               const previewDescriptor = buildPreviewDescriptor(capability);
               const preferredFormat = PREFERRED_JOB_FORMATS[capability.kind];
@@ -552,7 +699,8 @@ export function AdminExportTasksPage() {
                   </div>
                 </article>
               );
-            })}
+                })}
+            </div>
           </section>
 
           {previewState.status === "loading" ? (

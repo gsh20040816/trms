@@ -297,6 +297,166 @@ describe("admin export tasks page", () => {
     expect(screen.getByText(/expense_type,total_amount_cents,2250001/)).toBeInTheDocument();
   });
 
+  it("prioritizes reimbursement package generation and shows stale package warning", async () => {
+    const createRequests: Array<{ kind: string; format: string }> = [];
+    const packageBlob = new Blob(["zip-bytes"], { type: "application/zip" });
+
+    const createObjectUrlSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:package-download");
+    const revokeObjectUrlSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-PACKAGE") {
+        return Promise.resolve(jsonResponse(buildTask("TASK-PACKAGE", "ready_to_export")));
+      }
+
+      if (url === "/api/tasks/TASK-PACKAGE/exports/capabilities?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildCapabilities("TASK-PACKAGE", true)));
+      }
+
+      if (url === "/api/tasks/TASK-PACKAGE/exports?actor_id=admin-1" && !init?.method) {
+        return Promise.resolve(jsonResponse([
+          {
+            id: "export-job-package-old",
+            task_id: "TASK-PACKAGE",
+            requested_by: "admin-1",
+            kind: "reimbursement_package",
+            format: "zip",
+            status: "succeeded",
+            parameters: {},
+            task_status_at_request: "ready_to_export",
+            task_data_version: "e".repeat(64),
+            is_latest_for_task: false,
+            failure_reason: null,
+            created_at: "2026-04-28T09:00:00+08:00",
+            updated_at: "2026-04-28T09:08:00+08:00",
+            started_at: "2026-04-28T09:00:10+08:00",
+            finished_at: "2026-04-28T09:08:00+08:00",
+            retry_count: 0,
+            artifact: {
+              filename: "TASK-PACKAGE-reimbursement-package-old.zip",
+              content_type: "application/zip",
+              size_bytes: 4096,
+              sha256: "f".repeat(64),
+            },
+          },
+          {
+            id: "export-job-summary-existing",
+            task_id: "TASK-PACKAGE",
+            requested_by: "admin-1",
+            kind: "reimbursement_summary",
+            format: "csv",
+            status: "succeeded",
+            parameters: {},
+            task_status_at_request: "ready_to_export",
+            task_data_version: "g".repeat(64),
+            is_latest_for_task: true,
+            failure_reason: null,
+            created_at: "2026-04-27T08:40:00+08:00",
+            updated_at: "2026-04-27T08:41:00+08:00",
+            started_at: "2026-04-27T08:40:10+08:00",
+            finished_at: "2026-04-27T08:41:00+08:00",
+            retry_count: 0,
+            artifact: {
+              filename: "TASK-PACKAGE-summary.csv",
+              content_type: "text/csv",
+              size_bytes: 321,
+              sha256: "h".repeat(64),
+            },
+          },
+        ]));
+      }
+
+      if (url === "/api/tasks/TASK-PACKAGE/exports" && init?.method === "POST") {
+        if (typeof init.body !== "string") {
+          throw new Error("Expected export creation body to be a JSON string");
+        }
+        const body = JSON.parse(init.body) as { kind: string; format: string };
+        createRequests.push({ kind: body.kind, format: body.format });
+        return Promise.resolve(jsonResponse(
+          {
+            id: "export-job-package-new",
+            task_id: "TASK-PACKAGE",
+            requested_by: "admin-1",
+            kind: "reimbursement_package",
+            format: "zip",
+            status: "pending",
+            parameters: {},
+            task_status_at_request: "ready_to_export",
+            task_data_version: "i".repeat(64),
+            is_latest_for_task: true,
+            failure_reason: null,
+            created_at: "2026-04-28T10:10:00+08:00",
+            updated_at: "2026-04-28T10:10:00+08:00",
+            started_at: null,
+            finished_at: null,
+            retry_count: 0,
+            artifact: null,
+          },
+          { status: 201 },
+        ));
+      }
+
+      if (url === "/api/tasks/exports/export-job-package-old/artifact?actor_id=admin-1") {
+        return Promise.resolve(new Response(packageBlob, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/zip",
+            "Content-Disposition": "attachment; filename=\"TASK-PACKAGE-reimbursement-package-old.zip\"",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in reimbursement package export page test: ${url}`);
+    });
+
+    renderExportRoute("TASK-PACKAGE");
+
+    expect(await screen.findByText("最近一次完整材料包不是最新版本")).toBeInTheDocument();
+    expect(screen.getAllByText("任务数据已更新").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "生成完整材料包" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载最近完整材料包" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "高级单项导出" })).toBeInTheDocument();
+    expect(screen.getByText("仅用于排障或临时下载")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "下载最近完整材料包" }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(createObjectUrlSpy).toHaveBeenCalled();
+    expect(revokeObjectUrlSpy).toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "生成完整材料包" }));
+      await Promise.resolve();
+    });
+
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText(
+      "任务 ICPC 区域赛报销（TASK-PACKAGE）当前处于可导出。确认后会以 ZIP 格式创建新的异步导出任务，并按当前数据版本进入后台队列。",
+    )).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "创建导出任务" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(createRequests).toEqual([{ kind: "reimbursement_package", format: "zip" }]);
+    expect(
+      await screen.findByText("完整报销材料包 导出任务已创建，当前状态：待生成。"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("export-job-package-new").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "创建报销汇总表任务" })).toBeInTheDocument();
+  });
+
   it("shows blocking reasons and disables export creation before final confirmation", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);

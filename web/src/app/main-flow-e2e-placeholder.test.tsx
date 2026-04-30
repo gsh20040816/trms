@@ -893,7 +893,8 @@ describe("frontend main flow e2e placeholder", () => {
       fireEvent.click(within(screen.getByLabelText("当前任务快捷入口")).getByRole("link", { name: "导出打印" }));
 
       expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
-      expect(screen.getByText("导出门禁")).toBeInTheDocument();
+      expect(screen.getByText("材料包就绪度")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "生成完整材料包" })).toBeInTheDocument();
       expect(screen.getAllByText("可导出").length).toBeGreaterThan(0);
     },
     15_000,

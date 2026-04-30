@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-04-30 10:34 - Promote reimbursement package as the primary export action
+
+### 完成内容
+- 完成任务“导出页主动作收敛为生成完整材料包”。
+- 调整 [admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx)：
+  - 导出页页头说明改为“主流程优先生成完整材料包”，不再把单项导出表述为默认路径；
+  - 第一屏新增完整材料包主卡片，优先展示材料包就绪度、最近一次完整包状态、是否为最新任务数据版本，以及最近完整包的下载入口；
+  - 主按钮改为“生成完整材料包”，直接创建 `reimbursement_package` 异步导出任务；
+  - 原有单项导出能力下沉到“高级单项导出”区，明确只用于排障或临时下载；
+  - 保留导出任务历史区，继续提供完整任务状态、失败原因和已生成产物的下载入口。
+- 调整 [admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx)：
+  - 新增“完整材料包优先”回归测试，覆盖旧包非最新提示、下载最近完整包和创建新完整包任务；
+  - 保留既有单项导出创建、在线预览和导出门禁阻塞回归。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，将当前任务标记为已完成。
+
+### 根因
+- 虽然后端已经具备 `reimbursement_package` 完整材料包导出能力，但导出页仍把所有单项导出平铺为同级主动作。
+- 结果是管理员进入导出页后仍需自己判断“应先生成完整包还是点某个单项导出”，与交互简化方案中“默认一键生成完整材料包，单项导出只作排障”的目标不一致。
+
+### 保守假设
+- 本轮不新增后端接口，也不额外为导出页创建专门的“最近完整包摘要”接口；页面直接复用现有导出任务列表里 `reimbursement_package` 的最新记录和 `is_latest_for_task` 字段。
+- 如果后续导出历史量明显增大，第一屏的“最近完整包”摘要再考虑下沉到后端专门读模型；当前任务目标是先把主流程收口，而不是扩展新的接口面。
+
+### 影响范围
+- 仅修改管理员导出页和该页前端测试。
+- 没有改动导出领域模型、异步 worker、导出产物格式、管理员复核流程、成员工作台或数据库 schema。
+
+### 验证结果
+- 已通过定向验证：
+  - `cd web && npm test -- admin-export-tasks.test.tsx`
+    - 3 个用例通过；Vitest 仍有既有 `--localstorage-file` 路径警告
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 481 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径警告，Vite 仍有既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 10:22 - Add reimbursement package async export artifact
 
 ### 完成内容
