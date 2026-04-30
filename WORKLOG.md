@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-05-01 01:55 - Narrow admin recognition editing UI to business-first Material 3 form
+
+### 完成内容
+- 完成任务“收敛管理员识别字段编辑表单为业务字段优先的 Material 3 表单”。
+- 调整 [admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx)：
+  - 管理员发票编辑页“识别字段”标签改为“业务字段审核参考”，默认只展示发票号码、日期、抬头、税号、金额、费用类型等业务字段建议，不再在第一层直接铺开来源、置信度和人工更正轨迹；
+  - 新增折叠的“调试与审计信息”区，来源、置信度、字段更新时间和人工更正记录仅在管理员主动展开时可见，且折叠时从 DOM 卸载，避免默认路径继续暴露内部识别细节；
+  - 将编辑表单按“票据核心字段”“抬头与税号”“报销归类与补充信息”三组重排，保持 Material 3 `TextField` / `Select` 组件风格不变，但把字段顺序改为管理员审核顺序；
+  - 表单摘要区不再默认展示任务编号，改为提交成员、比赛名称、材料类型和上传时间，收敛默认界面中的内部标识噪音。
+- 更新前端测试 [admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)：
+  - 覆盖默认识别视图只显示业务字段建议；
+  - 覆盖来源/置信度默认隐藏、展开审计区后可见；
+  - 覆盖编辑表单按业务审核顺序分组。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，标记该任务已完成。
+
+### 根因
+- 旧管理员发票编辑页虽然保存表单本身已经使用 Material UI 控件，但“识别字段”标签默认仍按逐字段技术审计视图展开，第一层直接展示来源、置信度、更新时间和人工更正轨迹，导致管理员在真正开始补录前先被内部识别细节淹没。
+- 表单字段虽然可编辑，但缺少按业务审核顺序分组，管理员需要在金额、抬头、税号、费用类型之间来回扫视，默认路径不够贴近复核动作。
+- 摘要区仍显示 `task id` 这类内部标识，说明该页面默认展示边界还没有完全落实“业务可读信息优先”。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-invoice-editor.test.tsx`
+  - 1 个测试文件、5 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 495 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮只收敛管理员发票编辑页的主编辑路径，没有顺手改管理员复核总览中的只读识别详情，因为后者不属于本任务定义的“识别字段编辑表单”边界。
+- 当前审计区仍允许管理员展开查看来源、置信度和人工更正记录；如果后续需要进一步做角色分级或审计权限细化，应作为独立权限/审计任务处理，而不是在当前 UI 任务中继续扩散。
+
 ## 2026-05-01 01:36 - Unify invoice summary snippets into one-line rows
 
 ### 完成内容

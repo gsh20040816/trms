@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import MenuItem from "@mui/material/MenuItem";
@@ -24,6 +27,7 @@ import type {
 import { formatInvoiceAmountFromCents } from "../lib/currency";
 import {
   describeRecognitionFailure,
+  formatMaterialType,
   formatMemberLabel,
   formatValidationRule,
 } from "../lib/ui-text";
@@ -240,6 +244,10 @@ function parseAmountYuanToCents(value: string) {
 
 function formatConfidence(confidence: number) {
   return `${Math.round(confidence * 100)}%`;
+}
+
+function formatRecognitionAuditText(field: RecognitionFieldResult) {
+  return `来源：${formatRecognitionSource(field.source)}，置信度 ${formatConfidence(field.confidence)}`;
 }
 
 function formatDateTimeLocalInput(value: string | null) {
@@ -808,12 +816,16 @@ export function AdminInvoiceEditorPage() {
 
                 <dl className="task-meta-grid invoice-editor-summary-grid">
                   <div>
-                    <dt>任务编号</dt>
-                    <dd>{visibleTask.id}</dd>
+                    <dt>提交成员</dt>
+                    <dd>{formatMemberLabel(selectedItem.materialItem.material.submitter_id)}</dd>
                   </div>
                   <div>
                     <dt>比赛名称</dt>
                     <dd>{visibleTask.competition_name}</dd>
+                  </div>
+                  <div>
+                    <dt>材料类型</dt>
+                    <dd>{formatMaterialType(selectedItem.materialItem.material.material_type)}</dd>
                   </div>
                   <div>
                     <dt>材料上传时间</dt>
@@ -889,9 +901,9 @@ export function AdminInvoiceEditorPage() {
                   <section className="member-status-section">
                     <div className="member-status-section-header">
                       <div>
-                        <h4>识别状态与字段来源</h4>
+                        <h4>业务字段审核参考</h4>
                         <p className="field-hint">
-                          当前服务端会把人工更正写回最新有效识别记录，因此这里直接展示字段来源、置信度和待确认提示，而不是只显示最终发票值。
+                          默认只展示管理员审核需要的业务字段建议。来源、置信度和人工更正轨迹已收进下方折叠审计区，避免默认界面暴露内部识别细节。
                         </p>
                       </div>
                       <StatusBadge tone={selectedRecognition?.status === "failed" ? "danger" : selectedRecognition?.status === "succeeded" ? "success" : "warning"}>
@@ -905,81 +917,168 @@ export function AdminInvoiceEditorPage() {
                       </p>
                     ) : null}
 
-                    <div className="recognition-field-grid">
+                    <dl className="task-meta-grid invoice-editor-summary-grid">
+                      <div>
+                        <dt>材料类型</dt>
+                        <dd>{formatMaterialType(selectedItem.materialItem.material.material_type)}</dd>
+                      </div>
+                      <div>
+                        <dt>待人工确认字段</dt>
+                        <dd>
+                          {selectedRecognition
+                            ? INVOICE_FIELD_CONFIGS.filter((fieldConfig) => {
+                              const field = getRecognitionFieldValue(
+                                selectedRecognition,
+                                fieldConfig.recognitionField,
+                              );
+                              return field?.status === "needs_confirmation";
+                            }).length
+                            : 0}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>人工更正记录</dt>
+                        <dd>{selectedRecognition?.manual_corrections.length ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>当前识别状态</dt>
+                        <dd>{formatRecognitionStatus(selectedRecognition?.status ?? "pending")}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="admin-form-grid" style={{ marginTop: "18px" }}>
                       {INVOICE_FIELD_CONFIGS.map((fieldConfig) => {
                         const recognizedField = getRecognitionFieldValue(
                           selectedRecognition,
                           fieldConfig.recognitionField,
                         );
-                        const corrections = getFieldCorrections(
-                          selectedRecognition,
-                          fieldConfig.recognitionField,
-                        );
                         return (
-                          <section
+                          <TextField
                             key={fieldConfig.key}
-                            className="recognition-field-card"
-                            aria-label={`${fieldConfig.label}识别信息`}
-                          >
-                            <div className="member-status-section-header">
-                              <div>
-                                <h4>{fieldConfig.label}</h4>
-                                <p className="field-hint">
-                                  {recognizedField
-                                    ? `来源：${formatRecognitionSource(recognizedField.source)}，置信度 ${formatConfidence(recognizedField.confidence)}`
-                                    : fieldConfig.required
-                                      ? "当前没有可直接复用的识别建议，请人工录入。"
-                                      : "该字段暂无识别建议，可按需补录。"}
-                                </p>
-                              </div>
-                              <StatusBadge tone={recognizedField?.status === "recognized" ? "success" : "warning"}>
-                                {recognizedField
-                                  ? formatRecognitionFieldStatus(recognizedField.status)
-                                  : "暂无识别建议"}
-                              </StatusBadge>
-                            </div>
-
-                            {recognizedField ? (
-                              <ul className="member-status-message-list">
-                                <li>
-                                  <strong>当前识别值</strong>
-                                  <span>
-                                    {describeRecognitionFieldValue(recognizedField, fieldConfig.recognitionField)}
-                                  </span>
-                                </li>
-                                <li>
-                                  <strong>最近更新时间</strong>
-                                  <span>
-                                    {recognizedField.updated_at
-                                      ? formatDateTime(recognizedField.updated_at)
-                                      : "当前字段暂无单独更新时间"}
-                                  </span>
-                                </li>
-                              </ul>
-                            ) : null}
-
-                            {corrections.length > 0 ? (
-                              <ul className="manual-correction-list">
-                                {corrections.map((correction) => (
-                                  <li key={correction.id}>
-                                    <strong>人工更正</strong>
-                                    <span>
-                                      {correction.before
-                                        ? `${describeRecognitionFieldValue(correction.before, fieldConfig.recognitionField)} -> `
-                                        : "无原始识别值 -> "}
-                                      {describeRecognitionFieldValue(correction.after, fieldConfig.recognitionField)}
-                                    </span>
-                                    <span>
-                                      {formatDateTime(correction.corrected_at)}，{formatRevalidationStatus(correction.revalidation_status)}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                          </section>
+                            label={`${fieldConfig.label}识别建议`}
+                            value={recognizedField
+                              ? describeRecognitionFieldValue(recognizedField, fieldConfig.recognitionField)
+                              : ""}
+                            fullWidth
+                            slotProps={{
+                              input: {
+                                readOnly: true,
+                              },
+                            }}
+                            helperText={
+                              recognizedField
+                                ? recognizedField.status === "needs_confirmation"
+                                  ? "系统已给出建议，但该字段仍需管理员人工确认或更正。"
+                                  : "系统已识别到该字段，可直接对照原件核对。"
+                                : fieldConfig.required
+                                  ? "当前没有可直接复用的识别建议，需要管理员补录。"
+                                  : "该字段暂无识别建议，可按需补录。"
+                            }
+                          />
                         );
                       })}
                     </div>
+
+                    <Accordion
+                      disableGutters
+                      sx={{ mt: 2 }}
+                      slotProps={{ transition: { unmountOnExit: true } }}
+                    >
+                      <AccordionSummary aria-controls="recognition-audit-panel" id="recognition-audit-header">
+                        展开调试与审计信息
+                      </AccordionSummary>
+                      <AccordionDetails id="recognition-audit-panel">
+                        {selectedRecognition ? (
+                          <div className="page-stack">
+                            <ul className="member-status-message-list">
+                              <li>
+                                <strong>最近识别状态</strong>
+                                <span>{formatRecognitionStatus(selectedRecognition.status)}</span>
+                              </li>
+                              <li>
+                                <strong>最近识别更新时间</strong>
+                                <span>{formatDateTime(selectedRecognition.updated_at)}</span>
+                              </li>
+                            </ul>
+                            <div className="recognition-field-grid">
+                              {INVOICE_FIELD_CONFIGS.map((fieldConfig) => {
+                                const recognizedField = getRecognitionFieldValue(
+                                  selectedRecognition,
+                                  fieldConfig.recognitionField,
+                                );
+                                const corrections = getFieldCorrections(
+                                  selectedRecognition,
+                                  fieldConfig.recognitionField,
+                                );
+                                return (
+                                  <section
+                                    key={fieldConfig.key}
+                                    className="recognition-field-card"
+                                    aria-label={`${fieldConfig.label}审计信息`}
+                                  >
+                                    <div className="member-status-section-header">
+                                      <div>
+                                        <h4>{fieldConfig.label}</h4>
+                                        <p className="field-hint">
+                                          {recognizedField
+                                            ? formatRecognitionAuditText(recognizedField)
+                                            : "当前没有识别结果可供审计。"}
+                                        </p>
+                                      </div>
+                                      <StatusBadge tone={recognizedField?.status === "recognized" ? "success" : "warning"}>
+                                        {recognizedField
+                                          ? formatRecognitionFieldStatus(recognizedField.status)
+                                          : "暂无识别建议"}
+                                      </StatusBadge>
+                                    </div>
+
+                                    {recognizedField ? (
+                                      <ul className="member-status-message-list">
+                                        <li>
+                                          <strong>当前识别值</strong>
+                                          <span>
+                                            {describeRecognitionFieldValue(recognizedField, fieldConfig.recognitionField)}
+                                          </span>
+                                        </li>
+                                        <li>
+                                          <strong>最近更新时间</strong>
+                                          <span>
+                                            {recognizedField.updated_at
+                                              ? formatDateTime(recognizedField.updated_at)
+                                              : "当前字段暂无单独更新时间"}
+                                          </span>
+                                        </li>
+                                      </ul>
+                                    ) : null}
+
+                                    {corrections.length > 0 ? (
+                                      <ul className="manual-correction-list">
+                                        {corrections.map((correction) => (
+                                          <li key={correction.id}>
+                                            <strong>人工更正</strong>
+                                            <span>
+                                              {correction.before
+                                                ? `${describeRecognitionFieldValue(correction.before, fieldConfig.recognitionField)} -> `
+                                                : "无原始识别值 -> "}
+                                              {describeRecognitionFieldValue(correction.after, fieldConfig.recognitionField)}
+                                            </span>
+                                            <span>
+                                              {formatDateTime(correction.corrected_at)}，{formatRevalidationStatus(correction.revalidation_status)}
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : null}
+                                  </section>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="field-hint">当前材料还没有可展开的识别审计信息。</p>
+                        )}
+                      </AccordionDetails>
+                    </Accordion>
                   </section>
                 ) : null}
 
@@ -1044,107 +1143,143 @@ export function AdminInvoiceEditorPage() {
                         void handleSubmit(event);
                       }}
                     >
-                      <div className="admin-form-grid">
-                        <TextField
-                          label="发票号码"
-                          name="invoice-number"
-                          value={formState.invoiceNumber}
-                          onChange={(event) => {
-                            updateField("invoiceNumber", event.target.value);
-                          }}
-                          error={Boolean(formErrors.invoiceNumber)}
-                          helperText={formErrors.invoiceNumber}
-                          fullWidth
-                        />
-                        <TextField
-                          label="开票日期"
-                          type="date"
-                          name="issue-date"
-                          value={formState.issueDate}
-                          onChange={(event) => {
-                            updateField("issueDate", event.target.value);
-                          }}
-                          fullWidth
-                          slotProps={{ inputLabel: { shrink: true } }}
-                        />
-                        <TextField
-                          label="交易时间"
-                          type="datetime-local"
-                          name="transaction-time"
-                          value={formState.transactionTime}
-                          onChange={(event) => {
-                            updateField("transactionTime", event.target.value);
-                          }}
-                          fullWidth
-                          slotProps={{ inputLabel: { shrink: true } }}
-                        />
-                        <TextField
-                          label="金额（元）"
-                          name="amount-yuan"
-                          value={formState.amountYuan}
-                          onChange={(event) => {
-                            updateField("amountYuan", event.target.value);
-                          }}
-                          error={Boolean(formErrors.amountYuan)}
-                          helperText={formErrors.amountYuan}
-                          fullWidth
-                          slotProps={{
-                            htmlInput: {
-                              inputMode: "decimal",
-                              placeholder: "例如 123.45",
-                            },
-                          }}
-                        />
-                        <TextField
-                          label="发票抬头"
-                          name="buyer-name"
-                          value={formState.buyerName}
-                          onChange={(event) => {
-                            updateField("buyerName", event.target.value);
-                          }}
-                          error={Boolean(formErrors.buyerName)}
-                          helperText={formErrors.buyerName}
-                          fullWidth
-                        />
-                        <TextField
-                          label="税号"
-                          name="tax-number"
-                          value={formState.taxNumber}
-                          onChange={(event) => {
-                            updateField("taxNumber", event.target.value);
-                          }}
-                          error={Boolean(formErrors.taxNumber)}
-                          helperText={formErrors.taxNumber}
-                          fullWidth
-                        />
-                        <TextField
-                          label="销售方名称"
-                          name="seller-name"
-                          value={formState.sellerName}
-                          onChange={(event) => {
-                            updateField("sellerName", event.target.value);
-                          }}
-                          fullWidth
-                        />
-                        <TextField
-                          select
-                          label="费用类型"
-                          name="expense-type"
-                          value={formState.expenseType}
-                          onChange={(event) => {
-                            updateField("expenseType", event.target.value as ExpenseType);
-                          }}
-                          error={Boolean(formErrors.expenseType)}
-                          helperText={formErrors.expenseType}
-                          fullWidth
-                        >
-                          {allowedExpenseTypes.map((expenseType) => (
-                            <MenuItem key={expenseType} value={expenseType}>
-                              {formatExpenseType(expenseType)}
-                            </MenuItem>
-                          ))}
-                        </TextField>
-                      </div>
+                      <section className="member-status-section">
+                        <div className="member-status-section-header">
+                          <div>
+                            <h4>票据核心字段</h4>
+                            <p className="field-hint">
+                              先核对票号、金额和日期，再处理后续抬头与费用归类，避免在多个标签页之间来回切换。
+                            </p>
+                          </div>
+                        </div>
+                        <div className="admin-form-grid">
+                          <TextField
+                            label="发票号码"
+                            name="invoice-number"
+                            value={formState.invoiceNumber}
+                            onChange={(event) => {
+                              updateField("invoiceNumber", event.target.value);
+                            }}
+                            error={Boolean(formErrors.invoiceNumber)}
+                            helperText={formErrors.invoiceNumber}
+                            fullWidth
+                          />
+                          <TextField
+                            label="金额（元）"
+                            name="amount-yuan"
+                            value={formState.amountYuan}
+                            onChange={(event) => {
+                              updateField("amountYuan", event.target.value);
+                            }}
+                            error={Boolean(formErrors.amountYuan)}
+                            helperText={formErrors.amountYuan}
+                            fullWidth
+                            slotProps={{
+                              htmlInput: {
+                                inputMode: "decimal",
+                                placeholder: "例如 123.45",
+                              },
+                            }}
+                          />
+                          <TextField
+                            label="开票日期"
+                            type="date"
+                            name="issue-date"
+                            value={formState.issueDate}
+                            onChange={(event) => {
+                              updateField("issueDate", event.target.value);
+                            }}
+                            fullWidth
+                            slotProps={{ inputLabel: { shrink: true } }}
+                          />
+                          <TextField
+                            label="交易时间"
+                            type="datetime-local"
+                            name="transaction-time"
+                            value={formState.transactionTime}
+                            onChange={(event) => {
+                              updateField("transactionTime", event.target.value);
+                            }}
+                            fullWidth
+                            slotProps={{ inputLabel: { shrink: true } }}
+                          />
+                        </div>
+                      </section>
+
+                      <section className="member-status-section">
+                        <div className="member-status-section-header">
+                          <div>
+                            <h4>抬头与税号</h4>
+                            <p className="field-hint">
+                              这组字段会直接影响抬头和税号校验，应优先按原件与任务配置复核。
+                            </p>
+                          </div>
+                        </div>
+                        <div className="admin-form-grid">
+                          <TextField
+                            label="发票抬头"
+                            name="buyer-name"
+                            value={formState.buyerName}
+                            onChange={(event) => {
+                              updateField("buyerName", event.target.value);
+                            }}
+                            error={Boolean(formErrors.buyerName)}
+                            helperText={formErrors.buyerName}
+                            fullWidth
+                          />
+                          <TextField
+                            label="税号"
+                            name="tax-number"
+                            value={formState.taxNumber}
+                            onChange={(event) => {
+                              updateField("taxNumber", event.target.value);
+                            }}
+                            error={Boolean(formErrors.taxNumber)}
+                            helperText={formErrors.taxNumber}
+                            fullWidth
+                          />
+                        </div>
+                      </section>
+
+                      <section className="member-status-section">
+                        <div className="member-status-section-header">
+                          <div>
+                            <h4>报销归类与补充信息</h4>
+                            <p className="field-hint">
+                              最后确认费用类型和销售方名称，确保这张发票能进入正确的报销规则路径。
+                            </p>
+                          </div>
+                        </div>
+                        <div className="admin-form-grid">
+                          <TextField
+                            select
+                            label="费用类型"
+                            name="expense-type"
+                            value={formState.expenseType}
+                            onChange={(event) => {
+                              updateField("expenseType", event.target.value as ExpenseType);
+                            }}
+                            error={Boolean(formErrors.expenseType)}
+                            helperText={formErrors.expenseType}
+                            fullWidth
+                          >
+                            {allowedExpenseTypes.map((expenseType) => (
+                              <MenuItem key={expenseType} value={expenseType}>
+                                {formatExpenseType(expenseType)}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                          <TextField
+                            label="销售方名称"
+                            name="seller-name"
+                            value={formState.sellerName}
+                            onChange={(event) => {
+                              updateField("sellerName", event.target.value);
+                            }}
+                            fullWidth
+                          />
+                        </div>
+                      </section>
 
                       <div className="admin-form-footer">
                         <p className="field-hint">

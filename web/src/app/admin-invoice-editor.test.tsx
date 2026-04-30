@@ -325,9 +325,13 @@ describe("admin invoice editor page", () => {
     act(() => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "识别字段" }));
     });
-    expect(await screen.findByText("Tongji ACM Lab")).toBeInTheDocument();
-    expect(await screen.findByText("来源：图片识别，置信度 43%")).toBeInTheDocument();
-    expect(screen.getAllByText("待确认")).not.toHaveLength(0);
+    expect(await screen.findByRole("heading", { name: "业务字段审核参考" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Tongji ACM Lab")).toBeInTheDocument();
+    expect(screen.getAllByText("系统已给出建议，但该字段仍需管理员人工确认或更正。").length).toBeGreaterThan(0);
+    expect(screen.queryByText("来源：图片识别，置信度 43%")).not.toBeInTheDocument();
+    expect(screen.getByText("待人工确认字段")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("展开调试与审计信息")).toBeInTheDocument();
 
     act(() => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "校验异常" }));
@@ -409,6 +413,12 @@ describe("admin invoice editor page", () => {
     act(() => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "识别字段" }));
     });
+    expect(await screen.findByDisplayValue("同济大学")).toBeInTheDocument();
+    expect(screen.queryByText("来源：人工更正，置信度 100%")).not.toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(screen.getByText("展开调试与审计信息"));
+    });
     expect(await screen.findByText("来源：人工更正，置信度 100%")).toBeInTheDocument();
     expect(await screen.findByText((content) => content.includes("已触发重新校验"))).toBeInTheDocument();
 
@@ -458,6 +468,28 @@ describe("admin invoice editor page", () => {
     expect(screen.getByText("发票抬头不能为空。")).toBeInTheDocument();
     expect(screen.getByText("税号不能为空。")).toBeInTheDocument();
     expect(screen.getByText("请输入大于 0 的金额，单位为元。")).toBeInTheDocument();
+  });
+
+  it("groups editable form fields by business review order", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-ALPHA") {
+        return Promise.resolve(jsonResponse(buildTask()));
+      }
+      if (url === "/api/tasks/TASK-ALPHA/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReviewSummary()));
+      }
+
+      throw new Error(`Unhandled fetch URL in admin invoice editor grouping test: ${url}`);
+    });
+
+    renderAdminInvoiceEditorRoute();
+
+    expect(await screen.findByRole("heading", { name: "票据核心字段" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "抬头与税号" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "报销归类与补充信息" })).toBeInTheDocument();
+    expect(screen.getByText("先核对票号、金额和日期，再处理后续抬头与费用归类，避免在多个标签页之间来回切换。")).toBeInTheDocument();
   });
 
   it("shows an error notice when the backend rejects the invoice update", async () => {
