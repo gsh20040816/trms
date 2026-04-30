@@ -229,8 +229,8 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
 
     renderWorkbench();
 
-    const readySection = await screen.findByRole("region", { name: "可提交发票列表" });
-    expect(within(readySection).getByRole("heading", { name: "INV-001" })).toBeInTheDocument();
+    const readySection = await screen.findByRole("region", { name: "未提交发票列表" });
+    expect(within(readySection).getByRole("button", { name: /未提交发票 invoice\.pdf INV-001/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "所有发票列表" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "TEAM-001" })).toBeInTheDocument();
   });

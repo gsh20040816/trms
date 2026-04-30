@@ -243,7 +243,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
     clearMockSession();
   });
 
-  it("keeps the workbench concise and links invoices to the per-invoice page", async () => {
+  it("keeps the workbench concise and links invoice summary rows to the per-invoice page", async () => {
     mockCommonFetch();
     const router = renderRoute();
 
@@ -253,8 +253,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "发票字段" })).not.toBeInTheDocument();
 
-    const readySection = screen.getByRole("region", { name: "可提交发票列表" });
-    fireEvent.click(within(readySection).getByRole("heading", { name: "INV-READY-001" }));
+    const readySection = screen.getByRole("region", { name: "未提交发票列表" });
+    fireEvent.click(within(readySection).getByRole("button", { name: /未提交发票 ready\.pdf INV-READY-001/ }));
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/member/invoices/INV-READY-001");
@@ -265,7 +265,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
     mockCommonFetch();
     renderRoute();
 
-    expect(await screen.findByRole("heading", { name: "INV-READY-001" })).toBeInTheDocument();
+    expect(await screen.findByText("未提交列表已选 0 / 1")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("批量选择发票 INV-READY-001"));
     fireEvent.click(screen.getByRole("button", { name: "批量提交选中发票" }));
 
@@ -298,5 +298,70 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
     expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
+  });
+
+  it("marks problem invoices with emphasis while keeping the list collapsed to one-line summaries", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      items: [
+        {
+          material: {
+            material_id: "MAT-PROBLEM-001",
+            submitter_id: "2250001",
+            material_type: "invoice",
+            original_filename: "problem.pdf",
+            material_status: "assigned",
+            recognition_status: "needs_confirmation",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: "INV-PROBLEM-001",
+            invoice_number: "INV-PROBLEM-001",
+            validation_status: "pending",
+            validation_messages: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+          },
+          invoice: {
+            ...invoice,
+            id: "INV-PROBLEM-001",
+            material_id: "MAT-PROBLEM-001",
+            invoice_number: "INV-PROBLEM-001",
+            member_submission_status: "unsubmitted",
+          },
+          recognition: {
+            id: "REC-PROBLEM-001",
+            material_id: "MAT-PROBLEM-001",
+            status: "needs_confirmation",
+            failure: null,
+            recognized_fields: {},
+            manual_corrections: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+            updated_at: "2026-04-28T10:00:00+08:00",
+          },
+          validations: [],
+          supporting_materials: [],
+          splits: [],
+          confirmations: [],
+          related_expense_details: [],
+          missing_materials: [],
+          queue_group: "recognition_review",
+          blocking_reasons: ["recognition_review"],
+          ready_for_submission: false,
+        },
+      ],
+      report: {
+        ...buildWorkbenchSummary().report,
+        counts: {
+          ...buildWorkbenchSummary().report.counts,
+          recognition_needs_confirmation_count: 1,
+          validation_pending_count: 1,
+        },
+      },
+    }));
+    renderRoute();
+
+    const problemSection = await screen.findByRole("region", { name: "问题发票分组" });
+    const summaryList = within(problemSection).getByRole("list", { name: "识别失败或待确认 发票摘要列表" });
+    expect(within(summaryList).getByRole("button", { name: /识别失败或待确认 problem\.pdf INV-PROBLEM-001/ })).toBeInTheDocument();
+    expect(within(summaryList).getAllByText("识别失败或待确认").length).toBeGreaterThanOrEqual(1);
+    expect(within(summaryList).queryByRole("button", { name: "批量提交选中发票" })).not.toBeInTheDocument();
   });
 });

@@ -413,43 +413,50 @@ describe("MemberInvoiceWorkbenchPage batch submission", () => {
     clearMockSession();
   });
 
-  it("displays submission statuses and updates batch selection summary", async () => {
+  it("keeps submitted and unsubmitted selection states independent", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(buildWorkbenchFetchMock());
 
     renderWorkbenchRoute();
 
     const batchSection = await screen.findByRole("region", { name: "批量提交与撤回区" });
-    expect(screen.getAllByText("已提交管理员").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("未提交管理员").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /未提交发票 railway\.pdf INV-001/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /已提交发票 hotel\.pdf INV-002/ })).toBeInTheDocument();
     expect(within(batchSection).getByText("已选 0 张")).toBeInTheDocument();
+    expect(screen.getByText("未提交列表已选 0 / 1")).toBeInTheDocument();
+    expect(screen.getByText("已提交列表已选 0 / 1")).toBeInTheDocument();
 
     act(() => {
       fireEvent.click(screen.getByRole("checkbox", { name: "批量选择发票 INV-001" }));
     });
 
     expect(within(batchSection).getByText("已选 1 张")).toBeInTheDocument();
-    expect(within(batchSection).getByRole("button", { name: "清空选择" })).toBeEnabled();
-    expect(within(batchSection).getByRole("button", { name: "批量提交选中发票" })).toBeEnabled();
+    expect(screen.getByText("未提交列表已选 1 / 1")).toBeInTheDocument();
+    expect(screen.getByText("已提交列表已选 0 / 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "清空未提交选择" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "批量提交选中发票" })).toBeEnabled();
+
+    act(() => {
+      fireEvent.click(screen.getByRole("checkbox", { name: "批量选择发票 INV-002" }));
+    });
+
+    expect(within(batchSection).getByText("已选 2 张")).toBeInTheDocument();
+    expect(screen.getByText("未提交列表已选 1 / 1")).toBeInTheDocument();
+    expect(screen.getByText("已提交列表已选 1 / 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "清空已提交选择" })).toBeEnabled();
   });
 
   it("submits selected invoices and shows per-invoice failure reasons", async () => {
     const fetchMock = buildWorkbenchFetchMock({
       onSubmit: ({ body, invoices }) => {
-        expect(body.invoice_ids).toEqual(["INV-001", "INV-002"]);
+        expect(body.invoice_ids).toEqual(["INV-001"]);
         const firstInvoice = invoices.find((invoice) => invoice.id === "INV-001")!;
         firstInvoice.member_submission_status = "submitted";
         firstInvoice.submitted_by_member_id = "2250001";
         firstInvoice.submitted_at = "2026-04-30T03:00:00+08:00";
         return {
-          status: "partial_success",
+          status: "success",
           items: [buildInvoiceResponse(firstInvoice)],
-          failures: [
-            {
-              invoice_id: "INV-002",
-              error_code: "invoice_already_submitted",
-              detail: "invoice is already submitted",
-            },
-          ],
+          failures: [],
         };
       },
     });
@@ -460,15 +467,42 @@ describe("MemberInvoiceWorkbenchPage batch submission", () => {
     await screen.findByRole("region", { name: "批量提交与撤回区" });
     act(() => {
       fireEvent.click(screen.getByRole("checkbox", { name: "批量选择发票 INV-001" }));
-      fireEvent.click(screen.getByRole("checkbox", { name: "批量选择发票 INV-002" }));
       fireEvent.click(screen.getByRole("button", { name: "批量提交选中发票" }));
     });
 
-    expect((await screen.findAllByText("批量提交部分成功：已处理 1 张，另有 1 张失败。")).length).toBeGreaterThanOrEqual(1);
-    expect(await screen.findByText(/invoice is already submitted/)).toBeInTheDocument();
+    expect((await screen.findAllByText("批量提交成功：共处理 1 张发票。")).length).toBeGreaterThanOrEqual(1);
     await waitFor(() => {
-      expect(screen.getAllByText("已提交管理员").length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText("已提交列表已选 0 / 2")).toBeInTheDocument();
     });
+    expect(screen.getByText("未提交列表已选 0 / 0")).toBeInTheDocument();
+  });
+
+  it("submits all unsubmitted invoices through the dedicated list selector", async () => {
+    const fetchMock = buildWorkbenchFetchMock({
+      onSubmit: ({ body, invoices }) => {
+        expect(body.invoice_ids).toEqual(["INV-001"]);
+        const firstInvoice = invoices.find((invoice) => invoice.id === "INV-001")!;
+        firstInvoice.member_submission_status = "submitted";
+        firstInvoice.submitted_by_member_id = "2250001";
+        firstInvoice.submitted_at = "2026-04-30T03:00:00+08:00";
+        return {
+          status: "success",
+          items: [buildInvoiceResponse(firstInvoice)],
+          failures: [],
+        };
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
+
+    renderWorkbenchRoute();
+
+    await screen.findByRole("region", { name: "批量提交与撤回区" });
+    act(() => {
+      fireEvent.click(screen.getByRole("checkbox", { name: "全选未提交发票" }));
+      fireEvent.click(screen.getByRole("button", { name: "批量提交选中发票" }));
+    });
+
+    expect((await screen.findAllByText("批量提交成功：共处理 1 张发票。")).length).toBeGreaterThanOrEqual(1);
   });
 
   it("withdraws selected invoices and shows success feedback", async () => {
@@ -498,7 +532,8 @@ describe("MemberInvoiceWorkbenchPage batch submission", () => {
 
     expect((await screen.findAllByText("批量撤回成功：共处理 1 张发票。")).length).toBeGreaterThanOrEqual(1);
     await waitFor(() => {
-      expect(screen.getAllByText("未提交管理员").length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText("未提交列表已选 0 / 2")).toBeInTheDocument();
     });
+    expect(screen.getByText("已提交列表已选 0 / 0")).toBeInTheDocument();
   });
 });

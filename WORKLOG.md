@@ -1,5 +1,39 @@
 # WORKLOG
 
+## 2026-05-01 01:18 - Convert member ready invoices into one-line summaries with split batch actions
+
+### 完成内容
+- 完成任务“将成员工作台可提交发票改为一行摘要和分状态批量操作”。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 将原先混合选择的批量区拆成“未提交发票”和“已提交发票”两个独立列表，各自维护独立的全选、单选、清空和批量动作；
+  - 批量提交默认只消费未提交列表选择，批量撤回默认只消费已提交列表选择，成功后仅清理对应列表里已成功处理的选择状态；
+  - 将成员工作台中的本人发票摘要收口为一行信息架构，默认只展示原始文件名、发票号、校验状态和附件数量；
+  - 问题发票分组和展开列表统一复用同一行摘要样式，并用强调色标记当前阻塞分组；
+  - 点击任意摘要行仍进入单张发票处理页，不再在工作台中展开多字段卡片。
+- 调整 [styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)，新增成员发票一行摘要行、问题强调态、选择工具条和移动端收缩样式。
+- 更新前端测试：
+  - [member-invoice-workbench-submission.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-submission.test.tsx)
+  - [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)
+  - [member-invoice-workbench-aggregate.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-aggregate.test.tsx)
+  - 覆盖独立选择状态、列表级全选、批量提交、批量撤回、问题发票强调和摘要行跳转。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，标记该任务已完成。
+
+### 根因
+- 旧成员工作台虽然已有批量提交/撤回能力，但所有本人发票仍共用一个选择集合，导致“准备提交”和“已经提交可撤回”混在同一上下文里，用户无法稳定判断当前批处理对象。
+- 可提交区中的发票摘要仍保留多字段纵向卡片结构，单张发票默认占据过多垂直空间，造成工作台第一屏可扫描性差。
+- 问题发票折叠摘要和可提交区使用不同的信息密度与样式口径，用户在不同分组之间切换时需要重新理解状态语义。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx member-invoice-workbench-submission.test.tsx member-invoice-workbench-layout.test.tsx member-invoice-workbench-aggregate.test.tsx`
+  - 4 个测试文件、11 个用例通过。
+- 仓库级验证尚未执行，下一步按仓库规范运行 `./scripts/verify.sh`。
+
+### 风险与后续
+- 本轮只调整成员工作台中的本人发票摘要和批量区；共享发票摘要、管理员任务详情、管理员材料审核等入口仍使用各自展示实现，统一摘要组件任务继续留在后续独立任务中处理。
+- 当前“一行摘要”的校验列展示的是用户可读的校验结果汇总，而不是具体失败规则；具体问题仍通过问题发票分组提示和单张处理页闭合。
+
 ## 2026-05-01 01:05 - Fix admin invoice amount display units
 
 ### 完成内容
