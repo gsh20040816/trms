@@ -15,7 +15,15 @@ import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
-import type { ExpenseType, ReimbursementTask, TaskStatus, TaskUpdateInput } from "../lib/api/types";
+import type {
+  ExpenseType,
+  ReimbursementTask,
+  TaskReadinessIssue,
+  TaskReadinessIssueKind,
+  TaskReadinessSummary,
+  TaskStatus,
+  TaskUpdateInput,
+} from "../lib/api/types";
 import { formatExpenseType, formatMemberLabel, formatTaskStatus } from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
@@ -23,7 +31,7 @@ import { useAuthSession } from "./auth-store";
 type TaskDetailState =
   | { status: "loading" }
   | { status: "error"; error: unknown }
-  | { status: "ready"; task: ReimbursementTask };
+  | { status: "ready"; task: ReimbursementTask; readiness: TaskReadinessSummary };
 
 type TaskEditFormState = {
   competitionName: string;
@@ -59,6 +67,19 @@ const FEE_CATEGORY_OPTIONS: Array<{ value: ExpenseType; label: string }> = [
   { value: "other", label: "其他" },
 ];
 
+const READINESS_KIND_TO_ROUTE: Partial<Record<TaskReadinessIssueKind, string>> = {
+  recognition_pending: "review",
+  recognition_failed: "review",
+  recognition_needs_confirmation: "review",
+  supporting_material_linkage: "review",
+  validation_blocker: "review",
+  split_incomplete: "splits",
+  member_confirmation_pending: "splits",
+  member_confirmation_disputed: "corrections",
+  missing_materials: "missing-materials",
+  export_blocker: "exports",
+};
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "medium",
@@ -77,6 +98,73 @@ function toDateTimeLocalValue(value: string) {
 
 function buildStatusActionLabel(targetStatus: TaskStatus) {
   return `切换为${formatTaskStatus(targetStatus)}`;
+}
+
+function buildReadinessTone(readyForExport: boolean) {
+  return readyForExport ? "success" as const : "warning" as const;
+}
+
+function buildIssueTone(issue: TaskReadinessIssue) {
+  if (
+    issue.kind === "recognition_failed"
+    || issue.kind === "validation_blocker"
+    || issue.kind === "member_confirmation_disputed"
+    || issue.kind === "export_blocker"
+  ) {
+    return "danger" as const;
+  }
+  return "warning" as const;
+}
+
+function buildIssueDescription(issue: TaskReadinessIssue) {
+  if (issue.details.length > 0) {
+    return issue.details[0];
+  }
+  switch (issue.kind) {
+    case "recognition_pending":
+      return "仍有材料处于识别排队或处理中，管理员先无需逐张点开正常材料。";
+    case "recognition_failed":
+      return "有材料识别失败，需要进入审核页查看原件和失败原因。";
+    case "recognition_needs_confirmation":
+      return "有识别结果置信度不足，需人工确认关键字段。";
+    case "supporting_material_linkage":
+      return "仍有辅助材料未安全归到具体发票，需优先处理。";
+    case "missing_materials":
+      return "仍有必传材料缺失，会直接阻塞后续导出。";
+    case "validation_blocker":
+      return "当前存在 blocker 级校验失败，任务还不能进入最终导出。";
+    case "split_incomplete":
+      return "仍有发票分摊金额未闭合，需先补齐金额归属。";
+    case "member_confirmation_pending":
+      return "仍有成员未确认当前费用明细，需要继续催办或回退处理。";
+    case "member_confirmation_disputed":
+      return "已有成员提出异议，建议先处理争议再推进任务状态。";
+    case "export_blocker":
+      return "当前导出 boundary 仍未满足，导出页会展示完整阻塞原因。";
+    default:
+      return "当前存在待处理问题，请进入对应工作页继续处理。";
+  }
+}
+
+function buildIssueActionLabel(issue: TaskReadinessIssue) {
+  switch (issue.kind) {
+    case "missing_materials":
+      return "查看缺失材料";
+    case "split_incomplete":
+    case "member_confirmation_pending":
+      return "进入分摊确认";
+    case "member_confirmation_disputed":
+      return "进入成员提醒";
+    case "export_blocker":
+      return "查看导出阻塞";
+    default:
+      return "进入异常处理";
+  }
+}
+
+function buildIssueActionHref(taskId: string, issue: TaskReadinessIssue) {
+  const route = READINESS_KIND_TO_ROUTE[issue.kind];
+  return route ? `/admin/tasks/${taskId}/${route}` : `/admin/tasks/${taskId}`;
 }
 
 function buildFormState(task: ReimbursementTask): TaskEditFormState {
@@ -201,13 +289,17 @@ export function AdminTaskDetailPage() {
       setSaveNotice(null);
 
       try {
-        const task = await trmsApi.getTask(taskId);
+        const [task, readiness] = await Promise.all([
+          trmsApi.getTask(taskId),
+          trmsApi.getTaskReadiness(taskId, session.actorId),
+        ]);
         if (cancelled) {
           return;
         }
         setState({
           status: "ready",
           task,
+          readiness,
         });
         setFormState(buildFormState(task));
         setValidationErrors({});
@@ -256,9 +348,11 @@ export function AdminTaskDetailPage() {
   }
 
   const task = state.status === "ready" ? state.task : null;
+  const readiness = state.status === "ready" ? state.readiness : null;
   const allowedTransitions = task ? TASK_STATUS_TRANSITIONS[task.status] : [];
   const isForeignTask = task ? task.administrator_id !== session.actorId : false;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
+  const visibleReadiness = state.status === "ready" && !isForeignTask ? state.readiness : null;
   const isDraftEditable = visibleTask?.status === "draft";
 
   function updateField<Key extends keyof TaskEditFormState>(
@@ -327,6 +421,7 @@ export function AdminTaskDetailPage() {
       setState({
         status: "ready",
         task: updatedTask,
+        readiness: readiness!,
       });
       setFormState(buildFormState(updatedTask));
       setValidationErrors({});
@@ -339,9 +434,10 @@ export function AdminTaskDetailPage() {
   }
 
   async function handleStatusUpdate(targetStatus: TaskStatus) {
-    if (!task) {
+    if (!task || !session) {
       return;
     }
+    const actorId = session.actorId;
 
     const confirmed = await confirm({
       title: `确认将任务切换为${formatTaskStatus(targetStatus)}？`,
@@ -363,9 +459,11 @@ export function AdminTaskDetailPage() {
       const updatedTask = await trmsApi.updateTaskStatus(task.id, {
         target_status: targetStatus,
       });
+      const updatedReadiness = await trmsApi.getTaskReadiness(task.id, actorId);
       setState({
         status: "ready",
         task: updatedTask,
+        readiness: updatedReadiness,
       });
       setFormState(buildFormState(updatedTask));
       setValidationErrors({});
@@ -382,13 +480,13 @@ export function AdminTaskDetailPage() {
       taskId={taskId}
       task={visibleTask}
       header={(
-        <PageHeader
-          eyebrow="任务管理"
-          title="任务详情与状态操作"
-          description="这里集中查看任务基础配置、编辑草稿任务和推进当前可执行的下一步操作。"
-          actions={(
-            <div className="page-actions">
-              <Button component={RouterLink} variant="contained" to={`/admin/tasks/${taskId}/invoices`}>
+          <PageHeader
+            eyebrow="任务管理"
+            title="任务详情与状态操作"
+            description="这里优先查看任务就绪度和异常优先队列，再处理草稿配置和状态推进。"
+            actions={(
+              <div className="page-actions">
+                <Button component={RouterLink} variant="contained" to={`/admin/tasks/${taskId}/invoices`}>
                 录入或更正发票
               </Button>
               <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/missing-materials`}>
@@ -475,6 +573,132 @@ export function AdminTaskDetailPage() {
               </div>
             </dl>
           </article>
+
+          {visibleReadiness ? (
+            <>
+              <article className="status-card admin-task-detail-panel">
+                <div className="admin-form-header">
+                  <div>
+                    <p className="eyebrow">Task Readiness</p>
+                    <h2>任务就绪度总览</h2>
+                  </div>
+                  <StatusBadge tone={buildReadinessTone(visibleReadiness.ready_for_export)}>
+                    {visibleReadiness.ready_for_export ? "可导出" : "仍有阻塞"}
+                  </StatusBadge>
+                </div>
+                <p className="field-hint">
+                  第一屏先看还有哪些门禁没过；正常材料不要求管理员逐张点开确认。
+                </p>
+                <dl className="task-detail-grid" aria-label="任务就绪度统计">
+                  <div>
+                    <dt>待识别</dt>
+                    <dd>{visibleReadiness.counts.pending_recognition_count}</dd>
+                  </div>
+                  <div>
+                    <dt>识别失败</dt>
+                    <dd>{visibleReadiness.counts.failed_recognition_count}</dd>
+                  </div>
+                  <div>
+                    <dt>低置信待确认</dt>
+                    <dd>{visibleReadiness.counts.needs_confirmation_recognition_count}</dd>
+                  </div>
+                  <div>
+                    <dt>待关联附件</dt>
+                    <dd>{visibleReadiness.counts.pending_supporting_material_linkage_count}</dd>
+                  </div>
+                  <div>
+                    <dt>缺失材料</dt>
+                    <dd>{visibleReadiness.counts.missing_material_count}</dd>
+                  </div>
+                  <div>
+                    <dt>异常校验</dt>
+                    <dd>{visibleReadiness.counts.blocker_validation_count}</dd>
+                  </div>
+                  <div>
+                    <dt>分摊未完成</dt>
+                    <dd>{visibleReadiness.counts.split_incomplete_count}</dd>
+                  </div>
+                  <div>
+                    <dt>成员未确认</dt>
+                    <dd>{visibleReadiness.counts.pending_confirmation_count}</dd>
+                  </div>
+                  <div>
+                    <dt>有异议</dt>
+                    <dd>{visibleReadiness.counts.disputed_confirmation_count}</dd>
+                  </div>
+                  <div>
+                    <dt>导出阻塞原因</dt>
+                    <dd>{visibleReadiness.counts.export_blocking_reason_count}</dd>
+                  </div>
+                </dl>
+                {visibleReadiness.export_blocking_reasons.length > 0 ? (
+                  <div className="field-stack" aria-label="导出阻塞原因">
+                    <p className="field-hint">当前仍存在以下导出阻塞原因：</p>
+                    <ul className="admin-review-list">
+                      {visibleReadiness.export_blocking_reasons.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="field-hint">当前任务已满足导出边界，可以进入导出页生成材料包。</p>
+                )}
+              </article>
+
+              <article className="status-card admin-task-detail-panel" aria-label="异常优先队列">
+                <div className="admin-form-header">
+                  <div>
+                    <p className="eyebrow">Priority Queue</p>
+                    <h2>异常优先队列</h2>
+                  </div>
+                  <StatusBadge tone={visibleReadiness.issues.length > 0 ? "warning" : "success"}>
+                    {visibleReadiness.issues.length > 0 ? `${visibleReadiness.issues.length} 类待处理问题` : "全部通过"}
+                  </StatusBadge>
+                </div>
+                {visibleReadiness.issues.length === 0 ? (
+                  <p className="field-hint">
+                    当前没有待处理异常，管理员可以直接进入导出页生成最新材料包。
+                  </p>
+                ) : (
+                  <div className="page-stack">
+                    {visibleReadiness.issues.map((issue) => (
+                      <section key={issue.kind} className="admin-form-card">
+                        <div className="task-card-header">
+                          <div>
+                            <p className="task-card-id">
+                              {issue.count} 项待处理
+                              {issue.invoice_ids.length > 0 ? ` / ${issue.invoice_ids.length} 张发票` : ""}
+                              {issue.material_ids.length > 0 ? ` / ${issue.material_ids.length} 份材料` : ""}
+                            </p>
+                            <h3>{issue.label}</h3>
+                          </div>
+                          <StatusBadge tone={buildIssueTone(issue)}>
+                            {issue.blocking ? "阻塞中" : "需关注"}
+                          </StatusBadge>
+                        </div>
+                        <p className="field-hint">{buildIssueDescription(issue)}</p>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                          <Button
+                            component={RouterLink}
+                            variant="contained"
+                            to={buildIssueActionHref(taskId, issue)}
+                          >
+                            {buildIssueActionLabel(issue)}
+                          </Button>
+                          {issue.details.length > 0 ? (
+                            <div className="field-stack">
+                              <span className="field-hint">示例问题：</span>
+                              <span>{issue.details[0]}</span>
+                            </div>
+                          ) : null}
+                        </Stack>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </article>
+            </>
+          ) : null}
 
           <article className="status-card admin-form-card">
             <div className="admin-form-header">

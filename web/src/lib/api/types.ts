@@ -510,6 +510,51 @@ export type TaskReviewSummary = {
   invoices: TaskReviewSummaryInvoiceItem[];
 };
 
+export type TaskReadinessIssueKind =
+  | "recognition_pending"
+  | "recognition_failed"
+  | "recognition_needs_confirmation"
+  | "supporting_material_linkage"
+  | "missing_materials"
+  | "validation_blocker"
+  | "split_incomplete"
+  | "member_confirmation_pending"
+  | "member_confirmation_disputed"
+  | "export_blocker";
+
+export type TaskReadinessCounts = {
+  pending_recognition_count: number;
+  failed_recognition_count: number;
+  needs_confirmation_recognition_count: number;
+  pending_supporting_material_linkage_count: number;
+  missing_material_count: number;
+  blocker_validation_count: number;
+  split_incomplete_count: number;
+  pending_confirmation_count: number;
+  disputed_confirmation_count: number;
+  export_blocking_reason_count: number;
+};
+
+export type TaskReadinessIssue = {
+  kind: TaskReadinessIssueKind;
+  label: string;
+  count: number;
+  blocking: boolean;
+  invoice_ids: string[];
+  material_ids: string[];
+  split_ids: string[];
+  details: string[];
+};
+
+export type TaskReadinessSummary = {
+  task_id: string;
+  administrator_id: string;
+  ready_for_export: boolean;
+  counts: TaskReadinessCounts;
+  issues: TaskReadinessIssue[];
+  export_blocking_reasons: string[];
+};
+
 export type TaskReviewSummaryMaterialItem = {
   material: MaterialRecord;
   latest_recognition: RecognitionTaskRecord | null;

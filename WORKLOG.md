@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-04-30 10:15 - Attach readiness overview and priority anomaly queue to admin task detail
+
+### 完成内容
+- 完成任务“管理员任务详情接入就绪度总览与异常优先队列”。
+- 调整 [admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)：
+  - 管理员任务详情页主加载改为同时读取任务基础信息和 `GET /api/tasks/{task_id}/readiness`，不再只显示配置和状态流转；
+  - 第一屏新增“任务就绪度总览”，直接展示待识别、识别失败、低置信待确认、待关联附件、缺失材料、异常校验、分摊未完成、成员未确认、有异议和导出阻塞原因；
+  - 新增“异常优先队列”，按后端 `issues` 列表展示当前阻塞问题，并为缺失材料、分摊确认、成员异议、审核异常和导出阻塞提供明确入口；
+  - 当任务已满足导出 boundary 时，第一屏会明确显示“可导出”，避免管理员继续逐张浏览正常材料。
+- 调整前端 API 和类型：
+  - [trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts) 新增 `getTaskReadiness(...)`；
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 新增 `TaskReadinessSummary` 及相关 issue/count 类型，前端不再自行造管理员门禁状态。
+- 更新测试：
+  - 更新 [admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)，覆盖就绪度总览、导出阻塞展示和异常优先入口；
+  - 更新 [main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)，补齐管理员任务详情依赖的 readiness mock，避免主流程占位测试继续按旧接口形状运行。
+
+### 根因
+- 上一轮虽然已经补齐管理员任务就绪度读模型，但管理员任务详情第一屏仍停留在“基础配置 + 状态流转”，没有把后端已经统一聚合出的门禁事实接进来。
+- 结果是管理员进入任务后仍要自己判断“哪些材料还没识别、哪些附件待关联、哪些成员还没确认、当前是否可导出”，也就无法形成“正常材料跳过、异常优先处理”的第一屏工作流。
+
+### 保守假设
+- 本轮异常优先队列严格复用后端 `TaskReadinessSummary.issues` 的顺序和标签，不在前端再做二次排序或新造状态优先级。
+- 原因是当前目标是把已存在的管理员门禁事实稳定接入任务详情，而不是在前端重写一套“看起来更智能”的规则；若后续需要更细粒度优先级，应作为后端读模型调整。
+
+### 影响范围
+- 修改了管理员任务详情前端、前端 API 类型和两个前端测试文件。
+- 没有改动后端 readiness 逻辑、管理员导出页主流程、材料审核页数据结构、数据库 schema 或成员侧业务路径。
+
+### 验证结果
+- 已通过定向验证：
+  - `cd web && npm test -- admin-task-detail.test.tsx`
+    - 5 个用例通过
+  - `cd web && npm test -- main-flow-e2e-placeholder.test.tsx`
+    - 1 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 479 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 10:02 - Add administrator task readiness read model
 
 ### 完成内容

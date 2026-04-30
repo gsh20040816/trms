@@ -382,6 +382,43 @@ describe("frontend main flow e2e placeholder", () => {
         return Promise.resolve(jsonResponse(buildTask(workflowState.taskStatus)));
       }
 
+      if (url === "/api/tasks/TASK-E2E/readiness?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-E2E",
+          administrator_id: "admin-1",
+          ready_for_export: false,
+          counts: {
+            pending_recognition_count: workflowState.materialUploaded && !workflowState.invoiceSaved ? 1 : 0,
+            failed_recognition_count: 0,
+            needs_confirmation_recognition_count: workflowState.materialUploaded && !workflowState.invoiceSaved ? 1 : 0,
+            pending_supporting_material_linkage_count: 0,
+            missing_material_count: 0,
+            blocker_validation_count: 0,
+            split_incomplete_count: workflowState.invoiceSaved && !workflowState.splitSaved ? 1 : 0,
+            pending_confirmation_count: workflowState.splitSaved && !workflowState.confirmed ? 1 : 0,
+            disputed_confirmation_count: 0,
+            export_blocking_reason_count: workflowState.taskStatus === "ready_to_export" ? 0 : 1,
+          },
+          issues: workflowState.taskStatus === "ready_to_export"
+            ? []
+            : [
+                {
+                  kind: "export_blocker",
+                  label: "导出阻塞原因",
+                  count: 1,
+                  blocking: true,
+                  invoice_ids: [],
+                  material_ids: [],
+                  split_ids: [],
+                  details: ["task must be ready_to_export or completed before real exports can be generated"],
+                },
+              ],
+          export_blocking_reasons: workflowState.taskStatus === "ready_to_export"
+            ? []
+            : ["task must be ready_to_export or completed before real exports can be generated"],
+        }));
+      }
+
       if (url === "/api/tasks/TASK-E2E/member-status?actor_id=2250001") {
         return Promise.resolve(jsonResponse({
           task_id: "TASK-E2E",

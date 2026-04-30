@@ -41,6 +41,7 @@ import type {
   TaskSharedInvoiceReport,
   TaskMemberStatusReport,
   TaskMemberWorkbenchSummary,
+  TaskReadinessSummary,
   TaskMembersUpdate,
   TaskReviewSummary,
   TaskStatusUpdate,
@@ -201,6 +202,12 @@ export const trmsApi = {
   getTaskReviewSummary(taskId: string, actorId: string) {
     return apiClient.request<TaskReviewSummary>(
       `/tasks/${encodeSegment(taskId)}/review-summary${buildActorScopedQuery(actorId)}`,
+    );
+  },
+
+  getTaskReadiness(taskId: string, actorId: string) {
+    return apiClient.request<TaskReadinessSummary>(
+      `/tasks/${encodeSegment(taskId)}/readiness${buildActorScopedQuery(actorId)}`,
     );
   },
 

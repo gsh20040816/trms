@@ -25,6 +25,76 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+function buildReadinessResponse(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    task_id: "TASK-ALPHA",
+    administrator_id: "admin-1",
+    ready_for_export: false,
+    counts: {
+      pending_recognition_count: 1,
+      failed_recognition_count: 0,
+      needs_confirmation_recognition_count: 0,
+      pending_supporting_material_linkage_count: 1,
+      missing_material_count: 1,
+      blocker_validation_count: 0,
+      split_incomplete_count: 0,
+      pending_confirmation_count: 1,
+      disputed_confirmation_count: 0,
+      export_blocking_reason_count: 2,
+    },
+    issues: [
+      {
+        kind: "recognition_pending",
+        label: "待识别",
+        count: 1,
+        blocking: true,
+        invoice_ids: [],
+        material_ids: ["MAT-1"],
+        split_ids: [],
+        details: [],
+      },
+      {
+        kind: "missing_materials",
+        label: "缺失材料",
+        count: 1,
+        blocking: true,
+        invoice_ids: ["INV-1"],
+        material_ids: [],
+        split_ids: [],
+        details: ["参赛费缺少比赛通知。"],
+      },
+      {
+        kind: "member_confirmation_pending",
+        label: "成员未确认",
+        count: 1,
+        blocking: true,
+        invoice_ids: [],
+        material_ids: [],
+        split_ids: ["SPLIT-1"],
+        details: [],
+      },
+      {
+        kind: "export_blocker",
+        label: "导出阻塞原因",
+        count: 2,
+        blocking: true,
+        invoice_ids: [],
+        material_ids: [],
+        split_ids: [],
+        details: [
+          "task must be ready_to_export or completed before real exports can be generated",
+          "task still has unresolved blocker validations",
+        ],
+      },
+    ],
+    export_blocking_reasons: [
+      "task must be ready_to_export or completed before real exports can be generated",
+      "task still has unresolved blocker validations",
+    ],
+    ...overrides,
+  };
+}
+
 function renderAdminTaskDetailRoute(taskId = "TASK-ALPHA") {
   const router = createMemoryRouter(routes, {
     initialEntries: [`/admin/tasks/${taskId}`],
@@ -69,13 +139,16 @@ describe("admin task detail page", () => {
         }));
       }
 
+      if (url === "/api/tasks/TASK-ALPHA/readiness?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReadinessResponse()));
+      }
+
       throw new Error(`Unhandled fetch URL in detail test: ${url}`);
     });
 
     renderAdminTaskDetailRoute();
 
-    expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
-    expect(screen.getAllByText("全国邀请赛").length).toBeGreaterThan(0);
+    expect(await screen.findAllByText("全国邀请赛")).toHaveLength(2);
     expect(screen.getAllByText("Project A").length).toBeGreaterThan(0);
     expect(screen.getAllByText("张管理员").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("同济大学")).toBeInTheDocument();
@@ -87,9 +160,23 @@ describe("admin task detail page", () => {
       "href",
       "/admin/tasks/TASK-ALPHA/invoices",
     );
-    expect(screen.getByRole("link", { name: "查看缺失材料" })).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "查看缺失材料" })[0]).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/missing-materials",
+    );
+    expect(screen.getByRole("heading", { name: "任务就绪度总览" })).toBeInTheDocument();
+    expect(screen.getByLabelText("任务就绪度统计")).toHaveTextContent("待识别");
+    expect(screen.getByLabelText("导出阻塞原因")).toHaveTextContent(
+      "task must be ready_to_export or completed before real exports can be generated",
+    );
+    const readinessQueue = screen.getByLabelText("异常优先队列");
+    expect(within(readinessQueue).getByRole("link", { name: "查看缺失材料" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-ALPHA/missing-materials",
+    );
+    expect(within(readinessQueue).getByRole("link", { name: "进入分摊确认" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-ALPHA/splits",
     );
     const quickActions = screen.getByLabelText("当前任务快捷入口");
     expect(within(quickActions).getByText("材料审核").closest("a")).toHaveAttribute(
@@ -119,6 +206,7 @@ describe("admin task detail page", () => {
 
   it("updates task status when the backend accepts the transition", async () => {
     let statusUpdateRequestCount = 0;
+    let readinessRequestCount = 0;
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
@@ -142,6 +230,45 @@ describe("admin task detail page", () => {
           created_at: "2026-04-20T09:00:00+08:00",
           updated_at: "2026-04-25T10:00:00+08:00",
         }));
+      }
+
+      if (url === "/api/tasks/TASK-DRAFT/readiness?actor_id=admin-1") {
+        readinessRequestCount += 1;
+        return Promise.resolve(jsonResponse(buildReadinessResponse({
+          task_id: "TASK-DRAFT",
+          ...(readinessRequestCount > 1
+            ? {
+                ready_for_export: false,
+                counts: {
+                  pending_recognition_count: 0,
+                  failed_recognition_count: 0,
+                  needs_confirmation_recognition_count: 0,
+                  pending_supporting_material_linkage_count: 0,
+                  missing_material_count: 0,
+                  blocker_validation_count: 0,
+                  split_incomplete_count: 0,
+                  pending_confirmation_count: 0,
+                  disputed_confirmation_count: 0,
+                  export_blocking_reason_count: 1,
+                },
+                issues: [
+                  {
+                    kind: "export_blocker",
+                    label: "导出阻塞原因",
+                    count: 1,
+                    blocking: true,
+                    invoice_ids: [],
+                    material_ids: [],
+                    split_ids: [],
+                    details: ["task must be ready_to_export or completed before real exports can be generated"],
+                  },
+                ],
+                export_blocking_reasons: [
+                  "task must be ready_to_export or completed before real exports can be generated",
+                ],
+              }
+            : {}),
+        })));
       }
 
       if (url === "/api/tasks/TASK-DRAFT/status" && init?.method === "PATCH") {
@@ -247,6 +374,12 @@ describe("admin task detail page", () => {
         }));
       }
 
+      if (url === "/api/tasks/TASK-DRAFT-EDIT/readiness?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReadinessResponse({
+          task_id: "TASK-DRAFT-EDIT",
+        })));
+      }
+
       if (url === "/api/tasks/TASK-DRAFT-EDIT") {
         return Promise.resolve(jsonResponse({
           id: "TASK-DRAFT-EDIT",
@@ -273,7 +406,7 @@ describe("admin task detail page", () => {
 
     renderAdminTaskDetailRoute("TASK-DRAFT-EDIT");
 
-    expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("待编辑任务")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("比赛名称"), {
       target: { value: "已更新任务" },
     });
@@ -312,6 +445,12 @@ describe("admin task detail page", () => {
         }));
       }
 
+      if (url === "/api/tasks/TASK-CLOSED/readiness?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReadinessResponse({
+          task_id: "TASK-CLOSED",
+        })));
+      }
+
       throw new Error(`Unhandled fetch URL in detail read-only test: ${url}`);
     });
 
@@ -344,6 +483,12 @@ describe("admin task detail page", () => {
           created_at: "2026-04-20T09:00:00+08:00",
           updated_at: "2026-04-25T10:00:00+08:00",
         }));
+      }
+
+      if (url === "/api/tasks/TASK-READY/readiness?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReadinessResponse({
+          task_id: "TASK-READY",
+        })));
       }
 
       if (url === "/api/tasks/TASK-READY/status" && init?.method === "PATCH") {
