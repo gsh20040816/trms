@@ -18,6 +18,14 @@
 
 ## 临时任务 - 2026-04-30 运行时修复
 
+- [x] 收敛成员识别结果列表和 LLM 分类枚举输出
+  - Done when:
+    - 成员工作台“识别结果”区域默认只展示短摘要列表，不再展开所有需要处理材料的完整字段卡片
+    - 超过默认展示数量的识别结果明确提示已收进下方发票处理列表，用户点击进入处理后再查看完整详情
+    - OpenAI 兼容识别提示词明确列出 `document_family`、`material_type`、`expense_type_candidate` 允许值，并禁止 `hotel_invoice`、`railway_invoice`、`hotel_order` 等自造类别
+    - 识别客户端能把合法 `document_family` 补齐为缺失的同名 `material_type`，并把真实 provider 常见子类别收敛到现有枚举
+    - 相关前后端测试覆盖上述行为
+
 - [x] 修复成员工作台发票处理入口和 LLM 识别输出规范化
   - Done when:
     - 成员工作台待关联辅助材料“查看候选发票”能定位到对应发票详情

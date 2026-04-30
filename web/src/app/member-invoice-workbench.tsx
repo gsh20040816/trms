@@ -338,6 +338,7 @@ const MATERIAL_UI_STATUS_LABELS: Record<ReimbursementMaterialUiStatus, string> =
   confirmed: "已确认",
   excluded: "不报销",
 };
+const MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT = 5;
 
 const MATERIAL_RESULT_GROUP_METADATA: Record<MaterialResultGroupKey, Omit<MaterialResultGroup, "items" | "key">> = {
   needs_confirmation: {
@@ -2659,6 +2660,23 @@ export function MemberInvoiceWorkbenchPage() {
     ));
   }
 
+  function buildMaterialResultSummary(
+    item: WorkbenchInvoiceItem,
+    pendingLinkageMatches: PendingSupportingMaterialLinkageItem[],
+  ) {
+    const messages = buildInvoiceQueueStatusSummary(item, pendingSupportingMaterialLinkageItems);
+    if (pendingLinkageMatches.length > 0) {
+      messages.push(`还有 ${pendingLinkageMatches.length} 份辅助材料需要指定归属。`);
+    }
+    if (messages.length > 0) {
+      return messages[0];
+    }
+    if (item.invoice) {
+      return `${formatExpenseType(item.invoice.expense_type)} / ${formatCurrencyFromCents(item.invoice.amount_cents)}`;
+    }
+    return "系统尚未形成可提交发票，请进入详情补录关键信息。";
+  }
+
   function renderOwnWorkbenchQueueCard(item: WorkbenchInvoiceItem, contextLabel: string) {
     const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
       kind: "own",
@@ -2758,105 +2776,49 @@ export function MemberInvoiceWorkbenchPage() {
     const pendingLinkageMatches = item.invoice
       ? findPendingSupportingMaterialLinkageMatches(item.invoice.id, pendingSupportingMaterialLinkageItems)
       : [];
-    const shouldExpand = group.key !== "recognized";
     const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
       kind: "own",
       materialId: item.material.material_id,
     });
+    const summary = buildMaterialResultSummary(item, pendingLinkageMatches);
+    const resultTitle = item.invoice?.invoice_number ?? item.material.original_filename;
+    const resultMetaItems = [
+      formatMaterialType(item.material.material_type),
+      item.invoice ? formatExpenseType(item.invoice.expense_type) : null,
+      item.invoice ? formatCurrencyFromCents(item.invoice.amount_cents) : null,
+    ].filter((value): value is string => Boolean(value));
+    const resultMeta = resultMetaItems.join(" / ");
 
     return (
       <li key={`${group.key}:${item.material.material_id}`}>
-        <article className={`status-card member-status-card ${shouldExpand ? "" : "status-card-muted"}`}>
+        <article className={`member-result-summary-card ${isSelected ? "member-result-summary-card-selected" : ""}`}>
           <div className="member-status-section-header">
             <div>
               <p className="task-card-id">{item.material.original_filename}</p>
-              <h3>{item.invoice?.invoice_number ?? formatMaterialType(item.material.material_type)}</h3>
+              <h3>{resultTitle}</h3>
+              <p className="field-hint">{resultMeta}</p>
             </div>
             <StatusBadge tone={getMaterialUiTone(status)}>
               {MATERIAL_UI_STATUS_LABELS[status]}
             </StatusBadge>
           </div>
-
-          <dl className="task-meta-grid member-status-meta-grid">
-            <div>
-              <dt>材料类型</dt>
-              <dd>{formatMaterialType(item.material.material_type)}</dd>
-            </div>
-            <div>
-              <dt>金额</dt>
-              <dd>{item.invoice ? formatCurrencyFromCents(item.invoice.amount_cents) : "待识别"}</dd>
-            </div>
-            <div>
-              <dt>日期</dt>
-              <dd>{item.invoice?.issue_date ?? (item.invoice?.transaction_time ? formatDateTime(item.invoice.transaction_time) : "待识别")}</dd>
-            </div>
-            <div>
-              <dt>费用类别</dt>
-              <dd>{item.invoice ? formatExpenseType(item.invoice.expense_type) : "待识别"}</dd>
-            </div>
-            <div>
-              <dt>归属成员</dt>
-              <dd>{item.splits.length > 0 ? item.splits.map((split) => formatMemberLabel(split.member_id)).join("、") : "待确认"}</dd>
-            </div>
-            <div>
-              <dt>当前状态</dt>
-              <dd>{MATERIAL_UI_STATUS_LABELS[status]}</dd>
-            </div>
-          </dl>
-
-          {shouldExpand ? (
-            <div className="member-status-section">
-              <div className="member-status-section-header">
-                <h4>为什么需要处理</h4>
-                <StatusBadge tone="warning">
-                  {abnormalReasons.length + pendingLinkageMatches.length} 项
-                </StatusBadge>
-              </div>
-              {abnormalReasons.length > 0 || pendingLinkageMatches.length > 0 ? (
-                <ul className="member-status-message-list" aria-label={`${item.material.material_id} 需要处理原因`}>
-                  {abnormalReasons.map((reason) => (
-                    <li key={reason}>{reason}</li>
-                  ))}
-                  {pendingLinkageMatches.map((linkage) => (
-                    <li key={linkage.material_id}>
-                      辅助材料 {linkage.original_filename} 存在多个可能归属，需要你指定对应发票。
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="field-hint">系统还在整理这份材料，完成后会刷新可处理事项。</p>
-              )}
-            </div>
-          ) : (
-            <p className="field-hint">系统已生成草稿，默认不要求逐项填写；需要核对时可打开详情。</p>
-          )}
-
+          <p className="field-hint">{summary}</p>
+          {abnormalReasons.length + pendingLinkageMatches.length > 0 ? (
+            <p className="field-hint">
+              需要处理 {abnormalReasons.length + pendingLinkageMatches.length} 项，点击进入处理查看完整字段和操作。
+            </p>
+          ) : null}
           <div className="inline-actions">
-            {item.invoice && status !== "confirmed" ? (
-              <Button
-                type="button"
-                variant={status === "recognized" ? "contained" : "outlined"}
-                size="small"
-                disabled={runningInvoiceBatchAction !== null || workbenchState.status !== "ready" || workbenchState.task.status !== "open"}
-                onClick={() => {
-                  const invoiceIds = [item.invoice!.id];
-                  setSelectedBatchInvoiceIds(invoiceIds);
-                  void handleInvoiceBatchAction("submit", invoiceIds);
-                }}
-              >
-                确认
-              </Button>
-            ) : null}
             <Button
               type="button"
-              variant="outlined"
+              variant={status === "recognized" ? "outlined" : "contained"}
               size="small"
               onClick={() => {
                 handleInvoiceDetailAction(item);
               }}
               aria-pressed={isSelected}
             >
-              修改
+              进入处理
             </Button>
             <Button
               type="button"
@@ -2867,9 +2829,6 @@ export function MemberInvoiceWorkbenchPage() {
               }}
             >
               指定归属
-            </Button>
-            <Button type="button" variant="outlined" size="small" disabled>
-              标记为不报销
             </Button>
             <Button
               type="button"
@@ -2885,9 +2844,6 @@ export function MemberInvoiceWorkbenchPage() {
           </div>
           {status === "confirmed" ? (
             <p className="field-hint">这份材料已提交给管理员；如需调整，请先在批量区撤回。</p>
-          ) : null}
-          {status !== "recognized" && status !== "confirmed" ? (
-            <p className="field-hint">请先处理上方原因，再提交确认。</p>
           ) : null}
         </article>
       </li>
@@ -3817,11 +3773,16 @@ export function MemberInvoiceWorkbenchPage() {
                 </div>
                 {group.items.length > 0 ? (
                   <ul className="invoice-material-list" aria-label={`${group.title} 材料卡片`}>
-                    {group.items.map((item) => renderMaterialResultCard(item, group))}
+                    {group.items.slice(0, MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT).map((item) => renderMaterialResultCard(item, group))}
                   </ul>
                 ) : (
                   <p className="field-hint">当前没有这一类材料。</p>
                 )}
+                {group.items.length > MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT ? (
+                  <p className="field-hint">
+                    还有 {group.items.length - MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT} 份材料已收进下方发票处理列表，页面默认不展开全部。
+                  </p>
+                ) : null}
               </section>
             ))}
           </div>

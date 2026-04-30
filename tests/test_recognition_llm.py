@@ -347,7 +347,9 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
     classification_user_prompt = json.loads(captured_requests[0]["messages"][1]["content"])
     extraction_system_prompt = captured_requests[1]["messages"][0]["content"]
     extraction_user_prompt = json.loads(captured_requests[1]["messages"][1]["content"])
-    assert "document_family must be one of" in captured_requests[0]["messages"][0]["content"]
+    assert "document_family.value must be exactly one of: invoice, competition_notice, payment_record, order_screenshot, itinerary, other_attachment" in captured_requests[0]["messages"][0]["content"]
+    assert "material_type.value must be exactly one of: invoice, payment_record, competition_notice, itinerary, order_screenshot, other_attachment" in captured_requests[0]["messages"][0]["content"]
+    assert "Never invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi." in captured_requests[0]["messages"][0]["content"]
     assert "Selected schema: invoice." in extraction_system_prompt
     assert "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible." in extraction_system_prompt
     assert classification_user_prompt == {
@@ -365,7 +367,12 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
             "Return JSON only.",
             "Stage 1 only: classify the document before extracting detailed metadata.",
             "Always populate document_family, material_type, expense_type_candidate, is_reimbursement_voucher, and classification_confidence.",
-            "Use only TRMS enums for document_family, material_type, and expense_type_candidate.",
+            "document_family.value must be exactly one of: invoice, competition_notice, payment_record, order_screenshot, itinerary, other_attachment.",
+            "material_type.value must be exactly one of: invoice, payment_record, competition_notice, itinerary, order_screenshot, other_attachment.",
+            "expense_type_candidate.value must be exactly one of: registration, railway, airfare, local_transport, hotel, other; use other when no stronger category is supported.",
+            "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
+            "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
+            "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
             "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
             "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
@@ -802,6 +809,83 @@ def test_openai_compatible_recognition_client_normalizes_scalar_classification_f
     assert result.recognized_fields["material_type"].status is RecognitionFieldStatus.NEEDS_CONFIRMATION
     assert result.recognized_fields["amount_cents"].value == 308700
     assert result.raw_response["selected_schema"]["name"] == "order_screenshot"
+
+
+def test_openai_compatible_recognition_client_fills_material_type_from_document_family():
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                build_two_stage_handler(
+                    classification_content={
+                        "output": {
+                            "document_family": {
+                                "value": "invoice",
+                                "confidence": 0.95,
+                            },
+                            "expense_type_candidate": {
+                                "value": "other",
+                                "confidence": 0.95,
+                            },
+                            "is_reimbursement_voucher": {
+                                "value": True,
+                                "confidence": 0.95,
+                            },
+                            "classification_confidence": {
+                                "value": 0.95,
+                            },
+                        }
+                    },
+                    extraction_content={
+                        "output": {
+                            "amount_cents": {
+                                "value": 291226,
+                                "confidence": 0.91,
+                            }
+                        }
+                    },
+                )
+            ),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert result.recognized_fields["document_family"].value == "invoice"
+    assert result.recognized_fields["material_type"].value == "invoice"
+    assert result.recognized_fields["classification_confidence"].value == 0.95
+    assert result.raw_response["selected_schema"]["name"] == "invoice"
+
+
+def test_openai_compatible_recognition_client_normalizes_provider_subtype_aliases():
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                build_two_stage_handler(
+                    classification_content={
+                        "output": {
+                            "document_family": "invoice",
+                            "material_type": "railway_invoice",
+                            "expense_type_candidate": "transportation",
+                            "is_reimbursement_voucher": True,
+                            "classification_confidence": {"value": 0.94},
+                        }
+                    },
+                    extraction_content={"output": {}},
+                )
+            ),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert result.recognized_fields["document_family"].value == "invoice"
+    assert result.recognized_fields["material_type"].value == "invoice"
+    assert result.recognized_fields["expense_type_candidate"].value == "local_transport"
+    assert result.raw_response["selected_schema"]["name"] == "invoice"
 
 
 def test_openai_compatible_recognition_client_rejects_non_json_content():

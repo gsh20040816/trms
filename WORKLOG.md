@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-04-30 21:43 - Collapse recognition result list and tighten LLM classification enums
+
+### 完成内容
+- 完成任务“收敛成员识别结果列表和 LLM 分类枚举输出”。
+- 调整 [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - 分类 prompt 显式列出 `document_family`、`material_type`、`expense_type_candidate` 的允许枚举值；
+  - 明确禁止 `hotel_invoice`、`railway_invoice`、`hotel_order`、`train_order`、`accommodation`、`transportation` 等自造类别；
+  - 将真实 provider 常见子类别收敛到系统既有枚举，例如 `railway_invoice -> invoice`、`transportation -> local_transport`；
+  - 当分类输出已有合法 `document_family` 但漏掉 `material_type` 时，补齐同名 `material_type`，避免有效分类因结构缺字段被记为 `llm_output_invalid`。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 和 [styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)：
+  - “识别结果”区域改为短摘要处理列表，每组默认最多展示 5 条；
+  - 不再默认展开每份问题材料的完整字段网格和原因详情；
+  - 超出部分提示“已收进下方发票处理列表”，用户点击“进入处理”后再查看完整发票详情。
+- 补充回归测试：
+  - [test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)
+  - [member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)
+
+### 根因
+- 查看 `data/粘贴的文件.png` 后确认，上一轮只折叠了底部“问题发票分组”，但截图里造成长页面的主因是上方“识别结果”仍把“需要你确认/可能有问题”材料按完整卡片逐项展开。
+- 查询本地 `trms.db` 后确认，当前共有 19 条 `failed` 识别任务，失败原因均为 `llm_output_invalid`；最新失败样本显示模型输出存在两类问题：
+  - 分类阶段漏掉 `material_type`，但已经给出合法 `document_family=invoice`；
+  - VLM/Provider 输出 `hotel_invoice`、`railway_invoice`、`accommodation`、`transportation` 等非系统枚举。
+- 因此本轮同时收敛提示词和有限规范化；没有把任意非法输出静默当成功，只处理能明确映射到系统枚举的真实样本。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_recognition_llm.py`
+  - 15 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx member-invoice-workbench-layout.test.tsx member-invoice-workbench-submission.test.tsx member-invoice-workbench-aggregate.test.tsx`
+  - 4 个测试文件、29 个用例通过；Vitest 仍有既有 `--localstorage-file` 路径警告。
+- 已通过前端类型检查：
+  - `cd web && npx tsc --noEmit`
+- 已通过前端 lint：
+  - `cd web && npm run lint`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过。
+  - Alembic 升降级验证通过。
+  - pytest 487 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning。
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径警告，Vite 仍有既有 chunk size 警告。
+  - Docker Compose 配置检查通过。
+  - `git diff --check` 通过。
+
+### 保守假设
+- 本轮不直接批量重跑历史 19 条失败任务；代码修复后，新上传或手动重新识别会走新的提示词和规范化逻辑。
+- “识别结果”区域只作为短摘要入口，完整字段、附件关联、分摊和确认仍以下方发票处理详情为准。
+
 ## 2026-04-30 21:17 - Fix member workbench actions and LLM output normalization
 
 ### 完成内容

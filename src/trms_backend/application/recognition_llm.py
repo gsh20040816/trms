@@ -47,11 +47,16 @@ _MATERIAL_TYPE_ALIASES = {
     "平台订单截图": "order_screenshot",
     "订单": "order_screenshot",
     "其他附件": "other_attachment",
+    "hotel_invoice": "invoice",
     "hotel_order": "order_screenshot",
     "hotel_order_screenshot": "order_screenshot",
     "accommodation_order": "order_screenshot",
+    "railway_invoice": "invoice",
+    "train_ticket_invoice": "invoice",
     "railway_order": "order_screenshot",
     "train_order": "order_screenshot",
+    "flight_invoice": "invoice",
+    "airline_invoice": "invoice",
     "flight_order": "order_screenshot",
     "airfare_order": "order_screenshot",
     "rideshare_order": "order_screenshot",
@@ -70,9 +75,14 @@ _EXPENSE_TYPE_ALIASES = {
     "市内交通": "local_transport",
     "打车费": "local_transport",
     "网约车": "local_transport",
+    "transportation": "local_transport",
+    "transport": "local_transport",
+    "taxi": "local_transport",
+    "rideshare": "local_transport",
     "住宿费": "hotel",
     "酒店费": "hotel",
     "房费": "hotel",
+    "accommodation": "hotel",
     "其他": "other",
 }
 _DOCUMENT_FAMILY_ALIASES = {
@@ -88,11 +98,16 @@ _DOCUMENT_FAMILY_ALIASES = {
     "行程单": "itinerary",
     "其他附件": "other_attachment",
     "辅助材料": "other_attachment",
+    "hotel_invoice": "invoice",
     "hotel_order": "order_screenshot",
     "hotel_order_screenshot": "order_screenshot",
     "accommodation_order": "order_screenshot",
+    "railway_invoice": "invoice",
+    "train_ticket_invoice": "invoice",
     "railway_order": "order_screenshot",
     "train_order": "order_screenshot",
+    "flight_invoice": "invoice",
+    "airline_invoice": "invoice",
     "flight_order": "order_screenshot",
     "airfare_order": "order_screenshot",
     "rideshare_order": "order_screenshot",
@@ -110,7 +125,6 @@ _BOOLEAN_TEXT_TO_VALUE = {
     "可报销": True,
     "不可报销": False,
 }
-
 
 class RecognitionInputSource(StrEnum):
     PDF_TEXT = "pdf_text"
@@ -243,6 +257,13 @@ class RecognitionDocumentFamily(StrEnum):
     ORDER_SCREENSHOT = "order_screenshot"
     ITINERARY = "itinerary"
     OTHER_ATTACHMENT = "other_attachment"
+
+
+_ALLOWED_MATERIAL_TYPE_VALUES = ", ".join(material_type.value for material_type in MaterialType)
+_ALLOWED_DOCUMENT_FAMILY_VALUES = ", ".join(
+    document_family.value for document_family in RecognitionDocumentFamily
+)
+_ALLOWED_EXPENSE_TYPE_VALUES = ", ".join(expense_type.value for expense_type in ExpenseType)
 
 
 class RecognitionDocumentFamilyField(BaseModel):
@@ -709,7 +730,12 @@ def _build_classification_chat_completions_payload(
             "Return JSON only.",
             "Stage 1 only: classify the document before extracting detailed metadata.",
             "Always populate document_family, material_type, expense_type_candidate, is_reimbursement_voucher, and classification_confidence.",
-            "Use only TRMS enums for document_family, material_type, and expense_type_candidate.",
+            f"document_family.value must be exactly one of: {_ALLOWED_DOCUMENT_FAMILY_VALUES}.",
+            f"material_type.value must be exactly one of: {_ALLOWED_MATERIAL_TYPE_VALUES}.",
+            f"expense_type_candidate.value must be exactly one of: {_ALLOWED_EXPENSE_TYPE_VALUES}; use other when no stronger category is supported.",
+            "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
+            "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
+            "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
             "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
             "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
@@ -730,10 +756,12 @@ def _build_classification_chat_completions_payload(
                     "The top-level object must contain an 'output' field. "
                     "Inside 'output', always provide these fields as objects with 'value' and 'confidence': "
                     "document_family, material_type, expense_type_candidate, is_reimbursement_voucher, classification_confidence. "
-                    "document_family must be one of: invoice, competition_notice, payment_record, order_screenshot, itinerary, other_attachment. "
-                    "material_type must be one of the TRMS material_type enums. "
-                    "expense_type_candidate must be one of the TRMS expense_type enums and should use 'other' when no stronger category is supported. "
+                    f"document_family.value must be exactly one of: {_ALLOWED_DOCUMENT_FAMILY_VALUES}. "
+                    f"material_type.value must be exactly one of: {_ALLOWED_MATERIAL_TYPE_VALUES}. "
+                    f"expense_type_candidate.value must be exactly one of: {_ALLOWED_EXPENSE_TYPE_VALUES}; use 'other' when no stronger category is supported. "
                     "classification_confidence.value must equal the overall classification confidence in [0, 1]. "
+                    "Never invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi. "
+                    "Map invoice subtypes to material_type.value='invoice' and platform order subtypes to material_type.value='order_screenshot'. "
                     "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "
                     "payment records, competition notices, travel itineraries, train or flight documents, rideshare receipts, "
                     "hotel invoices, and platform order screenshots. "
@@ -1006,6 +1034,14 @@ def _normalize_output_fields(output: dict[str, Any]) -> dict[str, Any]:
             next_field_value["confidence"] = LOW_CONFIDENCE_THRESHOLD - 0.01
 
         normalized[field_name] = next_field_value
+
+    if "material_type" not in normalized and isinstance(
+        normalized.get("document_family"),
+        dict,
+    ):
+        document_family_value = normalized["document_family"].get("value")
+        if isinstance(document_family_value, str) and document_family_value in MaterialType._value2member_map_:
+            normalized["material_type"] = dict(normalized["document_family"])
     return normalized
 
 

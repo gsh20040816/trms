@@ -617,6 +617,9 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
     renderWorkbenchRoute();
 
     const reviewGroup = within(await screen.findByRole("region", { name: "识别失败或待确认 分组" }));
+    const recognitionResultGroup = within(screen.getByRole("region", { name: "需要你确认 材料列表" }));
+    expect(recognitionResultGroup.getByText("INV-REVIEW-001")).toBeInTheDocument();
+    expect(recognitionResultGroup.queryByRole("heading", { name: "为什么需要处理" })).not.toBeInTheDocument();
 
     act(() => {
       fireEvent.click(reviewGroup.getByRole("button", { name: "进入处理" }));
@@ -632,7 +635,7 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
     expect(reviewGroup.getByRole("heading", { name: "INV-REVIEW-001" })).toBeInTheDocument();
 
     act(() => {
-      fireEvent.click(screen.getByRole("button", { name: "修改" }));
+      fireEvent.click(screen.getByRole("button", { name: "进入处理" }));
     });
 
     detailPanel = screen.getByLabelText("成员发票工作台列表");
@@ -644,5 +647,35 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
 
     detailPanel = screen.getByLabelText("成员发票工作台列表");
     expect(within(detailPanel).getByRole("heading", { name: "INV-REVIEW-001" })).toBeInTheDocument();
+  });
+
+  it("keeps the recognition result section as a short processing list", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(buildWorkbenchFetchMock({
+      materials: Array.from({ length: 7 }, (_, index) => {
+        const sequence = index + 1;
+        return {
+          material_id: `MAT-REVIEW-${sequence}`,
+          original_filename: `review-${sequence}.pdf`,
+          created_at: `2026-04-28T11:0${index}:00+08:00`,
+          recognition_status: "needs_confirmation",
+          invoice: {
+            id: `INV-REVIEW-${sequence}`,
+            material_id: `MAT-REVIEW-${sequence}`,
+            invoice_number: `INV-REVIEW-${sequence}`,
+            amount_cents: 6000 + sequence,
+            expense_type: "railway",
+          },
+        } satisfies FixtureMaterial;
+      }),
+    }));
+
+    renderWorkbenchRoute();
+
+    const recognitionResultGroup = within(await screen.findByRole("region", { name: "需要你确认 材料列表" }));
+    expect(recognitionResultGroup.getByText("INV-REVIEW-7")).toBeInTheDocument();
+    expect(recognitionResultGroup.getByText("INV-REVIEW-5")).toBeInTheDocument();
+    expect(recognitionResultGroup.queryByText("INV-REVIEW-2")).not.toBeInTheDocument();
+    expect(recognitionResultGroup.getByText("还有 2 份材料已收进下方发票处理列表，页面默认不展开全部。")).toBeInTheDocument();
+    expect(recognitionResultGroup.queryByRole("heading", { name: "为什么需要处理" })).not.toBeInTheDocument();
   });
 });
