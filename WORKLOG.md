@@ -1,5 +1,60 @@
 # WORKLOG
 
+## 2026-04-30 23:58 - Simplify member amount ownership and airfare metadata checks
+
+### 完成内容
+- 完成任务“简化成员金额归属确认并调整航空/交易时间校验”。
+- 新增 [invoice_split_defaults.py](/home/gsh/workspace/TRMS/src/trms_backend/application/invoice_split_defaults.py)：
+  - 成员本人创建或识别自动建票后，若发票尚无分摊，默认生成全额归属上传成员的分摊；
+  - 成员保存自己名下的金额归属时，同步把本人分摊视为已确认，避免每张发票再点一次“确认这笔费用”。
+- 调整成员端单票页 [member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)：
+  - “分摊金额”改为“金额归属”；
+  - 移除单张发票里的“本人费用确认”二次确认区；
+  - 发票提交给管理员后，普通成员不能继续修改材料类型、发票字段或金额归属。
+- 调整后端写路径：
+  - [invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py) 阻止普通成员修改已提交发票字段；
+  - [splits.py](/home/gsh/workspace/TRMS/src/trms_backend/api/splits.py) 阻止普通成员修改已提交发票分摊，并在成员保存本人分摊后自动确认本人金额；
+  - 识别自动建票路径同样接入默认本人全额归属。
+- 调整 [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - 发票和行程单基础抽取 schema 增加机场代码字段；
+  - 当分类或元数据指向 `airfare` 时，追加第三轮 `airfare_route_extraction`，只抽取显式可见的 IATA 机场代码。
+- 调整 [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py)：
+  - 航空费用若具备去程或往返机场代码，舱位/订单截图证明规则直接通过，不再要求额外订单截图；
+  - 比赛时间范围校验保留证据但统一返回 `not_applicable`，不再因交易时间缺失或超出范围产生限制。
+
+### 根因
+- 旧流程把“成员指定这张发票的金额归属”和“成员确认本人金额”拆成两个动作；对单人全额发票来说，这是重复确认。
+- 航空票据上常见的机场代码已经能证明航段信息，但旧规则只认舱位字段或订单截图，导致用户被要求补充不必要附件。
+- 交易时间范围校验属于旧财务规则约束，当前用户明确要求取消该限制；继续输出待确认/失败会制造无效待办。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_invoice_validation_rules.py tests/test_recognition_llm.py tests/test_invoice_member_submission_api.py tests/test_task_member_workbench_api.py tests/test_recognition_async_jobs.py`
+  - 54 个用例通过。
+- 已通过扩展后端回归：
+  - `uv run pytest tests/test_tasks_api.py tests/test_task_readiness_api.py tests/test_task_review_summary_api.py tests/test_exports_api.py tests/test_export_async_jobs.py tests/test_main_flow_e2e.py tests/test_splits_api.py tests/test_confirmations_api.py`
+  - 首次运行发现 10 个旧断言仍假设“无默认分摊/无默认确认”；按新需求更新断言后，失败用例已定向复跑通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-detail.test.tsx`
+  - `cd web && npm test -- member-invoice-workbench.test.tsx member-invoice-workbench-layout.test.tsx member-invoice-workbench-submission.test.tsx member-invoice-workbench-aggregate.test.tsx`
+- 已通过前端类型检查：
+  - `cd web && npx tsc --noEmit`
+- 已通过占位主流程回归：
+  - `cd web && npm test -- main-flow-e2e-placeholder.test.tsx`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 494 个用例通过，存在 3 条既有 deprecation warning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮没有删除管理员端和旧独立“费用确认”页面；它们仍可用于多人分摊、异议或管理员复核场景。成员单票主路径已不再要求本人逐票二次确认。
+- 自动确认只覆盖操作者自己名下的分摊；若把金额分给其他成员，其他成员的确认/异议机制仍保留。
+- 第三轮机场代码识别只在 `airfare` 路径触发，并且只接受显式三字母机场代码；不会根据城市名猜测机场。
+
 ## 2026-04-30 23:14 - Split member workbench into per-invoice processing and auto-create invoices
 
 ### 完成内容

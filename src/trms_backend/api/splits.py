@@ -11,11 +11,13 @@ from trms_backend.api.request_identity import (
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.expense_audit import record_invoice_split_replace_audit
+from trms_backend.application.invoice_split_defaults import InvoiceSplitDefaultService
 from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository
 
+from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.materials import MaterialRepository
-from trms_backend.domain.invoices import InvoiceRepository
+from trms_backend.domain.invoices import InvoiceMemberSubmissionStatus, InvoiceRepository
 from trms_backend.domain.splits import (
     ExpenseSplitActorNotAllowedError,
     ExpenseSplitItem,
@@ -45,10 +47,15 @@ def build_split_router(
     material_repository: MaterialRepository,
     invoice_repository: InvoiceRepository,
     split_repository: ExpenseSplitRepository,
+    confirmation_repository: ConfirmationRepository,
     audit_log_repository: AuditLogRepository,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/invoices/{invoice_id}/splits", tags=["splits"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
+    invoice_split_default_service = InvoiceSplitDefaultService(
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
+    )
 
     @router.put("")
     def replace_splits(
@@ -83,6 +90,14 @@ def build_split_router(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(error),
             ) from error
+        if (
+            replace_payload.actor_id != task.administrator_id
+            and invoice.member_submission_status is InvoiceMemberSubmissionStatus.SUBMITTED
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="submitted invoice splits cannot be modified by members",
+            )
         try:
             ensure_split_actor_allowed(
                 actor_id=replace_payload.actor_id,
@@ -127,6 +142,10 @@ def build_split_router(
             previous_splits=previous_splits,
             current_splits=replaced_items,
             request_id=ensure_request_id(request),
+        )
+        invoice_split_default_service.confirm_actor_own_splits(
+            actor_id=replace_payload.actor_id,
+            splits=replaced_items,
         )
         return {"items": replaced_items}
 

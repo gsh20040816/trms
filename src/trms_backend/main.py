@@ -231,6 +231,8 @@ def create_app(
             invoice_repository,
             validation_repository,
             recognition_task_repository,
+            split_repository,
+            confirmation_repository,
             material_submission_service,
             recognition_preparation_service,
             material_deletion_service,
@@ -271,6 +273,8 @@ def create_app(
             invoice_repository,
             validation_repository,
             recognition_task_repository,
+            split_repository,
+            confirmation_repository,
             recognition_preparation_service,
             audit_log_repository,
             config.async_jobs.mode,
@@ -285,6 +289,8 @@ def create_app(
             invoice_repository,
             validation_repository,
             recognition_task_repository,
+            split_repository,
+            confirmation_repository,
             audit_log_repository,
             app.state.metrics_collector,
         )
@@ -296,6 +302,7 @@ def create_app(
             material_repository,
             invoice_repository,
             split_repository,
+            confirmation_repository,
             audit_log_repository,
         )
     )

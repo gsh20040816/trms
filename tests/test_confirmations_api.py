@@ -50,7 +50,7 @@ def test_confirm_own_split(tmp_path):
     assert audit_logs[0].result is AuditLogResult.SUCCEEDED
     assert audit_logs[0].request_id.startswith("req_")
     assert audit_logs[0].detail["status"] == "confirmed"
-    assert audit_logs[0].detail["previous_status"] is None
+    assert audit_logs[0].detail["previous_status"] == "confirmed"
 
 
 def test_dispute_own_split(tmp_path):

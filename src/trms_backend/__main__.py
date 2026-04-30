@@ -128,6 +128,8 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
                     invoice_repository=invoice_repository,
                     validation_repository=validation_repository,
                     recognition_task_repository=recognition_task_repository,
+                    split_repository=split_repository,
+                    confirmation_repository=confirmation_repository,
                     recognition_preparation_service=recognition_preparation_service,
                     metrics_collector=metrics_collector,
                 ),

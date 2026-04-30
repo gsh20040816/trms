@@ -752,6 +752,8 @@ describe("frontend main flow e2e placeholder", () => {
           ],
         });
         workflowState.splitSaved = true;
+        workflowState.confirmed = true;
+        workflowState.taskStatus = "ready_to_export";
         return Promise.resolve(jsonResponse({
           items: [
             {
@@ -1024,15 +1026,9 @@ describe("frontend main flow e2e placeholder", () => {
       renderRoute("/member/invoices/INV-001?taskId=TASK-E2E");
 
       expect(await screen.findByRole("heading", { level: 1, name: "INV-E2E-001" })).toBeInTheDocument();
-      expect(await screen.findByText("本人费用确认")).toBeInTheDocument();
-      const detailList = await screen.findByLabelText("单张发票费用确认列表");
-      const detailCard = within(detailList).getByRole("heading", { name: "INV-E2E-001" }).closest("article");
-      if (!detailCard) {
-        throw new Error("Expected expense detail card for INV-E2E-001.");
-      }
-      fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
-
-      expect(await screen.findByText("已确认这笔费用。")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "金额归属" })).toBeInTheDocument();
+      expect(screen.queryByText("本人费用确认")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "确认这笔费用" })).not.toBeInTheDocument();
 
       cleanup();
       setMockSession("admin");

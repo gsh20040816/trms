@@ -16,6 +16,8 @@ from trms_backend.domain.audit_logs import AuditLogResult
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
     SqlAlchemyAuditLogRepository,
+    SqlAlchemyConfirmationRepository,
+    SqlAlchemyExpenseSplitRepository,
     SqlAlchemyInvoiceRepository,
     SqlAlchemyMaterialRepository,
     SqlAlchemyRecognitionTaskRepository,
@@ -130,6 +132,8 @@ def build_processor(
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
+    split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
+    confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     material_file_storage = LocalMaterialFileStorage(tmp_path / "material-storage")
     recognition_preparation_service = RecognitionPreparationService(
         material_repository,
@@ -145,6 +149,8 @@ def build_processor(
         invoice_repository=invoice_repository,
         validation_repository=validation_repository,
         recognition_task_repository=recognition_task_repository,
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
         recognition_preparation_service=recognition_preparation_service,
     )
 

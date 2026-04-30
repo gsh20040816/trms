@@ -25,6 +25,7 @@ from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
 )
 from trms_backend.domain.audit_logs import AuditLogRepository
+from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.auth import UserRole
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
@@ -37,6 +38,7 @@ from trms_backend.domain.recognitions import (
     RecognitionTaskStatusUpdate,
     ensure_recognition_task_can_transition,
 )
+from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import TaskRepository
 from trms_backend.runtime_config import AsyncJobMode
 
@@ -48,6 +50,8 @@ def build_recognition_router(
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
+    split_repository: ExpenseSplitRepository,
+    confirmation_repository: ConfirmationRepository,
     recognition_preparation_service: RecognitionPreparationService,
     audit_log_repository: AuditLogRepository,
     async_job_mode: AsyncJobMode,
@@ -63,6 +67,8 @@ def build_recognition_router(
         task_repository=task_repository,
         material_repository=material_repository,
         invoice_repository=invoice_repository,
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
         supporting_material_auto_link_service=SupportingMaterialAutoLinkService(
             material_repository=material_repository,
             invoice_repository=invoice_repository,

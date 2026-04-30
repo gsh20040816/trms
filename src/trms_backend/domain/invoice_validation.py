@@ -20,6 +20,15 @@ COMPETITION_NOTICE_REQUIRED_RULE_CODE = "invoice_competition_notice_required"
 AIRFARE_ITINERARY_REQUIRED_RULE_CODE = "invoice_airfare_itinerary_required"
 AIRFARE_CABIN_PROOF_RULE_CODE = "invoice_airfare_cabin_proof_required"
 AIRFARE_CABIN_FIELD_NAMES = ("cabin_class", "seat_class", "cabin")
+AIRFARE_AIRPORT_CODE_FIELD_GROUPS = (
+    ("departure_airport_code", "arrival_airport_code"),
+    (
+        "departure_airport_code",
+        "arrival_airport_code",
+        "return_departure_airport_code",
+        "return_arrival_airport_code",
+    ),
+)
 LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE = "invoice_local_transport_rideshare_trip_required"
 COMPETITION_TIME_RANGE_RULE_CODE = "invoice_competition_time_range"
 COMPETITION_LOCATION_RANGE_RULE_CODE = "invoice_competition_location_range"
@@ -517,14 +526,22 @@ def validate_airfare_cabin_requirement(
         supporting_materials,
         supporting_material_recognitions,
     )
+    recognized_airport_code_materials = _collect_airfare_airport_code_evidence(
+        invoice,
+        recognition_task,
+        supporting_materials,
+        supporting_material_recognitions,
+    )
     evidence = {
         "expense_type": invoice.expense_type.value,
         "invoice_material_id": invoice.material_id,
         "cabin_field_names": list(AIRFARE_CABIN_FIELD_NAMES),
+        "airport_code_field_groups": [list(group) for group in AIRFARE_AIRPORT_CODE_FIELD_GROUPS],
         "requires_cabin_proof": requires_cabin_proof,
         "itinerary_material_ids": itinerary_material_ids,
         "order_screenshot_material_ids": order_screenshot_material_ids,
         "recognized_cabin_materials": recognized_cabin_materials,
+        "recognized_airport_code_materials": recognized_airport_code_materials,
     }
 
     if not requires_cabin_proof:
@@ -542,6 +559,15 @@ def validate_airfare_cabin_requirement(
             target_id=invoice.id,
             status=ValidationStatus.PASSED,
             message="航空费用已具备舱位信息",
+            evidence=evidence,
+        )
+
+    if recognized_airport_code_materials:
+        return _validation_result(
+            rule_code=AIRFARE_CABIN_PROOF_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="航空费用已具备往返机场代码，无需补充订单截图",
             evidence=evidence,
         )
 
@@ -674,41 +700,11 @@ def validate_competition_time_range(
         ),
     }
 
-    if not requires_competition_time_validation:
-        return _validation_result(
-            rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
-            target_id=invoice.id,
-            status=ValidationStatus.NOT_APPLICABLE,
-            message="当前费用类型不要求比赛时间范围校验",
-            evidence=evidence,
-            severity=ValidationSeverity.WARNING,
-        )
-
-    if transaction_date is None:
-        return _validation_result(
-            rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
-            target_id=invoice.id,
-            status=ValidationStatus.PENDING,
-            message="缺少交易时间，需人工确认是否与比赛时间范围相关",
-            evidence=evidence,
-            severity=ValidationSeverity.WARNING,
-        )
-
-    if effective_start_date <= transaction_date <= effective_end_date:
-        return _validation_result(
-            rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
-            target_id=invoice.id,
-            status=ValidationStatus.PASSED,
-            message="交易时间在比赛时间合理范围内",
-            evidence=evidence,
-            severity=ValidationSeverity.WARNING,
-        )
-
     return _validation_result(
         rule_code=COMPETITION_TIME_RANGE_RULE_CODE,
         target_id=invoice.id,
-        status=ValidationStatus.FAILED,
-        message="交易时间超出默认比赛时间缓冲范围，需人工确认",
+        status=ValidationStatus.NOT_APPLICABLE,
+        message="当前不限制发票交易产生时间",
         evidence=evidence,
         severity=ValidationSeverity.WARNING,
     )
@@ -862,6 +858,59 @@ def _collect_airfare_cabin_evidence(
         )
 
     return recognized_cabin_materials
+
+
+def _collect_airfare_airport_code_evidence(
+    invoice: InvoiceRecord,
+    recognition_task: RecognitionTaskRecord | None,
+    supporting_materials: list[MaterialRecord],
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
+) -> list[dict[str, object | None]]:
+    recognized_airport_code_materials: list[dict[str, object | None]] = []
+
+    primary_material_match = _extract_airport_code_group_match(
+        material_id=invoice.material_id,
+        material_type=MaterialType.INVOICE,
+        recognition_task=recognition_task,
+    )
+    if primary_material_match is not None:
+        recognized_airport_code_materials.append(primary_material_match)
+
+    for material in supporting_materials:
+        if material.material_type not in {MaterialType.ITINERARY, MaterialType.ORDER_SCREENSHOT}:
+            continue
+        field_match = _extract_airport_code_group_match(
+            material_id=material.id,
+            material_type=material.material_type,
+            recognition_task=supporting_material_recognitions.get(material.id),
+        )
+        if field_match is None:
+            continue
+        recognized_airport_code_materials.append(field_match)
+
+    return recognized_airport_code_materials
+
+
+def _extract_airport_code_group_match(
+    *,
+    material_id: str,
+    material_type: MaterialType,
+    recognition_task: RecognitionTaskRecord | None,
+) -> dict[str, object | None] | None:
+    if recognition_task is None:
+        return None
+    for field_group in AIRFARE_AIRPORT_CODE_FIELD_GROUPS:
+        matched_values = _extract_field_group_values(recognition_task, field_group)
+        if not matched_values:
+            continue
+        return {
+            "material_id": material_id,
+            "material_type": material_type.value,
+            "matched_fields": matched_values,
+            "recognition_task_id": recognition_task.id,
+            "recognition_task_status": recognition_task.status.value,
+        }
+    return None
 
 
 def _extract_recognized_field_match(

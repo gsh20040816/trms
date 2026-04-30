@@ -419,6 +419,13 @@ def test_task_readiness_reports_confirmation_and_split_blockers(tmp_path):
         invoice_number="SPLIT-001",
         amount_cents=20000,
     )
+    create_invoice(
+        client,
+        second_invoice_material_id,
+        actor_id="admin-1",
+        invoice_number="SPLIT-001",
+        amount_cents=21000,
+    )
 
     response = client.get(
         f"/api/tasks/{task_id}/readiness",

@@ -410,7 +410,7 @@ def test_task_administrator_can_export_member_details_csv_with_current_split_ver
             "invoice_number": "INV-001",
             "invoice_amount_cents": "12345",
             "split_amount_cents": "6100",
-            "split_version": "2",
+            "split_version": "3",
             "confirmation_status": "pending",
             "split_note": "final-self",
         },
@@ -440,8 +440,8 @@ def test_task_administrator_can_export_member_details_csv_with_current_split_ver
             "invoice_number": "INV-002",
             "invoice_amount_cents": "20000",
             "split_amount_cents": "10000",
-            "split_version": "1",
-            "confirmation_status": "",
+            "split_version": "2",
+            "confirmation_status": "confirmed",
             "split_note": "",
         },
         {
@@ -763,7 +763,7 @@ def test_task_administrator_can_export_finance_draft_json(tmp_path):
                 {
                     "member_id": "2250001",
                     "amount_cents": 6000,
-                    "split_version": 1,
+                    "split_version": 2,
                     "split_note": "self",
                 },
                 {

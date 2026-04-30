@@ -14,15 +14,18 @@ from trms_backend.api.request_identity import (
 from trms_backend.api.request_identity_http import resolve_required_actor_request_field
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
+from trms_backend.application.invoice_split_defaults import InvoiceSplitDefaultService
 from trms_backend.application.recognition_audit import record_manual_recognition_corrections_audit
 from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
 )
 from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import AuthRepository
+from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import (
     ExpenseType,
+    InvoiceMemberSubmissionStatus,
     InvoiceManualEntryActorNotAllowedError,
     InvoiceRepository,
     ManualInvoiceEntry,
@@ -35,6 +38,7 @@ from trms_backend.domain.materials import (
     MaterialType,
 )
 from trms_backend.domain.recognitions import RecognitionTaskRepository
+from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import (
     TaskExpenseTypeNotAllowedError,
     TaskRepository,
@@ -87,6 +91,8 @@ def build_invoice_router(
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
+    split_repository: ExpenseSplitRepository,
+    confirmation_repository: ConfirmationRepository,
     audit_log_repository: AuditLogRepository,
     metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
@@ -99,6 +105,10 @@ def build_invoice_router(
     supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
         material_repository=material_repository,
         invoice_repository=invoice_repository,
+    )
+    invoice_split_default_service = InvoiceSplitDefaultService(
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
     )
 
     def load_supporting_materials(invoice_id: str) -> list:
@@ -197,6 +207,16 @@ def build_invoice_router(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(error),
             ) from error
+        existing_invoice = invoice_repository.get_by_material(material_id)
+        if (
+            existing_invoice is not None
+            and existing_invoice.member_submission_status is InvoiceMemberSubmissionStatus.SUBMITTED
+            and manual_entry.actor_id != task.administrator_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="submitted invoice fields cannot be modified by members",
+            )
 
         invoice_data = manual_entry.to_invoice_create()
         latest_effective_recognition = recognition_task_repository.get_latest_effective_by_material(
@@ -214,6 +234,11 @@ def build_invoice_router(
             material_id,
             invoice_data,
         )
+        if material.submitter_id == manual_entry.actor_id:
+            invoice_split_default_service.ensure_default_self_split(
+                invoice=invoice,
+                material=material,
+            )
         supporting_material_auto_link_service.auto_link_for_invoice(invoice)
         supporting_materials = load_supporting_materials(invoice.id)
         supporting_material_recognitions = load_supporting_material_recognitions(

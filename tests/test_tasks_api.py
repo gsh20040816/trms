@@ -934,7 +934,12 @@ def test_update_task_status_rejects_ready_to_export_when_member_confirmation_mis
     open_task(client, task["id"])
     material_id = upload_material(client, task["id"])
     invoice_id = create_invoice(client, material_id)
-    split_id = replace_invoice_splits(client, invoice_id)
+    split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={"actor_id": "2250001", "items": [{"member_id": "2250002", "amount_cents": 12345}]},
+    )
+    assert split_response.status_code == 200
+    split_id = split_response.json()["items"][0]["id"]
     move_open_task_to_reviewing(client, task["id"])
 
     response = client.patch(

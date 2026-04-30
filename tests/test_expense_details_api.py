@@ -154,7 +154,7 @@ def test_task_administrator_can_list_all_expense_details(tmp_path):
     assert len(body["items"]) == 2
     items_by_split_id = {item["split_id"]: item for item in body["items"]}
     assert set(items_by_split_id) == set(split_ids.values())
-    assert items_by_split_id[split_ids["2250001"]]["confirmation"] is None
+    assert items_by_split_id[split_ids["2250001"]]["confirmation"]["status"] == "confirmed"
     assert items_by_split_id[split_ids["2250001"]]["invoice"]["id"] == invoice_id
     assert items_by_split_id[split_ids["2250002"]]["confirmation"]["status"] == "confirmed"
 

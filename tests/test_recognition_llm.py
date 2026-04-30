@@ -395,6 +395,10 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
         "trip_route",
         "transport_mode",
         "cabin_class",
+        "departure_airport_code",
+        "arrival_airport_code",
+        "return_departure_airport_code",
+        "return_arrival_airport_code",
     ]
 
 
@@ -488,6 +492,119 @@ def test_openai_classification_prompt_includes_tax_seal_and_direct_voucher_rules
     assert result.recognized_fields["material_type"].value == "invoice"
     assert result.recognized_fields["expense_type_candidate"].value == "railway"
     assert result.recognized_fields["is_reimbursement_voucher"].value is True
+
+
+def test_openai_compatible_recognition_client_runs_airfare_route_stage_for_airfare_invoice():
+    captured_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    build_classification_output(
+                                        expense_type_candidate="airfare",
+                                        classification_confidence=0.98,
+                                    ),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        if len(captured_requests) == 2:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "output": {
+                                            "invoice_number": {
+                                                "value": "AIR-001",
+                                                "confidence": 0.96,
+                                            },
+                                            "expense_type": {
+                                                "value": "airfare",
+                                                "confidence": 0.96,
+                                            },
+                                        }
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "departure_airport_code": {
+                                            "value": "sha",
+                                            "confidence": 0.94,
+                                        },
+                                        "arrival_airport_code": {
+                                            "value": "wuh",
+                                            "confidence": 0.94,
+                                        },
+                                        "return_departure_airport_code": {
+                                            "value": "WUH",
+                                            "confidence": 0.94,
+                                        },
+                                        "return_arrival_airport_code": {
+                                            "value": "SHA",
+                                            "confidence": 0.94,
+                                        },
+                                    }
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert len(captured_requests) == 3
+    route_user_prompt = json.loads(captured_requests[2]["messages"][1]["content"])
+    assert route_user_prompt["stage"] == "airfare_route_extraction"
+    assert route_user_prompt["selected_schema"]["allowed_fields"] == [
+        "departure_airport_code",
+        "arrival_airport_code",
+        "return_departure_airport_code",
+        "return_arrival_airport_code",
+    ]
+    assert result.recognized_fields["departure_airport_code"].value == "SHA"
+    assert result.recognized_fields["arrival_airport_code"].value == "WUH"
+    assert result.recognized_fields["return_departure_airport_code"].value == "WUH"
+    assert result.recognized_fields["return_arrival_airport_code"].value == "SHA"
+    assert result.raw_response["airfare_route"]["attempts"] == 1
 
 
 def test_openai_compatible_recognition_client_sends_pdf_file_input_for_scanned_pdf():

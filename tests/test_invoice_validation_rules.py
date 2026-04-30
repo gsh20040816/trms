@@ -315,6 +315,21 @@ def test_airfare_itinerary_rule_covers_passed_and_failed_paths(
             ValidationStatus.FAILED,
         ),
         (
+            [],
+            {
+                "material-invoice": make_recognition(
+                    "material-invoice",
+                    recognized_fields={
+                        "departure_airport_code": "SHA",
+                        "arrival_airport_code": "WUH",
+                        "return_departure_airport_code": "WUH",
+                        "return_arrival_airport_code": "SHA",
+                    },
+                )
+            },
+            ValidationStatus.PASSED,
+        ),
+        (
             [make_material("itinerary-1", material_type=MaterialType.ITINERARY)],
             {"itinerary-1": make_recognition("itinerary-1", recognized_fields={"cabin_class": "经济舱"})},
             ValidationStatus.PASSED,
@@ -328,7 +343,7 @@ def test_airfare_cabin_rule_covers_passed_failed_pending_paths(
 ):
     result = validate_airfare_cabin_requirement(
         make_invoice(expense_type=ExpenseType.AIRFARE),
-        recognition_task=None,
+        recognition_task=supporting_material_recognitions.get("material-invoice"),
         supporting_materials=supporting_materials,
         supporting_material_recognitions=supporting_material_recognitions,
     )
@@ -383,12 +398,12 @@ def test_local_transport_rideshare_trip_rule_covers_passed_failed_pending_paths(
 @pytest.mark.parametrize(
     ("transaction_time", "expected_status"),
     [
-        (datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc), ValidationStatus.PASSED),
-        (datetime(2026, 5, 10, 8, 0, tzinfo=timezone.utc), ValidationStatus.FAILED),
-        (None, ValidationStatus.PENDING),
+        (datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc), ValidationStatus.NOT_APPLICABLE),
+        (datetime(2026, 5, 10, 8, 0, tzinfo=timezone.utc), ValidationStatus.NOT_APPLICABLE),
+        (None, ValidationStatus.NOT_APPLICABLE),
     ],
 )
-def test_competition_time_range_rule_covers_passed_failed_pending_paths(
+def test_competition_time_range_rule_no_longer_limits_invoice_transaction_time(
     transaction_time: datetime | None,
     expected_status: ValidationStatus,
 ):
@@ -399,6 +414,7 @@ def test_competition_time_range_rule_covers_passed_failed_pending_paths(
 
     assert result.rule_code == COMPETITION_TIME_RANGE_RULE_CODE
     assert result.status is expected_status
+    assert result.message == "当前不限制发票交易产生时间"
 
 
 @pytest.mark.parametrize(

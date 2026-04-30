@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
 )
+from trms_backend.application.invoice_split_defaults import InvoiceSplitDefaultService
+from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.invoices import ExpenseType, InvoiceCreate, InvoiceRepository
 from trms_backend.domain.materials import MaterialRepository, MaterialStatus, MaterialType
 from trms_backend.domain.recognitions import (
@@ -16,6 +18,7 @@ from trms_backend.domain.recognitions import (
     RecognitionTaskRecord,
     RecognitionTaskStatus,
 )
+from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import (
     TaskExpenseTypeNotAllowedError,
     TaskRepository,
@@ -40,11 +43,17 @@ class RecognitionInvoiceAutoCreateService:
         task_repository: TaskRepository,
         material_repository: MaterialRepository,
         invoice_repository: InvoiceRepository,
+        split_repository: ExpenseSplitRepository,
+        confirmation_repository: ConfirmationRepository,
         supporting_material_auto_link_service: SupportingMaterialAutoLinkService,
     ) -> None:
         self._task_repository = task_repository
         self._material_repository = material_repository
         self._invoice_repository = invoice_repository
+        self._invoice_split_default_service = InvoiceSplitDefaultService(
+            split_repository=split_repository,
+            confirmation_repository=confirmation_repository,
+        )
         self._supporting_material_auto_link_service = supporting_material_auto_link_service
 
     def try_upsert_invoice_from_recognition(
@@ -80,6 +89,10 @@ class RecognitionInvoiceAutoCreateService:
             material.task_id,
             material.id,
             invoice_data,
+        )
+        self._invoice_split_default_service.ensure_default_self_split(
+            invoice=invoice,
+            material=material,
         )
         self._supporting_material_auto_link_service.auto_link_for_invoice(invoice)
         return True

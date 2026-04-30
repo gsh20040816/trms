@@ -260,6 +260,8 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
         invoice_repository=object(),
         validation_repository=object(),
         recognition_task_repository=FakeRecognitionTaskRepository(),
+        split_repository=object(),
+        confirmation_repository=object(),
         recognition_preparation_service=preparation_service,
         metrics_collector=metrics_collector,
     )
@@ -327,6 +329,8 @@ def test_recognition_async_processor_logs_processed_and_skipped_jobs(monkeypatch
         invoice_repository=object(),
         validation_repository=object(),
         recognition_task_repository=FakeRecognitionTaskRepository(),
+        split_repository=object(),
+        confirmation_repository=object(),
         recognition_preparation_service=FakeRecognitionPreparationService(),
         metrics_collector=InMemoryMetricsCollector(),
     )

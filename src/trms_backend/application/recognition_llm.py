@@ -290,6 +290,10 @@ class RecognitionInvoiceExtractionOutput(BaseModel):
     trip_route: RecognitionTextField | None = None
     transport_mode: RecognitionTextField | None = None
     cabin_class: RecognitionTextField | None = None
+    departure_airport_code: RecognitionTextField | None = None
+    arrival_airport_code: RecognitionTextField | None = None
+    return_departure_airport_code: RecognitionTextField | None = None
+    return_arrival_airport_code: RecognitionTextField | None = None
 
 
 class RecognitionPaymentRecordExtractionOutput(BaseModel):
@@ -324,6 +328,10 @@ class RecognitionItineraryExtractionOutput(BaseModel):
     trip_route: RecognitionTextField | None = None
     transport_mode: RecognitionTextField | None = None
     cabin_class: RecognitionTextField | None = None
+    departure_airport_code: RecognitionTextField | None = None
+    arrival_airport_code: RecognitionTextField | None = None
+    return_departure_airport_code: RecognitionTextField | None = None
+    return_arrival_airport_code: RecognitionTextField | None = None
 
 
 class RecognitionOtherAttachmentExtractionOutput(BaseModel):
@@ -332,6 +340,13 @@ class RecognitionOtherAttachmentExtractionOutput(BaseModel):
     expense_type: RecognitionExpenseTypeField | None = None
     trip_route: RecognitionTextField | None = None
     transport_mode: RecognitionTextField | None = None
+
+
+class RecognitionAirfareRouteExtractionOutput(BaseModel):
+    departure_airport_code: RecognitionTextField | None = None
+    arrival_airport_code: RecognitionTextField | None = None
+    return_departure_airport_code: RecognitionTextField | None = None
+    return_arrival_airport_code: RecognitionTextField | None = None
 
 
 @dataclass(frozen=True)
@@ -392,6 +407,14 @@ _OTHER_ATTACHMENT_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
         "expense type clues, or route hints when they are explicit."
     ),
     output_model=RecognitionOtherAttachmentExtractionOutput,
+)
+_AIRFARE_ROUTE_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
+    name="airfare_route",
+    description=(
+        "For airfare invoices or vouchers after general metadata extraction. Extract "
+        "explicit airport IATA codes for outbound and return legs when visible."
+    ),
+    output_model=RecognitionAirfareRouteExtractionOutput,
 )
 _EXTRACTION_SCHEMA_BY_MATERIAL_TYPE = {
     MaterialType.INVOICE: _INVOICE_EXTRACTION_SCHEMA,
@@ -543,17 +566,42 @@ class OpenAiCompatibleRecognitionClient:
             **classification_fields,
             **extraction_fields,
         }
+        airfare_route_raw_response: dict[str, Any] | None = None
+        if _should_run_airfare_route_stage(classification_output, extraction_fields):
+            airfare_route_output, airfare_route_fields, airfare_route_raw_response = (
+                self._run_recognition_stage(
+                    request_payload=_build_airfare_route_chat_completions_payload(
+                        provider_base_url=self._provider_config.base_url,
+                        model=self._provider_config.model,
+                        material=material,
+                        document_input=document_input,
+                        classification_output=classification_output,
+                        extracted_fields=extraction_fields,
+                    ),
+                    output_model=_AIRFARE_ROUTE_EXTRACTION_SCHEMA.output_model,
+                    allow_empty_fields=True,
+                )
+            )
+            _ = airfare_route_output
+            recognized_fields = {
+                **recognized_fields,
+                **airfare_route_fields,
+            }
+
+        raw_response = {
+            "classification": classification_raw_response,
+            "selected_schema": {
+                "name": extraction_schema.name,
+                "description": extraction_schema.description,
+                "allowed_fields": list(extraction_schema.allowed_field_names),
+            },
+            "extraction": extraction_raw_response,
+        }
+        if airfare_route_raw_response is not None:
+            raw_response["airfare_route"] = airfare_route_raw_response
 
         return RecognitionLlmExtractionResult(
-            raw_response={
-                "classification": classification_raw_response,
-                "selected_schema": {
-                    "name": extraction_schema.name,
-                    "description": extraction_schema.description,
-                    "allowed_fields": list(extraction_schema.allowed_field_names),
-                },
-                "extraction": extraction_raw_response,
-            },
+            raw_response=raw_response,
             recognized_fields=recognized_fields,
         )
 
@@ -849,6 +897,70 @@ def _build_extraction_chat_completions_payload(
     }
 
 
+def _build_airfare_route_chat_completions_payload(
+    *,
+    provider_base_url: str,
+    model: str,
+    material: MaterialRecord,
+    document_input: RecognitionDocumentInput,
+    classification_output: RecognitionClassificationOutput,
+    extracted_fields: dict[str, RecognitionFieldResult],
+) -> dict[str, Any]:
+    allowed_fields = list(_AIRFARE_ROUTE_EXTRACTION_SCHEMA.allowed_field_names)
+    user_prompt = {
+        "prompt_version": PROMPT_VERSION,
+        "stage": "airfare_route_extraction",
+        "material_id": material.id,
+        "material_type": material.material_type.value,
+        "original_filename": material.original_filename,
+        "content_type": material.content_type,
+        "recognition_input": document_input.to_prompt_payload(),
+        "classification_result": classification_output.model_dump(mode="json"),
+        "metadata_extraction_result": {
+            field_name: field.model_dump(mode="json")
+            for field_name, field in extracted_fields.items()
+        },
+        "selected_schema": {
+            "name": _AIRFARE_ROUTE_EXTRACTION_SCHEMA.name,
+            "description": _AIRFARE_ROUTE_EXTRACTION_SCHEMA.description,
+            "allowed_fields": allowed_fields,
+        },
+        "instructions": [
+            "Return JSON only.",
+            "Stage 3 only: for airfare materials, extract explicit IATA airport codes.",
+            "Do not infer airport codes from city names, airline names, or filenames.",
+            "Only populate outbound and return-leg airport code fields when the code is visible on the document.",
+            "Airport code values must be uppercase three-letter IATA codes such as PVG, SHA, WUH, PEK, or PKX.",
+            "Do not repeat unrelated invoice fields from earlier stages.",
+        ],
+    }
+    user_prompt_json = json.dumps(user_prompt, ensure_ascii=False)
+    return {
+        "model": model,
+        "response_format": _build_response_format(provider_base_url),
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You extract airfare route evidence after general reimbursement metadata extraction. "
+                    f"Prompt version: {PROMPT_VERSION}. "
+                    "Return JSON only. "
+                    "The top-level object must contain an 'output' field. "
+                    f"Inside 'output', only use these field names: {', '.join(allowed_fields)}. "
+                    "Each populated field must be an object with 'value' and 'confidence'. "
+                    "Extract only explicit three-letter IATA airport codes visible on the document. "
+                    "Do not infer airport codes from city names or routes without visible codes. "
+                    "If a return trip is shown, use return_departure_airport_code and return_arrival_airport_code for the return leg."
+                ),
+            },
+            {
+                "role": "user",
+                "content": document_input.to_message_content(metadata_json=user_prompt_json),
+            },
+        ],
+    }
+
+
 def _extract_message_content(response_payload: dict[str, Any]) -> str:
     choices = response_payload.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -1030,6 +1142,12 @@ def _normalize_output_fields(output: dict[str, Any]) -> dict[str, Any]:
                 continue
             next_field_value["value"] = normalized_boolean
 
+        if field_name.endswith("_airport_code"):
+            normalized_airport_code = _normalize_airport_code(next_field_value.get("value"))
+            if normalized_airport_code is None:
+                continue
+            next_field_value["value"] = normalized_airport_code
+
         if "confidence" not in next_field_value:
             next_field_value["confidence"] = LOW_CONFIDENCE_THRESHOLD - 0.01
 
@@ -1096,6 +1214,15 @@ def _normalize_boolean_value(value: Any) -> bool | None:
     return None
 
 
+def _normalize_airport_code(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().upper()
+    if len(normalized) != 3 or not normalized.isalpha():
+        return None
+    return normalized
+
+
 def _select_extraction_schema(
     classification_output: RecognitionClassificationOutput,
 ) -> RecognitionExtractionSchemaDefinition:
@@ -1104,6 +1231,16 @@ def _select_extraction_schema(
         material_type,
         _OTHER_ATTACHMENT_EXTRACTION_SCHEMA,
     )
+
+
+def _should_run_airfare_route_stage(
+    classification_output: RecognitionClassificationOutput,
+    extracted_fields: dict[str, RecognitionFieldResult],
+) -> bool:
+    if classification_output.expense_type_candidate.value == ExpenseType.AIRFARE:
+        return True
+    expense_type_field = extracted_fields.get("expense_type")
+    return expense_type_field is not None and expense_type_field.value == ExpenseType.AIRFARE.value
 
 
 @lru_cache(maxsize=None)

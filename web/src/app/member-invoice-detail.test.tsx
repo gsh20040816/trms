@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import type { ExpenseSplitRecord, InvoiceRecord, TaskMemberWorkbenchSummary } from "../lib/api/types";
@@ -231,7 +231,7 @@ describe("MemberInvoiceDetailPage", () => {
       throw new Error("Expected split amount input.");
     }
     fireEvent.change(splitAmountInput, { target: { value: "100.00" } });
-    fireEvent.click(await screen.findByRole("button", { name: "保存分摊方案" }));
+    fireEvent.click(await screen.findByRole("button", { name: "保存金额归属" }));
     await waitFor(() => {
       expect(requests.some((request) => request.method === "PUT" && request.url === "/api/invoices/INV-READY-001/splits")).toBe(true);
     });
@@ -242,7 +242,7 @@ describe("MemberInvoiceDetailPage", () => {
     });
   });
 
-  it("confirms the member expense from the per-invoice page", async () => {
+  it("does not ask the member to confirm the same invoice amount again", async () => {
     const requests: Array<{ method: string; url: string; body: unknown }> = [];
     const split: ExpenseSplitRecord = {
       id: "SPLIT-001",
@@ -292,35 +292,15 @@ describe("MemberInvoiceDetailPage", () => {
       if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
         return Promise.resolve(jsonResponse(summary));
       }
-      if (url === "/api/splits/SPLIT-001/confirmation" && method === "PUT") {
-        return Promise.resolve(jsonResponse({
-          id: "CONF-001",
-          split_id: "SPLIT-001",
-          member_id: "2250001",
-          split_version: 1,
-          split_amount_cents: 12345,
-          split_note: "self paid",
-          is_current: true,
-          status: "confirmed",
-          dispute_reason: null,
-          confirmed_at: "2026-04-28T10:05:00+08:00",
-          updated_at: "2026-04-28T10:05:00+08:00",
-        }));
-      }
       throw new Error(`Unhandled request ${method} ${url}`);
     });
 
     renderDetail();
 
-    const confirmationList = await screen.findByLabelText("单张发票费用确认列表");
-    fireEvent.click(within(confirmationList).getByRole("button", { name: "确认这笔费用" }));
+    expect(await screen.findByRole("heading", { name: "金额归属" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "本人费用确认" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认这笔费用" })).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(requests.some((request) => (
-        request.method === "PUT"
-        && request.url === "/api/splits/SPLIT-001/confirmation"
-        && (request.body as { status?: string }).status === "confirmed"
-      ))).toBe(true);
-    });
+    expect(requests.some((request) => request.url === "/api/splits/SPLIT-001/confirmation")).toBe(false);
   });
 });

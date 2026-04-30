@@ -42,7 +42,7 @@ def test_replace_invoice_splits(tmp_path):
 
     assert response.status_code == 200
     assert [item["amount_cents"] for item in response.json()["items"]] == [6000, 6345]
-    assert [item["version"] for item in response.json()["items"]] == [1, 1]
+    assert [item["version"] for item in response.json()["items"]] == [2, 1]
 
 
 def test_replace_invoice_splits_rejects_amount_mismatch(tmp_path):
@@ -204,7 +204,7 @@ def test_replace_invoice_splits_resets_changed_member_confirmations_to_pending(t
     replaced_items = replace_response.json()["items"]
     assert {item["member_id"]: item["id"] for item in replaced_items} == initial_split_ids
     assert {item["member_id"]: item["version"] for item in replaced_items} == {
-        "2250001": 2,
+        "2250001": 3,
         "2250002": 2,
     }
 
@@ -217,7 +217,7 @@ def test_replace_invoice_splits_resets_changed_member_confirmations_to_pending(t
         if item["is_current"]
     }
     assert current_confirmations["2250001"]["status"] == "pending"
-    assert current_confirmations["2250001"]["split_version"] == 2
+    assert current_confirmations["2250001"]["split_version"] == 3
     assert current_confirmations["2250002"]["status"] == "pending"
     assert current_confirmations["2250002"]["split_version"] == 2
 
@@ -226,6 +226,7 @@ def test_replace_invoice_splits_resets_changed_member_confirmations_to_pending(t
     ]
     assert {(item["member_id"], item["split_version"], item["status"]) for item in historical_confirmations} == {
         ("2250001", 1, "confirmed"),
+        ("2250001", 2, "confirmed"),
         ("2250002", 1, "confirmed"),
     }
 
@@ -275,7 +276,7 @@ def test_replace_invoice_splits_records_amount_change_audit(tmp_path):
                 "member_id": "2250001",
                 "amount_cents": 6000,
                 "note": None,
-                "version": 1,
+                "version": 2,
                 "is_active": True,
             },
             "after": {
@@ -283,7 +284,7 @@ def test_replace_invoice_splits_records_amount_change_audit(tmp_path):
                 "member_id": "2250001",
                 "amount_cents": 6100,
                 "note": None,
-                "version": 2,
+                "version": 3,
                 "is_active": True,
             },
         },
@@ -349,17 +350,19 @@ def test_replace_invoice_splits_keeps_unchanged_member_confirmation(tmp_path):
     replaced_split_ids = {item["member_id"]: item["id"] for item in replaced_items}
     assert replaced_split_ids["2250001"] == initial_split_ids["2250001"]
     assert {item["member_id"]: item["version"] for item in replaced_items} == {
-        "2250001": 1,
+        "2250001": 2,
         "2250003": 1,
     }
 
     confirmation_response = client.get(f"/api/invoices/{invoice_id}/confirmations")
 
     assert confirmation_response.status_code == 200
-    assert confirmation_response.json()["items"] == [
+    current_items = [item for item in confirmation_response.json()["items"] if item["is_current"]]
+    assert current_items == [
         {
             **response.json(),
-            "confirmed_at": confirmation_response.json()["items"][0]["confirmed_at"],
-            "updated_at": confirmation_response.json()["items"][0]["updated_at"],
+            "split_version": 2,
+            "confirmed_at": current_items[0]["confirmed_at"],
+            "updated_at": current_items[0]["updated_at"],
         }
     ]

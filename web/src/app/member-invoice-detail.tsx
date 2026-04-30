@@ -368,9 +368,6 @@ export function MemberInvoiceDetailPage() {
   const [splitError, setSplitError] = useState<string | null>(null);
   const [savingSplits, setSavingSplits] = useState(false);
   const [openingOriginal, setOpeningOriginal] = useState(false);
-  const [confirmingSplitId, setConfirmingSplitId] = useState<string | null>(null);
-  const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
-  const [confirmationError, setConfirmationError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -417,10 +414,8 @@ export function MemberInvoiceDetailPage() {
   const abnormalReasons = useMemo(() => (item ? collectAbnormalReasons(item) : []), [item]);
   const allowedExpenseTypes = task ? buildAllowedExpenseTypes(task) : [];
   const splitSummary = summarizeSplitDrafts(splitDrafts);
-  const relatedExpenseDetails = item?.related_expense_details ?? [];
-  const pendingExpenseConfirmationCount = relatedExpenseDetails.filter((detail) => (
-    detail.confirmation?.status !== "confirmed"
-  )).length;
+  const canEditInvoice = invoice?.member_submission_status !== "submitted";
+  const canEditSplits = canEditInvoice;
 
   function updateManualField<Key extends keyof ManualInvoiceFormState>(
     key: Key,
@@ -522,6 +517,10 @@ export function MemberInvoiceDetailPage() {
     if (!invoice || !session) {
       return;
     }
+    if (!canEditSplits) {
+      setSplitError("发票已提交给管理员，不能继续修改金额归属。");
+      return;
+    }
     const normalizedItems = [];
     for (const draft of splitDrafts) {
       const amountCents = parseCurrencyInputToCents(draft.amount_yuan);
@@ -546,7 +545,7 @@ export function MemberInvoiceDetailPage() {
         actor_id: session.actorId,
         items: normalizedItems,
       });
-      showSuccess("分摊方案已保存，相关成员需要重新确认费用。");
+      showSuccess("金额归属已保存。");
       setReloadVersion((current) => current + 1);
     } catch (error) {
       setSplitError(error instanceof ApiError ? error.summary.message : "分摊方案保存失败。");
@@ -589,38 +588,6 @@ export function MemberInvoiceDetailPage() {
       showError(error instanceof ApiError ? error.summary.message : "原文件暂时无法打开。");
     } finally {
       setOpeningOriginal(false);
-    }
-  }
-
-  async function handleExpenseConfirmationSubmit(
-    splitId: string,
-    status: "confirmed" | "disputed",
-  ) {
-    if (!session) {
-      return;
-    }
-    const disputeReason = disputeReasons[splitId]?.trim() ?? "";
-    if (status === "disputed" && !disputeReason) {
-      setConfirmationError("提交异议时必须填写原因。");
-      return;
-    }
-
-    setConfirmingSplitId(splitId);
-    setConfirmationError(null);
-    try {
-      await trmsApi.submitSplitConfirmation(splitId, {
-        actor_id: session.actorId,
-        member_id: session.actorId,
-        status,
-        dispute_reason: status === "disputed" ? disputeReason : null,
-      });
-      showSuccess(status === "confirmed" ? "已确认这笔费用。" : "已提交费用异议。");
-      setDisputeReasons((current) => ({ ...current, [splitId]: "" }));
-      setReloadVersion((current) => current + 1);
-    } catch (error) {
-      setConfirmationError(error instanceof ApiError ? error.summary.message : "费用确认提交失败。");
-    } finally {
-      setConfirmingSplitId(null);
     }
   }
 
@@ -714,7 +681,7 @@ export function MemberInvoiceDetailPage() {
                 label="当前材料类型"
                 value={materialTypeDraft ?? item.material.material_type}
                 onChange={(event) => { setMaterialTypeDraft(event.target.value as MaterialType); }}
-                disabled={savingMaterialType}
+                disabled={savingMaterialType || !canEditInvoice}
               >
                 {MATERIAL_TYPE_OPTIONS.map((option) => (
                   <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
@@ -724,7 +691,7 @@ export function MemberInvoiceDetailPage() {
                 <Button
                   type="button"
                   variant="outlined"
-                  disabled={savingMaterialType || !materialTypeDraft || materialTypeDraft === item.material.material_type}
+                  disabled={savingMaterialType || !canEditInvoice || !materialTypeDraft || materialTypeDraft === item.material.material_type}
                   onClick={() => { void handleMaterialTypeSave(); }}
                 >
                   {savingMaterialType ? "保存中..." : "保存材料类型"}
@@ -746,14 +713,14 @@ export function MemberInvoiceDetailPage() {
             {manualForm ? (
               <form className="page-stack" onSubmit={(event) => { void handleManualSubmit(event); }}>
                 <div className="admin-form-grid">
-                  <TextField label="发票号码" value={manualForm.invoiceNumber} onChange={(event) => { updateManualField("invoiceNumber", event.target.value); }} />
-                  <TextField label="开票日期" type="date" value={manualForm.issueDate} onChange={(event) => { updateManualField("issueDate", event.target.value); }} slotProps={{ inputLabel: { shrink: true } }} />
-                  <TextField label="交易时间" type="datetime-local" value={manualForm.transactionTime} onChange={(event) => { updateManualField("transactionTime", event.target.value); }} slotProps={{ inputLabel: { shrink: true } }} />
-                  <TextField label="金额（元）" value={manualForm.amountYuan} onChange={(event) => { updateManualField("amountYuan", event.target.value); }} />
-                  <TextField label="发票抬头" value={manualForm.buyerName} onChange={(event) => { updateManualField("buyerName", event.target.value); }} />
-                  <TextField label="税号" value={manualForm.taxNumber} onChange={(event) => { updateManualField("taxNumber", event.target.value); }} />
-                  <TextField label="销售方名称" value={manualForm.sellerName} onChange={(event) => { updateManualField("sellerName", event.target.value); }} />
-                  <TextField select label="费用类型" value={manualForm.expenseType} onChange={(event) => { updateManualField("expenseType", event.target.value as ExpenseType); }}>
+                  <TextField label="发票号码" value={manualForm.invoiceNumber} disabled={!canEditInvoice} onChange={(event) => { updateManualField("invoiceNumber", event.target.value); }} />
+                  <TextField label="开票日期" type="date" value={manualForm.issueDate} disabled={!canEditInvoice} onChange={(event) => { updateManualField("issueDate", event.target.value); }} slotProps={{ inputLabel: { shrink: true } }} />
+                  <TextField label="交易时间" type="datetime-local" value={manualForm.transactionTime} disabled={!canEditInvoice} onChange={(event) => { updateManualField("transactionTime", event.target.value); }} slotProps={{ inputLabel: { shrink: true } }} />
+                  <TextField label="金额（元）" value={manualForm.amountYuan} disabled={!canEditInvoice} onChange={(event) => { updateManualField("amountYuan", event.target.value); }} />
+                  <TextField label="发票抬头" value={manualForm.buyerName} disabled={!canEditInvoice} onChange={(event) => { updateManualField("buyerName", event.target.value); }} />
+                  <TextField label="税号" value={manualForm.taxNumber} disabled={!canEditInvoice} onChange={(event) => { updateManualField("taxNumber", event.target.value); }} />
+                  <TextField label="销售方名称" value={manualForm.sellerName} disabled={!canEditInvoice} onChange={(event) => { updateManualField("sellerName", event.target.value); }} />
+                  <TextField select label="费用类型" value={manualForm.expenseType} disabled={!canEditInvoice} onChange={(event) => { updateManualField("expenseType", event.target.value as ExpenseType); }}>
                     {allowedExpenseTypes.map((expenseType) => (
                       <MenuItem key={expenseType} value={expenseType}>{formatExpenseType(expenseType)}</MenuItem>
                     ))}
@@ -761,28 +728,29 @@ export function MemberInvoiceDetailPage() {
                 </div>
                 {manualError ? <p className="field-error field-error-block">{manualError}</p> : null}
                 <div className="inline-actions">
-                  <Button type="submit" variant="contained" disabled={savingManual || item.material.material_type !== "invoice"}>
+                  <Button type="submit" variant="contained" disabled={savingManual || !canEditInvoice || item.material.material_type !== "invoice"}>
                     {savingManual ? "保存中..." : "保存发票字段并校验"}
                   </Button>
                 </div>
+                {!canEditInvoice ? <p className="field-hint">这张发票已提交给管理员，如需修改请先回工作台撤回。</p> : null}
               </form>
             ) : null}
           </SectionCard>
 
-          <SectionCard title="分摊金额" description="修改分摊对象和金额后，相关成员需要重新确认。">
+          <SectionCard title="金额归属" description="默认全额归属当前上传成员；发票未提交给管理员前可以修改归属对象和金额。">
             {invoice && task ? (
               <>
                 {splitDrafts.map((draft, index) => (
                   <div key={draft.key} className="admin-form-grid">
-                    <TextField select label={`分配对象 ${index + 1}`} value={draft.member_id} onChange={(event) => { updateSplitDraft(draft.key, { member_id: event.target.value }); }}>
+                    <TextField select label={`归属对象 ${index + 1}`} value={draft.member_id} disabled={!canEditSplits} onChange={(event) => { updateSplitDraft(draft.key, { member_id: event.target.value }); }}>
                       {task.member_ids.map((memberId) => (
                         <MenuItem key={memberId} value={memberId}>{formatMemberLabel(memberId)}</MenuItem>
                       ))}
                     </TextField>
-                    <TextField label="金额（元）" value={draft.amount_yuan} onChange={(event) => { updateSplitDraft(draft.key, { amount_yuan: event.target.value }); }} />
-                    <TextField label="备注" value={draft.note} onChange={(event) => { updateSplitDraft(draft.key, { note: event.target.value }); }} />
+                    <TextField label="金额（元）" value={draft.amount_yuan} disabled={!canEditSplits} onChange={(event) => { updateSplitDraft(draft.key, { amount_yuan: event.target.value }); }} />
+                    <TextField label="备注" value={draft.note} disabled={!canEditSplits} onChange={(event) => { updateSplitDraft(draft.key, { note: event.target.value }); }} />
                     <Box sx={{ display: "flex", alignItems: "center" }}>
-                      <Button type="button" variant="outlined" disabled={splitDrafts.length <= 1} onClick={() => { setSplitDrafts((current) => current.filter((row) => row.key !== draft.key)); }}>
+                      <Button type="button" variant="outlined" disabled={!canEditSplits || splitDrafts.length <= 1} onClick={() => { setSplitDrafts((current) => current.filter((row) => row.key !== draft.key)); }}>
                         移除
                       </Button>
                     </Box>
@@ -795,11 +763,12 @@ export function MemberInvoiceDetailPage() {
                 </p>
                 {splitError ? <p className="field-error field-error-block">{splitError}</p> : null}
                 <div className="inline-actions">
-                  <Button type="button" variant="outlined" onClick={addSplitDraft}>新增分摊对象</Button>
-                  <Button type="button" variant="contained" disabled={savingSplits} onClick={() => { void handleSplitSave(); }}>
-                    {savingSplits ? "保存中..." : "保存分摊方案"}
+                  <Button type="button" variant="outlined" disabled={!canEditSplits} onClick={addSplitDraft}>新增归属对象</Button>
+                  <Button type="button" variant="contained" disabled={savingSplits || !canEditSplits} onClick={() => { void handleSplitSave(); }}>
+                    {savingSplits ? "保存中..." : "保存金额归属"}
                   </Button>
                 </div>
+                {!canEditSplits ? <p className="field-hint">这张发票已提交给管理员，如需修改请先回工作台撤回。</p> : null}
                 {item.splits.length > 0 ? (
                   <ul className="member-status-message-list" aria-label="当前已保存分摊">
                     {item.splits.map((split: ExpenseSplitRecord) => {
@@ -807,8 +776,8 @@ export function MemberInvoiceDetailPage() {
                       return (
                         <li key={split.id}>
                           <strong>{formatMemberLabel(split.member_id)}</strong>
-                          <span>分摊金额：{formatCurrencyFromCents(split.amount_cents)}</span>
-                          <span>确认状态：{confirmation ? formatConfirmationStatus(confirmation.status) : "待确认"}</span>
+                          <span>归属金额：{formatCurrencyFromCents(split.amount_cents)}</span>
+                          <span>确认状态：{confirmation ? formatConfirmationStatus(confirmation.status) : "已指定"}</span>
                         </li>
                       );
                     })}
@@ -816,76 +785,7 @@ export function MemberInvoiceDetailPage() {
                 ) : null}
               </>
             ) : (
-              <p className="field-hint">当前材料还没有形成发票主记录，先保存发票字段后再调整分摊。</p>
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="本人费用确认"
-            description="确认或提出异议只作用于这张发票分到你名下的费用。"
-            action={<StatusBadge tone={pendingExpenseConfirmationCount > 0 ? "warning" : "success"}>待确认 {pendingExpenseConfirmationCount} 条</StatusBadge>}
-          >
-            {confirmationError ? <p className="field-error field-error-block">{confirmationError}</p> : null}
-            {relatedExpenseDetails.length > 0 ? (
-              <section className="member-confirmation-list" aria-label="单张发票费用确认列表">
-                {relatedExpenseDetails.map((detail) => {
-                  const currentStatus = detail.confirmation?.status ?? "pending";
-                  const isSubmitting = confirmingSplitId === detail.split_id;
-                  return (
-                    <article key={detail.split_id} className="status-card member-confirmation-card">
-                      <div className="member-status-section-header">
-                        <div>
-                          <p className="task-card-id">费用明细 {detail.split_id}</p>
-                          <h3>{detail.invoice.invoice_number}</h3>
-                        </div>
-                        <StatusBadge tone={currentStatus === "confirmed" ? "success" : currentStatus === "disputed" ? "danger" : "warning"}>
-                          {formatConfirmationStatus(currentStatus)}
-                        </StatusBadge>
-                      </div>
-                      <dl className="task-meta-grid member-status-meta-grid">
-                        <div><dt>归属成员</dt><dd>{formatMemberLabel(detail.member_id)}</dd></div>
-                        <div><dt>归属金额</dt><dd>{formatCurrencyFromCents(detail.amount_cents)}</dd></div>
-                        <div><dt>发票总额</dt><dd>{formatCurrencyFromCents(detail.invoice.amount_cents)}</dd></div>
-                        <div><dt>备注</dt><dd>{detail.note ?? "无"}</dd></div>
-                      </dl>
-                      <TextField
-                        label="异议原因"
-                        value={disputeReasons[detail.split_id] ?? ""}
-                        onChange={(event) => {
-                          setDisputeReasons((current) => ({
-                            ...current,
-                            [detail.split_id]: event.target.value,
-                          }));
-                          setConfirmationError(null);
-                        }}
-                        multiline
-                        minRows={2}
-                        fullWidth
-                      />
-                      <div className="inline-actions">
-                        <Button
-                          type="button"
-                          variant="contained"
-                          disabled={isSubmitting}
-                          onClick={() => { void handleExpenseConfirmationSubmit(detail.split_id, "confirmed"); }}
-                        >
-                          {isSubmitting ? "提交中..." : "确认这笔费用"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outlined"
-                          disabled={isSubmitting}
-                          onClick={() => { void handleExpenseConfirmationSubmit(detail.split_id, "disputed"); }}
-                        >
-                          {isSubmitting ? "提交中..." : "提交异议"}
-                        </Button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </section>
-            ) : (
-              <p className="field-hint">当前这张发票还没有分到你名下、需要你确认的费用。</p>
+              <p className="field-hint">当前材料还没有形成发票主记录，先保存发票字段后再调整金额归属。</p>
             )}
           </SectionCard>
 

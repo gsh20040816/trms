@@ -186,7 +186,8 @@ def test_member_status_returns_only_actor_related_materials_and_confirmations(tm
     assert body["counts"]["validation_failed_count"] == 1
     assert body["counts"]["missing_material_count"] == 2
     assert body["counts"]["expense_detail_count"] == 1
-    assert body["counts"]["missing_confirmation_count"] == 1
+    assert body["counts"]["confirmed_expense_count"] == 1
+    assert body["counts"]["missing_confirmation_count"] == 0
     assert [item["original_filename"] for item in body["materials"]] == ["registration.pdf"]
     assert body["materials"][0]["recognition_status"] == "needs_confirmation"
     assert body["materials"][0]["validation_status"] == "failed"
@@ -199,14 +200,14 @@ def test_member_status_returns_only_actor_related_materials_and_confirmations(tm
     ]
     assert len(body["expense_details"]) == 1
     expense_detail = body["expense_details"][0]
-    assert expense_detail["split_version"] == 1
+    assert expense_detail["split_version"] == 2
     assert expense_detail["member_id"] == "2250001"
     assert expense_detail["amount_cents"] == 100000
     assert expense_detail["note"] == "self paid"
+    assert expense_detail["confirmation"]["status"] == "confirmed"
     assert expense_detail["invoice"]["invoice_number"] == "REG-001"
     assert expense_detail["invoice"]["amount_cents"] == 150000
     assert expense_detail["invoice"]["expense_type"] == "registration"
-    assert expense_detail["confirmation"] is None
 
 
 def test_anonymous_request_cannot_self_report_member_status_actor_id(tmp_path):

@@ -22,6 +22,16 @@ from trms_backend.runtime_config import load_runtime_config
 
 from test_tasks_api import admin_auth_headers, create_task as create_admin_task, valid_task_payload
 
+AIRPORT_CODE_FIELD_GROUPS = [
+    ["departure_airport_code", "arrival_airport_code"],
+    [
+        "departure_airport_code",
+        "arrival_airport_code",
+        "return_departure_airport_code",
+        "return_arrival_airport_code",
+    ],
+]
+
 
 def make_client(tmp_path):
     runtime_config = load_runtime_config(
@@ -302,10 +312,12 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         "expense_type": "railway",
         "invoice_material_id": material_id,
         "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
+        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
         "requires_cabin_proof": False,
         "itinerary_material_ids": [],
         "order_screenshot_material_ids": [],
         "recognized_cabin_materials": [],
+        "recognized_airport_code_materials": [],
     }
     local_transport_validation = validation_by_code(
         body, LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE
@@ -333,7 +345,8 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
     }
     competition_time_validation = validation_by_code(body, COMPETITION_TIME_RANGE_RULE_CODE)
     assert competition_time_validation["severity"] == "warning"
-    assert competition_time_validation["status"] == "passed"
+    assert competition_time_validation["status"] == "not_applicable"
+    assert competition_time_validation["message"] == "当前不限制发票交易产生时间"
     assert competition_time_validation["evidence"] == {
         "expense_type": "railway",
         "supported_expense_types": [
@@ -621,10 +634,8 @@ def test_create_invoice_marks_competition_time_validation_pending_when_transacti
         COMPETITION_TIME_RANGE_RULE_CODE,
     )
     assert competition_time_validation["severity"] == "warning"
-    assert competition_time_validation["status"] == "pending"
-    assert competition_time_validation["message"] == (
-        "缺少交易时间，需人工确认是否与比赛时间范围相关"
-    )
+    assert competition_time_validation["status"] == "not_applicable"
+    assert competition_time_validation["message"] == "当前不限制发票交易产生时间"
     assert competition_time_validation["evidence"] == {
         "expense_type": "railway",
         "supported_expense_types": [
@@ -664,8 +675,8 @@ def test_create_invoice_warns_when_transaction_time_is_outside_default_competiti
         COMPETITION_TIME_RANGE_RULE_CODE,
     )
     assert competition_time_validation["severity"] == "warning"
-    assert competition_time_validation["status"] == "failed"
-    assert competition_time_validation["message"] == "交易时间超出默认比赛时间缓冲范围，需人工确认"
+    assert competition_time_validation["status"] == "not_applicable"
+    assert competition_time_validation["message"] == "当前不限制发票交易产生时间"
     assert competition_time_validation["evidence"] == {
         "expense_type": "railway",
         "supported_expense_types": [
@@ -904,10 +915,12 @@ def test_create_airfare_invoice_fails_when_itinerary_and_cabin_proof_are_missing
         "expense_type": "airfare",
         "invoice_material_id": material_id,
         "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
+        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
         "requires_cabin_proof": True,
         "itinerary_material_ids": [],
         "order_screenshot_material_ids": [],
         "recognized_cabin_materials": [],
+        "recognized_airport_code_materials": [],
     }
 
 
@@ -1321,6 +1334,7 @@ def test_attach_itinerary_with_cabin_info_revalidates_airfare_invoice_to_pass(tm
         "expense_type": "airfare",
         "invoice_material_id": material_id,
         "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
+        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
         "requires_cabin_proof": True,
         "itinerary_material_ids": [itinerary_material_id],
         "order_screenshot_material_ids": [],
@@ -1334,6 +1348,7 @@ def test_attach_itinerary_with_cabin_info_revalidates_airfare_invoice_to_pass(tm
                 "recognition_task_status": "succeeded",
             }
         ],
+        "recognized_airport_code_materials": [],
     }
 
 
@@ -1391,10 +1406,12 @@ def test_attach_order_screenshot_marks_airfare_cabin_validation_pending_when_cab
         "expense_type": "airfare",
         "invoice_material_id": material_id,
         "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
+        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
         "requires_cabin_proof": True,
         "itinerary_material_ids": [itinerary_material_id],
         "order_screenshot_material_ids": [order_screenshot_material_id],
         "recognized_cabin_materials": [],
+        "recognized_airport_code_materials": [],
     }
 
 

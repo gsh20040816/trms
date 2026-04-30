@@ -219,6 +219,7 @@ def test_batch_submit_reports_partial_success_when_some_invoices_are_not_ready(t
         actor_id="2250001",
         invoice_number="INV-BLOCKED",
         expense_type="railway",
+        amount_cents=150000,
     )
     ready_split_id = replace_invoice_splits(
         client,
@@ -243,9 +244,62 @@ def test_batch_submit_reports_partial_success_when_some_invoices_are_not_ready(t
         {
             "invoice_id": blocked_invoice_id,
             "error_code": "invoice_not_ready_for_submission",
-            "detail": f"missing expense splits for invoices: {blocked_invoice_id}",
+            "detail": f"blocker validations are not resolved for invoices: {blocked_invoice_id}",
         }
     ]
+
+
+def test_invoice_creation_defaults_full_amount_to_submitter_and_locks_after_submission(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="self.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        material_id,
+        actor_id="2250001",
+        invoice_number="INV-SELF",
+        expense_type="railway",
+    )
+
+    splits_response = client.get(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+    assert splits_response.status_code == 200
+    split = splits_response.json()["items"][0]
+    assert split["member_id"] == "2250001"
+    assert split["amount_cents"] == 12345
+
+    confirmations_response = client.get(
+        f"/api/invoices/{invoice_id}/confirmations",
+        headers=member_auth_headers(client, username="member1b", actor_id="2250001"),
+    )
+    assert confirmations_response.status_code == 200
+    assert confirmations_response.json()["items"][0]["status"] == "confirmed"
+
+    submit_response = client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        json={"invoice_ids": [invoice_id]},
+        headers=member_auth_headers(client, username="member1c", actor_id="2250001"),
+    )
+    assert submit_response.status_code == 200
+    assert submit_response.json()["status"] == "success"
+
+    update_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [{"member_id": "2250001", "amount_cents": 12345, "note": "late change"}],
+        },
+        headers=member_auth_headers(client, username="member1d", actor_id="2250001"),
+    )
+    assert update_response.status_code == 409
+    assert update_response.json()["detail"] == "submitted invoice splits cannot be modified by members"
 
 
 def test_outsider_member_cannot_submit_task_invoices(tmp_path):

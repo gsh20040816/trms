@@ -195,6 +195,8 @@ def build_recognition_processor(
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
+    split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
+    confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     recognition_preparation_service = RecognitionPreparationService(
         material_repository,
         LocalMaterialFileStorage(tmp_path / "material-storage"),
@@ -209,6 +211,8 @@ def build_recognition_processor(
         invoice_repository=invoice_repository,
         validation_repository=validation_repository,
         recognition_task_repository=recognition_task_repository,
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
         recognition_preparation_service=recognition_preparation_service,
     )
 
@@ -363,29 +367,29 @@ def test_main_flow_e2e_scaffold_covers_submission_to_export_gate(tmp_path):
     assert split_response.status_code == 200
     split_id = split_response.json()["items"][0]["id"]
 
-    expense_details_before_confirmation = client.get(
+    expense_details_after_split = client.get(
         f"/api/tasks/{task_id}/expense-details",
         headers=member_headers,
     )
-    assert expense_details_before_confirmation.status_code == 200
-    detail_body = expense_details_before_confirmation.json()
+    assert expense_details_after_split.status_code == 200
+    detail_body = expense_details_after_split.json()
     assert detail_body["actor_id"] == "2250001"
     assert detail_body["total_amount_cents"] == 12345
     assert len(detail_body["items"]) == 1
     assert detail_body["items"][0]["split_id"] == split_id
-    assert detail_body["items"][0]["confirmation"] is None
+    assert detail_body["items"][0]["confirmation"]["status"] == "confirmed"
 
-    review_summary_before_confirmation = client.get(
+    review_summary_after_split = client.get(
         f"/api/tasks/{task_id}/review-summary",
         headers=admin_headers,
     )
-    assert review_summary_before_confirmation.status_code == 200
-    review_body_before_confirmation = review_summary_before_confirmation.json()
-    assert review_body_before_confirmation["counts"]["material_count"] == 1
-    assert review_body_before_confirmation["counts"]["invoice_count"] == 1
-    assert review_body_before_confirmation["counts"]["validation_count"] >= 3
-    assert review_body_before_confirmation["counts"]["missing_confirmation_count"] == 1
-    assert review_body_before_confirmation["counts"]["pending_confirmation_count"] == 0
+    assert review_summary_after_split.status_code == 200
+    review_body_after_split = review_summary_after_split.json()
+    assert review_body_after_split["counts"]["material_count"] == 1
+    assert review_body_after_split["counts"]["invoice_count"] == 1
+    assert review_body_after_split["counts"]["validation_count"] >= 3
+    assert review_body_after_split["counts"]["missing_confirmation_count"] == 0
+    assert review_body_after_split["counts"]["pending_confirmation_count"] == 0
 
     blocked_export_response = client.get(
         f"/api/tasks/{task_id}/exports/capabilities",
@@ -398,14 +402,6 @@ def test_main_flow_e2e_scaffold_covers_submission_to_export_gate(tmp_path):
     assert blocked_export_body["blocking_reasons"] == [
         "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
     ]
-
-    confirmation_response = client.put(
-        f"/api/splits/{split_id}/confirmation",
-        headers=member_headers,
-        json={"status": "confirmed"},
-    )
-    assert confirmation_response.status_code == 200
-    assert confirmation_response.json()["status"] == "confirmed"
 
     move_task_status(client, task_id, "closed", headers=admin_headers)
     reviewing = move_task_status(client, task_id, "reviewing", headers=admin_headers)

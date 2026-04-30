@@ -20,6 +20,8 @@ from trms_backend.application.supporting_material_auto_link import (
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import RecognitionTaskRepository
+from trms_backend.domain.confirmations import ConfirmationRepository
+from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import TaskRepository
 from trms_backend.logging_safety import sanitize_log_fields
 
@@ -37,6 +39,8 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
         invoice_repository: InvoiceRepository,
         validation_repository: ValidationRepository,
         recognition_task_repository: RecognitionTaskRepository,
+        split_repository: ExpenseSplitRepository,
+        confirmation_repository: ConfirmationRepository,
         recognition_preparation_service: RecognitionPreparationService,
         batch_size: int = 10,
         metrics_collector: MetricsCollector | None = None,
@@ -53,6 +57,8 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
             task_repository=task_repository,
             material_repository=material_repository,
             invoice_repository=invoice_repository,
+            split_repository=split_repository,
+            confirmation_repository=confirmation_repository,
             supporting_material_auto_link_service=SupportingMaterialAutoLinkService(
                 material_repository=material_repository,
                 invoice_repository=invoice_repository,
