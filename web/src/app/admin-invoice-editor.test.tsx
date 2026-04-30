@@ -318,6 +318,7 @@ describe("admin invoice editor page", () => {
 
     const materialList = within(screen.getByLabelText("发票材料列表"));
     expect(materialList.getByText("invoice.pdf")).toBeInTheDocument();
+    expect(materialList.getByText("票号 待补录")).toBeInTheDocument();
     expect(materialList.getByText("待录入")).toBeInTheDocument();
 
     const detailTabs = within(screen.getByRole("tablist", { name: "发票详情标签页" }));

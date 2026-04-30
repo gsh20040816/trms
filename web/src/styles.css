@@ -1710,6 +1710,11 @@ select:focus {
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
 }
 
+.invoice-summary-row-shell-selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+}
+
 .invoice-summary-row-shell-warning {
   border-color: #f0b77a;
   background: linear-gradient(180deg, #fff9f0 0%, #fffdf8 100%);
@@ -1734,6 +1739,10 @@ select:focus {
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.invoice-summary-row-static {
+  cursor: default;
 }
 
 .invoice-summary-row-button:focus-visible {

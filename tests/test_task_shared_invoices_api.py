@@ -173,7 +173,9 @@ def test_task_member_can_view_shared_invoice_summary_without_sensitive_attachmen
     assert set(items_by_invoice_number) == {"REG-001", "RAIL-001"}
 
     shared_invoice = items_by_invoice_number["REG-001"]
+    assert shared_invoice["original_filename"] == "member-one-registration.pdf"
     assert shared_invoice["submitter_id"] == "2250001"
+    assert shared_invoice["validation_status"] == "failed"
     assert shared_invoice["buyer_name"] == "同济大学"
     assert shared_invoice["amount_cents"] == 20000
     assert shared_invoice["splits"] == [

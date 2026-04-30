@@ -7,6 +7,7 @@ import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -226,6 +227,29 @@ function buildRecognitionBadgeTone(recognition: RecognitionTaskRecord | null) {
     return "danger" as const;
   }
   return "warning" as const;
+}
+
+function buildInvoiceSummaryValidationLabel(invoiceItem: TaskReviewSummaryInvoiceItem) {
+  if (invoiceItem.validations.some((validation) => validation.status === "failed")) {
+    return {
+      label: "校验失败",
+      tone: "warning" as const,
+    };
+  }
+  if (invoiceItem.validations.some((validation) => validation.status === "pending")) {
+    return {
+      label: "校验待确认",
+      tone: "warning" as const,
+    };
+  }
+  return {
+    label: "校验通过",
+    tone: "success" as const,
+  };
+}
+
+function buildInvoiceSummaryValidationStatus(invoiceItem: TaskReviewSummaryInvoiceItem) {
+  return buildInvoiceSummaryValidationLabel(invoiceItem);
 }
 
 function buildValidationBadgeTone(validation: ValidationResult) {
@@ -947,11 +971,37 @@ export function AdminReviewOverviewPage() {
                         <ul className="admin-review-list" aria-label="关联发票摘要列表">
                           {relatedInvoices.map((invoiceItem) => (
                             <li key={invoiceItem.invoice.id}>
-                              <strong>
-                                {invoiceItem.invoice.invoice_number} / {formatCurrencyFromCents(invoiceItem.invoice.amount_cents)}
-                              </strong>
-                              <span>发票编号：{invoiceItem.invoice.id}</span>
-                              <span>当前异常校验：{invoiceItem.validations.filter((item) => item.status === "failed" || item.status === "pending").length} 条</span>
+                              {(() => {
+                                const invoiceMaterial = detailItems.find(
+                                  (item) => item.materialItem.material.id === invoiceItem.invoice.material_id,
+                                )?.materialItem.material ?? null;
+                                const summaryValidation = buildInvoiceSummaryValidationStatus(invoiceItem);
+                                const filename = invoiceMaterial?.original_filename ?? invoiceItem.invoice.invoice_number;
+                                const abnormalValidationCount = invoiceItem.validations.filter(
+                                  (item) => item.status === "failed" || item.status === "pending",
+                                ).length;
+                                return (
+                                  <InvoiceSummaryRow
+                                    filename={filename}
+                                    invoiceNumber={invoiceItem.invoice.invoice_number}
+                                    validationLabel={summaryValidation.label}
+                                    validationTone={summaryValidation.tone}
+                                    supportingMaterialCount={invoiceItem.supporting_material_ids.length}
+                                    statusHint={`当前异常校验 ${abnormalValidationCount} 条`}
+                                    trailingContent={(
+                                      <StatusBadge tone="info">
+                                        {formatExpenseType(invoiceItem.invoice.expense_type)}
+                                      </StatusBadge>
+                                    )}
+                                    action={{
+                                      ariaLabel: `关联发票 ${filename} ${invoiceItem.invoice.invoice_number}`,
+                                      onClick: () => {
+                                        setSelectedMaterialId(invoiceItem.invoice.material_id);
+                                      },
+                                    }}
+                                  />
+                                );
+                              })()}
                             </li>
                           ))}
                         </ul>

@@ -7,6 +7,7 @@ import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import {
   EmptyState,
   PageHeader,
@@ -157,6 +158,29 @@ function toApiDateTime(value: string) {
   const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, "0");
   const offsetRemainderMinutes = String(absoluteOffsetMinutes % 60).padStart(2, "0");
   return `${year}-${month}-${day}T${hours}:${minutes}:00${sign}${offsetHours}:${offsetRemainderMinutes}`;
+}
+
+function formatSharedInvoiceValidationLabel(validationStatus: TaskSharedInvoiceItem["validation_status"]) {
+  if (validationStatus === "passed") {
+    return "校验通过";
+  }
+  if (validationStatus === "failed") {
+    return "校验未通过";
+  }
+  if (validationStatus === "pending") {
+    return "校验待确认";
+  }
+  return "校验暂不适用";
+}
+
+function mapSharedInvoiceValidationTone(validationStatus: TaskSharedInvoiceItem["validation_status"]) {
+  if (validationStatus === "passed") {
+    return "success" as const;
+  }
+  if (validationStatus === "failed" || validationStatus === "pending") {
+    return "warning" as const;
+  }
+  return "neutral" as const;
 }
 
 function isExpenseType(value: string): value is ExpenseType {
@@ -633,12 +657,15 @@ export function MemberInvoiceDetailPage() {
           description="这是任务内其他成员上传的发票，只展示可共享摘要，不提供原始附件和编辑入口。"
           action={<StatusBadge tone="info">只读</StatusBadge>}
         >
-          <dl className="task-meta-grid member-status-meta-grid">
-            <div><dt>上传成员</dt><dd>{sharedInvoice.submitter_id ? formatMemberLabel(sharedInvoice.submitter_id) : "未记录"}</dd></div>
-            <div><dt>发票金额</dt><dd>{formatCurrencyFromCents(sharedInvoice.amount_cents)}</dd></div>
-            <div><dt>费用类型</dt><dd>{formatExpenseType(sharedInvoice.expense_type)}</dd></div>
-            <div><dt>开票日期</dt><dd>{sharedInvoice.issue_date ?? "未填写"}</dd></div>
-          </dl>
+          <InvoiceSummaryRow
+            filename={sharedInvoice.original_filename}
+            invoiceNumber={sharedInvoice.invoice_number}
+            validationLabel={formatSharedInvoiceValidationLabel(sharedInvoice.validation_status)}
+            validationTone={mapSharedInvoiceValidationTone(sharedInvoice.validation_status)}
+            supportingMaterialCount={sharedInvoice.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
+            statusHint={`上传成员 ${sharedInvoice.submitter_id ? formatMemberLabel(sharedInvoice.submitter_id) : "未记录"}；费用类型 ${formatExpenseType(sharedInvoice.expense_type)}`}
+            trailingContent={<StatusBadge tone="info">{formatCurrencyFromCents(sharedInvoice.amount_cents)}</StatusBadge>}
+          />
         </SectionCard>
       ) : null}
 

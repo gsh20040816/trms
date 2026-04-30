@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import ButtonBase from "@mui/material/ButtonBase";
 import MenuItem from "@mui/material/MenuItem";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -409,6 +409,19 @@ function countPendingValidations(validations: ValidationResult[]) {
   return validations.filter((item) => item.status === "pending").length;
 }
 
+function buildInvoiceSummaryValidation(validations: ValidationResult[], hasInvoice: boolean) {
+  if (!hasInvoice) {
+    return { label: "待补录校验", tone: "warning" as const };
+  }
+  if (countFailedValidations(validations) > 0) {
+    return { label: "校验失败", tone: "warning" as const };
+  }
+  if (countPendingValidations(validations) > 0) {
+    return { label: "校验待确认", tone: "warning" as const };
+  }
+  return { label: "校验通过", tone: "success" as const };
+}
+
 function findSelectedItem(items: InvoiceMaterialItem[], materialId: string) {
   return items.find((item) => item.materialItem.material.id === materialId) ?? null;
 }
@@ -750,47 +763,30 @@ export function AdminInvoiceEditorPage() {
                     const isSelected = material.id === selectedMaterialId;
                     return (
                       <li key={material.id}>
-                        <ButtonBase
-                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
-                          onClick={() => {
-                            setSelectedMaterialId(material.id);
-                            setFormState(buildInitialFormState(item, visibleTask));
-                            setFormErrors({});
-                            setSubmitError(null);
-                            setSaveFeedback(null);
-                          }}
-                          sx={{ display: "block", width: "100%", textAlign: "left", borderRadius: 2 }}
-                        >
-                          <div className="task-card-header">
-                            <div>
-                              <p className="task-card-id">材料编号 {material.id}</p>
-                              <h3>{material.original_filename}</h3>
-                            </div>
+                        <InvoiceSummaryRow
+                          filename={material.original_filename}
+                          invoiceNumber={invoice?.invoice_number ?? null}
+                          validationLabel={buildInvoiceSummaryValidation(validations, invoice !== null).label}
+                          validationTone={buildInvoiceSummaryValidation(validations, invoice !== null).tone}
+                          supportingMaterialCount={item.invoiceItem?.supporting_material_ids.length ?? 0}
+                          statusHint={`提交人 ${formatMemberLabel(material.submitter_id)}；${formatRecognitionStatus(item.materialItem.latest_recognition?.status ?? "pending")}`}
+                          trailingContent={(
                             <StatusBadge tone={invoice ? "success" : "warning"}>
                               {invoice ? "已存在发票记录" : "待录入"}
                             </StatusBadge>
-                          </div>
-                          <dl className="task-meta-grid invoice-editor-summary-grid">
-                            <div>
-                              <dt>提交人</dt>
-                              <dd>{formatMemberLabel(material.submitter_id)}</dd>
-                            </div>
-                            <div>
-                              <dt>识别状态</dt>
-                              <dd>{formatRecognitionStatus(item.materialItem.latest_recognition?.status ?? "pending")}</dd>
-                            </div>
-                            <div>
-                              <dt>当前发票号</dt>
-                              <dd>{invoice?.invoice_number ?? "尚未录入"}</dd>
-                            </div>
-                            <div>
-                              <dt>异常校验</dt>
-                              <dd>
-                                失败 {countFailedValidations(validations)} 条，待确认 {countPendingValidations(validations)} 条
-                              </dd>
-                            </div>
-                          </dl>
-                        </ButtonBase>
+                          )}
+                          selected={isSelected}
+                          action={{
+                            ariaLabel: `发票材料 ${material.original_filename} ${invoice?.invoice_number ?? "待补录票号"}`,
+                            onClick: () => {
+                              setSelectedMaterialId(material.id);
+                              setFormState(buildInitialFormState(item, visibleTask));
+                              setFormErrors({});
+                              setSubmitError(null);
+                              setSaveFeedback(null);
+                            },
+                          }}
+                        />
                       </li>
                     );
                   })}

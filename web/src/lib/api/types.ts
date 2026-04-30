@@ -724,7 +724,9 @@ export type TaskSharedInvoiceSupportingMaterialSummary = {
 
 export type TaskSharedInvoiceItem = {
   invoice_id: string;
+  original_filename: string;
   invoice_number: string;
+  validation_status: ValidationStatus;
   issue_date: ApiDate | null;
   buyer_name: string;
   seller_name: string | null;

@@ -281,6 +281,9 @@ describe("AdminCorrectionsRemindersPage", () => {
       "href",
       "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
     );
+    const invoiceCorrectionList = within(screen.getByLabelText("金额更正列表"));
+    expect(invoiceCorrectionList.getByText("invoice.pdf")).toBeInTheDocument();
+    expect(invoiceCorrectionList.getByText("票号 INV-001")).toBeInTheDocument();
 
     const reminderList = within(await screen.findByLabelText("补材料提醒列表"));
     expect(reminderList.getByText("请补充支付记录。")).toBeInTheDocument();

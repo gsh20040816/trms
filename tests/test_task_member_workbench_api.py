@@ -337,7 +337,9 @@ def test_member_workbench_summary_redacts_shared_attachment_details_and_recognit
     shared_item = next(
         item for item in body["shared_invoices"] if item["invoice_number"] == "SHARED-001"
     )
+    assert shared_item["original_filename"] == "shared-registration.pdf"
     assert shared_item["submitter_id"] == "2250001"
+    assert shared_item["validation_status"] == "failed"
     assert shared_item["supporting_materials"] == [
         {"material_type": "order_screenshot", "count": 1},
         {"material_type": "payment_record", "count": 1},

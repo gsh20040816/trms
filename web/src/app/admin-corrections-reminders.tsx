@@ -6,6 +6,7 @@ import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import { formatCurrencyFromCents } from "../lib/currency";
@@ -49,6 +50,7 @@ type RecognitionCorrectionAction = {
 type InvoiceCorrectionAction = {
   invoiceId: string;
   materialId: string;
+  filename: string;
   invoiceNumber: string;
   amountCents: number;
   expenseType: ExpenseType;
@@ -147,6 +149,8 @@ function buildInvoiceCorrectionActions(summary: TaskReviewSummary): InvoiceCorre
       return {
         invoiceId: invoiceItem.invoice.id,
         materialId: invoiceItem.invoice.material_id,
+        filename: summary.materials.find((item) => item.material.id === invoiceItem.invoice.material_id)?.material.original_filename
+          ?? invoiceItem.invoice.invoice_number,
         invoiceNumber: invoiceItem.invoice.invoice_number,
         amountCents: invoiceItem.invoice.amount_cents,
         expenseType: invoiceItem.invoice.expense_type,
@@ -424,13 +428,15 @@ export function AdminCorrectionsRemindersPage() {
                 <ul className="admin-review-record-list" aria-label="金额更正列表">
                   {invoiceActions.map((item) => (
                     <li key={item.invoiceId} className="admin-review-record-card">
-                      <div className="task-card-header">
-                        <div>
-                          <p className="task-card-id">发票编号 {item.invoiceId}</p>
-                          <h3>{item.invoiceNumber}</h3>
-                        </div>
-                        <StatusBadge tone="info">{formatCurrencyFromCents(item.amountCents)}</StatusBadge>
-                      </div>
+                      <InvoiceSummaryRow
+                        filename={item.filename}
+                        invoiceNumber={item.invoiceNumber}
+                        validationLabel={item.abnormalValidations.some((validation) => validation.status === "failed") ? "校验失败" : "校验待确认"}
+                        validationTone="warning"
+                        supportingMaterialCount={0}
+                        statusHint={`待确认分摊 ${item.pendingSplitCount} 条；异议分摊 ${item.disputedSplitCount} 条`}
+                        trailingContent={<StatusBadge tone="info">{formatCurrencyFromCents(item.amountCents)}</StatusBadge>}
+                      />
                       <div className="admin-review-inline-metadata">
                         <span className="token-chip">{formatExpenseType(item.expenseType)}</span>
                         <span className="token-chip">异常校验 {item.abnormalValidations.length} 条</span>

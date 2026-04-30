@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import Button from "@mui/material/Button";
-import ButtonBase from "@mui/material/ButtonBase";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
@@ -199,6 +199,16 @@ function countFailedValidations(item: TaskReviewSummaryInvoiceItem) {
 
 function countPendingValidations(item: TaskReviewSummaryInvoiceItem) {
   return item.validations.filter((validation) => validation.status === "pending").length;
+}
+
+function buildInvoiceSummaryValidation(item: TaskReviewSummaryInvoiceItem) {
+  if (countFailedValidations(item) > 0) {
+    return { label: "校验失败", tone: "warning" as const };
+  }
+  if (countPendingValidations(item) > 0) {
+    return { label: "校验待确认", tone: "warning" as const };
+  }
+  return { label: "校验通过", tone: "success" as const };
 }
 
 function formatConfirmationStatus(status: ConfirmationStatus) {
@@ -542,44 +552,26 @@ export function AdminSplitEditorPage() {
                   const isSelected = invoice.id === selectedInvoiceId;
                   return (
                     <li key={invoice.id}>
-                      <ButtonBase
-                        className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
-                        onClick={() => {
-                          handleSelectInvoice(item);
-                        }}
-                        sx={{ display: "block", width: "100%", textAlign: "left", borderRadius: 2 }}
-                      >
-                        <div className="task-card-header">
-                          <div>
-                            <p className="task-card-id">发票编号 {invoice.id}</p>
-                            <h3>{invoice.invoice_number}</h3>
-                          </div>
+                      <InvoiceSummaryRow
+                        filename={material?.original_filename ?? invoice.invoice_number}
+                        invoiceNumber={invoice.invoice_number}
+                        validationLabel={buildInvoiceSummaryValidation(item.invoiceItem).label}
+                        validationTone={buildInvoiceSummaryValidation(item.invoiceItem).tone}
+                        supportingMaterialCount={item.invoiceItem.supporting_material_ids.length}
+                        statusHint={`提交人 ${material?.submitter_id ?? "未知提交人"}；分摊 ${item.invoiceItem.splits.length} 条`}
+                        trailingContent={(
                           <StatusBadge tone={item.invoiceItem.splits.length > 0 ? "info" : "warning"}>
                             {item.invoiceItem.splits.length > 0 ? `${item.invoiceItem.splits.length} 条分摊` : "待分摊"}
                           </StatusBadge>
-                        </div>
-
-                        <dl className="task-meta-grid invoice-editor-summary-grid">
-                          <div>
-                            <dt>材料编号</dt>
-                            <dd>{material?.id ?? invoice.material_id}</dd>
-                          </div>
-                          <div>
-                            <dt>提交人</dt>
-                            <dd>{material?.submitter_id ?? "未知提交人"}</dd>
-                          </div>
-                          <div>
-                            <dt>发票金额</dt>
-                            <dd>{formatCurrencyFromCents(invoice.amount_cents)}</dd>
-                          </div>
-                          <div>
-                            <dt>异常校验</dt>
-                            <dd>
-                              失败 {countFailedValidations(item.invoiceItem)} 条，待确认 {countPendingValidations(item.invoiceItem)} 条
-                            </dd>
-                          </div>
-                        </dl>
-                      </ButtonBase>
+                        )}
+                        selected={isSelected}
+                        action={{
+                          ariaLabel: `任务发票 ${material?.original_filename ?? invoice.invoice_number} ${invoice.invoice_number}`,
+                          onClick: () => {
+                            handleSelectInvoice(item);
+                          },
+                        }}
+                      />
                     </li>
                   );
                 })}

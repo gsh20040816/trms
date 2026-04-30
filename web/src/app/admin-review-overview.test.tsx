@@ -422,7 +422,11 @@ describe("AdminReviewOverviewPage", () => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "校验异常" }));
       await Promise.resolve();
     });
-    expect(detailPanel.getByText("INV-001 / ￥123.45")).toBeInTheDocument();
+    expect(detailPanel.getByText("invoice.pdf")).toBeInTheDocument();
+    expect(detailPanel.getByText("票号 INV-001")).toBeInTheDocument();
+    expect(detailPanel.getByText("附件 1")).toBeInTheDocument();
+    expect(detailPanel.getByText("校验失败")).toBeInTheDocument();
+    expect(detailPanel.queryByText("发票编号：INV-001")).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "处理动作" }));

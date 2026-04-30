@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from trms_backend.domain.invoices import ExpenseType, InvoiceRecord
+from trms_backend.domain.invoices import ExpenseType, InvoiceRecord, ValidationResult, ValidationStatus
 from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.tasks import ReimbursementTask
@@ -27,7 +27,9 @@ class SharedInvoiceSupportingMaterialSummary(BaseModel):
 
 class TaskSharedInvoiceItem(BaseModel):
     invoice_id: str
+    original_filename: str
     invoice_number: str
+    validation_status: ValidationStatus
     issue_date: date | None
     buyer_name: str
     seller_name: str | None
@@ -46,12 +48,25 @@ class TaskSharedInvoiceReport(BaseModel):
     items: list[TaskSharedInvoiceItem] = Field(default_factory=list)
 
 
+def _resolve_invoice_validation_status(
+    validations: list[ValidationResult],
+) -> ValidationStatus:
+    if any(validation.status is ValidationStatus.FAILED for validation in validations):
+        return ValidationStatus.FAILED
+    if any(validation.status is ValidationStatus.PENDING for validation in validations):
+        return ValidationStatus.PENDING
+    if any(validation.status is ValidationStatus.PASSED for validation in validations):
+        return ValidationStatus.PASSED
+    return ValidationStatus.NOT_APPLICABLE
+
+
 def build_task_shared_invoice_report(
     task: ReimbursementTask,
     *,
     actor_id: str,
     invoices: list[InvoiceRecord],
     materials_by_id: dict[str, MaterialRecord],
+    validations_by_invoice_id: dict[str, list[ValidationResult]],
     supporting_materials_by_invoice_id: dict[str, list[MaterialRecord]],
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
 ) -> TaskSharedInvoiceReport:
@@ -78,7 +93,13 @@ def build_task_shared_invoice_report(
         items.append(
             TaskSharedInvoiceItem(
                 invoice_id=invoice.id,
+                original_filename=invoice_material.original_filename
+                if invoice_material is not None
+                else invoice.invoice_number,
                 invoice_number=invoice.invoice_number,
+                validation_status=_resolve_invoice_validation_status(
+                    validations_by_invoice_id.get(invoice.id, [])
+                ),
                 issue_date=invoice.issue_date,
                 buyer_name=invoice.buyer_name,
                 seller_name=invoice.seller_name,

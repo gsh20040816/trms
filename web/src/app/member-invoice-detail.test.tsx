@@ -145,7 +145,24 @@ function buildSummary(): TaskMemberWorkbenchSummary {
       },
     ],
     pending_supporting_material_linkage_items: [],
-    shared_invoices: [],
+    shared_invoices: [
+      {
+        invoice_id: "INV-SHARED-001",
+        original_filename: "team-shared.pdf",
+        invoice_number: "TEAM-SHARED-001",
+        validation_status: "passed",
+        issue_date: "2026-04-26",
+        buyer_name: "同济大学",
+        seller_name: "12306",
+        amount_cents: 8888,
+        expense_type: "railway",
+        submitter_id: "2250002",
+        supporting_materials: [{ material_type: "payment_record", count: 1 }],
+        splits: [{ member_id: "2250001", amount_cents: 4444 }],
+        created_at: "2026-04-28T10:00:00+08:00",
+        updated_at: "2026-04-28T10:00:00+08:00",
+      },
+    ],
   };
 }
 
@@ -302,5 +319,34 @@ describe("MemberInvoiceDetailPage", () => {
     expect(screen.queryByRole("button", { name: "确认这笔费用" })).not.toBeInTheDocument();
 
     expect(requests.some((request) => request.url === "/api/splits/SPLIT-001/confirmation")).toBe(false);
+  });
+
+  it("renders shared invoices with the same one-line summary fields", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(buildSummary()));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/member/invoices/INV-SHARED-001?taskId=TASK-OPEN"],
+    });
+    act(() => {
+      render(<RouterProvider router={router} />);
+    });
+
+    expect(await screen.findByRole("heading", { name: "共享发票摘要" })).toBeInTheDocument();
+    expect(screen.getByText("team-shared.pdf")).toBeInTheDocument();
+    expect(screen.getByText("票号 TEAM-SHARED-001")).toBeInTheDocument();
+    expect(screen.getByText("校验通过")).toBeInTheDocument();
+    expect(screen.getByText("附件 1")).toBeInTheDocument();
   });
 });

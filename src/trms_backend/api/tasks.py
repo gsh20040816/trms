@@ -587,6 +587,9 @@ def build_task_router(
         splits_by_invoice_id = {
             invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
+        validations_by_invoice_id = {
+            invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
+        }
 
         try:
             return build_task_shared_invoice_report(
@@ -594,6 +597,7 @@ def build_task_router(
                 actor_id=resolved_actor_id,
                 invoices=invoices,
                 materials_by_id=materials_by_id,
+                validations_by_invoice_id=validations_by_invoice_id,
                 supporting_materials_by_invoice_id=supporting_materials_by_invoice_id,
                 splits_by_invoice_id=splits_by_invoice_id,
             )

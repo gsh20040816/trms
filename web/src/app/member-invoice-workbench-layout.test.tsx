@@ -209,7 +209,9 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
           shared_invoices: [
             {
               invoice_id: "INV-SHARED",
+              original_filename: "team-railway.pdf",
               invoice_number: "TEAM-001",
+              validation_status: "passed",
               issue_date: "2026-04-26",
               buyer_name: "同济大学",
               seller_name: "12306",
@@ -232,6 +234,7 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
     const readySection = await screen.findByRole("region", { name: "未提交发票列表" });
     expect(within(readySection).getByRole("button", { name: /未提交发票 invoice\.pdf INV-001/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "所有发票列表" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "TEAM-001" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /共享发票 team-railway\.pdf TEAM-001/ })).toBeInTheDocument();
+    expect(screen.getByText("票号 TEAM-001")).toBeInTheDocument();
   });
 });

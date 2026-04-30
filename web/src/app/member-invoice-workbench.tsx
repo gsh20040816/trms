@@ -11,6 +11,7 @@ import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { FileDropZone } from "../components/FileDropZone";
+import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { ApiError } from "../lib/api/client";
 import {
   EmptyState,
@@ -580,6 +581,29 @@ function buildInvoiceValidationSummary(item: WorkbenchInvoiceItem) {
     label: "校验暂不适用",
     tone: "neutral" as const,
   };
+}
+
+function mapValidationStatusToSummaryTone(validationStatus: TaskSharedInvoiceItem["validation_status"]) {
+  if (validationStatus === "passed") {
+    return "success" as const;
+  }
+  if (validationStatus === "failed" || validationStatus === "pending") {
+    return "warning" as const;
+  }
+  return "neutral" as const;
+}
+
+function formatSharedInvoiceValidationLabel(validationStatus: TaskSharedInvoiceItem["validation_status"]) {
+  if (validationStatus === "passed") {
+    return "校验通过";
+  }
+  if (validationStatus === "failed") {
+    return "校验未通过";
+  }
+  if (validationStatus === "pending") {
+    return "校验待确认";
+  }
+  return "校验暂不适用";
 }
 
 function formatRecognitionDispatchMessage(dispatch: MaterialBatchUploadResponse["recognition_dispatch"]) {
@@ -1619,64 +1643,35 @@ export function MemberInvoiceWorkbenchPage() {
       && workbenchState.status === "ready"
       && workbenchState.task.status === "open"
     );
-    const summaryRowClassName = options?.highlight
-      ? "invoice-summary-row-shell invoice-summary-row-shell-warning"
-      : "invoice-summary-row-shell";
-    const summaryButtonClassName = options?.highlight
-      ? "invoice-summary-row-button invoice-summary-row-button-warning"
-      : "invoice-summary-row-button";
-
     return (
       <li key={item.material.material_id}>
-        <div className={summaryRowClassName}>
-          {selectionListKey !== null ? (
-            <div className="invoice-summary-selection">
-              <Checkbox
-                checked={isBatchSelected}
-                disabled={!canSelect}
-                onChange={(event) => {
-                  if (!item.invoice) {
-                    return;
-                  }
-                  handleBatchInvoiceSelectionChange(selectionListKey, item.invoice.id, event.target.checked);
-                }}
-                inputProps={{
-                  "aria-label": `批量选择发票 ${describeWorkbenchInvoice(item)}`,
-                }}
-              />
-            </div>
-          ) : null}
-          <button
-            type="button"
-            className={summaryButtonClassName}
-            aria-label={`${contextLabel} ${item.material.original_filename} ${item.invoice?.invoice_number ?? "待补录票号"}`}
-            onClick={() => {
+        <InvoiceSummaryRow
+          filename={item.material.original_filename}
+          invoiceNumber={item.invoice?.invoice_number ?? null}
+          validationLabel={validationSummary.label}
+          validationTone={validationSummary.tone}
+          supportingMaterialCount={item.supportingMaterials.length}
+          statusHint={statusHint}
+          emphasisLabel={options?.emphasisLabel ?? null}
+          highlight={options?.highlight ?? false}
+          selection={selectionListKey !== null ? {
+            checked: isBatchSelected,
+            disabled: !canSelect,
+            ariaLabel: `批量选择发票 ${describeWorkbenchInvoice(item)}`,
+            onChange: (checked) => {
+              if (!item.invoice) {
+                return;
+              }
+              handleBatchInvoiceSelectionChange(selectionListKey, item.invoice.id, checked);
+            },
+          } : null}
+          action={{
+            ariaLabel: `${contextLabel} ${item.material.original_filename} ${item.invoice?.invoice_number ?? "待补录票号"}`,
+            onClick: () => {
               handleInvoiceDetailAction(item);
-            }}
-          >
-            <span className="sr-only">{contextLabel}</span>
-            <span className="invoice-summary-grid">
-              <span className="invoice-summary-cell invoice-summary-file" title={item.material.original_filename}>
-                {item.material.original_filename}
-              </span>
-              <span className="invoice-summary-cell" title={item.invoice?.invoice_number ?? "待补录票号"}>
-                票号 {item.invoice?.invoice_number ?? "待补录"}
-              </span>
-              <span className={`invoice-summary-cell invoice-summary-validation invoice-summary-validation-${validationSummary.tone}`}>
-                {validationSummary.label}
-              </span>
-              <span className="invoice-summary-cell">附件 {item.supportingMaterials.length}</span>
-            </span>
-            <span className="invoice-summary-side">
-              {statusHint ? (
-                <span className="invoice-summary-hint" title={statusHint}>
-                  {statusHint}
-                </span>
-              ) : null}
-              {options?.emphasisLabel ? <StatusBadge tone="warning">{options.emphasisLabel}</StatusBadge> : null}
-            </span>
-          </button>
-        </div>
+            },
+          }}
+        />
       </li>
     );
   }
@@ -2402,41 +2397,27 @@ export function MemberInvoiceWorkbenchPage() {
                 </p>
                 <ul className="invoice-material-list" aria-label="共享发票选择列表">
                   {sharedInvoices.map((item) => (
-                      <li key={item.invoice_id}>
-                        <button
-                          type="button"
-                          className="invoice-material-button"
-                          onClick={() => {
+                    <li key={item.invoice_id}>
+                      <InvoiceSummaryRow
+                        filename={item.original_filename}
+                        invoiceNumber={item.invoice_number}
+                        validationLabel={formatSharedInvoiceValidationLabel(item.validation_status)}
+                        validationTone={mapValidationStatusToSummaryTone(item.validation_status)}
+                        supportingMaterialCount={item.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
+                        statusHint={`上传成员 ${item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}；${formatSupportingMaterialSummary(item)}`}
+                        trailingContent={(
+                          <StatusBadge tone="info">
+                            {formatExpenseType(item.expense_type)}
+                          </StatusBadge>
+                        )}
+                        action={{
+                          ariaLabel: `共享发票 ${item.original_filename} ${item.invoice_number}`,
+                          onClick: () => {
                             void navigate(buildInvoiceDetailPath(workbenchState.task.id, item.invoice_id));
-                          }}
-                        >
-                          <div className="task-card-header">
-                            <div>
-                              <p className="task-card-id">共享摘要 / {item.invoice_id}</p>
-                              <h3>{item.invoice_number}</h3>
-                            </div>
-                            <StatusBadge tone="info">{formatExpenseType(item.expense_type)}</StatusBadge>
-                          </div>
-                          <dl className="task-meta-grid invoice-editor-summary-grid">
-                            <div>
-                              <dt>上传成员</dt>
-                              <dd>{item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}</dd>
-                            </div>
-                            <div>
-                              <dt>发票金额</dt>
-                              <dd>{formatCurrencyFromCents(item.amount_cents)}</dd>
-                            </div>
-                            <div>
-                              <dt>分摊记录</dt>
-                              <dd>{item.splits.length} 条</dd>
-                            </div>
-                            <div>
-                              <dt>附件摘要</dt>
-                              <dd>{formatSupportingMaterialSummary(item)}</dd>
-                            </div>
-                          </dl>
-                        </button>
-                      </li>
+                          },
+                        }}
+                      />
+                    </li>
                   ))}
                 </ul>
               </>

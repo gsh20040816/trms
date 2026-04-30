@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-05-01 01:36 - Unify invoice summary snippets into one-line rows
+
+### 完成内容
+- 完成任务“统一所有发票缩略信息为一行摘要组件”。
+- 新增统一前端摘要组件 [invoice-summary-row.tsx](/home/gsh/workspace/TRMS/web/src/components/invoice-summary-row.tsx)：
+  - 默认字段顺序固定为原始文件名、发票号、校验状态、附件数量；
+  - 同时支持可点击摘要行、只读静态摘要行、批量选择复选框、状态提示和强调标签；
+  - 复用现有成员工作台的一行摘要样式，不再让不同入口各自维护一套缩略结构。
+- 调整成员端入口：
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 中“未提交发票”“已提交发票”“问题发票”和“共享发票”统一改用该摘要组件；
+  - 共享发票摘要不再默认展示 `invoice_id`，而是改为原始文件名、票号、校验状态和附件数量，并把上传成员/费用类型收进提示或状态标签；
+  - [member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx) 的“共享发票摘要”也改为同一只读一行摘要。
+- 调整管理员入口：
+  - [admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx) 中非发票材料的“关联发票摘要列表”改为同一组件；
+  - [admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 的发票材料列表、[admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx) 的任务发票列表，以及 [admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx) 的异常发票列表也统一改用同一摘要组件；
+  - 默认不再在这些缩略摘要中显示“发票编号：UUID”“材料编号”一类内部标识，而是展示原始文件名、票号、校验状态、附件数量和费用类型，并在需要时点击回到对应主发票材料。
+- 补齐共享发票读模型字段：
+  - [task_shared_invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_shared_invoices.py) 为共享发票摘要新增 `original_filename` 与 `validation_status`；
+  - [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py) 与 [task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py) 将发票校验结果传入共享摘要构建逻辑；
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 同步前端类型定义。
+- 更新测试：
+  - 后端：[test_task_shared_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_task_shared_invoices_api.py)、[test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py)
+  - 前端：[member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)、[member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)、[admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)、[admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)、[admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx)、[admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)
+  - 覆盖共享发票摘要新字段、成员端统一一行摘要，以及管理员审核/录入/分摊/异常列表摘要不显示内部 ID。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，标记该任务已完成。
+
+### 根因
+- 成员工作台本人发票摘要虽然已收成一行，但共享发票摘要仍是独立卡片；管理员材料审核中的关联发票摘要又是另一套列表文本，导致同一类对象在不同页面的信息密度、字段顺序和状态语义不一致。
+- 共享发票聚合接口之前没有提供原始文件名与校验状态，前端无法在成员共享摘要入口复用“原始文件名、票号、校验状态、附件数量”这一统一信息架构。
+- 管理员材料审核默认展示 `invoice.id`，说明缩略摘要没有落实“业务可读信息优先、内部 ID 不在第一层展示”的边界。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_task_shared_invoices_api.py tests/test_task_member_workbench_api.py`
+  - 7 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-split-editor.test.tsx admin-invoice-editor.test.tsx admin-corrections-reminders.test.tsx admin-review-overview.test.tsx member-invoice-workbench-layout.test.tsx member-invoice-detail.test.tsx`
+  - 6 个测试文件、18 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 495 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮统一的是成员工作台、成员共享发票详情和管理员材料审核中的发票缩略摘要；管理员分摊页、管理员发票录入页、成员费用确认页等仍保留各自更完整的卡片或详情视图，因为它们不属于本任务定义的“缩略摘要”边界。
+- 本轮已经统一成员工作台、成员共享发票详情、管理员材料审核、管理员发票录入列表、管理员分摊列表和管理员异常发票列表中的缩略摘要；成员费用确认页仍保留更完整的明细卡片，因为它属于个人费用确认详情，不是当前任务定义的“缩略摘要主路径”。
+- 共享发票 `validation_status` 当前按该发票已有校验结果推导；若后续需要把“缺失材料导致的阻塞”和“规则校验失败/待确认”拆成更细的摘要标签，应在统一摘要组件外增加明确的状态映射，而不是重新回退到展示内部字段。
+
 ## 2026-05-01 01:18 - Convert member ready invoices into one-line summaries with split batch actions
 
 ### 完成内容
