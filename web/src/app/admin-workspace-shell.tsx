@@ -268,7 +268,7 @@ export function AdminWorkspaceShell({
                 <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="caption" color="text.secondary">
-                      任务编号 {task.id}
+                      当前任务
                     </Typography>
                     <Typography component="h3" variant="subtitle1" sx={{ fontWeight: 700 }}>
                       {task.competition_name}

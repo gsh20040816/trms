@@ -204,6 +204,20 @@ function buildReviewDetailItems(summary: TaskReviewSummary) {
     });
 }
 
+function describeInvoiceReference(invoiceItem: TaskReviewSummaryInvoiceItem | null) {
+  if (invoiceItem === null) {
+    return "未录入";
+  }
+  return invoiceItem.invoice.invoice_number;
+}
+
+function describeSupportingInvoiceReferences(invoices: TaskReviewSummaryInvoiceItem[]) {
+  if (invoices.length === 0) {
+    return "无";
+  }
+  return invoices.map((item) => item.invoice.invoice_number).join("、");
+}
+
 function pickSelectedMaterialId(
   items: ReviewMaterialDetailItem[],
   currentMaterialId: string,
@@ -502,7 +516,7 @@ export function AdminReviewOverviewPage() {
           <section className="status-card admin-review-panel">
             <div className="task-card-header">
               <div>
-                <p className="task-card-id">任务编号 {visibleTask.id}</p>
+                <p className="task-card-id">材料审核</p>
                 <h2>{visibleTask.competition_name}</h2>
               </div>
               <StatusBadge tone="info">{formatTaskStatus(visibleTask.status)}</StatusBadge>
@@ -581,7 +595,7 @@ export function AdminReviewOverviewPage() {
                 <ul className="token-list" aria-label="逾期未确认成员">
                   {visibleOverdueSummary.overdue_member_ids.map((memberId) => (
                     <li key={memberId} className="token-chip">
-                      {memberId}
+                      {formatMemberLabel(memberId)}
                     </li>
                   ))}
                 </ul>
@@ -594,7 +608,7 @@ export function AdminReviewOverviewPage() {
                   {disputedItems.map(({ invoiceNumber, split, confirmation }) => (
                     <li key={split.id}>
                       <strong>
-                        {split.member_id} / {invoiceNumber} / {formatCurrencyFromCents(split.amount_cents)}
+                        {formatMemberLabel(split.member_id)} / {invoiceNumber} / {formatCurrencyFromCents(split.amount_cents)}
                       </strong>
                       <span>{confirmation.dispute_reason ?? "未填写异议原因"}</span>
                       <span>提交时间：{formatDateTime(confirmation.updated_at)}</span>
@@ -621,7 +635,7 @@ export function AdminReviewOverviewPage() {
                   <li key={material.id} className="admin-review-record-card">
                     <div className="task-card-header">
                       <div>
-                        <p className="task-card-id">材料编号 {material.id}</p>
+                        <p className="task-card-id">待归属材料</p>
                         <h3>{material.original_filename}</h3>
                       </div>
                       <StatusBadge tone="danger">待归属</StatusBadge>
@@ -632,20 +646,12 @@ export function AdminReviewOverviewPage() {
                     </div>
                     <div className="task-meta-grid admin-review-meta-grid">
                       <div>
-                        <dt>任务提示</dt>
-                        <dd>{material.task_id_hint ?? "未提供"}</dd>
-                      </div>
-                      <div>
                         <dt>成员提示</dt>
-                        <dd>{material.submitter_id_hint ?? "未提供"}</dd>
+                        <dd>{material.submitter_id_hint ? formatMemberLabel(material.submitter_id_hint) : "未提供"}</dd>
                       </div>
                       <div>
                         <dt>上传时间</dt>
                         <dd>{formatDateTime(material.created_at)}</dd>
-                      </div>
-                      <div>
-                        <dt>文件哈希</dt>
-                        <dd>{material.sha256.slice(0, 12)}...</dd>
                       </div>
                     </div>
                   </li>
@@ -692,7 +698,7 @@ export function AdminReviewOverviewPage() {
                         >
                           <div className="task-card-header">
                             <div>
-                              <p className="task-card-id">材料编号 {material.id}</p>
+                              <p className="task-card-id">材料摘要</p>
                               <h3>{material.original_filename}</h3>
                             </div>
                             <StatusBadge tone={buildRecognitionBadgeTone(recognition)}>
@@ -707,7 +713,7 @@ export function AdminReviewOverviewPage() {
                           <dl className="task-meta-grid invoice-editor-summary-grid">
                             <div>
                               <dt>主发票</dt>
-                              <dd>{item.materialItem.invoice_id ?? "未录入"}</dd>
+                              <dd>{describeInvoiceReference(item.primaryInvoice)}</dd>
                             </div>
                             <div>
                               <dt>关联发票</dt>
@@ -747,7 +753,7 @@ export function AdminReviewOverviewPage() {
 
                   <div className="task-card-header">
                     <div>
-                      <p className="task-card-id">材料编号 {selectedMaterial.id}</p>
+                      <p className="task-card-id">当前材料</p>
                       <h3>{selectedMaterial.original_filename}</h3>
                     </div>
                     <StatusBadge tone="info">
@@ -775,15 +781,11 @@ export function AdminReviewOverviewPage() {
                     </div>
                     <div>
                       <dt>主发票</dt>
-                      <dd>{selectedDetailItem?.materialItem.invoice_id ?? "未录入"}</dd>
+                      <dd>{describeInvoiceReference(selectedInvoice)}</dd>
                     </div>
                     <div>
                       <dt>辅助归属到</dt>
-                      <dd>
-                        {selectedDetailItem?.materialItem.supporting_invoice_ids.length
-                          ? selectedDetailItem.materialItem.supporting_invoice_ids.join("、")
-                          : "无"}
-                      </dd>
+                      <dd>{describeSupportingInvoiceReferences(relatedInvoices.filter((item) => item.invoice.id !== selectedInvoice?.invoice.id))}</dd>
                     </div>
                   </div>
 

@@ -441,11 +441,11 @@ export function AdminTaskDetailPage() {
 
     const confirmed = await confirm({
       title: `确认将任务切换为${formatTaskStatus(targetStatus)}？`,
-      description: `任务 ${task.competition_name}（${task.id}）将从${formatTaskStatus(task.status)}切换为${formatTaskStatus(targetStatus)}。请确认当前阶段的成员提交流程、复核进度和导出准备度都已符合预期。`,
+      description: `任务 ${task.competition_name} 将从${formatTaskStatus(task.status)}切换为${formatTaskStatus(targetStatus)}。请确认当前阶段的成员提交流程、复核进度和导出准备度都已符合预期。`,
       confirmLabel: "确认切换状态",
       cancelLabel: "保留当前状态",
       destructive: targetStatus === "completed",
-      requireTyping: targetStatus === "completed" ? task.id : undefined,
+      requireTyping: targetStatus === "completed" ? task.competition_name : undefined,
     });
     if (!confirmed) {
       return;
@@ -530,7 +530,7 @@ export function AdminTaskDetailPage() {
           <article className="status-card admin-task-detail-panel">
             <div className="task-card-header">
               <div>
-                <p className="task-card-id">任务编号 {visibleTask.id}</p>
+                <p className="task-card-id">任务详情</p>
                 <h2>{visibleTask.competition_name}</h2>
               </div>
               <StatusBadge tone="info">{formatTaskStatus(visibleTask.status)}</StatusBadge>

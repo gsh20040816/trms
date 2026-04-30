@@ -169,6 +169,19 @@ function formatFileSize(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function describeExportArtifact(contentType: string | null | undefined) {
+  if (contentType === "application/zip") {
+    return "ZIP 材料包";
+  }
+  if (contentType === "application/pdf") {
+    return "PDF 材料包";
+  }
+  if (contentType === "text/csv") {
+    return "CSV 文件";
+  }
+  return contentType ?? "导出产物";
+}
+
 function buildPackageJobSummary(job: TaskExportJobRecord | null) {
   if (!job) {
     return {
@@ -328,7 +341,7 @@ export function AdminExportTasksPage() {
 
     const confirmed = await confirm({
       title: `确认创建${formatExportKind(kind)}任务？`,
-      description: `任务 ${pageState.task.competition_name}（${pageState.task.id}）当前处于${formatTaskStatus(pageState.task.status)}。确认后会以 ${formatExportFormat(PREFERRED_JOB_FORMATS[kind])} 格式创建新的异步导出任务，并按当前数据版本进入后台队列。`,
+      description: `任务 ${pageState.task.competition_name} 当前处于${formatTaskStatus(pageState.task.status)}。确认后会以 ${formatExportFormat(PREFERRED_JOB_FORMATS[kind])} 格式创建新的异步导出任务，并按当前数据版本进入后台队列。`,
       confirmLabel: "创建导出任务",
       cancelLabel: "暂不创建",
       tone: kind === "merged_pdf" ? "warning" : "info",
@@ -424,19 +437,19 @@ export function AdminExportTasksPage() {
     }
   }
 
-  async function handleDownload(jobId: string) {
+  async function handleDownload(job: TaskExportJobRecord) {
     if (!session) {
       return;
     }
 
     setActionError(null);
     setActionFeedback(null);
-    setActiveDownloadJobId(jobId);
+    setActiveDownloadJobId(job.id);
 
     try {
-      const downloaded = await trmsApi.downloadTaskExportArtifact(jobId, session.actorId);
-      triggerBrowserDownload(downloaded.blob, downloaded.filename ?? `${jobId}.bin`);
-      setActionFeedback(`导出文件 ${downloaded.filename ?? jobId} 已开始下载。`);
+      const downloaded = await trmsApi.downloadTaskExportArtifact(job.id, session.actorId);
+      triggerBrowserDownload(downloaded.blob, downloaded.filename ?? `${job.kind}.bin`);
+      setActionFeedback(`${formatExportKind(job.kind)}已开始下载。`);
     } catch (error) {
       setActionError(error);
     } finally {
@@ -484,7 +497,7 @@ export function AdminExportTasksPage() {
           <section className="status-card admin-review-panel">
             <div className="task-card-header">
               <div>
-                <p className="task-card-id">任务编号 {pageState.task.id}</p>
+                <p className="task-card-id">导出打印</p>
                 <h2>{pageState.task.competition_name}</h2>
               </div>
               <StatusBadge tone={packageJobSummary.tone}>{packageJobSummary.badge}</StatusBadge>
@@ -523,7 +536,7 @@ export function AdminExportTasksPage() {
                 <div className="task-card-header">
                   <div>
                     <p className="task-card-id">最近完整材料包</p>
-                    <h4>{latestPackageJob.id}</h4>
+                    <h4>{formatDateTime(latestPackageJob.created_at)}</h4>
                   </div>
                   <StatusBadge tone={buildJobStatusTone(latestPackageJob.status)}>
                     {formatExportJobStatus(latestPackageJob.status)}
@@ -550,7 +563,7 @@ export function AdminExportTasksPage() {
                 {latestPackageJob.artifact ? (
                   <div className="status-note">
                     <p>
-                      下载产物：{latestPackageJob.artifact.filename} ·{" "}
+                      下载产物：{describeExportArtifact(latestPackageJob.artifact.content_type)} ·{" "}
                       {latestPackageJob.artifact.content_type ?? "未知类型"} ·{" "}
                       {formatFileSize(latestPackageJob.artifact.size_bytes)}
                     </p>
@@ -578,7 +591,7 @@ export function AdminExportTasksPage() {
                   variant="outlined"
                   disabled={activeDownloadJobId === latestPackageJob.id}
                   onClick={() => {
-                    void handleDownload(latestPackageJob.id);
+                    void handleDownload(latestPackageJob);
                   }}
                 >
                   {activeDownloadJobId === latestPackageJob.id ? "正在下载..." : "下载最近完整材料包"}
@@ -748,7 +761,7 @@ export function AdminExportTasksPage() {
                         <p className="task-card-id">
                           {formatExportKind(job.kind)} / {formatExportFormat(job.format)}
                         </p>
-                        <h3>{job.id}</h3>
+                        <h3>{formatDateTime(job.created_at)}</h3>
                       </div>
                       <StatusBadge tone={buildJobStatusTone(job.status)}>
                         {formatExportJobStatus(job.status)}
@@ -784,7 +797,7 @@ export function AdminExportTasksPage() {
                       <>
                         <div className="status-note">
                           <p>
-                            导出产物：{job.artifact.filename} · {job.artifact.content_type ?? "未知类型"} ·{" "}
+                            导出产物：{describeExportArtifact(job.artifact.content_type)} · {job.artifact.content_type ?? "未知类型"} ·{" "}
                             {formatFileSize(job.artifact.size_bytes)}
                           </p>
                         </div>
@@ -794,7 +807,7 @@ export function AdminExportTasksPage() {
                             variant="outlined"
                             disabled={activeDownloadJobId === job.id}
                             onClick={() => {
-                              void handleDownload(job.id);
+                              void handleDownload(job);
                             }}
                           >
                             {activeDownloadJobId === job.id ? "正在下载..." : "下载导出文件"}

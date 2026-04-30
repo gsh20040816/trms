@@ -365,14 +365,18 @@ describe("AdminReviewOverviewPage", () => {
 
     const pendingList = within(screen.getByLabelText("待归属材料列表"));
     expect(pendingList.getByText("pending-pay.pdf")).toBeInTheDocument();
-    expect(pendingList.getByText("2250003")).toBeInTheDocument();
+    expect(pendingList.getByText("成员 2250003")).toBeInTheDocument();
+    expect(pendingList.queryByText(/TASK-REVIEW/)).not.toBeInTheDocument();
+    expect(pendingList.queryByText(/材料编号/)).not.toBeInTheDocument();
 
     const materialList = within(screen.getByLabelText("材料审核列表"));
     expect(materialList.getByText("invoice.pdf")).toBeInTheDocument();
     expect(materialList.getByText("payment.png")).toBeInTheDocument();
+    expect(materialList.queryByText(/材料编号/)).not.toBeInTheDocument();
 
     const detailPanel = within(screen.getByLabelText("当前材料详情"));
     expect(await detailPanel.findByText("invoice.pdf")).toBeInTheDocument();
+    expect(detailPanel.queryByText(/材料编号/)).not.toBeInTheDocument();
     const detailTabs = within(detailPanel.getByRole("tablist", { name: "当前材料详情标签页" }));
     expect(detailTabs.getByRole("tab", { name: "附件预览" })).toHaveAttribute("aria-selected", "true");
     expect(await detailPanel.findByLabelText("原始票据 PDF 预览")).toHaveAttribute(
@@ -385,6 +389,7 @@ describe("AdminReviewOverviewPage", () => {
       await Promise.resolve();
     });
     expect(detailPanel.getByText("￥123.45")).toBeInTheDocument();
+    expect(detailPanel.queryByText(/材料编号/)).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "校验异常" }));

@@ -18,6 +18,7 @@ import type {
   TaskReviewSummary,
   ValidationResult,
 } from "../lib/api/types";
+import { formatMemberLabel } from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -39,6 +40,7 @@ type ReminderFormErrors = {
 type RecognitionCorrectionAction = {
   materialId: string;
   invoiceId: string | null;
+  invoiceNumber: string | null;
   filename: string;
   submitterId: string | null;
   recognitionStatus: RecognitionTaskStatus | null;
@@ -99,10 +101,12 @@ function sortRemindersByCreatedAtDesc(items: MaterialReminderRecord[]) {
 }
 
 function buildRecognitionCorrectionActions(summary: TaskReviewSummary): RecognitionCorrectionAction[] {
+  const invoiceItemsById = new Map(summary.invoices.map((item) => [item.invoice.id, item] as const));
   return summary.materials
     .filter((item) => item.material.material_type === "invoice")
     .map((item) => {
       const recognition = item.latest_recognition;
+      const invoiceItem = item.invoice_id ? (invoiceItemsById.get(item.invoice_id) ?? null) : null;
       const lowConfidenceFieldNames = recognition
         ? Object.entries(recognition.recognized_fields)
           .filter(([, field]) => field.status === "needs_confirmation")
@@ -112,6 +116,7 @@ function buildRecognitionCorrectionActions(summary: TaskReviewSummary): Recognit
       return {
         materialId: item.material.id,
         invoiceId: item.invoice_id,
+        invoiceNumber: invoiceItem?.invoice.invoice_number ?? null,
         filename: item.material.original_filename,
         submitterId: item.material.submitter_id,
         recognitionStatus: recognition?.status ?? null,
@@ -302,7 +307,7 @@ export function AdminCorrectionsRemindersPage() {
       });
       setContent("");
       setFormErrors({});
-      setSubmitFeedback(`已保存对成员 ${reminder.member_id} 的内部提醒记录；系统不会自动发送消息。`);
+      setSubmitFeedback(`已保存对${formatMemberLabel(reminder.member_id)}的内部提醒记录；系统不会自动发送消息。`);
     } catch (error) {
       setSubmitError(error);
     } finally {
@@ -373,7 +378,7 @@ export function AdminCorrectionsRemindersPage() {
                     <li key={item.materialId} className="admin-review-record-card">
                       <div className="task-card-header">
                         <div>
-                          <p className="task-card-id">材料编号 {item.materialId}</p>
+                          <p className="task-card-id">待确认发票材料</p>
                           <h3>{item.filename}</h3>
                         </div>
                         <StatusBadge tone={item.recognitionStatus === "failed" ? "danger" : "warning"}>
@@ -381,7 +386,7 @@ export function AdminCorrectionsRemindersPage() {
                         </StatusBadge>
                       </div>
                       <div className="admin-review-inline-metadata">
-                        <span className="token-chip">提交人 {item.submitterId ?? "未解析"}</span>
+                        <span className="token-chip">提交人 {item.submitterId ? formatMemberLabel(item.submitterId) : "未解析"}</span>
                         <span className="token-chip">
                           低置信度字段 {item.lowConfidenceFieldNames.length} 个
                         </span>
@@ -389,7 +394,7 @@ export function AdminCorrectionsRemindersPage() {
                       <div className="task-meta-grid admin-review-meta-grid">
                         <div>
                           <dt>已录入发票</dt>
-                          <dd>{item.invoiceId ?? "未录入"}</dd>
+                          <dd>{item.invoiceNumber ?? "未录入"}</dd>
                         </div>
                         <div>
                           <dt>上传时间</dt>
@@ -518,7 +523,7 @@ export function AdminCorrectionsRemindersPage() {
                   {visibleTask.member_ids.length > 0 ? (
                     visibleTask.member_ids.map((taskMemberId) => (
                       <MenuItem key={taskMemberId} value={taskMemberId}>
-                        {taskMemberId}
+                        {formatMemberLabel(taskMemberId)}
                       </MenuItem>
                     ))
                   ) : (
@@ -558,7 +563,7 @@ export function AdminCorrectionsRemindersPage() {
                 <ul className="admin-review-list" aria-label="补材料提醒列表">
                   {visibleReminders.map((reminder) => (
                     <li key={reminder.id}>
-                      <strong>成员 {reminder.member_id}</strong>
+                      <strong>{formatMemberLabel(reminder.member_id)}</strong>
                       <span>{reminder.content}</span>
                       <span>记录时间：{formatDateTime(reminder.created_at)}</span>
                     </li>

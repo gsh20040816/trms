@@ -253,7 +253,7 @@ describe("admin export tasks page", () => {
       await Promise.resolve();
     });
     const confirmDialog = await screen.findByRole("dialog");
-    expect(within(confirmDialog).getByText("任务 ICPC 区域赛报销（TASK-EXPORT）当前处于可导出。确认后会以 XLSX 格式创建新的异步导出任务，并按当前数据版本进入后台队列。")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("任务 ICPC 区域赛报销 当前处于可导出。确认后会以 XLSX 格式创建新的异步导出任务，并按当前数据版本进入后台队列。")).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(within(confirmDialog).getByRole("button", { name: "暂不创建" }));
       await Promise.resolve();
@@ -282,7 +282,9 @@ describe("admin export tasks page", () => {
       await screen.findByText("报销汇总表 导出任务已创建，当前状态：待生成。"),
     ).toBeInTheDocument();
     expect(createJobRequestCount).toBe(1);
-    expect(screen.getByText("export-job-summary")).toBeInTheDocument();
+    const exportHistory = within(screen.getByLabelText("导出任务历史列表"));
+    expect(exportHistory.getByText(/报销汇总表\s*\/\s*XLSX/)).toBeInTheDocument();
+    expect(screen.queryByText("export-job-summary")).not.toBeInTheDocument();
 
     const refreshedSummaryCard = screen.getByRole("heading", { name: "报销汇总表" }).closest("article");
     expect(refreshedSummaryCard).not.toBeNull();
@@ -439,7 +441,7 @@ describe("admin export tasks page", () => {
 
     const confirmDialog = await screen.findByRole("dialog");
     expect(within(confirmDialog).getByText(
-      "任务 ICPC 区域赛报销（TASK-PACKAGE）当前处于可导出。确认后会以 ZIP 格式创建新的异步导出任务，并按当前数据版本进入后台队列。",
+      "任务 ICPC 区域赛报销 当前处于可导出。确认后会以 ZIP 格式创建新的异步导出任务，并按当前数据版本进入后台队列。",
     )).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(within(confirmDialog).getByRole("button", { name: "创建导出任务" }));
@@ -453,7 +455,9 @@ describe("admin export tasks page", () => {
     expect(
       await screen.findByText("完整报销材料包 导出任务已创建，当前状态：待生成。"),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("export-job-package-new").length).toBeGreaterThan(0);
+    const packageHistory = within(screen.getByLabelText("导出任务历史列表"));
+    expect(packageHistory.getAllByText(/完整报销材料包\s*\/\s*ZIP/).length).toBe(2);
+    expect(screen.queryByText("export-job-package-new")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建报销汇总表任务" })).toBeInTheDocument();
   });
 

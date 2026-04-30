@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-01 02:10 - Remove internal identifiers from admin primary paths
+
+### 完成内容
+- 完成任务“清理管理员面板内部标识展示并改为用户友好信息”。
+- 调整管理员主路径默认展示边界：
+  - [admin-workspace-shell.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-workspace-shell.tsx) 的固定任务上下文不再显示 `任务编号 TASK-*`，只保留比赛名称、阶段、截止时间和快捷入口；
+  - [admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx) 顶部摘要不再显示任务编号，状态切换确认弹窗改为使用比赛名称，并把高风险确认输入从内部 `task.id` 改为比赛名称；
+  - [admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx) 中待归属材料、材料审核列表、当前材料详情、逾期成员和成员异议区域不再默认展示材料编号、任务提示、文件哈希和内部发票 ID，改为成员标签、原始文件名、票号、费用类型、时间和状态；
+  - [admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx) 中识别待更正列表、提醒成员下拉和提醒记录统一改为成员业务标签，已录入发票字段展示票号而不是内部 `invoiceId`，成功反馈也不再回显内部成员 ID；
+  - [admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx) 不再默认展示任务编号、导出任务 ID 和导出文件名，导出确认弹窗改为使用比赛名称，历史记录和最新材料包改用创建时间、导出类型、状态和产物类型描述。
+- 更新前端测试：
+  - [admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)
+  - [admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)
+  - [admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx)
+  - [admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - 覆盖管理员复核、催补、导出和任务详情默认路径不出现内部标识，同时保留业务可读信息和既有跳转动作。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，标记该任务已完成。
+
+### 根因
+- 之前虽然已经在部分发票摘要里去掉了 UUID，但管理员共享壳层、任务详情、复核页、催补页和导出页仍沿用“任务编号/材料编号/导出任务 ID/文件名”作为第一层摘要信息，说明“业务可读信息优先”的展示边界没有在管理员主路径统一落实。
+- 这些页面共享的是审核和导出主流程，默认暴露内部标识会迫使管理员先理解系统实现对象，而不是先看比赛、成员、票号、状态和时间等业务线索。
+- 导出页和状态切换确认弹窗还把 `task.id` 当成主要确认对象，导致即使页面正文收口，关键动作前的确认路径仍会把内部标识重新暴露出来。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-review-overview.test.tsx admin-corrections-reminders.test.tsx admin-export-tasks.test.tsx admin-task-detail.test.tsx`
+  - 4 个测试文件、13 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 495 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮只清理管理员主路径默认第一层展示，不改动后端数据结构，也不移除路由参数中的任务 ID / 发票 ID，因为这些仍是内部跳转和接口调用所需的技术标识。
+- 当前成员、管理员标签仍使用“成员 2250001”这类学号型业务标签；如果后续引入真实姓名或更完整的成员档案展示，应作为独立读模型/权限任务处理，而不是在本轮展示收口里继续扩散。
+
 ## 2026-05-01 01:55 - Narrow admin recognition editing UI to business-first Material 3 form
 
 ### 完成内容

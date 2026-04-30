@@ -149,6 +149,7 @@ describe("admin task detail page", () => {
     renderAdminTaskDetailRoute();
 
     expect(await screen.findAllByText("全国邀请赛")).toHaveLength(2);
+    expect(screen.queryByText(/任务编号/)).not.toBeInTheDocument();
     expect(screen.getAllByText("Project A").length).toBeGreaterThan(0);
     expect(screen.getAllByText("张管理员").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("同济大学")).toBeInTheDocument();
@@ -305,7 +306,7 @@ describe("admin task detail page", () => {
       await Promise.resolve();
     });
     const confirmDialog = await screen.findByRole("dialog");
-    expect(within(confirmDialog).getByText("任务 创建中任务（TASK-DRAFT）将从草稿切换为收集中。请确认当前阶段的成员提交流程、复核进度和导出准备度都已符合预期。")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("任务 创建中任务 将从草稿切换为收集中。请确认当前阶段的成员提交流程、复核进度和导出准备度都已符合预期。")).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(within(confirmDialog).getByRole("button", { name: "保留当前状态" }));
       await Promise.resolve();
@@ -508,7 +509,7 @@ describe("admin task detail page", () => {
     fireEvent.click(await screen.findByText("切换为已完成"));
     const confirmDialog = await screen.findByRole("dialog");
     fireEvent.change(within(confirmDialog).getByLabelText("确认动作输入框"), {
-      target: { value: "TASK-READY" },
+      target: { value: "待导出任务" },
     });
     await act(async () => {
       fireEvent.click(within(confirmDialog).getByRole("button", { name: "确认切换状态" }));
