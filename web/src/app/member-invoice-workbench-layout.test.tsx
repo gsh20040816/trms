@@ -536,12 +536,21 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
 
     renderWorkbenchRoute();
 
-    expect(within(await screen.findByRole("region", { name: "识别中 分组" })).getByRole("heading", { name: "INV-PENDING-001" })).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "识别失败或待确认 分组" })).getByRole("heading", { name: "INV-REVIEW-001" })).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "附件待关联 分组" })).getByRole("heading", { name: "INV-LINK-001" })).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "缺失材料 分组" })).getByRole("heading", { name: "INV-MISSING-001" })).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "分摊未完成 分组" })).getByRole("heading", { name: "INV-SPLIT-001" })).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "确认未完成 分组" })).getByRole("heading", { name: "INV-CONFIRM-001" })).toBeInTheDocument();
+    const pendingGroup = within(await screen.findByRole("region", { name: "识别中 分组" }));
+    expect(pendingGroup.getByText("INV-PENDING-001")).toBeInTheDocument();
+    expect(pendingGroup.queryByRole("heading", { name: "INV-PENDING-001" })).not.toBeInTheDocument();
+
+    expect(within(screen.getByRole("region", { name: "识别失败或待确认 分组" })).getByText("INV-REVIEW-001")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "附件待关联 分组" })).getByText("INV-LINK-001")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "缺失材料 分组" })).getByText("INV-MISSING-001")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "分摊未完成 分组" })).getByText("INV-SPLIT-001")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "确认未完成 分组" })).getByText("INV-CONFIRM-001")).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(pendingGroup.getByRole("button", { name: "展开本组全部 1 张" }));
+    });
+
+    expect(pendingGroup.getByRole("heading", { name: "INV-PENDING-001" })).toBeInTheDocument();
   });
 
   it("switches the expanded detail panel when selecting another invoice card", async () => {
@@ -584,5 +593,56 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
     fireEvent.click(screen.getByRole("button", { name: /INV-READY-002/ }));
 
     expect(within(detailPanel).getByRole("heading", { name: "INV-READY-002" })).toBeInTheDocument();
+  });
+
+  it("opens invoice detail from problem summary and card actions", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(buildWorkbenchFetchMock({
+      materials: [
+        {
+          material_id: "MAT-REVIEW-001",
+          original_filename: "review.pdf",
+          created_at: "2026-04-28T11:00:00+08:00",
+          recognition_status: "needs_confirmation",
+          invoice: {
+            id: "INV-REVIEW-001",
+            material_id: "MAT-REVIEW-001",
+            invoice_number: "INV-REVIEW-001",
+            amount_cents: 6345,
+            expense_type: "railway",
+          },
+        },
+      ],
+    }));
+
+    renderWorkbenchRoute();
+
+    const reviewGroup = within(await screen.findByRole("region", { name: "识别失败或待确认 分组" }));
+
+    act(() => {
+      fireEvent.click(reviewGroup.getByRole("button", { name: "进入处理" }));
+    });
+
+    let detailPanel = screen.getByLabelText("成员发票工作台列表");
+    expect(within(detailPanel).getByRole("heading", { name: "INV-REVIEW-001" })).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(reviewGroup.getByRole("button", { name: "展开本组全部 1 张" }));
+    });
+
+    expect(reviewGroup.getByRole("heading", { name: "INV-REVIEW-001" })).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "修改" }));
+    });
+
+    detailPanel = screen.getByLabelText("成员发票工作台列表");
+    expect(within(detailPanel).getByRole("heading", { name: "INV-REVIEW-001" })).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "指定归属" }));
+    });
+
+    detailPanel = screen.getByLabelText("成员发票工作台列表");
+    expect(within(detailPanel).getByRole("heading", { name: "INV-REVIEW-001" })).toBeInTheDocument();
   });
 });

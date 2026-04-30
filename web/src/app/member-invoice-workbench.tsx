@@ -1675,6 +1675,7 @@ export function MemberInvoiceWorkbenchPage() {
   const [runningInvoiceBatchAction, setRunningInvoiceBatchAction] = useState<InvoiceBatchAction | null>(null);
   const [runningPendingSupportingMaterialLinkageActionKey, setRunningPendingSupportingMaterialLinkageActionKey] = useState<string | null>(null);
   const [pendingSupportingMaterialLinkageErrors, setPendingSupportingMaterialLinkageErrors] = useState<Record<string, string>>({});
+  const [expandedProblemInvoiceGroupKeys, setExpandedProblemInvoiceGroupKeys] = useState<string[]>([]);
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
 
   function resetTaskScopedUiState() {
@@ -1705,6 +1706,7 @@ export function MemberInvoiceWorkbenchPage() {
     setRunningInvoiceBatchAction(null);
     setRunningPendingSupportingMaterialLinkageActionKey(null);
     setPendingSupportingMaterialLinkageErrors({});
+    setExpandedProblemInvoiceGroupKeys([]);
   }
 
   useEffect(() => {
@@ -2019,6 +2021,24 @@ export function MemberInvoiceWorkbenchPage() {
   const canSubmitReimbursementConfirmation = submitBlockers.length === 0 && readyInvoiceItems.length > 0;
 
   useEffect(() => {
+    if (!selectedInvoiceDetailAnchorId || activeTab !== "invoices") {
+      return undefined;
+    }
+
+    const timerId = window.setTimeout(() => {
+      const detailElement = document.getElementById(selectedInvoiceDetailAnchorId);
+      if (typeof detailElement?.scrollIntoView === "function") {
+        detailElement.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      detailElement?.focus({ preventScroll: true });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [activeTab, selectedInvoiceDetailAnchorId]);
+
+  useEffect(() => {
     if (!canAutoRefreshRecentUploadStatus) {
       return undefined;
     }
@@ -2043,7 +2063,7 @@ export function MemberInvoiceWorkbenchPage() {
         kind: "own",
         materialId: ownMatch.material.material_id,
       }));
-      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-invoices"));
+      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${invoiceId}`));
       return;
     }
     const sharedMatch = sharedInvoices.find((item) => item.invoice_id === invoiceId);
@@ -2052,7 +2072,7 @@ export function MemberInvoiceWorkbenchPage() {
         kind: "shared",
         invoiceId: sharedMatch.invoice_id,
       }));
-      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-invoices"));
+      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${invoiceId}`));
     }
   }
 
@@ -2619,6 +2639,26 @@ export function MemberInvoiceWorkbenchPage() {
     void navigate(buildWorkbenchTabAnchor(selectedTaskId, nextTab));
   }
 
+  function handleInvoiceDetailAction(item: WorkbenchInvoiceItem) {
+    const invoiceId = item.invoice?.id;
+    setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+      kind: "own",
+      materialId: item.material.material_id,
+    }));
+    void navigate(buildWorkbenchTaskAnchor(
+      workbenchState.status === "ready" ? workbenchState.task.id : selectedTaskId,
+      invoiceId ? `#workbench-invoice-${invoiceId}` : "#member-workbench-invoices",
+    ));
+  }
+
+  function toggleProblemInvoiceGroup(groupKey: string) {
+    setExpandedProblemInvoiceGroupKeys((current) => (
+      current.includes(groupKey)
+        ? current.filter((currentGroupKey) => currentGroupKey !== groupKey)
+        : [...current, groupKey]
+    ));
+  }
+
   function renderOwnWorkbenchQueueCard(item: WorkbenchInvoiceItem, contextLabel: string) {
     const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
       kind: "own",
@@ -2812,10 +2852,7 @@ export function MemberInvoiceWorkbenchPage() {
               variant="outlined"
               size="small"
               onClick={() => {
-                setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-                  kind: "own",
-                  materialId: item.material.material_id,
-                }));
+                handleInvoiceDetailAction(item);
               }}
               aria-pressed={isSelected}
             >
@@ -2826,10 +2863,7 @@ export function MemberInvoiceWorkbenchPage() {
               variant="outlined"
               size="small"
               onClick={() => {
-                setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-                  kind: "own",
-                  materialId: item.material.material_id,
-                }));
+                handleInvoiceDetailAction(item);
               }}
             >
               指定归属
@@ -4237,9 +4271,58 @@ export function MemberInvoiceWorkbenchPage() {
                         </div>
                         <StatusBadge tone={section.tone}>{section.items.length} 张</StatusBadge>
                       </div>
-                      <ul className="invoice-material-list" aria-label={`${section.title} 发票列表`}>
-                        {section.items.map((item) => renderOwnWorkbenchQueueCard(item, section.title))}
-                      </ul>
+                      {expandedProblemInvoiceGroupKeys.includes(section.key) ? (
+                        <>
+                          <div className="inline-actions">
+                            <Button
+                              type="button"
+                              variant="outlined"
+                              size="small"
+                              onClick={() => {
+                                toggleProblemInvoiceGroup(section.key);
+                              }}
+                            >
+                              收起本组
+                            </Button>
+                          </div>
+                          <ul className="invoice-material-list" aria-label={`${section.title} 发票列表`}>
+                            {section.items.map((item) => renderOwnWorkbenchQueueCard(item, section.title))}
+                          </ul>
+                        </>
+                      ) : (
+                        <ul className="member-status-message-list" aria-label={`${section.title} 发票摘要列表`}>
+                          {section.items.map((item) => (
+                            <li key={item.material.material_id}>
+                              <strong>{item.invoice?.invoice_number ?? item.material.original_filename}</strong>
+                              <span>{buildInvoiceQueueStatusSummary(item, pendingSupportingMaterialLinkageItems)[0] ?? section.description}</span>
+                              <div className="inline-actions">
+                                <Button
+                                  type="button"
+                                  variant="outlined"
+                                  size="small"
+                                  onClick={() => {
+                                    handleInvoiceDetailAction(item);
+                                  }}
+                                >
+                                  进入处理
+                                </Button>
+                              </div>
+                            </li>
+                          ))}
+                          <li>
+                            <Button
+                              type="button"
+                              variant="outlined"
+                              size="small"
+                              onClick={() => {
+                                toggleProblemInvoiceGroup(section.key);
+                              }}
+                            >
+                              展开本组全部 {section.items.length} 张
+                            </Button>
+                          </li>
+                        </ul>
+                      )}
                     </section>
                   ))}
                 </div>
@@ -4418,6 +4501,7 @@ export function MemberInvoiceWorkbenchPage() {
               className="status-card admin-form-card admin-review-detail-panel"
               id={selectedInvoiceDetailAnchorId}
               aria-label="成员发票工作台列表"
+              tabIndex={-1}
             >
               {selectedOwnWorkbenchItem ? (
                 renderSelectedOwnWorkbenchItem(selectedOwnWorkbenchItem)

@@ -763,6 +763,47 @@ def test_deepseek_compatible_recognition_client_normalizes_textual_confidence_an
     assert "expense_type" not in result.recognized_fields
 
 
+def test_openai_compatible_recognition_client_normalizes_scalar_classification_fields():
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                build_two_stage_handler(
+                    classification_content={
+                        "output": {
+                            "document_family": "order_screenshot",
+                            "material_type": "hotel_order",
+                            "expense_type_candidate": "hotel",
+                            "is_reimbursement_voucher": False,
+                            "classification_confidence": {"value": 0.9},
+                        }
+                    },
+                    extraction_content={
+                        "output": {
+                            "amount_cents": {
+                                "value": 308700,
+                                "confidence": "high",
+                            }
+                        }
+                    },
+                )
+            ),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert result.recognized_fields["document_family"].value == "order_screenshot"
+    assert result.recognized_fields["material_type"].value == "order_screenshot"
+    assert result.recognized_fields["expense_type_candidate"].value == "hotel"
+    assert result.recognized_fields["is_reimbursement_voucher"].value is False
+    assert result.recognized_fields["classification_confidence"].value == 0.9
+    assert result.recognized_fields["material_type"].status is RecognitionFieldStatus.NEEDS_CONFIRMATION
+    assert result.recognized_fields["amount_cents"].value == 308700
+    assert result.raw_response["selected_schema"]["name"] == "order_screenshot"
+
+
 def test_openai_compatible_recognition_client_rejects_non_json_content():
     client = OpenAiCompatibleRecognitionClient(
         build_provider_config(),

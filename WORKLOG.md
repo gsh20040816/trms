@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-30 21:17 - Fix member workbench actions and LLM output normalization
+
+### 完成内容
+- 完成任务“修复成员工作台发票处理入口和 LLM 识别输出规范化”。
+- 调整 [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - 分类阶段字段返回标量时统一包装为 `{ value: ... }`；
+  - 缺失 `confidence` 时按低置信处理，进入待确认而不是让整次识别失败；
+  - `classification_confidence` 缺 `confidence` 时使用自身数值作为置信度；
+  - 将 `hotel_order`、`railway_order` 等订单类别名收敛为现有 `order_screenshot`。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 待关联辅助材料“查看候选发票”跳转到具体 `#workbench-invoice-*` 详情锚点；
+  - 识别结果卡片“修改 / 指定归属”和问题发票摘要“进入处理”统一选中对应发票并定位详情；
+  - 问题发票分组默认只展示摘要和“进入处理 / 展开本组全部”，避免默认展开所有问题发票长列表。
+- 调整前后端测试：
+  - [test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)
+  - [member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)
+  - [member-invoice-workbench-submission.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-submission.test.tsx)
+
+### 根因
+- 本地运行进程正常，但数据库里上传发票大量失败为 `llm_output_invalid`；实际模型返回的是 `document_family: "order_screenshot"`、`material_type: "hotel_order"` 等标量字段，而旧解析只接受字段对象并且不接受订单类自造材料类型。
+- 成员工作台部分按钮只修改了选中状态或只跳到工作台总锚点，用户在长页面里无法明确看到对应发票详情变化。
+- 问题发票区默认展开完整卡片，上传问题票多时会形成过长列表，掩盖真正的处理入口。
+
+### 影响范围
+- 后端影响集中在 LLM 输出规范化阶段；缺失置信度仍按低置信进入待确认，不伪造高置信识别结果。
+- 前端影响集中在成员工作台发票定位和问题发票分组展示；未改动附件关联、分摊、确认、提交和权限接口。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_recognition_llm.py`
+  - 13 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx member-invoice-workbench-layout.test.tsx member-invoice-workbench-submission.test.tsx member-invoice-workbench-aggregate.test.tsx`
+  - 4 个测试文件、28 个用例通过；Vitest 仍有既有 `--localstorage-file` 路径警告。
+- 已通过前端 lint：
+  - `cd web && npm run lint`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过。
+  - Alembic 升降级验证通过。
+  - pytest 485 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning。
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径警告，Vite 仍有既有 chunk size 警告。
+  - Docker Compose 配置检查通过。
+  - `git diff --check` 通过。
+
 ## 2026-04-30 20:34 - Refactor member reimbursement page to upload-first draft confirmation
 
 ### 完成内容

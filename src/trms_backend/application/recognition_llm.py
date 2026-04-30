@@ -44,8 +44,18 @@ _MATERIAL_TYPE_ALIASES = {
     "通知": "competition_notice",
     "行程单": "itinerary",
     "订单截图": "order_screenshot",
+    "平台订单截图": "order_screenshot",
     "订单": "order_screenshot",
     "其他附件": "other_attachment",
+    "hotel_order": "order_screenshot",
+    "hotel_order_screenshot": "order_screenshot",
+    "accommodation_order": "order_screenshot",
+    "railway_order": "order_screenshot",
+    "train_order": "order_screenshot",
+    "flight_order": "order_screenshot",
+    "airfare_order": "order_screenshot",
+    "rideshare_order": "order_screenshot",
+    "taxi_order": "order_screenshot",
 }
 _EXPENSE_TYPE_ALIASES = {
     "参赛费": "registration",
@@ -78,6 +88,15 @@ _DOCUMENT_FAMILY_ALIASES = {
     "行程单": "itinerary",
     "其他附件": "other_attachment",
     "辅助材料": "other_attachment",
+    "hotel_order": "order_screenshot",
+    "hotel_order_screenshot": "order_screenshot",
+    "accommodation_order": "order_screenshot",
+    "railway_order": "order_screenshot",
+    "train_order": "order_screenshot",
+    "flight_order": "order_screenshot",
+    "airfare_order": "order_screenshot",
+    "rideshare_order": "order_screenshot",
+    "taxi_order": "order_screenshot",
 }
 _BOOLEAN_TEXT_TO_VALUE = {
     "true": True,
@@ -938,8 +957,7 @@ def _normalize_output_fields(output: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for field_name, field_value in output.items():
         if not isinstance(field_value, dict):
-            normalized[field_name] = field_value
-            continue
+            field_value = {"value": field_value}
 
         next_field_value = dict(field_value)
         normalized_confidence = _normalize_confidence_value(next_field_value.get("confidence"))
@@ -975,12 +993,17 @@ def _normalize_output_fields(output: dict[str, Any]) -> dict[str, Any]:
             if normalized_value is None:
                 continue
             next_field_value["value"] = normalized_value
+            if "confidence" not in next_field_value:
+                next_field_value["confidence"] = normalized_value
 
         if field_name == "is_reimbursement_voucher":
             normalized_boolean = _normalize_boolean_value(next_field_value.get("value"))
             if normalized_boolean is None:
                 continue
             next_field_value["value"] = normalized_boolean
+
+        if "confidence" not in next_field_value:
+            next_field_value["confidence"] = LOW_CONFIDENCE_THRESHOLD - 0.01
 
         normalized[field_name] = next_field_value
     return normalized

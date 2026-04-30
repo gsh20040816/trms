@@ -92,6 +92,141 @@ function buildInvoiceResponse(invoice: MutableInvoiceState) {
   };
 }
 
+function buildMaterialStatusResponse(invoice: MutableInvoiceState) {
+  const isRailway = invoice.id === "INV-001";
+  return {
+    material_id: invoice.material_id,
+    submitter_id: "2250001",
+    material_type: "invoice",
+    original_filename: isRailway ? "railway.pdf" : "hotel.pdf",
+    material_status: "assigned",
+    recognition_status: "succeeded",
+    recognition_failure_stage: null,
+    recognition_failure_reason: null,
+    invoice_id: invoice.id,
+    invoice_number: invoice.invoice_number,
+    validation_status: "passed",
+    validation_messages: [],
+    created_at: isRailway ? "2026-04-28T10:00:00+08:00" : "2026-04-28T11:00:00+08:00",
+  };
+}
+
+function buildSplitResponse(invoice: MutableInvoiceState) {
+  const isRailway = invoice.id === "INV-001";
+  return {
+    id: isRailway ? "SPLIT-001" : "SPLIT-002",
+    invoice_id: invoice.id,
+    member_id: "2250001",
+    amount_cents: invoice.amount_cents,
+    note: "self paid",
+    version: 1,
+    is_active: true,
+    created_at: isRailway ? "2026-04-28T10:05:00+08:00" : "2026-04-28T11:05:00+08:00",
+    updated_at: isRailway ? "2026-04-28T10:05:00+08:00" : "2026-04-28T11:05:00+08:00",
+  };
+}
+
+function buildConfirmationResponse(invoice: MutableInvoiceState) {
+  const isRailway = invoice.id === "INV-001";
+  return {
+    id: isRailway ? "CONF-001" : "CONF-002",
+    split_id: isRailway ? "SPLIT-001" : "SPLIT-002",
+    member_id: "2250001",
+    split_version: 1,
+    split_amount_cents: invoice.amount_cents,
+    split_note: "self paid",
+    is_current: true,
+    status: "confirmed",
+    dispute_reason: null,
+    confirmed_at: isRailway ? "2026-04-28T10:06:00+08:00" : "2026-04-28T11:06:00+08:00",
+    updated_at: isRailway ? "2026-04-28T10:06:00+08:00" : "2026-04-28T11:06:00+08:00",
+  };
+}
+
+function buildRecognitionResponse(invoice: MutableInvoiceState) {
+  const isRailway = invoice.id === "INV-001";
+  return {
+    id: isRailway ? "REC-001" : "REC-002",
+    material_id: invoice.material_id,
+    status: "succeeded",
+    is_final_fact: false,
+    failure: null,
+    raw_response: {},
+    recognized_fields: {},
+    manual_corrections: [],
+    created_at: isRailway ? "2026-04-28T10:01:00+08:00" : "2026-04-28T11:01:00+08:00",
+    updated_at: isRailway ? "2026-04-28T10:01:00+08:00" : "2026-04-28T11:01:00+08:00",
+  };
+}
+
+function buildTaskMemberStatusReport(invoices: MutableInvoiceState[]) {
+  return {
+    task_id: "TASK-OPEN",
+    actor_id: "2250001",
+    total_expense_amount_cents: invoices.reduce((sum, invoice) => sum + invoice.amount_cents, 0),
+    counts: {
+      material_count: invoices.length,
+      missing_material_count: 0,
+      expense_detail_count: 0,
+      recognition_pending_count: 0,
+      recognition_succeeded_count: invoices.length,
+      recognition_failed_count: 0,
+      recognition_needs_confirmation_count: 0,
+      validation_passed_count: invoices.length,
+      validation_failed_count: 0,
+      validation_pending_count: 0,
+      validation_not_applicable_count: 0,
+      confirmed_expense_count: 0,
+      pending_confirmation_count: 0,
+      disputed_confirmation_count: 0,
+      missing_confirmation_count: 0,
+    },
+    materials: invoices.map(buildMaterialStatusResponse),
+    missing_materials: [],
+    expense_details: [],
+  };
+}
+
+function buildWorkbenchSummaryItem(invoice: MutableInvoiceState) {
+  const split = buildSplitResponse(invoice);
+  const confirmation = buildConfirmationResponse(invoice);
+  const recognition = buildRecognitionResponse(invoice);
+  const summaryRecognition = {
+    id: recognition.id,
+    status: recognition.status,
+    is_final_fact: recognition.is_final_fact,
+    failure: recognition.failure,
+    recognized_fields: recognition.recognized_fields,
+    manual_corrections: recognition.manual_corrections,
+    created_at: recognition.created_at,
+    updated_at: recognition.updated_at,
+  };
+
+  return {
+    material: buildMaterialStatusResponse(invoice),
+    invoice: buildInvoiceResponse(invoice),
+    recognition: summaryRecognition,
+    validations: [],
+    supporting_materials: [],
+    splits: [split],
+    confirmations: [confirmation],
+    related_expense_details: [
+      {
+        split_id: split.id,
+        invoice: buildInvoiceResponse(invoice),
+        member_id: "2250001",
+        amount_cents: invoice.amount_cents,
+        note: "self paid",
+        confirmation,
+      },
+    ],
+    missing_materials: [],
+    queue_group: "ready",
+    blocking_reasons: [],
+    ready_for_submission: true,
+  };
+}
+
 function buildWorkbenchFetchMock(options: WorkbenchFetchOptions = {}) {
   const invoices: MutableInvoiceState[] = [
     {
@@ -115,6 +250,7 @@ function buildWorkbenchFetchMock(options: WorkbenchFetchOptions = {}) {
       submitted_at: "2026-04-29T12:00:00+08:00",
     },
   ];
+  const [firstInvoice, secondInvoice] = invoices as [MutableInvoiceState, MutableInvoiceState];
 
   return vi.fn((input: string | URL | Request, init?: RequestInit) => {
     const url = resolveRequestUrl(input);
@@ -143,63 +279,19 @@ function buildWorkbenchFetchMock(options: WorkbenchFetchOptions = {}) {
       ]));
     }
 
-    if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001" && method === "GET") {
+    if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
       return Promise.resolve(jsonResponse({
         task_id: "TASK-OPEN",
         actor_id: "2250001",
-        total_expense_amount_cents: 15145,
-        counts: {
-          material_count: 2,
-          missing_material_count: 0,
-          expense_detail_count: 0,
-          recognition_pending_count: 0,
-          recognition_succeeded_count: 2,
-          recognition_failed_count: 0,
-          recognition_needs_confirmation_count: 0,
-          validation_passed_count: 2,
-          validation_failed_count: 0,
-          validation_pending_count: 0,
-          validation_not_applicable_count: 0,
-          confirmed_expense_count: 0,
-          pending_confirmation_count: 0,
-          disputed_confirmation_count: 0,
-          missing_confirmation_count: 0,
-        },
-        materials: [
-          {
-            material_id: "MAT-001",
-            submitter_id: "2250001",
-            material_type: "invoice",
-            original_filename: "railway.pdf",
-            material_status: "assigned",
-            recognition_status: "succeeded",
-            recognition_failure_stage: null,
-            recognition_failure_reason: null,
-            invoice_id: "INV-001",
-            invoice_number: "INV-001",
-            validation_status: "passed",
-            validation_messages: [],
-            created_at: "2026-04-28T10:00:00+08:00",
-          },
-          {
-            material_id: "MAT-002",
-            submitter_id: "2250001",
-            material_type: "invoice",
-            original_filename: "hotel.pdf",
-            material_status: "assigned",
-            recognition_status: "succeeded",
-            recognition_failure_stage: null,
-            recognition_failure_reason: null,
-            invoice_id: "INV-002",
-            invoice_number: "INV-002",
-            validation_status: "passed",
-            validation_messages: [],
-            created_at: "2026-04-28T11:00:00+08:00",
-          },
-        ],
-        missing_materials: [],
-        expense_details: [],
+        report: buildTaskMemberStatusReport(invoices),
+        items: invoices.map(buildWorkbenchSummaryItem),
+        pending_supporting_material_linkage_items: [],
+        shared_invoices: [],
       }));
+    }
+
+    if (url === "/api/tasks/TASK-OPEN/member-status?actor_id=2250001" && method === "GET") {
+      return Promise.resolve(jsonResponse(buildTaskMemberStatusReport(invoices)));
     }
 
     if (url === "/api/tasks/TASK-OPEN/shared-invoices?actor_id=2250001" && method === "GET") {
@@ -222,36 +314,14 @@ function buildWorkbenchFetchMock(options: WorkbenchFetchOptions = {}) {
 
     if (url === "/api/materials/MAT-001/recognition-tasks" && method === "GET") {
       return Promise.resolve(jsonResponse({
-        latest_effective: {
-          id: "REC-001",
-          material_id: "MAT-001",
-          status: "succeeded",
-          is_final_fact: false,
-          failure: null,
-          raw_response: {},
-          recognized_fields: {},
-          manual_corrections: [],
-          created_at: "2026-04-28T10:01:00+08:00",
-          updated_at: "2026-04-28T10:01:00+08:00",
-        },
+        latest_effective: buildRecognitionResponse(firstInvoice),
         items: [],
       }));
     }
 
     if (url === "/api/materials/MAT-002/recognition-tasks" && method === "GET") {
       return Promise.resolve(jsonResponse({
-        latest_effective: {
-          id: "REC-002",
-          material_id: "MAT-002",
-          status: "succeeded",
-          is_final_fact: false,
-          failure: null,
-          raw_response: {},
-          recognized_fields: {},
-          manual_corrections: [],
-          created_at: "2026-04-28T11:01:00+08:00",
-          updated_at: "2026-04-28T11:01:00+08:00",
-        },
+        latest_effective: buildRecognitionResponse(secondInvoice),
         items: [],
       }));
     }
@@ -266,42 +336,26 @@ function buildWorkbenchFetchMock(options: WorkbenchFetchOptions = {}) {
 
     if (url === "/api/invoices/INV-001/splits" && method === "GET") {
       return Promise.resolve(jsonResponse({
-        items: [
-          {
-            id: "SPLIT-001",
-            invoice_id: "INV-001",
-            member_id: "2250001",
-            amount_cents: 6345,
-            note: "self paid",
-            version: 1,
-            is_active: true,
-            created_at: "2026-04-28T10:05:00+08:00",
-            updated_at: "2026-04-28T10:05:00+08:00",
-          },
-        ],
+        items: [buildSplitResponse(firstInvoice)],
       }));
     }
 
     if (url === "/api/invoices/INV-002/splits" && method === "GET") {
       return Promise.resolve(jsonResponse({
-        items: [
-          {
-            id: "SPLIT-002",
-            invoice_id: "INV-002",
-            member_id: "2250001",
-            amount_cents: 8800,
-            note: "self paid",
-            version: 1,
-            is_active: true,
-            created_at: "2026-04-28T11:05:00+08:00",
-            updated_at: "2026-04-28T11:05:00+08:00",
-          },
-        ],
+        items: [buildSplitResponse(secondInvoice)],
       }));
     }
 
-    if (/^\/api\/invoices\/INV-00[12]\/confirmations$/.test(url) && method === "GET") {
-      return Promise.resolve(jsonResponse({ items: [] }));
+    if (url === "/api/invoices/INV-001/confirmations" && method === "GET") {
+      return Promise.resolve(jsonResponse({
+        items: [buildConfirmationResponse(firstInvoice)],
+      }));
+    }
+
+    if (url === "/api/invoices/INV-002/confirmations" && method === "GET") {
+      return Promise.resolve(jsonResponse({
+        items: [buildConfirmationResponse(secondInvoice)],
+      }));
     }
 
     if (url === "/api/tasks/TASK-OPEN/invoice-submissions" && method === "POST") {
