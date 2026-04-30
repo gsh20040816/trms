@@ -301,6 +301,26 @@ def test_airfare_itinerary_rule_covers_passed_and_failed_paths(
     assert result.status is expected_status
 
 
+def test_airfare_itinerary_rule_passes_when_invoice_has_airport_codes():
+    result = validate_airfare_itinerary_requirement(
+        make_invoice(expense_type=ExpenseType.AIRFARE),
+        [],
+        recognition_task=make_recognition(
+            "material-invoice",
+            recognized_fields={
+                "departure_airport_code": "SHA",
+                "arrival_airport_code": "WUH",
+                "return_departure_airport_code": "WUH",
+                "return_arrival_airport_code": "SHA",
+            },
+        ),
+    )
+
+    assert result.rule_code == AIRFARE_ITINERARY_REQUIRED_RULE_CODE
+    assert result.status is ValidationStatus.PASSED
+    assert result.message == "航空费用已具备往返机场代码，无需补充行程单"
+
+
 @pytest.mark.parametrize(
     ("supporting_materials", "supporting_material_recognitions", "expected_status"),
     [

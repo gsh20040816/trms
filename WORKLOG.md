@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-05-01 00:34 - Fix airfare airport-code itinerary requirement
+
+### 完成内容
+- 完成临时任务“修复航空发票机场代码仍触发行程单缺失”。
+- 调整 [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py)：
+  - `validate_invoice(...)` 调用航空行程单规则时传入发票识别结果和辅助材料识别结果；
+  - `validate_airfare_itinerary_requirement(...)` 复用已有机场代码证据收集逻辑；
+  - 航空发票主材料或关联的行程单/订单截图中识别到显式机场代码时，`invoice_airfare_itinerary_required` 返回通过，不再生成“航空费用缺少行程单”。
+- 补充 [test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py) 回归测试，覆盖“发票自身已有往返机场代码但没有额外行程单”的路径。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录并完成本轮运行时修复任务。
+
+### 根因
+- 上一轮只放宽了 `invoice_airfare_cabin_proof_required`：识别到机场代码时不再要求额外订单截图。
+- 但 `invoice_airfare_itinerary_required` 仍只判断是否关联了 `MaterialType.ITINERARY`，不读取任何识别字段；因此同一张航空发票即使已识别出 `SHA -> WUH -> SHA` 这类机场代码，仍会被缺失材料聚合成“缺少行程单”。
+
+### 验证结果
+- 修复前已用新增定向用例复现失败：
+  - `uv run pytest tests/test_invoice_validation_rules.py::test_airfare_itinerary_rule_passes_when_invoice_has_airport_codes`
+  - 失败原因：`validate_airfare_itinerary_requirement()` 不接受 `recognition_task`，行程单规则无法读取机场代码证据。
+- 修复后已通过：
+  - `uv run pytest tests/test_invoice_validation_rules.py`
+  - 28 个用例通过。
+- 已通过相关后端回归：
+  - `uv run pytest tests/test_invoices_api.py tests/test_missing_materials.py tests/test_task_member_workbench_api.py tests/test_task_readiness_api.py`
+  - 51 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 495 个用例通过，存在 3 条既有 deprecation warning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮只放行显式识别到的机场代码，不根据城市名、航司名或文件名推断机场。
+- 已运行实例若不是热加载模式，需要重启 API 后才会加载本次规则变更。
+- 历史发票若已保存旧校验结果，需要重新触发校验或访问会刷新发票校验的接口后，缺失材料列表才会消除。
+
 ## 2026-04-30 23:58 - Simplify member amount ownership and airfare metadata checks
 
 ### 完成内容

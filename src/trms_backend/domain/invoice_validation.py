@@ -110,7 +110,12 @@ def validate_invoice(
             supporting_material_recognitions,
         ),
         validate_competition_notice_requirement(invoice, supporting_materials),
-        validate_airfare_itinerary_requirement(invoice, supporting_materials),
+        validate_airfare_itinerary_requirement(
+            invoice,
+            supporting_materials,
+            recognition_task,
+            supporting_material_recognitions,
+        ),
         validate_airfare_cabin_requirement(
             invoice,
             recognition_task,
@@ -460,13 +465,22 @@ def validate_competition_notice_requirement(
 def validate_airfare_itinerary_requirement(
     invoice: InvoiceRecord,
     supporting_materials: list[MaterialRecord],
+    recognition_task: RecognitionTaskRecord | None = None,
+    supporting_material_recognitions: dict[str, RecognitionTaskRecord | None] | None = None,
 ) -> ValidationResult:
+    supporting_material_recognitions = supporting_material_recognitions or {}
     itinerary_material_ids = [
         material.id
         for material in supporting_materials
         if material.material_type is MaterialType.ITINERARY
     ]
     requires_itinerary = invoice.expense_type is ExpenseType.AIRFARE
+    recognized_airport_code_materials = _collect_airfare_airport_code_evidence(
+        invoice,
+        recognition_task,
+        supporting_materials,
+        supporting_material_recognitions,
+    )
     evidence = {
         "expense_type": invoice.expense_type.value,
         "invoice_material_id": invoice.material_id,
@@ -475,6 +489,11 @@ def validate_airfare_itinerary_requirement(
         "invoice_material_present": True,
         "itinerary_material_ids": itinerary_material_ids,
     }
+    if recognized_airport_code_materials:
+        evidence["airport_code_field_groups"] = [
+            list(group) for group in AIRFARE_AIRPORT_CODE_FIELD_GROUPS
+        ]
+        evidence["recognized_airport_code_materials"] = recognized_airport_code_materials
 
     if not requires_itinerary:
         return _validation_result(
@@ -491,6 +510,15 @@ def validate_airfare_itinerary_requirement(
             target_id=invoice.id,
             status=ValidationStatus.PASSED,
             message="航空费用已关联行程单",
+            evidence=evidence,
+        )
+
+    if recognized_airport_code_materials:
+        return _validation_result(
+            rule_code=AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="航空费用已具备往返机场代码，无需补充行程单",
             evidence=evidence,
         )
 
