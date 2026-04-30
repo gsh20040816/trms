@@ -155,6 +155,13 @@ def build_visible_missing_material_list(
 
 
 def _resolve_missing_material_type(validation: ValidationResult) -> MaterialType | None:
-    if validation.status is not ValidationStatus.FAILED:
+    if not is_missing_material_validation_result(validation):
         return None
     return _MISSING_MATERIAL_RULE_TO_TYPE.get(validation.rule_code)
+
+
+def is_missing_material_validation_result(validation: ValidationResult) -> bool:
+    return (
+        validation.status is ValidationStatus.FAILED
+        and validation.rule_code in _MISSING_MATERIAL_RULE_TO_TYPE
+    )

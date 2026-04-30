@@ -327,6 +327,19 @@ def test_admin_bearer_review_routes_reject_anonymous_or_unrelated_admin(tmp_path
     assert anonymous_summary_response.status_code == 401
     assert anonymous_summary_response.json()["detail"] == "invalid or missing bearer token"
 
+    outsider_readiness_response = client.get(
+        f"/api/tasks/{task_id}/readiness",
+        headers=auth_headers(outsider_admin_token),
+    )
+    assert outsider_readiness_response.status_code == 403
+    assert outsider_readiness_response.json()["detail"] == (
+        "actor is not allowed to view task readiness for this task"
+    )
+
+    anonymous_readiness_response = client.get(f"/api/tasks/{task_id}/readiness")
+    assert anonymous_readiness_response.status_code == 401
+    assert anonymous_readiness_response.json()["detail"] == "invalid or missing bearer token"
+
     anonymous_reminder_response = client.post(
         f"/api/tasks/{task_id}/material-reminders",
         json={

@@ -65,6 +65,10 @@ from trms_backend.domain.task_review_summary import (
     TaskReviewSummaryActorNotAllowedError,
     build_task_review_summary,
 )
+from trms_backend.domain.task_readiness import (
+    TaskReadinessActorNotAllowedError,
+    build_task_readiness_summary,
+)
 from trms_backend.domain.task_member_status import (
     TaskMemberStatusActorNotAllowedError,
     build_task_member_status_report,
@@ -905,6 +909,66 @@ def build_task_router(
                 confirmations_by_split_id=confirmations_by_split_id,
             )
         except TaskReviewSummaryActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+
+    @router.get("/{task_id}/readiness")
+    def get_task_readiness(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        actor_id: Annotated[str | None, Query(min_length=1)] = None,
+    ):
+        task = repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        materials = material_repository.list_by_task(task_id)
+        pending_assignment_materials = material_repository.list_pending_assignment_by_task_hint(task_id)
+        latest_recognitions_by_material_id = {}
+        for material in materials:
+            recognition_tasks = recognition_task_repository.list_by_material(material.id)
+            latest_recognitions_by_material_id[material.id] = (
+                recognition_tasks[-1] if recognition_tasks else None
+            )
+
+        invoices = invoice_repository.list_by_task(task_id)
+        validations_by_invoice_id = {}
+        splits_by_invoice_id = {}
+        confirmations_by_split_id = {}
+        linked_invoice_ids_by_material_id: dict[str, list[str]] = {
+            material.id: []
+            for material in materials
+        }
+        for invoice in invoices:
+            supporting_links = invoice_repository.list_supporting_material_links(invoice.id)
+            for link in supporting_links:
+                linked_invoice_ids_by_material_id.setdefault(link.material_id, []).append(invoice.id)
+            validations_by_invoice_id[invoice.id] = validation_repository.list_by_invoice(invoice.id)
+            splits_by_invoice_id[invoice.id] = split_repository.list_by_invoice(invoice.id)
+            for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
+                confirmations_by_split_id[confirmation.split_id] = confirmation
+
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
+        try:
+            return build_task_readiness_summary(
+                task,
+                administrator_id=resolved_actor_id,
+                materials=materials,
+                pending_assignment_materials=pending_assignment_materials,
+                latest_recognitions_by_material_id=latest_recognitions_by_material_id,
+                invoices=invoices,
+                validations_by_invoice_id=validations_by_invoice_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_split_id=confirmations_by_split_id,
+                linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
+            )
+        except TaskReadinessActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=str(error),

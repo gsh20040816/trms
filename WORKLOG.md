@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-04-30 10:02 - Add administrator task readiness read model
+
+### 完成内容
+- 完成任务“新增管理员任务就绪度读模型”。
+- 新增后端读模型 [task_readiness.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_readiness.py)：
+  - 统一聚合管理员任务第一屏所需的门禁状态，输出待识别、识别失败、低置信待确认、待关联附件、缺失材料、异常校验、分摊未完成、成员未确认、有异议和导出阻塞原因；
+  - 复用现有材料、识别、校验、分摊、确认、待关联附件和导出 boundary 事实，不额外引入前端自造状态；
+  - 将“缺失材料类 blocker”和“其它 blocker 校验”拆开统计，避免管理员把附件缺失和其它异常混成一类。
+- 调整 [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)：
+  - 新增 `GET /api/tasks/{task_id}/readiness`；
+  - 仅允许任务管理员读取；
+  - 返回统一 `counts`、`issues` 和 `export_blocking_reasons`，供后续管理员任务详情第一屏和导出页复用。
+- 调整 [missing_materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/missing_materials.py)：
+  - 抽出 `is_missing_material_validation_result(...)`，让缺失材料聚合和任务就绪度聚合共用同一判定口径。
+- 新增/更新测试：
+  - 新增 [test_task_readiness_api.py](/home/gsh/workspace/TRMS/tests/test_task_readiness_api.py)，覆盖全通过、识别阻塞、附件阻塞、确认阻塞和无关管理员拒绝；
+  - 更新 [test_web_bearer_request_identity_api.py](/home/gsh/workspace/TRMS/tests/test_web_bearer_request_identity_api.py)，补齐 `/api/tasks/{task_id}/readiness` 的匿名 `401` 与无关管理员 `403` 回归。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，将“新增管理员任务就绪度读模型”标记为已完成。
+
+### 根因
+- 管理员当前虽然已有 `review-summary`、缺失材料、待关联附件和导出能力边界，但这些事实分散在多个接口里，第一屏并没有统一的“门禁总览”。
+- 结果是管理员仍要自己拼“哪些材料还没识别、哪些附件待关联、哪些确认没完成、当前是否允许导出”，前端也容易重复推导状态并和后端真实边界漂移。
+
+### 保守假设
+- 本轮把“分摊未完成”收敛为两类：发票没有任何分摊记录，或当前分摊金额合计不等于发票金额。
+- 对“异常校验”则有意排除了已归入“缺失材料”的附件型 blocker，只保留其它 blocker 校验；否则管理员第一屏会把同一附件缺失同时看成两种完全等价的问题，难以优先处理。
+- 附件阻塞沿用现有自动归票规则：单候选辅助材料会自动归票，只有无候选或多候选才进入“待关联附件”。
+
+### 影响范围
+- 修改了管理员任务读模型聚合与任务 API。
+- 没有改动成员工作台、管理员前端页面、数据库 schema、导出产物模型或现有状态流转规则。
+
+### 验证结果
+- 已通过定向验证：
+  - `uv run pytest tests/test_task_readiness_api.py tests/test_web_bearer_request_identity_api.py`
+    - 16 个用例通过
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+    - Python 编译检查通过
+    - Alembic 升降级验证通过
+    - pytest 479 个用例通过，存在 3 条既有 DeprecationWarning
+    - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 输出既有 `--localstorage-file` 路径警告，Vite 输出既有 chunk size 警告
+    - Docker Compose 配置检查通过
+    - `git diff --check` 通过
+
 ## 2026-04-30 01:57 - Refresh automatic upload processing states in member workbench
 
 ### 完成内容
