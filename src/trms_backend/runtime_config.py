@@ -39,6 +39,7 @@ DEFAULT_ALLOW_ADMIN_SELF_REGISTER_BY_ENV: dict[RuntimeEnvironment, bool] = {
 }
 VALID_ENVIRONMENTS = frozenset({"development", "test", "production"})
 DEFAULT_DOTENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+DOTENV_PATH_ENVIRONMENT_KEY = "TRMS_DOTENV_PATH"
 
 
 class RuntimeConfigError(ValueError):
@@ -783,7 +784,8 @@ def load_runtime_environment_variables(env: Mapping[str, str] | None = None) -> 
     if env is not None:
         return env
 
-    dotenv_values = _read_dotenv_file(DEFAULT_DOTENV_PATH)
+    dotenv_path = Path(os.environ.get(DOTENV_PATH_ENVIRONMENT_KEY, DEFAULT_DOTENV_PATH))
+    dotenv_values = _read_dotenv_file(dotenv_path)
     if not dotenv_values:
         return os.environ
 

@@ -310,6 +310,51 @@ def test_submit_material_executes_recognition_immediately_in_in_process_mode(tmp
     assert fake_llm.calls[0]["material_id"] == material_id
 
 
+def test_submit_material_short_circuits_recognition_when_provider_is_not_configured(tmp_path):
+    client = make_client(tmp_path)
+    sample_path = tmp_path / "provider-missing.pdf"
+    sample_path.write_bytes(build_image_only_pdf_bytes())
+    task_id = create_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": (sample_path.name, sample_path.read_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["recognition_dispatch"] == {
+      "mode": "in_process",
+      "status": "executed",
+      "message": "当前环境未配置识别服务；材料已接收，但无法自动识别，请配置 provider 或手动补录。",
+    }
+    material_id = body["items"][0]["id"]
+    assert body["items"][0]["recognition_status"] == "failed"
+
+    listing = client.get(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
+    assert listing.status_code == 200
+    latest = listing.json()["latest_effective"]
+    assert latest["status"] == "failed"
+    assert latest["failure"] == {
+        "stage": "ai",
+        "reason": "llm_provider_not_configured",
+    }
+    assert latest["raw_response"]["preparation"] == {
+        "material_id": material_id,
+        "original_filename": sample_path.name,
+        "content_type": "application/pdf",
+    }
+    assert "recognition_input" not in latest["raw_response"]["preparation"]
+
+
 def test_submit_material_returns_queued_dispatch_in_worker_mode(tmp_path):
     fake_llm = FakeRecognitionLlmClient(
         result=RecognitionLlmExtractionResult(

@@ -201,6 +201,36 @@ def test_export_async_processor_persists_artifact_and_exposes_download(tmp_path)
     assert "storage_key" not in str(audit_logs[2].detail)
 
 
+def test_export_artifact_download_exposes_filename_header_for_browser_cors(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-a.pdf",
+        material_content=build_pdf_bytes(),
+        split_items=[{"member_id": "2250001", "amount_cents": 12345}],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(client, task_id, format="csv")
+    processor = build_processor(tmp_path, runtime_config)
+    processor.run_once()
+
+    download_response = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=admin_auth_headers(client) | {
+            "Origin": "http://127.0.0.1:5173",
+        },
+    )
+
+    assert download_response.status_code == 200
+    exposed_headers = download_response.headers["access-control-expose-headers"]
+    assert "Content-Disposition" in exposed_headers
+
+
 def test_export_artifact_download_reports_not_ready_and_rejects_non_admin(tmp_path):
     runtime_config = make_runtime_config(tmp_path)
     client = make_client(tmp_path, runtime_config=runtime_config)

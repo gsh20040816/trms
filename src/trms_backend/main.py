@@ -79,6 +79,7 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Content-Disposition"],
     )
     session_factory = build_session_factory(config.database_url)
     init_database(
@@ -237,6 +238,9 @@ def create_app(
             audit_log_repository,
             effective_config.async_jobs.mode,
             app.state.metrics_collector,
+            recognition_provider_configured_resolver=lambda: (
+                resolve_effective_runtime_config().llm_provider is not None
+            ),
         )
     )
     app.include_router(

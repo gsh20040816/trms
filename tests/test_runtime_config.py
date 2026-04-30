@@ -89,6 +89,36 @@ def test_process_environment_overrides_root_dotenv(monkeypatch, tmp_path):
     assert config.api_port == 8200
 
 
+def test_load_runtime_environment_variables_can_use_explicit_dotenv_path(monkeypatch, tmp_path):
+    root_dotenv = tmp_path / ".env"
+    isolated_dotenv = tmp_path / "ux.env"
+    root_dotenv.write_text(
+        "\n".join(
+            [
+                "TRMS_LLM_API_KEY=sk-root",
+                "TRMS_LLM_MODEL=root-model",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    isolated_dotenv.write_text("TRMS_API_PORT=9877\n", encoding="utf-8")
+
+    monkeypatch.setattr(runtime_config_module, "DEFAULT_DOTENV_PATH", root_dotenv)
+    monkeypatch.setenv("TRMS_DOTENV_PATH", str(isolated_dotenv))
+    monkeypatch.delenv("TRMS_API_PORT", raising=False)
+    monkeypatch.delenv("TRMS_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("TRMS_LLM_MODEL", raising=False)
+    monkeypatch.delenv("TRMS_TEXT_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("TRMS_TEXT_LLM_MODEL", raising=False)
+    monkeypatch.delenv("TRMS_VLM_API_KEY", raising=False)
+    monkeypatch.delenv("TRMS_VLM_MODEL", raising=False)
+
+    config = load_runtime_config(env=load_runtime_environment_variables())
+
+    assert config.api_port == 9877
+    assert config.llm_provider is None
+
+
 def test_load_runtime_config_requires_explicit_production_settings():
     with pytest.raises(RuntimeConfigError) as exc_info:
         load_runtime_config(env={"TRMS_ENV": "production"})

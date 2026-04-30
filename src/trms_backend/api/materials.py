@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Annotated
 from urllib.parse import quote
 
@@ -43,6 +44,7 @@ from trms_backend.application.recognition_preparation import (
     RecognitionTaskExecutionConflictError,
     RecognitionTaskExecutionNotFoundError,
 )
+from trms_backend.application.recognition_audit import record_recognition_result_audit
 from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
 )
@@ -56,6 +58,12 @@ from trms_backend.domain.materials import (
     SubmissionChannel,
 )
 from trms_backend.domain.recognitions import RecognitionTaskRepository
+from trms_backend.domain.recognitions import (
+    RecognitionFailureDetail,
+    RecognitionFailureStage,
+    RecognitionResultPayload,
+    RecognitionTaskStatus,
+)
 from trms_backend.runtime_config import AsyncJobMode
 from trms_backend.domain.tasks import (
     TaskRepository,
@@ -92,6 +100,7 @@ def build_material_router(
     audit_log_repository: AuditLogRepository,
     async_job_mode: AsyncJobMode,
     metrics_collector: MetricsCollector | None = None,
+    recognition_provider_configured_resolver: Callable[[], bool] | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["materials"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
@@ -119,6 +128,55 @@ def build_material_router(
                 "mode": "worker",
                 "status": "queued",
                 "message": "识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。",
+            }
+
+        if (
+            recognition_provider_configured_resolver is not None
+            and not recognition_provider_configured_resolver()
+        ):
+            failure = RecognitionFailureDetail(
+                stage=RecognitionFailureStage.AI,
+                reason="llm_provider_not_configured",
+            )
+            for material_id in material_ids:
+                recognition_tasks = recognition_task_repository.list_by_material(material_id)
+                material = material_repository.get(material_id)
+                if not recognition_tasks or material is None:
+                    continue
+                latest_task = recognition_tasks[-1]
+                updated = recognition_task_repository.update_status(
+                    latest_task.id,
+                    RecognitionTaskStatus.FAILED,
+                    result=RecognitionResultPayload(
+                        raw_response={
+                            "preparation": {
+                                "material_id": material.id,
+                                "original_filename": material.original_filename,
+                                "content_type": material.content_type,
+                            }
+                        }
+                    ),
+                    failure=failure,
+                    expected_current_status=RecognitionTaskStatus.PENDING,
+                )
+                if updated is None:
+                    continue
+                record_recognition_result_audit(
+                    audit_log_repository,
+                    actor_id=actor_id,
+                    recognition_task=updated,
+                    task_id=material.task_id,
+                    request_id=request_id,
+                )
+                metrics.record_recognition_task_status(
+                    status=updated.status,
+                    failure_stage=failure.stage,
+                )
+                recognition_status_by_material_id[material_id] = updated.status.value
+            return recognition_status_by_material_id, {
+                "mode": "in_process",
+                "status": "executed",
+                "message": "当前环境未配置识别服务；材料已接收，但无法自动识别，请配置 provider 或手动补录。",
             }
 
         for material_id in material_ids:

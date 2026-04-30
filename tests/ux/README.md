@@ -17,7 +17,12 @@
 后端：
 
 ```bash
+mkdir -p tmp/ux-runtime/materials
+rm -f tmp/ux-runtime/ux-test.db
+DATABASE_URL=sqlite:///./tmp/ux-runtime/ux-test.db uv run alembic upgrade head
+
 TRMS_ENV=development \
+TRMS_DOTENV_PATH=./tmp/ux-runtime/ux-empty.env \
 DATABASE_URL=sqlite:///./tmp/ux-runtime/ux-test.db \
 TRMS_STORAGE_BACKEND=local \
 MATERIAL_STORAGE_DIR=./tmp/ux-runtime/materials \
@@ -40,6 +45,16 @@ VITE_API_BASE_URL=http://127.0.0.1:9877/api npm run dev -- --host 127.0.0.1 --po
 ## 执行
 
 ```bash
-npx -y playwright@1.59.1 test tests/ux/real-user-flows.spec.mjs
+/tmp/trms-playwright/node_modules/.bin/playwright install chromium
+/tmp/trms-playwright/node_modules/.bin/playwright test tests/ux/real-user-flows.spec.mjs
 ```
 
+说明：
+
+- UX 验收后端命令显式设置 `TRMS_DOTENV_PATH=./tmp/ux-runtime/ux-empty.env`，用于隔离仓库根目录 `.env` 中可能存在的真实 LLM Provider 配置。不要在该文件里写入真实 key；本脚本需要验证“未配置真实 AI Provider 时不伪装已完成能力”的边界。
+- 当前仓库根目录没有直接声明 `@playwright/test`；若本地尚未准备独立 Playwright 运行目录，可先执行：
+
+```bash
+mkdir -p /tmp/trms-playwright
+npm install --prefix /tmp/trms-playwright @playwright/test@1.59.1
+```

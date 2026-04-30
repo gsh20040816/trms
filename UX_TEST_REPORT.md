@@ -1,5 +1,44 @@
 # UX 测试报告
 
+## 2026-04-30 报销交互简化真实主流程自动化复跑
+
+### 复跑结论
+
+- 执行时间：2026-04-30 20:10 CST
+- 命令：`/tmp/trms-playwright/node_modules/.bin/playwright test tests/ux/real-user-flows.spec.mjs`
+- 结果：4 个 Playwright 用例全部通过。
+- 通过用例：
+  - 管理员创建并开放真实上传任务。
+  - 成员真实批量上传后只处理系统列出的待办，并明确看到未配置识别服务阻塞。
+  - 成员工作台覆盖多候选附件人工归票、批量提交与撤回。
+  - 管理员查看就绪度并下载完整材料包。
+
+### 本轮覆盖范围
+
+- 成员侧真实上传使用 `tmp/ux-real-data` 下的真实发票 PDF 与行程 PNG 副本。
+- 后半段就绪流程使用受控夹具创建真实任务、材料、识别任务、发票、分摊、确认和完整包导出任务。
+- 完整材料包不是伪造成功状态：脚本调用 `uv run python -m trms_backend worker --once` 生成真实 ZIP artifact，再由浏览器点击“下载最近完整材料包”触发下载。
+- 本轮修复并验证了跨域下载时 `Content-Disposition` 不暴露导致浏览器文件名退化为 `.bin` 的问题；现在下载文件名为 `*-reimbursement-package.zip`。
+
+### 外部依赖边界
+
+- 本轮 UX 验收显式使用 `TRMS_DOTENV_PATH=./tmp/ux-runtime/ux-empty.env` 隔离仓库根目录 `.env`，未配置真实 Text LLM / VLM provider。
+- 未配置识别 provider 是本轮要验证的真实边界：成员上传后页面必须提示“当前环境未配置识别服务”，不得伪装为识别完成。
+- 未覆盖真实 Telegram、真实邮件、真实财务系统 Browser Use 自动录入，也未覆盖真实外部 AI provider 的识别准确率。
+- 后半段识别成功结果由测试夹具通过现有管理接口注入，用于验收报销主流程交互闭环，不代表真实 AI 已完成能力。
+
+### 截图与产物
+
+- [ux-upload-admin-task-detail.png](test-artifacts/ux/ux-upload-admin-task-detail.png)
+- [ux-upload-member-workbench-blocked.png](test-artifacts/ux/ux-upload-member-workbench-blocked.png)
+- [ux-ready-member-linked.png](test-artifacts/ux/ux-ready-member-linked.png)
+- [ux-ready-member-submitted.png](test-artifacts/ux/ux-ready-member-submitted.png)
+- [ux-ready-member-withdrawn.png](test-artifacts/ux/ux-ready-member-withdrawn.png)
+- [ux-ready-admin-readiness.png](test-artifacts/ux/ux-ready-admin-readiness.png)
+- [ux-ready-admin-export.png](test-artifacts/ux/ux-ready-admin-export.png)
+- [ux-ready-export-download.json](test-artifacts/ux/ux-ready-export-download.json)
+- [ux-worker-once.json](test-artifacts/ux/ux-worker-once.json)
+
 ## 1. 测试范围
 
 - 角色：
@@ -337,4 +376,3 @@ npx -y playwright@1.59.1 test tests/ux/real-user-flows.spec.mjs
 mkdir -p tmp/ux-real-data tmp/ux-runtime/materials test-artifacts/ux
 # 然后按 README 或 tests/ux/README.md 中的方式启动隔离前后端实例
 ```
-

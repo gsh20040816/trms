@@ -1,5 +1,105 @@
 # WORKLOG
 
+## 2026-04-30 20:12 - Complete real-flow UX acceptance for reimbursement simplification
+
+### 完成内容
+- 完成任务“补充报销交互简化真实主流程 UX 验收”。
+- 调整 [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)：
+  - `in_process` 上传识别在当前无 Text LLM / VLM provider 配置时直接短路为识别失败，并返回明确“未配置识别服务”分发信息；
+  - 避免本地 UX 验收在未配置 provider 时先解析/渲染真实大文件，导致上传请求长时间卡住。
+- 调整 [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)：
+  - 新增 `TRMS_DOTENV_PATH`，允许 UX 验收显式读取隔离空 `.env`；
+  - 防止本机仓库根目录 `.env` 中真实 LLM 配置误影响“未配置 provider”边界验收。
+- 调整 [src/trms_backend/main.py](/home/gsh/workspace/TRMS/src/trms_backend/main.py)：
+  - 材料上传路由接入运行时 provider 配置 resolver；
+  - CORS 显式暴露 `Content-Disposition`，让跨域浏览器下载能读取后端文件名。
+- 更新 [tests/ux/real-user-flows.spec.mjs](/home/gsh/workspace/TRMS/tests/ux/real-user-flows.spec.mjs)：
+  - 覆盖管理员创建并开放任务、成员真实批量上传、未配置识别服务待办提示、多候选附件人工归票、批量提交/撤回、管理员就绪度和完整材料包下载；
+  - 完整材料包下载前通过 `uv run python -m trms_backend worker --once` 生成真实 ZIP artifact，不再把无产物任务 patch 成成功；
+  - 使用小型合成 PDF 作为后半段夹具附件，避免无关的超 10MB 邀请函体积限制干扰主流程验收。
+- 更新 [tests/ux/README.md](/home/gsh/workspace/TRMS/tests/ux/README.md)，补齐 Alembic 迁移、Playwright 运行前置和 `TRMS_DOTENV_PATH=./tmp/ux-runtime/ux-empty.env` 隔离说明。
+- 更新 [UX_TEST_REPORT.md](/home/gsh/workspace/TRMS/UX_TEST_REPORT.md)，记录 2026-04-30 自动化复跑结果、截图路径和未覆盖的真实外部依赖。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，将当前任务标记完成。
+- 更新 [BLOCKERS.md](/home/gsh/workspace/TRMS/BLOCKERS.md)，移除已解除的当前阻塞。
+
+### 根因
+- 真实主流程 UX 验收之前无法闭合有三层根因：
+  - 隔离 UX 数据库未按当前 Alembic schema 初始化，旧本地库会导致管理员首页接口 500；
+  - 未配置 provider 时，`in_process` 上传路径仍进入真实材料解析/渲染和识别准备流程，导致上传反馈过慢且成员工作台无法稳定展示“未配置识别服务”待办；
+  - 测试夹具把导出任务状态直接 patch 为 `succeeded`，但没有生成 artifact，UI 正确地不显示下载按钮。
+- 最后一处下载文件名问题来自跨域 fetch 默认不可读 `Content-Disposition`，前端拿不到后端 ZIP 文件名后退回 `${jobId}.bin`。
+
+### 影响范围
+- 业务后端影响集中在未配置识别 provider 的上传失败路径、运行时 `.env` 选择和下载响应 CORS 暴露头。
+- UX 脚本仍明确不覆盖真实 AI provider、真实外部通知渠道和真实财务系统自动录入。
+- 完整材料包下载验收现在依赖真实导出 worker 生成产物，能覆盖 UI 下载入口与后端 artifact 的实际闭环。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_export_async_jobs.py::test_export_artifact_download_exposes_filename_header_for_browser_cors`
+  - `uv run pytest tests/test_recognition_execution_api.py tests/test_runtime_config.py tests/test_materials_api.py tests/test_recognition_async_jobs.py tests/test_export_async_jobs.py`
+  - 83 个用例通过。
+- 已通过完整 UX 验收：
+  - `/tmp/trms-playwright/node_modules/.bin/playwright test tests/ux/real-user-flows.spec.mjs`
+  - 4 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过。
+  - Alembic 升降级验证通过。
+  - pytest 484 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning。
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径警告，Vite 仍有既有 chunk size 警告。
+  - Docker Compose 配置检查通过。
+  - `git diff --check` 通过。
+
+### 保守假设
+- 后半段识别结果仍由测试夹具通过现有管理接口注入，只用于验证主流程交互和导出闭环；不代表真实 AI provider 的识别准确率已验证。
+- 当前本地 UX 验收不覆盖 Telegram、邮件或 Browser Use 财务系统录入，这些仍按第一阶段边界处理。
+
+## 2026-04-30 11:02 - Attempt real-flow UX acceptance and record blocking facts
+
+### 完成内容
+- 按项目约束读取并核对了 `AGENTS.md`、`TASKS.md`、`WORKLOG.md`、`BLOCKERS.md`、`README.md`、需求文档、架构文档、`docs/报销交互简化改造方案.md` 和 `tests/ux/README.md`，确认本轮唯一未完成任务是“补充报销交互简化真实主流程 UX 验收”。
+- 重写 [tests/ux/real-user-flows.spec.mjs](/home/gsh/workspace/TRMS/tests/ux/real-user-flows.spec.mjs) 的主流程脚本骨架，使其不再沿用旧交互：
+  - 管理员创建任务改为按当前 `Autocomplete` 成员名单交互录入，而不是旧的“成员 1 / 成员 2”输入框；
+  - 管理员创建后改为从当前任务列表主路径进入任务详情并切换到收集中；
+  - 新增后半段受控夹具准备逻辑，计划用于验证多候选附件人工归票、批量提交/撤回、管理员就绪度和完整材料包下载；
+  - 登录辅助函数改为显式等待目标角色工作台落地，避免受保护路由会话尚未稳定时被重定向回登录页。
+- 更新 [tests/ux/README.md](/home/gsh/workspace/TRMS/tests/ux/README.md)：
+  - 补上清理隔离库、执行 `uv run alembic upgrade head` 后再启动 UX 环境的步骤；
+  - 补上 Playwright Chromium 浏览器安装前置和独立 `@playwright/test` 安装说明。
+- 使用隔离 UX 环境进行了真实复跑排障：
+  - 先按旧说明启动时，管理员首页直接因 `tmp/ux-runtime/ux-test.db` schema 落后而 500；
+  - 清理 `tmp/ux-runtime/ux-test.db` 并执行 Alembic 迁移后，管理员创建并开放真实上传任务用例可通过；
+  - 对成员真实双文件上传做浏览器和独立 HTTP 探测，确认上传请求在当前 `in_process` 环境下约 25.7 秒才返回，且结果表现为 `recognition_status: failed`，没有稳定进入任务要求期望的“最近上传处理状态 + 未配置 provider 待办提示”。
+- 将上述阻塞事实写入 [BLOCKERS.md](/home/gsh/workspace/TRMS/BLOCKERS.md)。
+
+### 根因
+- 第一层阻塞不是业务逻辑，而是 UX 隔离环境文档缺少迁移步骤。旧的 `tmp/ux-runtime/ux-test.db` 来自历史 `create_all` 产物，和当前 Alembic schema 不一致，导致管理员首页请求 `review-summary` / `overdue-confirmations` 时直接触发 `sqlite3.OperationalError: no such column: invoices.member_submission_status`。
+- 第二层阻塞来自真实上传行为本身：成员在当前 `TRMS_ASYNC_JOB_MODE=in_process`、未配置真实识别 provider 的本地 UX 环境下上传两份真实材料时，请求并不会快速返回并进入“上传后处理状态”闭环，而是长时间停在上传中，最终返回结果为识别失败。这与本任务 Done when 里的“成员批量上传后只处理系统列出的待办”存在可观测差距。
+
+### 影响范围
+- 本轮没有修改业务后端或前端实现，只修改了 UX 脚本骨架、UX 运行说明和阻塞记录。
+- 当前未把 `TASKS.md` 中“补充报销交互简化真实主流程 UX 验收”标记为完成，因为真实浏览器验收尚未闭合。
+
+### 验证结果
+- 已执行的定向验证：
+  - `DATABASE_URL=sqlite:///./tmp/ux-runtime/ux-test.db uv run alembic upgrade head`
+    - 通过；确认隔离 UX 库可升级到 `20260430_01`
+  - `/tmp/trms-playwright/node_modules/.bin/playwright install chromium`
+    - 通过；本机补齐了 Playwright Chromium 运行时
+  - `/tmp/trms-playwright/node_modules/.bin/playwright test tests/ux/real-user-flows.spec.mjs --grep '管理员创建并开放真实上传任务|成员真实批量上传后只处理待办'`
+    - “管理员创建并开放真实上传任务”通过
+    - “成员真实批量上传后只处理待办，并明确看到未配置识别服务阻塞”未通过；页面停留在“正在上传...”，未在测试窗口内稳定出现“最近上传处理状态”
+  - 独立 HTTP 探测真实双文件上传：
+    - 约 `25.7s` 返回 `201`
+    - 返回体显示材料被接收，但 `recognition_status` 为 `failed`
+- 当前未执行 `./scripts/verify.sh`：
+  - 原因：按项目规则，本轮任务在真实 UX 验收阶段被阻塞，仍需先记录阻塞事实；仓库级验证将放在本轮收尾时执行，但不应把阻塞任务包装成已完成。
+
+### 保守假设
+- 当前观察到的“长时间上传 + 识别失败”先按真实现象记录，不把它武断归因成单一后端 bug；可能涉及本地 `in_process` 识别执行链、未配置 provider 时的失败路径、真实文件体积与同步处理时长共同作用。
+- 受控夹具脚本仅用于后半段 UI 状态准备，不代表真实 AI provider、真实外部通知渠道或真实异步 worker 已经可用；后续报告仍必须明确这层边界。
+
 ## 2026-04-30 10:34 - Promote reimbursement package as the primary export action
 
 ### 完成内容
