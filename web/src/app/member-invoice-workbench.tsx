@@ -214,6 +214,38 @@ type UploadProcessingSnapshot = {
   actionHref: string | null;
 };
 
+type ReimbursementMaterialUiStatus =
+  | "uploaded"
+  | "processing"
+  | "recognized"
+  | "needs_confirmation"
+  | "missing_info"
+  | "suspicious"
+  | "confirmed"
+  | "excluded";
+
+type MaterialResultGroupKey =
+  | "needs_confirmation"
+  | "recognized"
+  | "missing_info"
+  | "suspicious";
+
+type MaterialResultGroup = {
+  key: MaterialResultGroupKey;
+  title: string;
+  description: string;
+  tone: "info" | "warning" | "success";
+  items: WorkbenchInvoiceItem[];
+};
+
+type DraftSummary = {
+  recognizedAmountCents: number;
+  pendingConfirmationAmountCents: number;
+  memberAmountsCents: Map<string, number>;
+  missingMaterialCount: number;
+  riskItemCount: number;
+};
+
 const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
   { value: "invoice", label: "发票" },
   { value: "payment_record", label: "支付记录" },
@@ -273,7 +305,7 @@ const INVOICE_QUEUE_GROUP_METADATA: Record<Exclude<InvoiceQueueGroupKey, "ready"
   },
   missing_materials: {
     title: "缺失材料",
-    description: "系统已经明确指出缺什么材料，先补齐这些 blocker 再进入提交阶段。",
+    description: "系统已经明确指出缺什么材料，先补齐这些内容再进入提交阶段。",
     tone: "warning",
   },
   split_incomplete: {
@@ -294,6 +326,40 @@ const UPLOAD_PROCESSING_STAGE_LABELS: Record<UploadProcessingStageKey, string> =
   recognized: "识别完成",
   linked: "已归票",
   action_required: "需要处理",
+};
+
+const MATERIAL_UI_STATUS_LABELS: Record<ReimbursementMaterialUiStatus, string> = {
+  uploaded: "正在识别",
+  processing: "正在识别",
+  recognized: "已自动识别",
+  needs_confirmation: "需要你确认",
+  missing_info: "缺少信息",
+  suspicious: "可能有问题",
+  confirmed: "已确认",
+  excluded: "不报销",
+};
+
+const MATERIAL_RESULT_GROUP_METADATA: Record<MaterialResultGroupKey, Omit<MaterialResultGroup, "items" | "key">> = {
+  needs_confirmation: {
+    title: "需要你确认",
+    description: "这些材料存在系统无法替你决定的事项，请先处理。",
+    tone: "warning",
+  },
+  recognized: {
+    title: "已自动识别",
+    description: "这些材料已形成报销草稿，默认折叠查看，需要时再修改。",
+    tone: "success",
+  },
+  missing_info: {
+    title: "缺少材料",
+    description: "这些材料还缺必要凭证或关键信息，补齐后才能提交。",
+    tone: "warning",
+  },
+  suspicious: {
+    title: "可能有问题",
+    description: "这些材料存在金额、日期、抬头、税号或分摊风险，请核对原因。",
+    tone: "warning",
+  },
 };
 
 function isExpenseType(value: string): value is ExpenseType {
@@ -573,13 +639,7 @@ function renderRecognitionSource(field: RecognitionFieldResult | null) {
   if (field.source === "manual") {
     return "人工填写";
   }
-  if (field.source === "ai") {
-    return "AI 识别";
-  }
-  if (field.source === "pdf_text") {
-    return "PDF 文本提取";
-  }
-  return "OCR 识别";
+  return "系统识别";
 }
 
 function getRecognitionStatus(item: WorkbenchInvoiceItem): RecognitionTaskStatus | null {
@@ -628,7 +688,7 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
     actions.push({
       id: "missing-materials",
       title: "补齐必传材料",
-      detail: `当前有 ${report.counts.missing_material_count} 条缺失材料提示，会阻塞后续复核。`,
+      detail: `当前有 ${report.counts.missing_material_count} 条缺失材料提示，会影响后续复核。`,
       to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-upload"),
       tone: "danger",
       label: "去上传区补材料",
@@ -839,6 +899,132 @@ function formatInvoiceMemberSubmissionStatus(status: InvoiceMemberSubmissionStat
   return status === "submitted" ? "已提交管理员" : "未提交管理员";
 }
 
+function formatTaskDateRange(task: ReimbursementTask) {
+  if (task.competition_start_date === task.competition_end_date) {
+    return task.competition_start_date;
+  }
+  return `${task.competition_start_date} 至 ${task.competition_end_date}`;
+}
+
+function getMaterialUiStatus(item: WorkbenchInvoiceItem): ReimbursementMaterialUiStatus {
+  const recognitionStatus = getRecognitionStatus(item);
+  if (recognitionStatus === "pending") {
+    return "processing";
+  }
+  if (recognitionStatus === "failed" || recognitionStatus === "needs_confirmation" || !item.invoice) {
+    return "needs_confirmation";
+  }
+  if (item.missingMaterials.length > 0) {
+    return "missing_info";
+  }
+  if (item.validations.some((validation) => validation.status === "failed" || validation.status === "pending")) {
+    return "suspicious";
+  }
+  if (item.invoice.member_submission_status === "submitted") {
+    return "confirmed";
+  }
+  return "recognized";
+}
+
+function getMaterialUiTone(status: ReimbursementMaterialUiStatus) {
+  if (status === "recognized" || status === "confirmed") {
+    return "success" as const;
+  }
+  if (status === "uploaded" || status === "processing") {
+    return "info" as const;
+  }
+  if (status === "excluded") {
+    return "neutral" as const;
+  }
+  return "warning" as const;
+}
+
+function getMaterialResultGroupKey(item: WorkbenchInvoiceItem): MaterialResultGroupKey {
+  const status = getMaterialUiStatus(item);
+  if (status === "missing_info") {
+    return "missing_info";
+  }
+  if (status === "suspicious") {
+    return "suspicious";
+  }
+  if (status === "recognized" || status === "confirmed") {
+    return "recognized";
+  }
+  return "needs_confirmation";
+}
+
+function buildMaterialResultGroups(items: WorkbenchInvoiceItem[]) {
+  const groups = new Map<MaterialResultGroupKey, WorkbenchInvoiceItem[]>();
+  (Object.keys(MATERIAL_RESULT_GROUP_METADATA) as MaterialResultGroupKey[]).forEach((key) => {
+    groups.set(key, []);
+  });
+
+  items.forEach((item) => {
+    groups.get(getMaterialResultGroupKey(item))?.push(item);
+  });
+
+  return (Object.entries(MATERIAL_RESULT_GROUP_METADATA) as Array<
+    [MaterialResultGroupKey, Omit<MaterialResultGroup, "items" | "key">]
+  >)
+    .map(([key, metadata]) => ({
+      key,
+      ...metadata,
+      items: groups.get(key) ?? [],
+    }));
+}
+
+function buildDraftSummary(items: WorkbenchInvoiceItem[], report: TaskMemberStatusReport): DraftSummary {
+  const memberAmountsCents = new Map<string, number>();
+  for (const item of items) {
+    for (const split of item.splits) {
+      memberAmountsCents.set(
+        split.member_id,
+        (memberAmountsCents.get(split.member_id) ?? 0) + split.amount_cents,
+      );
+    }
+  }
+
+  return {
+    recognizedAmountCents: items.reduce((sum, item) => sum + (item.invoice?.amount_cents ?? 0), 0),
+    pendingConfirmationAmountCents: items.reduce((sum, item) => {
+      const status = getMaterialUiStatus(item);
+      return status === "needs_confirmation" || status === "missing_info" || status === "suspicious"
+        ? sum + (item.invoice?.amount_cents ?? 0)
+        : sum;
+    }, 0),
+    memberAmountsCents,
+    missingMaterialCount: report.counts.missing_material_count,
+    riskItemCount: items.filter((item) => getMaterialUiStatus(item) === "suspicious").length,
+  };
+}
+
+function buildSubmitBlockers(
+  task: ReimbursementTask,
+  pendingActionCount: number,
+  problemInvoiceCount: number,
+  pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[],
+  confirmationItems: WorkbenchConfirmationItem[],
+) {
+  const blockers: string[] = [];
+  if (task.status !== "open") {
+    blockers.push(`当前任务为${formatTaskStatus(task.status)}，暂不能提交新的确认。`);
+  }
+  if (pendingActionCount > 0) {
+    blockers.push(`还有 ${pendingActionCount} 项需要处理。`);
+  }
+  if (problemInvoiceCount > 0) {
+    blockers.push(`还有 ${problemInvoiceCount} 份材料存在待确认、缺少信息或风险提示。`);
+  }
+  if (pendingSupportingMaterialLinkageItems.length > 0) {
+    blockers.push(`还有 ${pendingSupportingMaterialLinkageItems.length} 份辅助材料需要指定归属。`);
+  }
+  const pendingConfirmations = confirmationItems.filter((item) => getCurrentConfirmationStatus(item.detail) === "pending").length;
+  if (pendingConfirmations > 0) {
+    blockers.push(`还有 ${pendingConfirmations} 笔分到你名下的费用需要确认。`);
+  }
+  return blockers;
+}
+
 function formatInvoiceBatchActionLabel(action: InvoiceBatchAction) {
   return action === "submit" ? "批量提交" : "批量撤回";
 }
@@ -867,6 +1053,16 @@ function buildInvoiceBatchFailureMessage(
   const matchedItem = items.find((item) => item.invoice?.id === failure.invoice_id);
   const invoiceLabel = matchedItem ? describeWorkbenchInvoice(matchedItem) : failure.invoice_id;
   return `${invoiceLabel}：${failure.detail}`;
+}
+
+function formatRecognitionDispatchMessage(dispatch: MaterialBatchUploadResponse["recognition_dispatch"]) {
+  if (!dispatch) {
+    return null;
+  }
+  if (dispatch.status === "queued") {
+    return "材料已接收，正在排队识别；识别完成后会自动刷新识别结果。";
+  }
+  return "材料已接收，系统正在整理识别结果和待处理事项。";
 }
 
 function buildAllowedExpenseTypes(task: ReimbursementTask): ExpenseType[] {
@@ -1252,7 +1448,7 @@ function buildUploadProcessingSnapshot(
         tone: "info",
         label: UPLOAD_PROCESSING_STAGE_LABELS.recognition_pending,
         detail: recognitionDispatch?.status === "queued"
-          ? "材料已接收，识别任务正在等待 worker 消费；工作台会继续自动刷新。"
+          ? "材料已接收，正在排队识别；页面会继续自动刷新。"
           : "材料已接收，系统正在刷新识别状态。",
         steps: ["received", "recognition_pending"],
         transitioning: true,
@@ -1292,7 +1488,7 @@ function buildUploadProcessingSnapshot(
       tone: "info",
       label: UPLOAD_PROCESSING_STAGE_LABELS.recognition_pending,
       detail: recognitionDispatch?.status === "queued"
-        ? "识别任务已入队等待 worker 消费；系统会继续刷新下面的待处理事项。"
+        ? "材料已进入识别队列；系统会继续刷新下面的待处理事项。"
         : "系统正在识别这份材料，识别完成后会继续刷新归票和待办结果。",
       steps: ["received", "recognition_pending"],
       transitioning: true,
@@ -1307,7 +1503,7 @@ function buildUploadProcessingSnapshot(
       tone: isRecognitionProviderNotConfiguredFailure(recognitionFailure) ? "warning" : "danger",
       label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
       detail: isRecognitionProviderNotConfiguredFailure(recognitionFailure)
-        ? "当前环境未配置识别服务；请联系管理员配置 provider，或直接在下面工作台手动补录发票字段。"
+        ? "当前环境未配置识别服务；请联系管理员配置自动识别服务，或直接在下面手动补录发票字段。"
         : describeRecognitionFailure(recognitionFailure),
       steps: ["received", "action_required"],
       transitioning: false,
@@ -1467,6 +1663,7 @@ export function MemberInvoiceWorkbenchPage() {
   const [uploadResult, setUploadResult] = useState<MaterialBatchUploadResponse | null>(null);
   const [uploadProcessingRefreshAttempts, setUploadProcessingRefreshAttempts] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [viewingOriginalMaterialId, setViewingOriginalMaterialId] = useState<string | null>(null);
   const [confirmationSubmitError, setConfirmationSubmitError] = useState<unknown>(null);
   const [confirmationFeedback, setConfirmationFeedback] = useState<ConfirmationFeedback | null>(null);
   const [submittingConfirmationSplitId, setSubmittingConfirmationSplitId] = useState<string | null>(null);
@@ -1494,6 +1691,7 @@ export function MemberInvoiceWorkbenchPage() {
     setUploadResult(null);
     setUploadProcessingRefreshAttempts(0);
     setUploadFormState(buildInitialUploadFormState());
+    setViewingOriginalMaterialId(null);
     setConfirmationSubmitError(null);
     setConfirmationFeedback(null);
     setSubmittingConfirmationSplitId(null);
@@ -1757,6 +1955,22 @@ export function MemberInvoiceWorkbenchPage() {
   const readyInvoiceItems = invoiceQueueGroups.readyItems;
   const problemInvoiceSections = invoiceQueueGroups.problemSections;
   const problemInvoiceCount = problemInvoiceSections.reduce((count, section) => count + section.items.length, 0);
+  const materialResultGroups = useMemo(
+    () => (
+      workbenchState.status === "ready"
+        ? buildMaterialResultGroups(workbenchState.items)
+        : []
+    ),
+    [workbenchState],
+  );
+  const draftSummary = useMemo(
+    () => (
+      workbenchState.status === "ready"
+        ? buildDraftSummary(workbenchState.items, workbenchState.report)
+        : null
+    ),
+    [workbenchState],
+  );
   const selectedBatchInvoiceIdSet = useMemo(
     () => new Set(selectedBatchInvoiceIds),
     [selectedBatchInvoiceIds],
@@ -1793,6 +2007,16 @@ export function MemberInvoiceWorkbenchPage() {
     && hasRecentUploadTransitioningItems
     && uploadProcessingRefreshAttempts < RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS
   );
+  const submitBlockers = workbenchState.status === "ready"
+    ? buildSubmitBlockers(
+      workbenchState.task,
+      pendingActionCount,
+      problemInvoiceCount,
+      pendingSupportingMaterialLinkageItems,
+      confirmationItems,
+    )
+    : [];
+  const canSubmitReimbursementConfirmation = submitBlockers.length === 0 && readyInvoiceItems.length > 0;
 
   useEffect(() => {
     if (!canAutoRefreshRecentUploadStatus) {
@@ -1889,8 +2113,17 @@ export function MemberInvoiceWorkbenchPage() {
     setSelectedBatchInvoiceIds([]);
   }
 
-  async function handleInvoiceBatchAction(action: InvoiceBatchAction) {
-    if (!session || !selectedTask || selectedBatchInvoiceIds.length === 0) {
+  function handleSubmitReimbursementConfirmation() {
+    if (readyInvoiceItems.length === 0) {
+      return;
+    }
+    const invoiceIds = readyInvoiceItems.flatMap((item) => (item.invoice ? [item.invoice.id] : []));
+    setSelectedBatchInvoiceIds(invoiceIds);
+    void handleInvoiceBatchAction("submit", invoiceIds);
+  }
+
+  async function handleInvoiceBatchAction(action: InvoiceBatchAction, invoiceIds = selectedBatchInvoiceIds) {
+    if (!session || !selectedTask || invoiceIds.length === 0) {
       return;
     }
 
@@ -1902,11 +2135,11 @@ export function MemberInvoiceWorkbenchPage() {
       const response = action === "submit"
         ? await trmsApi.submitTaskInvoices(selectedTask.id, {
           actor_id: session.actorId,
-          invoice_ids: selectedBatchInvoiceIds,
+          invoice_ids: invoiceIds,
         })
         : await trmsApi.withdrawTaskInvoiceSubmissions(selectedTask.id, {
           actor_id: session.actorId,
-          invoice_ids: selectedBatchInvoiceIds,
+          invoice_ids: invoiceIds,
         });
       const feedback = {
         action,
@@ -2146,7 +2379,7 @@ export function MemberInvoiceWorkbenchPage() {
       if (response.items.length > 0) {
         setWorkbenchReloadVersion((current) => current + 1);
       }
-      const dispatchMessage = response.recognition_dispatch?.message;
+      const dispatchMessage = formatRecognitionDispatchMessage(response.recognition_dispatch);
       if (response.status === "success") {
         showSuccess(dispatchMessage
           ? `上传成功：${response.items.length} 个文件已归档到当前任务。${dispatchMessage}`
@@ -2175,6 +2408,25 @@ export function MemberInvoiceWorkbenchPage() {
       }
     } finally {
       setIsUploading(false);
+    }
+  }
+
+  async function handleViewOriginalMaterial(item: WorkbenchInvoiceItem) {
+    setViewingOriginalMaterialId(item.material.material_id);
+    try {
+      const file = await trmsApi.downloadMaterialContent(item.material.material_id);
+      const objectUrl = URL.createObjectURL(file.blob);
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+      }, 60_000);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.summary.message : "原文件暂时无法打开，请稍后重试。";
+      showError(message);
+    } finally {
+      setViewingOriginalMaterialId((current) => (
+        current === item.material.material_id ? null : current
+      ));
     }
   }
 
@@ -2460,6 +2712,154 @@ export function MemberInvoiceWorkbenchPage() {
     );
   }
 
+  function renderMaterialResultCard(item: WorkbenchInvoiceItem, group: MaterialResultGroup) {
+    const status = getMaterialUiStatus(item);
+    const abnormalReasons = collectAbnormalReasons(item);
+    const pendingLinkageMatches = item.invoice
+      ? findPendingSupportingMaterialLinkageMatches(item.invoice.id, pendingSupportingMaterialLinkageItems)
+      : [];
+    const shouldExpand = group.key !== "recognized";
+    const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
+      kind: "own",
+      materialId: item.material.material_id,
+    });
+
+    return (
+      <li key={`${group.key}:${item.material.material_id}`}>
+        <article className={`status-card member-status-card ${shouldExpand ? "" : "status-card-muted"}`}>
+          <div className="member-status-section-header">
+            <div>
+              <p className="task-card-id">{item.material.original_filename}</p>
+              <h3>{item.invoice?.invoice_number ?? formatMaterialType(item.material.material_type)}</h3>
+            </div>
+            <StatusBadge tone={getMaterialUiTone(status)}>
+              {MATERIAL_UI_STATUS_LABELS[status]}
+            </StatusBadge>
+          </div>
+
+          <dl className="task-meta-grid member-status-meta-grid">
+            <div>
+              <dt>材料类型</dt>
+              <dd>{formatMaterialType(item.material.material_type)}</dd>
+            </div>
+            <div>
+              <dt>金额</dt>
+              <dd>{item.invoice ? formatCurrencyFromCents(item.invoice.amount_cents) : "待识别"}</dd>
+            </div>
+            <div>
+              <dt>日期</dt>
+              <dd>{item.invoice?.issue_date ?? (item.invoice?.transaction_time ? formatDateTime(item.invoice.transaction_time) : "待识别")}</dd>
+            </div>
+            <div>
+              <dt>费用类别</dt>
+              <dd>{item.invoice ? formatExpenseType(item.invoice.expense_type) : "待识别"}</dd>
+            </div>
+            <div>
+              <dt>归属成员</dt>
+              <dd>{item.splits.length > 0 ? item.splits.map((split) => formatMemberLabel(split.member_id)).join("、") : "待确认"}</dd>
+            </div>
+            <div>
+              <dt>当前状态</dt>
+              <dd>{MATERIAL_UI_STATUS_LABELS[status]}</dd>
+            </div>
+          </dl>
+
+          {shouldExpand ? (
+            <div className="member-status-section">
+              <div className="member-status-section-header">
+                <h4>为什么需要处理</h4>
+                <StatusBadge tone="warning">
+                  {abnormalReasons.length + pendingLinkageMatches.length} 项
+                </StatusBadge>
+              </div>
+              {abnormalReasons.length > 0 || pendingLinkageMatches.length > 0 ? (
+                <ul className="member-status-message-list" aria-label={`${item.material.material_id} 需要处理原因`}>
+                  {abnormalReasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                  {pendingLinkageMatches.map((linkage) => (
+                    <li key={linkage.material_id}>
+                      辅助材料 {linkage.original_filename} 存在多个可能归属，需要你指定对应发票。
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="field-hint">系统还在整理这份材料，完成后会刷新可处理事项。</p>
+              )}
+            </div>
+          ) : (
+            <p className="field-hint">系统已生成草稿，默认不要求逐项填写；需要核对时可打开详情。</p>
+          )}
+
+          <div className="inline-actions">
+            {item.invoice && status !== "confirmed" ? (
+              <Button
+                type="button"
+                variant={status === "recognized" ? "contained" : "outlined"}
+                size="small"
+                disabled={runningInvoiceBatchAction !== null || workbenchState.status !== "ready" || workbenchState.task.status !== "open"}
+                onClick={() => {
+                  const invoiceIds = [item.invoice!.id];
+                  setSelectedBatchInvoiceIds(invoiceIds);
+                  void handleInvoiceBatchAction("submit", invoiceIds);
+                }}
+              >
+                确认
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+                  kind: "own",
+                  materialId: item.material.material_id,
+                }));
+              }}
+              aria-pressed={isSelected}
+            >
+              修改
+            </Button>
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
+                  kind: "own",
+                  materialId: item.material.material_id,
+                }));
+              }}
+            >
+              指定归属
+            </Button>
+            <Button type="button" variant="outlined" size="small" disabled>
+              标记为不报销
+            </Button>
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              disabled={viewingOriginalMaterialId === item.material.material_id}
+              onClick={() => {
+                void handleViewOriginalMaterial(item);
+              }}
+            >
+              {viewingOriginalMaterialId === item.material.material_id ? "正在打开..." : "查看原文件"}
+            </Button>
+          </div>
+          {status === "confirmed" ? (
+            <p className="field-hint">这份材料已提交给管理员；如需调整，请先在批量区撤回。</p>
+          ) : null}
+          {status !== "recognized" && status !== "confirmed" ? (
+            <p className="field-hint">请先处理上方原因，再提交确认。</p>
+          ) : null}
+        </article>
+      </li>
+    );
+  }
+
   function renderSelectedOwnWorkbenchItem(item: WorkbenchInvoiceItem) {
     const abnormalReasons = collectAbnormalReasons(item);
     const invoice = item.invoice;
@@ -2614,7 +3014,7 @@ export function MemberInvoiceWorkbenchPage() {
             <StatusBadge tone="info">仅本人材料可操作</StatusBadge>
           </div>
           <p className="field-hint">
-            这里的人工补录只会更新当前发票字段并保留更正痕迹；重新识别会新建一次识别任务，不会让成员直接写入任意识别原始结果。
+            这里用于修正系统识别不准的字段；重新识别会再次读取原文件，不会覆盖你已经确认的内容。
           </p>
           <div className="inline-actions">
             <Button
@@ -3085,9 +3485,9 @@ export function MemberInvoiceWorkbenchPage() {
     <RoleWorkspace
       header={(
         <PageHeader
-          eyebrow="成员发票工作台"
-          title="按任务查看我的发票与费用"
-          description="在单一任务上下文里查看识别字段、人工更正值、关联附件、当前分摊去向和确认状态。"
+          eyebrow="成员材料提交"
+          title="比赛报销材料提交"
+          description="先批量上传发票、车票、住宿凭证、支付截图和比赛通知；系统生成报销草稿后，你只处理需要确认的事项。"
           meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
           actions={(
             <div className="page-actions">
@@ -3127,8 +3527,8 @@ export function MemberInvoiceWorkbenchPage() {
 
       {taskState.status === "ready" && visibleTasks.length > 0 ? (
         <SectionCard
-          title="当前任务上下文"
-          description="先固定在一个任务内处理发票，再在缺失材料和费用确认之间切换，减少上下文丢失。"
+          title="比赛报销项目"
+          description="确认当前处理的是哪场比赛；发票抬头和税号会用于系统自动核对。"
           action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
         >
           <div className="admin-form-grid">
@@ -3150,16 +3550,32 @@ export function MemberInvoiceWorkbenchPage() {
             {selectedTask ? (
               <dl className="task-meta-grid member-status-meta-grid">
                 <div>
+                  <dt>比赛名称</dt>
+                  <dd>{selectedTask.competition_name}</dd>
+                </div>
+                <div>
+                  <dt>比赛时间</dt>
+                  <dd>{formatTaskDateRange(selectedTask)}</dd>
+                </div>
+                <div>
                   <dt>比赛地点</dt>
                   <dd>{selectedTask.competition_location}</dd>
                 </div>
                 <div>
-                  <dt>截止时间</dt>
+                  <dt>报销截止时间</dt>
                   <dd>{formatDateTime(selectedTask.deadline)}</dd>
                 </div>
                 <div>
-                  <dt>当前成员</dt>
-                  <dd>{session.displayName}{session.memberCode ? `（${session.memberCode}）` : ""}</dd>
+                  <dt>参赛成员</dt>
+                  <dd>{selectedTask.member_ids.map((memberId) => formatMemberLabel(memberId)).join("、")}</dd>
+                </div>
+                <div>
+                  <dt>发票抬头</dt>
+                  <dd>{selectedTask.invoice_title}</dd>
+                </div>
+                <div>
+                  <dt>税号</dt>
+                  <dd>{selectedTask.tax_number}</dd>
                 </div>
               </dl>
             ) : null}
@@ -3168,13 +3584,13 @@ export function MemberInvoiceWorkbenchPage() {
       ) : null}
 
       {selectedTask && workbenchState.status === "loading" ? (
-        <SectionCard title="正在汇总当前任务" description="正在聚合你的发票、识别结果、分摊和确认状态。" />
+        <SectionCard title="正在汇总当前任务" description="正在整理你的材料、识别结果、金额分配和确认状态。" />
       ) : null}
 
       {workbenchState.status === "ready" ? (
         <SectionCard
-          title="待处理事项"
-          description="先处理最会阻塞后续复核的事项，再回看发票细节。"
+          title="需要你处理的事项"
+          description="系统只把无法自动判断、材料缺失或存在冲突的事项列出来。"
           action={(
             <StatusBadge tone={pendingActionCount > 0 ? (abnormalCount > 0 ? "warning" : "info") : "success"}>
               {pendingActionCount > 0 ? `${pendingActionCount} 项仍待处理` : "当前无明显异常"}
@@ -3195,29 +3611,11 @@ export function MemberInvoiceWorkbenchPage() {
         </SectionCard>
       ) : null}
 
-      {workbenchState.status === "ready" ? (
-        <SectionCard
-          title="单任务处理视图"
-          description="在发票、缺失材料和费用确认三类视图之间切换，不再要求你自己在多个页面之间拼接上下文。"
-        >
-          <Tabs
-            value={activeTab}
-            onChange={handleTabChange}
-            aria-label="成员单任务工作台标签页"
-            sx={{ borderBottom: 1, borderColor: "divider" }}
-          >
-            <Tab value="invoices" label="发票" id="member-workbench-tab-invoices" />
-            <Tab value="missing-materials" label="缺失材料" id="member-workbench-tab-missing-materials" />
-            <Tab value="confirmations" label="费用确认" id="member-workbench-tab-confirmations" />
-          </Tabs>
-        </SectionCard>
-      ) : null}
-
       {selectedTask && activeTab === "invoices" ? (
         <div id="member-workbench-upload">
           <SectionCard
-            title="上传材料与附件"
-            description="在当前任务下直接补充发票、压缩包或辅助材料；上传后系统会先接收文件，再由 AI 识别类型并刷新下面的识别、缺失项和分摊视图。"
+            title="上传报销材料"
+            description="将发票、车票、住宿凭证、支付截图拖到这里。上传后系统会自动识别类型、金额、日期、费用类别和归属建议。"
             action={(
               <StatusBadge tone={selectedTask.status === "open" ? "info" : "neutral"}>
                 {selectedTask.status === "open" ? "当前可补交" : `当前${formatTaskStatus(selectedTask.status)}，不可补交`}
@@ -3232,19 +3630,8 @@ export function MemberInvoiceWorkbenchPage() {
                 }}
                 noValidate
               >
-                <div className="admin-form-grid">
-                  <TextField
-                    label="识别策略"
-                    aria-label="工作台上传识别策略"
-                    value="上传后自动识别材料类型"
-                    disabled
-                    helperText="系统会先接收文件，再识别是发票、支付记录、比赛通知或其他附件。"
-                  />
-
+                <div className="page-stack">
                   <Box>
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                      上传文件
-                    </Typography>
                     <FileDropZone
                       files={uploadFormState.files}
                       onChange={(files) => {
@@ -3254,7 +3641,7 @@ export function MemberInvoiceWorkbenchPage() {
                       disabled={isUploading}
                       ariaLabel="工作台上传文件"
                       fileListAriaLabel="工作台待上传文件列表"
-                      hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。上传后系统会自动识别材料类型，再提示还缺哪些辅助资料。"
+                      hint="将发票、车票、住宿凭证、支付截图拖到这里；支持一次选择多个文件，单文件最大 10MB。"
                     />
                     {uploadValidationErrors.files ? (
                       <Typography color="error" variant="body2" sx={{ mt: 1 }}>
@@ -3268,10 +3655,10 @@ export function MemberInvoiceWorkbenchPage() {
 
                 <div className="admin-form-footer">
                   <p className="field-hint">
-                    上传成功后会保留原始文件并刷新当前任务视图；若 AI 还未识别出类型，结果会先显示为“其他附件”。
+                    上传后无需先填写完整报销表单；系统会先生成草稿，再把需要你确认的地方列出来。
                   </p>
                   <Button variant="contained" type="submit" disabled={isUploading}>
-                    {isUploading ? "正在上传..." : "上传到当前任务"}
+                    {isUploading ? "正在上传..." : "选择文件并上传"}
                   </Button>
                 </div>
               </form>
@@ -3312,8 +3699,8 @@ export function MemberInvoiceWorkbenchPage() {
             </div>
           )}
         >
-          {uploadResult.recognition_dispatch ? (
-            <p className="field-hint">{uploadResult.recognition_dispatch.message}</p>
+          {formatRecognitionDispatchMessage(uploadResult.recognition_dispatch) ? (
+            <p className="field-hint">{formatRecognitionDispatchMessage(uploadResult.recognition_dispatch)}</p>
           ) : null}
           {canAutoRefreshRecentUploadStatus ? (
             <>
@@ -3327,7 +3714,7 @@ export function MemberInvoiceWorkbenchPage() {
           && hasRecentUploadTransitioningItems
           && uploadProcessingRefreshAttempts >= RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS ? (
             <p className="field-hint">
-              这批材料仍在自动处理中；如果当前环境使用独立 worker，可稍后手动刷新查看最新状态。
+              这批材料仍在自动处理中；可稍后手动刷新查看最新状态。
             </p>
           ) : null}
           {uploadResult.items.length > 0 ? (
@@ -3337,7 +3724,6 @@ export function MemberInvoiceWorkbenchPage() {
                 return (
                 <li key={item.id}>
                   <strong>{item.original_filename}</strong>
-                  <span>材料编号：{item.id}</span>
                   <span>材料类型：{formatMaterialType(item.material_type)}</span>
                   <span>{item.duplicate_of ? `重复文件：${item.duplicate_of}` : "已归档到当前任务"}</span>
                   {snapshot ? (
@@ -3376,6 +3762,138 @@ export function MemberInvoiceWorkbenchPage() {
               ))}
             </ul>
           ) : null}
+        </SectionCard>
+      ) : null}
+
+      {workbenchState.status === "ready" && activeTab === "invoices" ? (
+        <SectionCard
+          title="识别结果"
+          description="系统已按状态整理材料，优先展示需要你确认的内容；正常材料默认只显示摘要。"
+          action={<StatusBadge tone="info">{workbenchState.items.length} 份材料</StatusBadge>}
+        >
+          <div className="page-stack">
+            {materialResultGroups.map((group) => (
+              <section key={group.key} className="member-status-section" aria-label={`${group.title} 材料列表`}>
+                <div className="member-status-section-header">
+                  <div>
+                    <h4>{group.title}</h4>
+                    <p className="field-hint">{group.description}</p>
+                  </div>
+                  <StatusBadge tone={group.items.length > 0 ? group.tone : "neutral"}>{group.items.length} 份</StatusBadge>
+                </div>
+                {group.items.length > 0 ? (
+                  <ul className="invoice-material-list" aria-label={`${group.title} 材料卡片`}>
+                    {group.items.map((item) => renderMaterialResultCard(item, group))}
+                  </ul>
+                ) : (
+                  <p className="field-hint">当前没有这一类材料。</p>
+                )}
+              </section>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {workbenchState.status === "ready" && activeTab === "invoices" && draftSummary ? (
+        <SectionCard
+          title="报销草稿汇总"
+          description="金额会随识别结果、分摊和确认状态自动更新。"
+        >
+          <dl className="task-meta-grid member-status-meta-grid">
+            <div>
+              <dt>当前已识别总金额</dt>
+              <dd>{formatCurrencyFromCents(draftSummary.recognizedAmountCents)}</dd>
+            </div>
+            <div>
+              <dt>待确认金额</dt>
+              <dd>{formatCurrencyFromCents(draftSummary.pendingConfirmationAmountCents)}</dd>
+            </div>
+            <div>
+              <dt>缺失材料数量</dt>
+              <dd>{draftSummary.missingMaterialCount}</dd>
+            </div>
+            <div>
+              <dt>风险项数量</dt>
+              <dd>{draftSummary.riskItemCount}</dd>
+            </div>
+          </dl>
+          <section className="member-status-section">
+            <div className="member-status-section-header">
+              <h4>每位成员金额</h4>
+              <StatusBadge tone={draftSummary.memberAmountsCents.size > 0 ? "info" : "neutral"}>
+                {draftSummary.memberAmountsCents.size} 人
+              </StatusBadge>
+            </div>
+            {draftSummary.memberAmountsCents.size > 0 ? (
+              <ul className="member-status-message-list" aria-label="每位成员金额">
+                {[...draftSummary.memberAmountsCents.entries()].map(([memberId, amountCents]) => (
+                  <li key={memberId}>
+                    <strong>{formatMemberLabel(memberId)}</strong>
+                    <span>{formatCurrencyFromCents(amountCents)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="field-hint">系统还没有形成成员金额分配。</p>
+            )}
+          </section>
+        </SectionCard>
+      ) : null}
+
+      {workbenchState.status === "ready" && activeTab === "invoices" ? (
+        <SectionCard
+          title="提交确认"
+          description="所有必要项确认后，再把报销草稿提交给管理员审核。"
+          action={(
+            <StatusBadge tone={canSubmitReimbursementConfirmation ? "success" : "warning"}>
+              {canSubmitReimbursementConfirmation ? "可以提交" : "暂不能提交"}
+            </StatusBadge>
+          )}
+        >
+          {submitBlockers.length > 0 ? (
+            <>
+              <p className="field-hint">还需要处理以下事项后才能提交：</p>
+              <ul className="member-status-message-list" aria-label="提交阻塞原因">
+                {submitBlockers.map((blocker) => (
+                  <li key={blocker}>{blocker}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="field-hint">当前没有阻塞项，可以提交给管理员审核。</p>
+          )}
+          <div className="inline-actions">
+            <Button
+              type="button"
+              variant="contained"
+              disabled={!canSubmitReimbursementConfirmation || runningInvoiceBatchAction !== null}
+              onClick={handleSubmitReimbursementConfirmation}
+            >
+              {runningInvoiceBatchAction === "submit" ? "正在提交..." : "提交报销确认"}
+            </Button>
+          </div>
+          {invoiceBatchActionError ? <ApiErrorNotice error={invoiceBatchActionError} /> : null}
+          {invoiceBatchActionFeedback ? (
+            <p className="field-hint">{buildInvoiceBatchFeedbackMessage(invoiceBatchActionFeedback)}</p>
+          ) : null}
+        </SectionCard>
+      ) : null}
+
+      {workbenchState.status === "ready" ? (
+        <SectionCard
+          title="高级处理"
+          description="低频操作集中在这里：查看发票详情、补充缺失材料或确认个人费用。"
+        >
+          <Tabs
+            value={activeTab}
+            onChange={handleTabChange}
+            aria-label="成员单任务工作台标签页"
+            sx={{ borderBottom: 1, borderColor: "divider" }}
+          >
+            <Tab value="invoices" label="材料详情" id="member-workbench-tab-invoices" />
+            <Tab value="missing-materials" label="缺失材料" id="member-workbench-tab-missing-materials" />
+            <Tab value="confirmations" label="费用确认" id="member-workbench-tab-confirmations" />
+          </Tabs>
         </SectionCard>
       ) : null}
 
@@ -3430,8 +3948,8 @@ export function MemberInvoiceWorkbenchPage() {
                           <dd>{formatExpenseType(item.detail.invoice.expense_type)}</dd>
                         </div>
                         <div>
-                          <dt>当前版本</dt>
-                          <dd>v{item.detail.split_version}</dd>
+                          <dt>确认状态</dt>
+                          <dd>{formatConfirmationStatus(currentStatus)}</dd>
                         </div>
                         <div>
                           <dt>关联附件</dt>
@@ -3675,7 +4193,7 @@ export function MemberInvoiceWorkbenchPage() {
                   <h4>可提交发票</h4>
                   <p className="field-hint">
                     {workbenchState.task.status === "open"
-                      ? "这些发票当前没有识别、附件、分摊或确认 blocker，可以直接纳入批量提交。"
+                      ? "这些发票当前没有识别、附件、分摊或确认问题，可以直接纳入批量提交。"
                       : "这些发票的结构已经闭合，但当前任务状态不允许成员继续提交或撤回。"}
                   </p>
                 </div>
@@ -3837,7 +4355,7 @@ export function MemberInvoiceWorkbenchPage() {
                   <StatusBadge tone="info">{sharedInvoices.length} 张</StatusBadge>
                 </div>
                 <p className="field-hint">
-                  这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。
+                  这里仅共享发票基础信息、当前分摊去向和必要附件摘要；不提供原始文件下载或支付截图全文。
                 </p>
                 <ul className="invoice-material-list" aria-label="共享发票选择列表">
                   {sharedInvoices.map((item) => {
@@ -3923,7 +4441,7 @@ export function MemberInvoiceWorkbenchPage() {
               >
                 <div className="member-status-section-header">
                   <div>
-                    <p className="task-card-id">缺失材料 / {missingMaterial.invoice_id}</p>
+                    <p className="task-card-id">缺失材料</p>
                     <h2>{missingMaterial.invoice_number}</h2>
                   </div>
                   <StatusBadge tone="warning">{formatMaterialType(missingMaterial.required_material_type)}</StatusBadge>
@@ -3939,7 +4457,7 @@ export function MemberInvoiceWorkbenchPage() {
                     <dd>{formatDateTime(missingMaterial.detected_at)}</dd>
                   </div>
                   <div>
-                    <dt>规则来源</dt>
+                    <dt>为什么需要</dt>
                     <dd>{formatValidationRule(missingMaterial.source_rule_code)}</dd>
                   </div>
                 </dl>

@@ -135,8 +135,8 @@ describe("member legacy routes", () => {
   it("redirects legacy upload route to the workbench upload section", async () => {
     const router = renderLegacyRoute("/member/materials/upload?taskId=TASK-OPEN");
 
-    expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
-    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
+    expect(await screen.findByText("上传报销材料")).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/member/invoices/workbench");
     expect(router.state.location.hash).toBe("#member-workbench-upload");
   });
@@ -144,7 +144,7 @@ describe("member legacy routes", () => {
   it("redirects legacy status and missing routes to the workbench status views", async () => {
     const statusRouter = renderLegacyRoute("/member/materials/status?taskId=TASK-OPEN");
 
-    expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
     expect(await screen.findByText("当前任务下还没有可查看的发票")).toBeInTheDocument();
     expect(statusRouter.state.location.pathname).toBe("/member/invoices/workbench");
     expect(statusRouter.state.location.hash).toBe("#member-workbench-invoices");

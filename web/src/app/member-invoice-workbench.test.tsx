@@ -562,7 +562,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
     const summary = await screen.findByLabelText("成员发票工作台摘要");
     expect(summary).toBeInTheDocument();
     expect(within(summary).getByText("￥63.45")).toBeInTheDocument();
@@ -1855,8 +1855,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("上传后自动识别材料类型")).toBeDisabled();
+    expect(await screen.findByText("上传报销材料")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
@@ -1864,7 +1863,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
       },
     });
     expect(screen.getByLabelText("工作台待上传文件列表")).toHaveTextContent("pay.png");
-    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择文件并上传" }));
 
     expect(await screen.findByRole("progressbar")).toBeInTheDocument();
 
@@ -1904,8 +1903,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
     expect(await screen.findByText((content) => content.includes("上传成功：1 个文件已归档到当前任务。"))).toBeInTheDocument();
-    expect(screen.getByText("识别已入队等待 worker 消费；在 worker 未运行前，材料会保持“识别排队中”。")).toBeInTheDocument();
-    expect(screen.getByText("材料编号：MAT-UP-001")).toBeInTheDocument();
+    expect(screen.getAllByText("材料已接收，正在排队识别；识别完成后会自动刷新识别结果。").length).toBeGreaterThan(0);
+    expect(screen.getByText("材料类型：支付记录")).toBeInTheDocument();
     expect(screen.getByText((content) => content.includes("当前阶段：") && content.includes("识别排队中"))).toBeInTheDocument();
     expect(screen.getByText((content) => content.includes("处理轨迹：") && content.includes("已接收 -> 识别排队中"))).toBeInTheDocument();
     expect(await screen.findByText("支付记录 / MAT-UP-001")).toBeInTheDocument();
@@ -1987,7 +1986,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+    expect(await screen.findByText("上传报销材料")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
@@ -1997,7 +1996,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
       },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择文件并上传" }));
 
     expect(await screen.findByText("文件 oversized.pdf 超过 10MB，请压缩或拆分后再上传。")).toBeInTheDocument();
     expect(fetchSpy.mock.calls.some(([input, init]) => (
@@ -2195,14 +2194,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+    expect(await screen.findByText("上传报销材料")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
         files: [new File(["invoice"], "hotel.pdf", { type: "application/pdf" })],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择文件并上传" }));
 
     expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
     expect(await screen.findByText("当前阶段：已归票")).toBeInTheDocument();
@@ -2347,14 +2346,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+    expect(await screen.findByText("上传报销材料")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
         files: [new File(["scan"], "scan.pdf", { type: "application/pdf" })],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择文件并上传" }));
 
     expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
     expect(await screen.findByText((content) => content.includes("当前阶段：") && content.includes("需要处理"))).toBeInTheDocument();
@@ -2560,7 +2559,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     renderWorkbenchRoute();
 
-    expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+    expect(await screen.findByText("上传报销材料")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("工作台上传文件"), {
       target: {
@@ -2570,10 +2569,10 @@ describe("MemberInvoiceWorkbenchPage", () => {
         ],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择文件并上传" }));
 
     expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
-    expect(screen.getByText("材料编号：MAT-UP-PARTIAL-001")).toBeInTheDocument();
+    expect(screen.getByText("材料类型：发票")).toBeInTheDocument();
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
     expect(screen.getByText("unsupported material content type: text/plain")).toBeInTheDocument();
     expect(screen.getByText("部分成功")).toBeInTheDocument();
@@ -3367,7 +3366,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByText("任务内其他成员已上传发票")).toBeInTheDocument();
     expect(screen.getAllByText("TEAM-001").length).toBeGreaterThan(0);
     expect(
-      screen.getByText("这里仅共享发票基础元数据、当前分摊去向和必要附件摘要；不提供原始文件下载、支付截图全文或识别原始响应。"),
+      screen.getByText("这里仅共享发票基础信息、当前分摊去向和必要附件摘要；不提供原始文件下载或支付截图全文。"),
     ).toBeInTheDocument();
     expect(screen.getAllByText("支付记录 1 份 / 订单截图 1 份").length).toBeGreaterThan(0);
 

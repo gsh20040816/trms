@@ -815,17 +815,17 @@ describe("frontend main flow e2e placeholder", () => {
       setMockSession("member");
       renderRoute("/member/invoices/workbench?taskId=TASK-E2E#member-workbench-upload");
 
-      expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
-      expect(await screen.findByText("上传材料与附件")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
+      expect(await screen.findByText("上传报销材料")).toBeInTheDocument();
       fireEvent.change(screen.getByLabelText("工作台上传文件"), {
         target: {
           files: [new File(["fake-pdf"], "ticket.pdf", { type: "application/pdf" })],
         },
       });
-      fireEvent.click(screen.getByRole("button", { name: "上传到当前任务" }));
+      fireEvent.click(screen.getByRole("button", { name: "选择文件并上传" }));
 
       expect(await screen.findByText("最近上传处理状态")).toBeInTheDocument();
-      expect(screen.getByText("材料编号：MAT-001")).toBeInTheDocument();
+      expect(screen.getByText("材料类型：发票")).toBeInTheDocument();
 
       cleanup();
       setMockSession("admin");
@@ -867,7 +867,7 @@ describe("frontend main flow e2e placeholder", () => {
       setMockSession("member");
       renderRoute("/member/invoices/workbench?taskId=TASK-E2E#member-workbench-confirmations");
 
-      expect(await screen.findByRole("heading", { name: "按任务查看我的发票与费用" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
       expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
       const detailList = await screen.findByLabelText("工作台费用确认列表");
       const detailCard = within(detailList).getByRole("heading", { name: "INV-E2E-001" }).closest("article");

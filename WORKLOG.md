@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-04-30 20:34 - Refactor member reimbursement page to upload-first draft confirmation
+
+### 完成内容
+- 完成任务“将成员报销项目页重构为上传优先的材料草稿确认流程”。
+- 调整 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 页面标题改为“比赛报销材料提交”，顶部项目摘要补齐比赛名称、比赛时间、地点、参赛成员、发票抬头、税号和报销截止时间；
+  - 上传报销材料区前置为主入口，移除普通成员主路径里的“识别策略”禁用字段，不再要求先理解或填写表单；
+  - 新增用户可理解的材料状态映射和识别结果分组：需要你确认、已自动识别、缺少材料、可能有问题；
+  - 新增材料卡片摘要，展示文件名、材料类型、金额、日期、费用类别、归属成员、状态标签，以及确认、修改、指定归属、标记为不报销、查看原文件入口；
+  - 新增报销草稿汇总与提交确认区，自动展示当前已识别总金额、待确认金额、每位成员金额、缺失材料数量、风险项数量，并在不可提交时列出原因；
+  - 将发票详情、缺失材料、费用确认收敛到“高级处理”区，保留原有成员自助更正、分摊和确认能力。
+- 调整前端测试：
+  - [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [member-legacy-route-redirects.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-legacy-route-redirects.test.tsx)
+  - [main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+  - 更新断言到新的上传优先文案，并避免测试继续依赖成员主界面的内部材料编号文案。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录并完成本轮最小任务。
+
+### 根因
+- 旧成员工作台虽然已经聚合上传、识别、缺失材料、分摊和确认能力，但第一屏仍以“发票工作台 / 发票分组 / 高级详情”组织，上传区被夹在待办和标签页之后。
+- 页面还保留“识别策略”、材料编号、worker/provider 调度说明、原始响应等实现视角文案，用户仍需要理解系统处理边界，而不是直接按“上传材料 -> 看草稿 -> 处理异常 -> 提交”完成。
+
+### 影响范围
+- 本轮只修改成员单任务报销材料提交页和相关前端测试。
+- 没有改动后端识别、归票、分摊、确认、权限或导出模型。
+- “标记为不报销”目前作为禁用入口占位，因为后端尚无 excluded 写模型；本轮不伪造前端本地排除状态。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx member-invoice-workbench-layout.test.tsx member-invoice-workbench-submission.test.tsx member-invoice-workbench-aggregate.test.tsx member-legacy-route-redirects.test.tsx main-flow-e2e-placeholder.test.tsx`
+  - 6 个测试文件、31 个用例通过。
+- 已通过前端 lint：
+  - `cd web && npm run lint`
+- 仓库级 `./scripts/verify.sh` 将在本记录后执行，结果另见本轮收尾。
+
+### 保守假设
+- 真实自动识别能力仍沿用现有后端识别链路；本轮只重构前端交互，不声称提升识别准确率。
+- 材料状态 `uploaded/processing/recognized/needs_confirmation/missing_info/suspicious/confirmed/excluded` 在前端按现有材料、识别、校验、缺失和提交状态映射展示；后端目前没有单独的 `excluded` 写接口。
+
 ## 2026-04-30 20:12 - Complete real-flow UX acceptance for reimbursement simplification
 
 ### 完成内容
