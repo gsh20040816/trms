@@ -1,10 +1,8 @@
-import { type FormEvent, type SyntheticEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Tab from "@mui/material/Tab";
-import Tabs from "@mui/material/Tabs";
 import LinearProgress from "@mui/material/LinearProgress";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
@@ -24,9 +22,7 @@ import {
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
 import type {
-  ConfirmationStatus,
   ConfirmationRecord,
-  ExpenseType,
   ExpenseDetailItem,
   ExpenseSplitRecord,
   InvoiceMemberSubmissionBatchFailure,
@@ -35,10 +31,8 @@ import type {
   InvoiceRecord,
   MaterialBatchUploadResponse,
   MaterialRecord,
-  MaterialType,
   PendingSupportingMaterialLinkageItem,
   RecognitionFailureDetail,
-  RecognitionFieldResult,
   RecognitionTaskRecord,
   RecognitionTaskStatus,
   ReimbursementTask,
@@ -51,7 +45,6 @@ import type {
 } from "../lib/api/types";
 import {
   describeRecognitionFailure,
-  formatConfirmationStatus,
   formatExpenseType,
   formatMaterialType,
   formatMemberLabel,
@@ -62,6 +55,7 @@ import {
 } from "../lib/ui-text";
 import { findOversizedFile, MAX_UPLOAD_FILE_BYTES } from "../lib/upload-validation";
 import { useAuthSession } from "./auth-store";
+import { buildInvoiceDetailPath, buildMaterialInvoiceDetailPath } from "./member-invoice-paths";
 
 type VisibleTaskState =
   | { status: "loading" }
@@ -129,65 +123,17 @@ type WorkbenchRecognition = Pick<
   "id" | "material_id" | "status" | "failure" | "recognized_fields" | "manual_corrections" | "created_at" | "updated_at"
 >;
 
-type SplitDraftRow = {
-  key: string;
-  member_id: string;
-  amount_yuan: string;
-  note: string;
-};
-
 type WorkbenchUploadFormState = {
   files: File[];
 };
 
 type WorkbenchUploadValidationErrors = Partial<Record<keyof WorkbenchUploadFormState, string>>;
 
-type WorkbenchConfirmationItem = {
-  detail: ExpenseDetailItem;
-  supportingMaterials: MaterialRecord[];
-};
-
-type ManualInvoiceFormState = {
-  invoiceNumber: string;
-  issueDate: string;
-  transactionTime: string;
-  buyerName: string;
-  taxNumber: string;
-  sellerName: string;
-  amountYuan: string;
-  expenseType: ExpenseType;
-};
-
-type ManualInvoiceFormErrors = Partial<Record<keyof ManualInvoiceFormState, string>>;
-
-type ConfirmationFeedback = {
-  splitId: string;
-  status: Extract<ConfirmationStatus, "confirmed" | "disputed">;
-};
-
-type ManualInvoiceSaveFeedback = {
-  materialId: string;
-  invoiceNumber: string;
-  validationCount: number;
-  failedValidationCount: number;
-  pendingValidationCount: number;
-};
-
-type MaterialActionFeedback = {
-  materialId: string;
-  tone: "success" | "warning" | "error";
-  message: string;
-};
-
 type InvoiceBatchAction = "submit" | "withdraw";
 
 type InvoiceBatchActionFeedback = InvoiceMemberSubmissionBatchResponse & {
   action: InvoiceBatchAction;
 };
-
-type InvoiceWorkbenchSelection =
-  | { kind: "own"; materialId: string }
-  | { kind: "shared"; invoiceId: string };
 
 type PendingSupportingMaterialLinkageAction = {
   materialId: string;
@@ -214,72 +160,9 @@ type UploadProcessingSnapshot = {
   actionHref: string | null;
 };
 
-type ReimbursementMaterialUiStatus =
-  | "uploaded"
-  | "processing"
-  | "recognized"
-  | "needs_confirmation"
-  | "missing_info"
-  | "suspicious"
-  | "confirmed"
-  | "excluded";
-
-type MaterialResultGroupKey =
-  | "needs_confirmation"
-  | "recognized"
-  | "missing_info"
-  | "suspicious";
-
-type MaterialResultGroup = {
-  key: MaterialResultGroupKey;
-  title: string;
-  description: string;
-  tone: "info" | "warning" | "success";
-  items: WorkbenchInvoiceItem[];
-};
-
-type DraftSummary = {
-  recognizedAmountCents: number;
-  pendingConfirmationAmountCents: number;
-  memberAmountsCents: Map<string, number>;
-  missingMaterialCount: number;
-  riskItemCount: number;
-};
-
-const MATERIAL_TYPE_OPTIONS: Array<{ value: MaterialType; label: string }> = [
-  { value: "invoice", label: "发票" },
-  { value: "payment_record", label: "支付记录" },
-  { value: "competition_notice", label: "比赛通知" },
-  { value: "itinerary", label: "行程单" },
-  { value: "order_screenshot", label: "订单截图" },
-  { value: "other_attachment", label: "其他材料" },
-];
-
 const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
 const RECENT_UPLOAD_AUTO_REFRESH_INTERVAL_MS = 2000;
 const RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS = 10;
-
-const FIELD_ORDER = [
-  "invoice_number",
-  "issue_date",
-  "transaction_time",
-  "buyer_name",
-  "tax_number",
-  "seller_name",
-  "amount_cents",
-  "expense_type",
-] as const;
-
-const FIELD_LABELS: Record<(typeof FIELD_ORDER)[number], string> = {
-  invoice_number: "发票号码",
-  issue_date: "开票日期",
-  transaction_time: "交易时间",
-  buyer_name: "发票抬头",
-  tax_number: "税号",
-  seller_name: "销售方",
-  amount_cents: "金额",
-  expense_type: "费用类型",
-};
 
 const WORKBENCH_TAB_HASHES: Record<WorkbenchTab, string> = {
   invoices: "#member-workbench-invoices",
@@ -328,52 +211,6 @@ const UPLOAD_PROCESSING_STAGE_LABELS: Record<UploadProcessingStageKey, string> =
   action_required: "需要处理",
 };
 
-const MATERIAL_UI_STATUS_LABELS: Record<ReimbursementMaterialUiStatus, string> = {
-  uploaded: "正在识别",
-  processing: "正在识别",
-  recognized: "已自动识别",
-  needs_confirmation: "需要你确认",
-  missing_info: "缺少信息",
-  suspicious: "可能有问题",
-  confirmed: "已确认",
-  excluded: "不报销",
-};
-const MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT = 5;
-
-const MATERIAL_RESULT_GROUP_METADATA: Record<MaterialResultGroupKey, Omit<MaterialResultGroup, "items" | "key">> = {
-  needs_confirmation: {
-    title: "需要你确认",
-    description: "这些材料存在系统无法替你决定的事项，请先处理。",
-    tone: "warning",
-  },
-  recognized: {
-    title: "已自动识别",
-    description: "这些材料已形成报销草稿，默认折叠查看，需要时再修改。",
-    tone: "success",
-  },
-  missing_info: {
-    title: "缺少材料",
-    description: "这些材料还缺必要凭证或关键信息，补齐后才能提交。",
-    tone: "warning",
-  },
-  suspicious: {
-    title: "可能有问题",
-    description: "这些材料存在金额、日期、抬头、税号或分摊风险，请核对原因。",
-    tone: "warning",
-  },
-};
-
-function isExpenseType(value: string): value is ExpenseType {
-  return (
-    value === "registration"
-    || value === "railway"
-    || value === "airfare"
-    || value === "local_transport"
-    || value === "hotel"
-    || value === "other"
-  );
-}
-
 function pickSelectedTaskId(
   tasks: ReimbursementTask[],
   preferredTaskId: string | null,
@@ -400,67 +237,6 @@ function formatCurrencyFromCents(cents: number) {
   return `￥${(cents / 100).toFixed(2)}`;
 }
 
-function formatCurrencyInputFromCents(cents: number) {
-  return (cents / 100).toFixed(2);
-}
-
-function formatDateTimeLocalInput(value: string | null) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
-function toApiDateTime(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const localDate = new Date(trimmed);
-  const year = localDate.getFullYear();
-  const month = String(localDate.getMonth() + 1).padStart(2, "0");
-  const day = String(localDate.getDate()).padStart(2, "0");
-  const hours = String(localDate.getHours()).padStart(2, "0");
-  const minutes = String(localDate.getMinutes()).padStart(2, "0");
-  const offsetMinutes = -localDate.getTimezoneOffset();
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const absoluteOffsetMinutes = Math.abs(offsetMinutes);
-  const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, "0");
-  const offsetRemainderMinutes = String(absoluteOffsetMinutes % 60).padStart(2, "0");
-  return (
-    `${year}-${month}-${day}T${hours}:${minutes}:00`
-    + `${sign}${offsetHours}:${offsetRemainderMinutes}`
-  );
-}
-
-function parseCurrencyInputToCents(value: string) {
-  const normalized = value.trim();
-  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
-    return null;
-  }
-  const [integerPart, decimalPart = ""] = normalized.split(".");
-  return Number(integerPart) * 100 + Number(`${decimalPart}00`.slice(0, 2));
-}
-
-function normalizeSplitNote(note: string) {
-  const normalized = note.trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function buildSplitDraftKey(invoiceId: string, suffix: string) {
-  return `${invoiceId}:${suffix}`;
-}
-
-function pickDefaultSplitMemberId(taskMemberIds: string[], drafts: SplitDraftRow[], fallbackMemberId: string) {
-  return taskMemberIds.find((memberId) => drafts.every((draft) => draft.member_id !== memberId)) ?? fallbackMemberId;
-}
-
 function buildWorkbenchTaskAnchor(taskId: string, hash: string) {
   return `/member/invoices/workbench?taskId=${encodeURIComponent(taskId)}${hash}`;
 }
@@ -483,164 +259,6 @@ function buildInitialUploadFormState(): WorkbenchUploadFormState {
   return {
     files: [],
   };
-}
-
-function buildSplitDraftRows(
-  item: WorkbenchInvoiceItem,
-  defaultMemberId: string,
-): SplitDraftRow[] {
-  const invoice = item.invoice;
-  if (!invoice) {
-    return [];
-  }
-  if (item.splits.length === 0) {
-    return [
-      {
-        key: buildSplitDraftKey(invoice.id, "default"),
-        member_id: defaultMemberId,
-        amount_yuan: formatCurrencyInputFromCents(invoice.amount_cents),
-        note: "",
-      },
-    ];
-  }
-  return item.splits.map((split, index) => ({
-    key: split.id || buildSplitDraftKey(invoice.id, `existing-${index}`),
-    member_id: split.member_id,
-    amount_yuan: formatCurrencyInputFromCents(split.amount_cents),
-    note: split.note ?? "",
-  }));
-}
-
-function buildInitialSplitDrafts(
-  items: WorkbenchInvoiceItem[],
-  defaultMemberId: string,
-) {
-  return Object.fromEntries(
-    items
-      .filter((item) => item.invoice !== null)
-      .map((item) => [item.invoice!.id, buildSplitDraftRows(item, defaultMemberId)] as const),
-  );
-}
-
-function haveSplitDraftsChanged(
-  item: WorkbenchInvoiceItem,
-  drafts: SplitDraftRow[],
-  defaultMemberId: string,
-) {
-  const baseline = buildSplitDraftRows(item, defaultMemberId);
-  if (drafts.length !== baseline.length) {
-    return true;
-  }
-  return drafts.some((draft, index) => {
-    const previous = baseline[index];
-    if (!previous) {
-      return true;
-    }
-    return (
-      draft.member_id !== previous.member_id
-      || draft.amount_yuan !== previous.amount_yuan
-      || normalizeSplitNote(draft.note) !== normalizeSplitNote(previous.note)
-    );
-  });
-}
-
-function summarizeSplitDrafts(drafts: SplitDraftRow[]) {
-  let totalCents = 0;
-  let hasInvalidAmount = false;
-  for (const draft of drafts) {
-    const amountCents = parseCurrencyInputToCents(draft.amount_yuan);
-    if (amountCents === null || amountCents <= 0) {
-      hasInvalidAmount = true;
-      continue;
-    }
-    totalCents += amountCents;
-  }
-  return { totalCents, hasInvalidAmount };
-}
-
-function formatFieldValue(
-  fieldName: (typeof FIELD_ORDER)[number],
-  value: unknown,
-) {
-  if (value === null || value === undefined || value === "") {
-    return "未填写";
-  }
-  if (fieldName === "amount_cents" && typeof value === "number") {
-    return formatCurrencyFromCents(value);
-  }
-  if (fieldName === "expense_type" && typeof value === "string") {
-    return formatExpenseType(value);
-  }
-  if (fieldName === "transaction_time" && typeof value === "string") {
-    return formatDateTime(value);
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return JSON.stringify(value);
-}
-
-function getInvoiceFieldValue(
-  invoice: InvoiceRecord | null,
-  fieldName: (typeof FIELD_ORDER)[number],
-) {
-  if (!invoice) {
-    return null;
-  }
-  return invoice[fieldName];
-}
-
-function getRecognitionFieldValue(
-  recognition: WorkbenchRecognition | null,
-  fieldName: (typeof FIELD_ORDER)[number],
-) {
-  return recognition?.recognized_fields[fieldName] ?? null;
-}
-
-function getRecognitionFieldTextValue(
-  recognition: WorkbenchRecognition | null,
-  fieldName: (typeof FIELD_ORDER)[number],
-) {
-  const field = getRecognitionFieldValue(recognition, fieldName);
-  if (!field) {
-    return "";
-  }
-  if (typeof field.value === "string") {
-    return field.value;
-  }
-  if (typeof field.value === "number" || typeof field.value === "boolean") {
-    return String(field.value);
-  }
-  return "";
-}
-
-function getRecognitionAmountInput(recognition: WorkbenchRecognition | null) {
-  const field = getRecognitionFieldValue(recognition, "amount_cents");
-  if (!field || typeof field.value !== "number") {
-    return "";
-  }
-  return formatCurrencyInputFromCents(field.value);
-}
-
-function getRecognitionExpenseType(
-  recognition: WorkbenchRecognition | null,
-  allowedExpenseTypes: ExpenseType[],
-) {
-  const rawValue = getRecognitionFieldTextValue(recognition, "expense_type");
-  if (isExpenseType(rawValue) && allowedExpenseTypes.includes(rawValue)) {
-    return rawValue;
-  }
-  return allowedExpenseTypes[0] ?? "other";
-}
-
-function renderRecognitionSource(field: RecognitionFieldResult | null) {
-  if (!field) {
-    return "暂无识别值";
-  }
-  if (field.source === "manual") {
-    return "人工填写";
-  }
-  return "系统识别";
 }
 
 function getRecognitionStatus(item: WorkbenchInvoiceItem): RecognitionTaskStatus | null {
@@ -869,15 +487,6 @@ function buildSummaryStats(task: ReimbursementTask, report: TaskMemberStatusRepo
   ];
 }
 
-function buildConfirmationItems(items: WorkbenchInvoiceItem[]) {
-  return items.flatMap((item) =>
-    item.relatedExpenseDetails.map((detail) => ({
-      detail,
-      supportingMaterials: item.supportingMaterials,
-    })),
-  );
-}
-
 function formatSupportingMaterialSummary(item: TaskSharedInvoiceItem) {
   if (item.supporting_materials.length === 0) {
     return "当前还没有已关联的必要附件摘要。";
@@ -905,125 +514,6 @@ function formatTaskDateRange(task: ReimbursementTask) {
     return task.competition_start_date;
   }
   return `${task.competition_start_date} 至 ${task.competition_end_date}`;
-}
-
-function getMaterialUiStatus(item: WorkbenchInvoiceItem): ReimbursementMaterialUiStatus {
-  const recognitionStatus = getRecognitionStatus(item);
-  if (recognitionStatus === "pending") {
-    return "processing";
-  }
-  if (recognitionStatus === "failed" || recognitionStatus === "needs_confirmation" || !item.invoice) {
-    return "needs_confirmation";
-  }
-  if (item.missingMaterials.length > 0) {
-    return "missing_info";
-  }
-  if (item.validations.some((validation) => validation.status === "failed" || validation.status === "pending")) {
-    return "suspicious";
-  }
-  if (item.invoice.member_submission_status === "submitted") {
-    return "confirmed";
-  }
-  return "recognized";
-}
-
-function getMaterialUiTone(status: ReimbursementMaterialUiStatus) {
-  if (status === "recognized" || status === "confirmed") {
-    return "success" as const;
-  }
-  if (status === "uploaded" || status === "processing") {
-    return "info" as const;
-  }
-  if (status === "excluded") {
-    return "neutral" as const;
-  }
-  return "warning" as const;
-}
-
-function getMaterialResultGroupKey(item: WorkbenchInvoiceItem): MaterialResultGroupKey {
-  const status = getMaterialUiStatus(item);
-  if (status === "missing_info") {
-    return "missing_info";
-  }
-  if (status === "suspicious") {
-    return "suspicious";
-  }
-  if (status === "recognized" || status === "confirmed") {
-    return "recognized";
-  }
-  return "needs_confirmation";
-}
-
-function buildMaterialResultGroups(items: WorkbenchInvoiceItem[]) {
-  const groups = new Map<MaterialResultGroupKey, WorkbenchInvoiceItem[]>();
-  (Object.keys(MATERIAL_RESULT_GROUP_METADATA) as MaterialResultGroupKey[]).forEach((key) => {
-    groups.set(key, []);
-  });
-
-  items.forEach((item) => {
-    groups.get(getMaterialResultGroupKey(item))?.push(item);
-  });
-
-  return (Object.entries(MATERIAL_RESULT_GROUP_METADATA) as Array<
-    [MaterialResultGroupKey, Omit<MaterialResultGroup, "items" | "key">]
-  >)
-    .map(([key, metadata]) => ({
-      key,
-      ...metadata,
-      items: groups.get(key) ?? [],
-    }));
-}
-
-function buildDraftSummary(items: WorkbenchInvoiceItem[], report: TaskMemberStatusReport): DraftSummary {
-  const memberAmountsCents = new Map<string, number>();
-  for (const item of items) {
-    for (const split of item.splits) {
-      memberAmountsCents.set(
-        split.member_id,
-        (memberAmountsCents.get(split.member_id) ?? 0) + split.amount_cents,
-      );
-    }
-  }
-
-  return {
-    recognizedAmountCents: items.reduce((sum, item) => sum + (item.invoice?.amount_cents ?? 0), 0),
-    pendingConfirmationAmountCents: items.reduce((sum, item) => {
-      const status = getMaterialUiStatus(item);
-      return status === "needs_confirmation" || status === "missing_info" || status === "suspicious"
-        ? sum + (item.invoice?.amount_cents ?? 0)
-        : sum;
-    }, 0),
-    memberAmountsCents,
-    missingMaterialCount: report.counts.missing_material_count,
-    riskItemCount: items.filter((item) => getMaterialUiStatus(item) === "suspicious").length,
-  };
-}
-
-function buildSubmitBlockers(
-  task: ReimbursementTask,
-  pendingActionCount: number,
-  problemInvoiceCount: number,
-  pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[],
-  confirmationItems: WorkbenchConfirmationItem[],
-) {
-  const blockers: string[] = [];
-  if (task.status !== "open") {
-    blockers.push(`当前任务为${formatTaskStatus(task.status)}，暂不能提交新的确认。`);
-  }
-  if (pendingActionCount > 0) {
-    blockers.push(`还有 ${pendingActionCount} 项需要处理。`);
-  }
-  if (problemInvoiceCount > 0) {
-    blockers.push(`还有 ${problemInvoiceCount} 份材料存在待确认、缺少信息或风险提示。`);
-  }
-  if (pendingSupportingMaterialLinkageItems.length > 0) {
-    blockers.push(`还有 ${pendingSupportingMaterialLinkageItems.length} 份辅助材料需要指定归属。`);
-  }
-  const pendingConfirmations = confirmationItems.filter((item) => getCurrentConfirmationStatus(item.detail) === "pending").length;
-  if (pendingConfirmations > 0) {
-    blockers.push(`还有 ${pendingConfirmations} 笔分到你名下的费用需要确认。`);
-  }
-  return blockers;
 }
 
 function formatInvoiceBatchActionLabel(action: InvoiceBatchAction) {
@@ -1064,52 +554,6 @@ function formatRecognitionDispatchMessage(dispatch: MaterialBatchUploadResponse[
     return "材料已接收，正在排队识别；识别完成后会自动刷新识别结果。";
   }
   return "材料已接收，系统正在整理识别结果和待处理事项。";
-}
-
-function buildAllowedExpenseTypes(task: ReimbursementTask): ExpenseType[] {
-  const taskExpenseTypes = task.fee_categories.filter(isExpenseType);
-  return taskExpenseTypes.length > 0 ? taskExpenseTypes : ["other"];
-}
-
-function buildManualInvoiceFormState(
-  item: WorkbenchInvoiceItem,
-  allowedExpenseTypes: ExpenseType[],
-): ManualInvoiceFormState {
-  return {
-    invoiceNumber: item.invoice?.invoice_number ?? getRecognitionFieldTextValue(item.recognition, "invoice_number"),
-    issueDate: item.invoice?.issue_date ?? getRecognitionFieldTextValue(item.recognition, "issue_date"),
-    transactionTime: item.invoice?.transaction_time
-      ? formatDateTimeLocalInput(item.invoice.transaction_time)
-      : formatDateTimeLocalInput(getRecognitionFieldTextValue(item.recognition, "transaction_time")),
-    buyerName: item.invoice?.buyer_name ?? getRecognitionFieldTextValue(item.recognition, "buyer_name"),
-    taxNumber: item.invoice?.tax_number ?? getRecognitionFieldTextValue(item.recognition, "tax_number"),
-    sellerName: item.invoice?.seller_name ?? getRecognitionFieldTextValue(item.recognition, "seller_name"),
-    amountYuan: item.invoice ? formatCurrencyInputFromCents(item.invoice.amount_cents) : getRecognitionAmountInput(item.recognition),
-    expenseType: item.invoice?.expense_type ?? getRecognitionExpenseType(item.recognition, allowedExpenseTypes),
-  };
-}
-
-function validateManualInvoiceForm(
-  formState: ManualInvoiceFormState,
-  allowedExpenseTypes: ExpenseType[],
-) {
-  const errors: ManualInvoiceFormErrors = {};
-  if (!formState.invoiceNumber.trim()) {
-    errors.invoiceNumber = "发票号码不能为空。";
-  }
-  if (!formState.buyerName.trim()) {
-    errors.buyerName = "发票抬头不能为空。";
-  }
-  if (!formState.taxNumber.trim()) {
-    errors.taxNumber = "税号不能为空。";
-  }
-  if (!allowedExpenseTypes.includes(formState.expenseType)) {
-    errors.expenseType = "请选择当前任务允许的费用类型。";
-  }
-  if (parseCurrencyInputToCents(formState.amountYuan) === null) {
-    errors.amountYuan = "请输入大于 0 的金额，单位为元。";
-  }
-  return errors;
 }
 
 function validateWorkbenchUploadForm(
@@ -1185,20 +629,6 @@ function extractFailedBatchUploadResponse(error: unknown): MaterialBatchUploadRe
     items: payload.items,
     failures: payload.failures,
   };
-}
-
-function getCurrentConfirmationStatus(detail: ExpenseDetailItem): ConfirmationStatus {
-  return detail.confirmation?.status ?? "pending";
-}
-
-function isSplitStaleError(error: unknown) {
-  return error instanceof ApiError && error.status === 404 && error.message === "split not found";
-}
-
-function buildInvoiceWorkbenchSelectionKey(selection: InvoiceWorkbenchSelection) {
-  return selection.kind === "own"
-    ? `own:${selection.materialId}`
-    : `shared:${selection.invoiceId}`;
 }
 
 function buildPendingSupportingMaterialLinkageActionKey(action: PendingSupportingMaterialLinkageAction) {
@@ -1355,77 +785,6 @@ function buildInvoiceQueueGroups(
       }))
       .filter((section) => section.items.length > 0),
   };
-}
-
-function parseInvoiceWorkbenchAnchorTarget(hash: string) {
-  const prefix = "#workbench-invoice-";
-  if (!hash.startsWith(prefix)) {
-    return null;
-  }
-  return decodeURIComponent(hash.slice(prefix.length));
-}
-
-function pickInvoiceWorkbenchSelection(
-  items: WorkbenchInvoiceItem[],
-  sharedInvoices: TaskSharedInvoiceItem[],
-  anchorTarget: string | null,
-  currentSelectionKey: string | null,
-): InvoiceWorkbenchSelection | null {
-  if (anchorTarget) {
-    const ownMatch = items.find((item) => item.invoice?.id === anchorTarget || item.material.material_id === anchorTarget);
-    if (ownMatch) {
-      return {
-        kind: "own",
-        materialId: ownMatch.material.material_id,
-      };
-    }
-    const sharedMatch = sharedInvoices.find((item) => item.invoice_id === anchorTarget);
-    if (sharedMatch) {
-      return {
-        kind: "shared",
-        invoiceId: sharedMatch.invoice_id,
-      };
-    }
-  }
-
-  if (currentSelectionKey) {
-    if (currentSelectionKey.startsWith("own:")) {
-      const materialId = currentSelectionKey.slice("own:".length);
-      if (items.some((item) => item.material.material_id === materialId)) {
-        return {
-          kind: "own",
-          materialId,
-        };
-      }
-    }
-    if (currentSelectionKey.startsWith("shared:")) {
-      const invoiceId = currentSelectionKey.slice("shared:".length);
-      if (sharedInvoices.some((item) => item.invoice_id === invoiceId)) {
-        return {
-          kind: "shared",
-          invoiceId,
-        };
-      }
-    }
-  }
-
-  const firstOwnItem = items[0];
-  if (firstOwnItem) {
-    return {
-      kind: "own",
-      materialId: firstOwnItem.material.material_id,
-    };
-  }
-
-  const firstSharedInvoice = sharedInvoices[0];
-  if (firstSharedInvoice) {
-    return {
-      kind: "shared",
-      invoiceId: firstSharedInvoice.invoice_id,
-    };
-  }
-
-  return null;
 }
 
 function findWorkbenchItemBySupportingMaterialId(
@@ -1636,41 +995,16 @@ export function MemberInvoiceWorkbenchPage() {
   const navigate = useNavigate();
   const preferredTaskId = searchParams.get("taskId");
   const activeTab = resolveWorkbenchTab(location.hash);
-  const preferredInvoiceAnchorTarget = activeTab === "invoices"
-    ? parseInvoiceWorkbenchAnchorTarget(location.hash)
-    : null;
   const [taskState, setTaskState] = useState<VisibleTaskState>({ status: "loading" });
   const [selectedTaskId, setSelectedTaskId] = useState("");
-  const [selectedInvoiceWorkbenchKey, setSelectedInvoiceWorkbenchKey] = useState<string | null>(null);
   const [selectedBatchInvoiceIds, setSelectedBatchInvoiceIds] = useState<string[]>([]);
   const [workbenchState, setWorkbenchState] = useState<SelectedTaskWorkbenchState>({ status: "idle" });
-  const [materialTypeDrafts, setMaterialTypeDrafts] = useState<Record<string, MaterialType>>({});
-  const [materialTypeErrors, setMaterialTypeErrors] = useState<Record<string, string>>({});
-  const [updatingMaterialId, setUpdatingMaterialId] = useState<string | null>(null);
-  const [activeManualEditorMaterialId, setActiveManualEditorMaterialId] = useState<string | null>(null);
-  const [manualInvoiceFormState, setManualInvoiceFormState] = useState<ManualInvoiceFormState | null>(null);
-  const [manualInvoiceErrors, setManualInvoiceErrors] = useState<ManualInvoiceFormErrors>({});
-  const [manualInvoiceSubmitError, setManualInvoiceSubmitError] = useState<string | null>(null);
-  const [manualInvoiceSaveFeedback, setManualInvoiceSaveFeedback] = useState<ManualInvoiceSaveFeedback | null>(null);
-  const [savingManualInvoiceMaterialId, setSavingManualInvoiceMaterialId] = useState<string | null>(null);
-  const [retryingRecognitionMaterialId, setRetryingRecognitionMaterialId] = useState<string | null>(null);
-  const [recognitionRetryFeedback, setRecognitionRetryFeedback] = useState<MaterialActionFeedback | null>(null);
-  const [splitDrafts, setSplitDrafts] = useState<Record<string, SplitDraftRow[]>>({});
-  const [splitErrors, setSplitErrors] = useState<Record<string, string>>({});
-  const [updatingSplitInvoiceId, setUpdatingSplitInvoiceId] = useState<string | null>(null);
   const [uploadFormState, setUploadFormState] = useState<WorkbenchUploadFormState>(() => buildInitialUploadFormState());
   const [uploadValidationErrors, setUploadValidationErrors] = useState<WorkbenchUploadValidationErrors>({});
   const [uploadSubmitError, setUploadSubmitError] = useState<unknown>(null);
   const [uploadResult, setUploadResult] = useState<MaterialBatchUploadResponse | null>(null);
   const [uploadProcessingRefreshAttempts, setUploadProcessingRefreshAttempts] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
-  const [viewingOriginalMaterialId, setViewingOriginalMaterialId] = useState<string | null>(null);
-  const [confirmationSubmitError, setConfirmationSubmitError] = useState<unknown>(null);
-  const [confirmationFeedback, setConfirmationFeedback] = useState<ConfirmationFeedback | null>(null);
-  const [submittingConfirmationSplitId, setSubmittingConfirmationSplitId] = useState<string | null>(null);
-  const [staleConfirmationSplitId, setStaleConfirmationSplitId] = useState<string | null>(null);
-  const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
-  const [disputeErrors, setDisputeErrors] = useState<Record<string, string>>({});
   const [invoiceBatchActionError, setInvoiceBatchActionError] = useState<unknown>(null);
   const [invoiceBatchActionFeedback, setInvoiceBatchActionFeedback] = useState<InvoiceBatchActionFeedback | null>(null);
   const [runningInvoiceBatchAction, setRunningInvoiceBatchAction] = useState<InvoiceBatchAction | null>(null);
@@ -1680,27 +1014,11 @@ export function MemberInvoiceWorkbenchPage() {
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
 
   function resetTaskScopedUiState() {
-    setActiveManualEditorMaterialId(null);
-    setManualInvoiceFormState(null);
-    setManualInvoiceErrors({});
-    setManualInvoiceSubmitError(null);
-    setManualInvoiceSaveFeedback(null);
-    setSavingManualInvoiceMaterialId(null);
-    setRetryingRecognitionMaterialId(null);
-    setRecognitionRetryFeedback(null);
     setUploadValidationErrors({});
     setUploadSubmitError(null);
     setUploadResult(null);
     setUploadProcessingRefreshAttempts(0);
     setUploadFormState(buildInitialUploadFormState());
-    setViewingOriginalMaterialId(null);
-    setConfirmationSubmitError(null);
-    setConfirmationFeedback(null);
-    setSubmittingConfirmationSplitId(null);
-    setStaleConfirmationSplitId(null);
-    setDisputeReasons({});
-    setDisputeErrors({});
-    setSelectedInvoiceWorkbenchKey(null);
     setSelectedBatchInvoiceIds([]);
     setInvoiceBatchActionError(null);
     setInvoiceBatchActionFeedback(null);
@@ -1770,14 +1088,6 @@ export function MemberInvoiceWorkbenchPage() {
           (left, right) => right.updated_at.localeCompare(left.updated_at),
         ),
       });
-      setMaterialTypeDrafts(
-        Object.fromEntries(
-          report.materials.map((material) => [material.material_id, material.material_type] as const),
-        ),
-      );
-      setSplitDrafts(buildInitialSplitDrafts(items, session!.actorId));
-      setMaterialTypeErrors({});
-      setSplitErrors({});
     }
 
     async function loadWorkbenchLegacy(task: ReimbursementTask) {
@@ -1903,35 +1213,6 @@ export function MemberInvoiceWorkbenchPage() {
       ? workbenchState.sharedInvoices.filter((item) => item.submitter_id !== actorId)
       : []
   ), [actorId, workbenchState]);
-  const resolvedInvoiceWorkbenchSelection = workbenchState.status === "ready" && activeTab === "invoices"
-    ? pickInvoiceWorkbenchSelection(
-      workbenchState.items,
-      sharedInvoices,
-      preferredInvoiceAnchorTarget,
-      selectedInvoiceWorkbenchKey,
-    )
-    : null;
-  const resolvedInvoiceWorkbenchKey = resolvedInvoiceWorkbenchSelection
-    ? buildInvoiceWorkbenchSelectionKey(resolvedInvoiceWorkbenchSelection)
-    : null;
-  const selectedOwnWorkbenchItem = workbenchState.status === "ready" && resolvedInvoiceWorkbenchSelection?.kind === "own"
-    ? workbenchState.items.find((item) => item.material.material_id === resolvedInvoiceWorkbenchSelection.materialId) ?? null
-    : null;
-  const selectedSharedWorkbenchInvoice = resolvedInvoiceWorkbenchSelection?.kind === "shared"
-    ? sharedInvoices.find((item) => item.invoice_id === resolvedInvoiceWorkbenchSelection.invoiceId) ?? null
-    : null;
-  const selectedInvoiceDetailAnchorId = selectedOwnWorkbenchItem?.invoice?.id
-    ? `workbench-invoice-${selectedOwnWorkbenchItem.invoice.id}`
-    : selectedSharedWorkbenchInvoice
-      ? `workbench-invoice-${selectedSharedWorkbenchInvoice.invoice_id}`
-      : undefined;
-  const taskAllowedExpenseTypes = workbenchState.status === "ready"
-    ? buildAllowedExpenseTypes(workbenchState.task)
-    : [];
-  const confirmationItems = useMemo(
-    () => (workbenchState.status === "ready" ? buildConfirmationItems(workbenchState.items) : []),
-    [workbenchState],
-  );
   const abnormalCount = useMemo(() => {
     if (workbenchState.status !== "ready") {
       return 0;
@@ -1958,22 +1239,6 @@ export function MemberInvoiceWorkbenchPage() {
   const readyInvoiceItems = invoiceQueueGroups.readyItems;
   const problemInvoiceSections = invoiceQueueGroups.problemSections;
   const problemInvoiceCount = problemInvoiceSections.reduce((count, section) => count + section.items.length, 0);
-  const materialResultGroups = useMemo(
-    () => (
-      workbenchState.status === "ready"
-        ? buildMaterialResultGroups(workbenchState.items)
-        : []
-    ),
-    [workbenchState],
-  );
-  const draftSummary = useMemo(
-    () => (
-      workbenchState.status === "ready"
-        ? buildDraftSummary(workbenchState.items, workbenchState.report)
-        : null
-    ),
-    [workbenchState],
-  );
   const selectedBatchInvoiceIdSet = useMemo(
     () => new Set(selectedBatchInvoiceIds),
     [selectedBatchInvoiceIds],
@@ -2010,34 +1275,6 @@ export function MemberInvoiceWorkbenchPage() {
     && hasRecentUploadTransitioningItems
     && uploadProcessingRefreshAttempts < RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS
   );
-  const submitBlockers = workbenchState.status === "ready"
-    ? buildSubmitBlockers(
-      workbenchState.task,
-      pendingActionCount,
-      problemInvoiceCount,
-      pendingSupportingMaterialLinkageItems,
-      confirmationItems,
-    )
-    : [];
-  const canSubmitReimbursementConfirmation = submitBlockers.length === 0 && readyInvoiceItems.length > 0;
-
-  useEffect(() => {
-    if (!selectedInvoiceDetailAnchorId || activeTab !== "invoices") {
-      return undefined;
-    }
-
-    const timerId = window.setTimeout(() => {
-      const detailElement = document.getElementById(selectedInvoiceDetailAnchorId);
-      if (typeof detailElement?.scrollIntoView === "function") {
-        detailElement.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-      detailElement?.focus({ preventScroll: true });
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, [activeTab, selectedInvoiceDetailAnchorId]);
 
   useEffect(() => {
     if (!canAutoRefreshRecentUploadStatus) {
@@ -2058,23 +1295,7 @@ export function MemberInvoiceWorkbenchPage() {
     if (workbenchState.status !== "ready") {
       return;
     }
-    const ownMatch = workbenchState.items.find((item) => item.invoice?.id === invoiceId);
-    if (ownMatch) {
-      setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-        kind: "own",
-        materialId: ownMatch.material.material_id,
-      }));
-      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${invoiceId}`));
-      return;
-    }
-    const sharedMatch = sharedInvoices.find((item) => item.invoice_id === invoiceId);
-    if (sharedMatch) {
-      setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-        kind: "shared",
-        invoiceId: sharedMatch.invoice_id,
-      }));
-      void navigate(buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${invoiceId}`));
-    }
+    void navigate(buildInvoiceDetailPath(workbenchState.task.id, invoiceId));
   }
 
   async function handlePendingSupportingMaterialAttach(
@@ -2134,15 +1355,6 @@ export function MemberInvoiceWorkbenchPage() {
     setSelectedBatchInvoiceIds([]);
   }
 
-  function handleSubmitReimbursementConfirmation() {
-    if (readyInvoiceItems.length === 0) {
-      return;
-    }
-    const invoiceIds = readyInvoiceItems.flatMap((item) => (item.invoice ? [item.invoice.id] : []));
-    setSelectedBatchInvoiceIds(invoiceIds);
-    void handleInvoiceBatchAction("submit", invoiceIds);
-  }
-
   async function handleInvoiceBatchAction(action: InvoiceBatchAction, invoiceIds = selectedBatchInvoiceIds) {
     if (!session || !selectedTask || invoiceIds.length === 0) {
       return;
@@ -2182,163 +1394,6 @@ export function MemberInvoiceWorkbenchPage() {
       showError(message);
     } finally {
       setRunningInvoiceBatchAction(null);
-    }
-  }
-
-  async function handleMaterialTypeSave(materialId: string) {
-    if (!session) {
-      return;
-    }
-    const materialType = materialTypeDrafts[materialId];
-    if (!materialType) {
-      return;
-    }
-
-    setUpdatingMaterialId(materialId);
-    setMaterialTypeErrors((current) => {
-      const next = { ...current };
-      delete next[materialId];
-      return next;
-    });
-
-    try {
-      await trmsApi.updateMaterialType(materialId, {
-        actor_id: session.actorId,
-        material_type: materialType,
-      });
-      setWorkbenchReloadVersion((current) => current + 1);
-    } catch (error) {
-      const message = error instanceof ApiError ? error.message : "材料类型更新失败，请稍后重试。";
-      setMaterialTypeErrors((current) => ({
-        ...current,
-        [materialId]: message,
-      }));
-    } finally {
-      setUpdatingMaterialId((current) => (current === materialId ? null : current));
-    }
-  }
-
-  function handleManualEditorToggle(item: WorkbenchInvoiceItem, task: ReimbursementTask) {
-    if (item.material.material_type !== "invoice") {
-      return;
-    }
-    if (activeManualEditorMaterialId === item.material.material_id) {
-      setActiveManualEditorMaterialId(null);
-      setManualInvoiceFormState(null);
-      setManualInvoiceErrors({});
-      setManualInvoiceSubmitError(null);
-      return;
-    }
-
-    setActiveManualEditorMaterialId(item.material.material_id);
-    setManualInvoiceFormState(buildManualInvoiceFormState(item, buildAllowedExpenseTypes(task)));
-    setManualInvoiceErrors({});
-    setManualInvoiceSubmitError(null);
-    setManualInvoiceSaveFeedback(null);
-  }
-
-  function updateManualInvoiceField<Key extends keyof ManualInvoiceFormState>(
-    key: Key,
-    value: ManualInvoiceFormState[Key],
-  ) {
-    setManualInvoiceFormState((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: value,
-      };
-    });
-    setManualInvoiceErrors((current) => {
-      if (!(key in current)) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }
-
-  async function handleManualInvoiceSubmit(
-    event: FormEvent<HTMLFormElement>,
-    item: WorkbenchInvoiceItem,
-    task: ReimbursementTask,
-  ) {
-    event.preventDefault();
-    if (!session || !manualInvoiceFormState) {
-      return;
-    }
-
-    const allowedExpenseTypes = buildAllowedExpenseTypes(task);
-    const errors = validateManualInvoiceForm(manualInvoiceFormState, allowedExpenseTypes);
-    setManualInvoiceErrors(errors);
-    setManualInvoiceSubmitError(null);
-    if (Object.keys(errors).length > 0) {
-      return;
-    }
-
-    const amountCents = parseCurrencyInputToCents(manualInvoiceFormState.amountYuan);
-    if (amountCents === null) {
-      return;
-    }
-
-    setSavingManualInvoiceMaterialId(item.material.material_id);
-    try {
-      const response = await trmsApi.createOrUpdateInvoice(item.material.material_id, {
-        actor_id: session.actorId,
-        invoice_number: manualInvoiceFormState.invoiceNumber.trim(),
-        issue_date: manualInvoiceFormState.issueDate.trim() || null,
-        transaction_time: toApiDateTime(manualInvoiceFormState.transactionTime),
-        buyer_name: manualInvoiceFormState.buyerName.trim(),
-        tax_number: manualInvoiceFormState.taxNumber.trim(),
-        seller_name: manualInvoiceFormState.sellerName.trim() || null,
-        amount_cents: amountCents,
-        expense_type: manualInvoiceFormState.expenseType,
-      });
-      setManualInvoiceSaveFeedback({
-        materialId: item.material.material_id,
-        invoiceNumber: response.invoice.invoice_number,
-        validationCount: response.validations.length,
-        failedValidationCount: response.validations.filter((validation) => validation.status === "failed").length,
-        pendingValidationCount: response.validations.filter((validation) => validation.status === "pending").length,
-      });
-      setActiveManualEditorMaterialId(null);
-      setManualInvoiceFormState(null);
-      setManualInvoiceErrors({});
-      setManualInvoiceSubmitError(null);
-      setWorkbenchReloadVersion((current) => current + 1);
-    } catch (error) {
-      setManualInvoiceSubmitError(error instanceof ApiError ? error.message : "保存发票字段失败，请稍后重试。");
-    } finally {
-      setSavingManualInvoiceMaterialId((current) => (
-        current === item.material.material_id ? null : current
-      ));
-    }
-  }
-
-  async function handleRecognitionRetry(item: WorkbenchInvoiceItem) {
-    setRetryingRecognitionMaterialId(item.material.material_id);
-    setRecognitionRetryFeedback(null);
-    try {
-      const created = await trmsApi.createRecognitionTask(item.material.material_id);
-      const executed = await trmsApi.executeRecognitionTask(created.item.id);
-      setRecognitionRetryFeedback({
-        materialId: item.material.material_id,
-        tone: executed.dispatch?.status === "queued" ? "warning" : "success",
-        message: executed.dispatch?.message ?? "已发起重新识别，工作台正在刷新最新状态。",
-      });
-      setWorkbenchReloadVersion((current) => current + 1);
-    } catch (error) {
-      setRecognitionRetryFeedback({
-        materialId: item.material.material_id,
-        tone: "error",
-        message: error instanceof ApiError ? error.message : "重新识别失败，请稍后重试。",
-      });
-    } finally {
-      setRetryingRecognitionMaterialId((current) => (
-        current === item.material.material_id ? null : current
-      ));
     }
   }
 
@@ -2432,224 +1487,23 @@ export function MemberInvoiceWorkbenchPage() {
     }
   }
 
-  async function handleViewOriginalMaterial(item: WorkbenchInvoiceItem) {
-    setViewingOriginalMaterialId(item.material.material_id);
-    try {
-      const file = await trmsApi.downloadMaterialContent(item.material.material_id);
-      const objectUrl = URL.createObjectURL(file.blob);
-      window.open(objectUrl, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => {
-        URL.revokeObjectURL(objectUrl);
-      }, 60_000);
-    } catch (error) {
-      const message = error instanceof ApiError ? error.summary.message : "原文件暂时无法打开，请稍后重试。";
-      showError(message);
-    } finally {
-      setViewingOriginalMaterialId((current) => (
-        current === item.material.material_id ? null : current
-      ));
-    }
-  }
-
-  function updateSplitDraft(invoiceId: string, rowKey: string, patch: Partial<SplitDraftRow>) {
-    setSplitDrafts((current) => ({
-      ...current,
-      [invoiceId]: (current[invoiceId] ?? []).map((draft) => (
-        draft.key === rowKey
-          ? {
-            ...draft,
-            ...patch,
-          }
-          : draft
-      )),
-    }));
-    setSplitErrors((current) => {
-      const next = { ...current };
-      delete next[invoiceId];
-      return next;
-    });
-  }
-
-  function addSplitDraft(invoiceId: string, taskMemberIds: string[]) {
-    if (!session) {
-      return;
-    }
-    setSplitDrafts((current) => {
-      const currentDrafts = current[invoiceId] ?? [];
-      const defaultMemberId = pickDefaultSplitMemberId(
-        taskMemberIds,
-        currentDrafts,
-        session.actorId,
-      );
-      return {
-        ...current,
-        [invoiceId]: [
-          ...currentDrafts,
-          {
-            key: buildSplitDraftKey(invoiceId, `new-${currentDrafts.length + 1}`),
-            member_id: defaultMemberId,
-            amount_yuan: "0.00",
-            note: "",
-          },
-        ],
-      };
-    });
-    setSplitErrors((current) => {
-      const next = { ...current };
-      delete next[invoiceId];
-      return next;
-    });
-  }
-
-  function removeSplitDraft(invoiceId: string, rowKey: string) {
-    setSplitDrafts((current) => ({
-      ...current,
-      [invoiceId]: (current[invoiceId] ?? []).filter((draft) => draft.key !== rowKey),
-    }));
-    setSplitErrors((current) => {
-      const next = { ...current };
-      delete next[invoiceId];
-      return next;
-    });
-  }
-
-  async function handleSplitSave(item: WorkbenchInvoiceItem) {
-    if (!session || !item.invoice) {
-      return;
-    }
-    const invoiceId = item.invoice.id;
-    const drafts = splitDrafts[invoiceId] ?? buildSplitDraftRows(item, session.actorId);
-    if (drafts.length === 0) {
-      setSplitErrors((current) => ({
-        ...current,
-        [invoiceId]: "至少保留一条分摊记录。",
-      }));
-      return;
-    }
-
-    const normalizedItems = [];
-    for (const draft of drafts) {
-      const amountCents = parseCurrencyInputToCents(draft.amount_yuan);
-      if (amountCents === null || amountCents <= 0) {
-        setSplitErrors((current) => ({
-          ...current,
-          [invoiceId]: "请为每条分摊填写有效金额，格式示例为 123.45。",
-        }));
-        return;
-      }
-      normalizedItems.push({
-        member_id: draft.member_id,
-        amount_cents: amountCents,
-        note: normalizeSplitNote(draft.note),
-      });
-    }
-
-    setUpdatingSplitInvoiceId(invoiceId);
-    setSplitErrors((current) => {
-      const next = { ...current };
-      delete next[invoiceId];
-      return next;
-    });
-
-    try {
-      await trmsApi.replaceInvoiceSplits(invoiceId, {
-        actor_id: session.actorId,
-        items: normalizedItems,
-      });
-      setWorkbenchReloadVersion((current) => current + 1);
-    } catch (error) {
-      const message = error instanceof ApiError ? error.message : "分摊方案更新失败，请稍后重试。";
-      setSplitErrors((current) => ({
-        ...current,
-        [invoiceId]: message,
-      }));
-    } finally {
-      setUpdatingSplitInvoiceId((current) => (current === invoiceId ? null : current));
-    }
-  }
-
-  async function handleConfirmationSubmit(
-    item: WorkbenchConfirmationItem,
-    status: Extract<ConfirmationStatus, "confirmed" | "disputed">,
-  ) {
-    if (!session) {
-      return;
-    }
-
-    const disputeReason = disputeReasons[item.detail.split_id]?.trim() ?? "";
-    if (status === "disputed" && !disputeReason) {
-      setDisputeErrors((current) => ({
-        ...current,
-        [item.detail.split_id]: "提交异议时必须填写原因。",
-      }));
-      return;
-    }
-
-    setConfirmationSubmitError(null);
-    setConfirmationFeedback(null);
-    setStaleConfirmationSplitId(null);
-    setDisputeErrors((current) => {
-      if (!(item.detail.split_id in current)) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[item.detail.split_id];
-      return next;
-    });
-    setSubmittingConfirmationSplitId(item.detail.split_id);
-
-    try {
-      await trmsApi.submitSplitConfirmation(item.detail.split_id, {
-        actor_id: session.actorId,
-        member_id: session.actorId,
-        status,
-        dispute_reason: status === "disputed" ? disputeReason : null,
-      });
-      setConfirmationFeedback({
-        splitId: item.detail.split_id,
-        status,
-      });
-      if (status === "disputed") {
-        setDisputeReasons((current) => ({
-          ...current,
-          [item.detail.split_id]: "",
-        }));
-      }
-      setWorkbenchReloadVersion((current) => current + 1);
-    } catch (error) {
-      if (isSplitStaleError(error)) {
-        setStaleConfirmationSplitId(item.detail.split_id);
-        return;
-      }
-      setConfirmationSubmitError(error);
-    } finally {
-      setSubmittingConfirmationSplitId(null);
-    }
-  }
-
   function handleTaskChange(nextTaskId: string) {
     resetTaskScopedUiState();
     setSelectedTaskId(nextTaskId);
     void navigate(buildWorkbenchTabAnchor(nextTaskId, activeTab));
   }
 
-  function handleTabChange(_event: SyntheticEvent, nextTab: WorkbenchTab) {
-    if (!selectedTaskId) {
-      return;
-    }
-    void navigate(buildWorkbenchTabAnchor(selectedTaskId, nextTab));
-  }
-
   function handleInvoiceDetailAction(item: WorkbenchInvoiceItem) {
     const invoiceId = item.invoice?.id;
-    setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-      kind: "own",
-      materialId: item.material.material_id,
-    }));
-    void navigate(buildWorkbenchTaskAnchor(
-      workbenchState.status === "ready" ? workbenchState.task.id : selectedTaskId,
-      invoiceId ? `#workbench-invoice-${invoiceId}` : "#member-workbench-invoices",
-    ));
+    const taskId = workbenchState.status === "ready" ? workbenchState.task.id : selectedTaskId;
+    if (!taskId) {
+      return;
+    }
+    void navigate(
+      invoiceId
+        ? buildInvoiceDetailPath(taskId, invoiceId)
+        : buildMaterialInvoiceDetailPath(taskId, item.material.material_id),
+    );
   }
 
   function toggleProblemInvoiceGroup(groupKey: string) {
@@ -2660,28 +1514,7 @@ export function MemberInvoiceWorkbenchPage() {
     ));
   }
 
-  function buildMaterialResultSummary(
-    item: WorkbenchInvoiceItem,
-    pendingLinkageMatches: PendingSupportingMaterialLinkageItem[],
-  ) {
-    const messages = buildInvoiceQueueStatusSummary(item, pendingSupportingMaterialLinkageItems);
-    if (pendingLinkageMatches.length > 0) {
-      messages.push(`还有 ${pendingLinkageMatches.length} 份辅助材料需要指定归属。`);
-    }
-    if (messages.length > 0) {
-      return messages[0];
-    }
-    if (item.invoice) {
-      return `${formatExpenseType(item.invoice.expense_type)} / ${formatCurrencyFromCents(item.invoice.amount_cents)}`;
-    }
-    return "系统尚未形成可提交发票，请进入详情补录关键信息。";
-  }
-
   function renderOwnWorkbenchQueueCard(item: WorkbenchInvoiceItem, contextLabel: string) {
-    const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
-      kind: "own",
-      materialId: item.material.material_id,
-    });
     const abnormalReasons = collectAbnormalReasons(item);
     const canBatchSelect = item.invoice !== null;
     const isBatchSelected = item.invoice ? selectedBatchInvoiceIdSet.has(item.invoice.id) : false;
@@ -2716,13 +1549,9 @@ export function MemberInvoiceWorkbenchPage() {
           </div>
           <button
             type="button"
-            className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
-            aria-pressed={isSelected}
+            className="invoice-material-button"
             onClick={() => {
-              setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-                kind: "own",
-                materialId: item.material.material_id,
-              }));
+              handleInvoiceDetailAction(item);
             }}
           >
             <div className="task-card-header">
@@ -2763,707 +1592,10 @@ export function MemberInvoiceWorkbenchPage() {
                 ))}
               </ul>
             ) : null}
-            <p className="field-hint">点击展开处理详情，继续更正字段、处理附件、分摊和确认。</p>
+            <p className="field-hint">点击进入单张发票处理页面，继续更正字段、处理附件、分摊和确认。</p>
           </button>
         </div>
       </li>
-    );
-  }
-
-  function renderMaterialResultCard(item: WorkbenchInvoiceItem, group: MaterialResultGroup) {
-    const status = getMaterialUiStatus(item);
-    const abnormalReasons = collectAbnormalReasons(item);
-    const pendingLinkageMatches = item.invoice
-      ? findPendingSupportingMaterialLinkageMatches(item.invoice.id, pendingSupportingMaterialLinkageItems)
-      : [];
-    const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
-      kind: "own",
-      materialId: item.material.material_id,
-    });
-    const summary = buildMaterialResultSummary(item, pendingLinkageMatches);
-    const resultTitle = item.invoice?.invoice_number ?? item.material.original_filename;
-    const resultMetaItems = [
-      formatMaterialType(item.material.material_type),
-      item.invoice ? formatExpenseType(item.invoice.expense_type) : null,
-      item.invoice ? formatCurrencyFromCents(item.invoice.amount_cents) : null,
-    ].filter((value): value is string => Boolean(value));
-    const resultMeta = resultMetaItems.join(" / ");
-
-    return (
-      <li key={`${group.key}:${item.material.material_id}`}>
-        <article className={`member-result-summary-card ${isSelected ? "member-result-summary-card-selected" : ""}`}>
-          <div className="member-status-section-header">
-            <div>
-              <p className="task-card-id">{item.material.original_filename}</p>
-              <h3>{resultTitle}</h3>
-              <p className="field-hint">{resultMeta}</p>
-            </div>
-            <StatusBadge tone={getMaterialUiTone(status)}>
-              {MATERIAL_UI_STATUS_LABELS[status]}
-            </StatusBadge>
-          </div>
-          <p className="field-hint">{summary}</p>
-          {abnormalReasons.length + pendingLinkageMatches.length > 0 ? (
-            <p className="field-hint">
-              需要处理 {abnormalReasons.length + pendingLinkageMatches.length} 项，点击进入处理查看完整字段和操作。
-            </p>
-          ) : null}
-          <div className="inline-actions">
-            <Button
-              type="button"
-              variant={status === "recognized" ? "outlined" : "contained"}
-              size="small"
-              onClick={() => {
-                handleInvoiceDetailAction(item);
-              }}
-              aria-pressed={isSelected}
-            >
-              进入处理
-            </Button>
-            <Button
-              type="button"
-              variant="outlined"
-              size="small"
-              onClick={() => {
-                handleInvoiceDetailAction(item);
-              }}
-            >
-              指定归属
-            </Button>
-            <Button
-              type="button"
-              variant="outlined"
-              size="small"
-              disabled={viewingOriginalMaterialId === item.material.material_id}
-              onClick={() => {
-                void handleViewOriginalMaterial(item);
-              }}
-            >
-              {viewingOriginalMaterialId === item.material.material_id ? "正在打开..." : "查看原文件"}
-            </Button>
-          </div>
-          {status === "confirmed" ? (
-            <p className="field-hint">这份材料已提交给管理员；如需调整，请先在批量区撤回。</p>
-          ) : null}
-        </article>
-      </li>
-    );
-  }
-
-  function renderSelectedOwnWorkbenchItem(item: WorkbenchInvoiceItem) {
-    const abnormalReasons = collectAbnormalReasons(item);
-    const invoice = item.invoice;
-    const task = workbenchState.status === "ready" ? workbenchState.task : null;
-    const splitDraftRows = invoice && session
-      ? (splitDrafts[invoice.id] ?? buildSplitDraftRows(item, session.actorId))
-      : [];
-    const isManualEditorOpen = activeManualEditorMaterialId === item.material.material_id;
-    const isSavingManualInvoice = savingManualInvoiceMaterialId === item.material.material_id;
-    const scopedRecognitionRetryFeedback = recognitionRetryFeedback?.materialId === item.material.material_id
-      ? recognitionRetryFeedback
-      : null;
-    const scopedManualInvoiceSaveFeedback = manualInvoiceSaveFeedback?.materialId === item.material.material_id
-      ? manualInvoiceSaveFeedback
-      : null;
-    const recognitionActionLabel = getRecognitionStatus(item) ? "运行重新识别" : "开始识别";
-
-    return (
-      <>
-        <div className="member-status-section-header">
-          <div>
-            <p className="task-card-id">
-              {formatMaterialType(item.material.material_type)} / {item.material.material_id}
-            </p>
-            <h2>{item.invoice?.invoice_number ?? item.material.original_filename}</h2>
-          </div>
-          <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>
-            {abnormalReasons.length > 0 ? "需处理" : "状态稳定"}
-          </StatusBadge>
-        </div>
-
-        <dl className="task-meta-grid member-status-meta-grid">
-          <div>
-            <dt>原始文件</dt>
-            <dd>{item.material.original_filename}</dd>
-          </div>
-          <div>
-            <dt>上传时间</dt>
-            <dd>{formatDateTime(item.material.created_at)}</dd>
-          </div>
-          <div>
-            <dt>识别状态</dt>
-            <dd>{getRecognitionStatus(item) ? formatRecognitionStatus(getRecognitionStatus(item)!) : "暂无识别记录"}</dd>
-          </div>
-          <div>
-            <dt>校验状态</dt>
-            <dd>{formatValidationStatus(item.material.validation_status)}</dd>
-          </div>
-        </dl>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>材料类型</h4>
-            <StatusBadge tone="info">可自助更正</StatusBadge>
-          </div>
-          <div className="admin-form-grid">
-            <TextField
-              select
-              label="当前材料类型"
-              aria-label={`${item.material.material_id} 材料类型`}
-              value={materialTypeDrafts[item.material.material_id] ?? item.material.material_type}
-              onChange={(event) => {
-                const nextMaterialType = event.target.value as MaterialType;
-                setMaterialTypeDrafts((current) => ({
-                  ...current,
-                  [item.material.material_id]: nextMaterialType,
-                }));
-              }}
-              disabled={updatingMaterialId === item.material.material_id}
-            >
-              {MATERIAL_TYPE_OPTIONS.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Button
-                type="button"
-                variant="outlined"
-                onClick={() => {
-                  void handleMaterialTypeSave(item.material.material_id);
-                }}
-                disabled={
-                  updatingMaterialId === item.material.material_id
-                  || (materialTypeDrafts[item.material.material_id] ?? item.material.material_type)
-                    === item.material.material_type
-                }
-              >
-                {updatingMaterialId === item.material.material_id ? "保存中..." : "保存材料类型"}
-              </Button>
-            </Box>
-          </div>
-          <p className="field-hint">
-            仅收集中任务允许成员修改本人材料类型；若该材料已经形成发票主记录或存在不兼容关联，系统会明确拒绝。
-          </p>
-          {materialTypeErrors[item.material.material_id] ? (
-            <p className="field-error field-error-block">{materialTypeErrors[item.material.material_id]}</p>
-          ) : null}
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>待处理事项</h4>
-            <StatusBadge tone={abnormalReasons.length > 0 ? "warning" : "success"}>{abnormalReasons.length} 条</StatusBadge>
-          </div>
-          {abnormalReasons.length > 0 ? (
-            <ul className="member-status-message-list" aria-label={`${item.material.material_id} 异常原因列表`}>
-              {abnormalReasons.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="field-hint">当前发票没有新的识别、校验或确认异常。</p>
-          )}
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>识别字段与当前值</h4>
-            <StatusBadge tone="info">
-              {item.recognition ? renderRecognitionSource(getRecognitionFieldValue(item.recognition, "invoice_number")) : "暂无识别"}
-            </StatusBadge>
-          </div>
-          <ul className="member-status-message-list" aria-label={`${item.material.material_id} 发票字段列表`}>
-            {FIELD_ORDER.map((fieldName) => {
-              const recognitionField = getRecognitionFieldValue(item.recognition, fieldName);
-              const manualValue = getInvoiceFieldValue(item.invoice, fieldName);
-              const recognitionText = formatFieldValue(fieldName, recognitionField?.value ?? null);
-              const manualText = formatFieldValue(fieldName, manualValue);
-              const isCorrected = recognitionField !== null && manualText !== recognitionText;
-              return (
-                <li key={fieldName}>
-                  <strong>{FIELD_LABELS[fieldName]}</strong>
-                  <span>识别值：{recognitionText}</span>
-                  <span>当前值：{manualText}</span>
-                  <span>
-                    {recognitionField
-                      ? `${renderRecognitionSource(recognitionField)} / ${recognitionField.status === "needs_confirmation" ? "待确认" : "已识别"}`
-                      : "暂无识别结果"}
-                  </span>
-                  {isCorrected ? <span>状态：已人工更正</span> : null}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>手动补录与重新识别</h4>
-            <StatusBadge tone="info">仅本人材料可操作</StatusBadge>
-          </div>
-          <p className="field-hint">
-            这里用于修正系统识别不准的字段；重新识别会再次读取原文件，不会覆盖你已经确认的内容。
-          </p>
-          <div className="inline-actions">
-            <Button
-              type="button"
-              variant="outlined"
-              disabled={retryingRecognitionMaterialId === item.material.material_id}
-              onClick={() => {
-                void handleRecognitionRetry(item);
-              }}
-            >
-              {retryingRecognitionMaterialId === item.material.material_id ? "重新识别中..." : recognitionActionLabel}
-            </Button>
-            {item.material.material_type === "invoice" ? (
-              <Button
-                type="button"
-                variant="outlined"
-                onClick={() => {
-                  if (task) {
-                    handleManualEditorToggle(item, task);
-                  }
-                }}
-              >
-                {isManualEditorOpen ? "收起手动补录" : "手动填写或更正发票"}
-              </Button>
-            ) : null}
-          </div>
-          {scopedRecognitionRetryFeedback ? (
-            scopedRecognitionRetryFeedback.tone === "error" ? (
-              <p className="field-error field-error-block">{scopedRecognitionRetryFeedback.message}</p>
-            ) : (
-              <p className="field-hint">{scopedRecognitionRetryFeedback.message}</p>
-            )
-          ) : null}
-          {item.material.material_type !== "invoice" ? (
-            <p className="field-hint">
-              当前材料不是发票类型，因此这里只提供重新识别入口；如需补录发票字段，请先确认材料类型是否应更正为发票。
-            </p>
-          ) : null}
-          {scopedManualInvoiceSaveFeedback ? (
-            <p className="field-hint">
-              已保存发票 {scopedManualInvoiceSaveFeedback.invoiceNumber}；当前共有 {scopedManualInvoiceSaveFeedback.validationCount} 条校验结果，其中失败 {scopedManualInvoiceSaveFeedback.failedValidationCount} 条、待确认 {scopedManualInvoiceSaveFeedback.pendingValidationCount} 条。
-            </p>
-          ) : null}
-          {isManualEditorOpen && manualInvoiceFormState && item.material.material_type === "invoice" && task ? (
-            <form
-              className="page-stack"
-              aria-label={`${item.material.material_id} 发票手动补录表单`}
-              onSubmit={(event) => {
-                void handleManualInvoiceSubmit(event, item, task);
-              }}
-            >
-              <div className="admin-form-grid">
-                <TextField
-                  label="发票号码"
-                  value={manualInvoiceFormState.invoiceNumber}
-                  onChange={(event) => {
-                    updateManualInvoiceField("invoiceNumber", event.target.value);
-                  }}
-                  error={Boolean(manualInvoiceErrors.invoiceNumber)}
-                  helperText={manualInvoiceErrors.invoiceNumber}
-                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 发票号码` } }}
-                />
-                <TextField
-                  label="开票日期"
-                  type="date"
-                  value={manualInvoiceFormState.issueDate}
-                  onChange={(event) => {
-                    updateManualInvoiceField("issueDate", event.target.value);
-                  }}
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-                <TextField
-                  label="交易时间"
-                  type="datetime-local"
-                  value={manualInvoiceFormState.transactionTime}
-                  onChange={(event) => {
-                    updateManualInvoiceField("transactionTime", event.target.value);
-                  }}
-                  slotProps={{
-                    inputLabel: { shrink: true },
-                    htmlInput: { "aria-label": `${item.material.material_id} 交易时间` },
-                  }}
-                />
-                <TextField
-                  label="金额（元）"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="例如 123.45"
-                  value={manualInvoiceFormState.amountYuan}
-                  onChange={(event) => {
-                    updateManualInvoiceField("amountYuan", event.target.value);
-                  }}
-                  error={Boolean(manualInvoiceErrors.amountYuan)}
-                  helperText={manualInvoiceErrors.amountYuan}
-                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 金额` } }}
-                />
-                <TextField
-                  label="发票抬头"
-                  value={manualInvoiceFormState.buyerName}
-                  onChange={(event) => {
-                    updateManualInvoiceField("buyerName", event.target.value);
-                  }}
-                  error={Boolean(manualInvoiceErrors.buyerName)}
-                  helperText={manualInvoiceErrors.buyerName}
-                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 发票抬头` } }}
-                />
-                <TextField
-                  label="税号"
-                  value={manualInvoiceFormState.taxNumber}
-                  onChange={(event) => {
-                    updateManualInvoiceField("taxNumber", event.target.value);
-                  }}
-                  error={Boolean(manualInvoiceErrors.taxNumber)}
-                  helperText={manualInvoiceErrors.taxNumber}
-                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 税号` } }}
-                />
-                <TextField
-                  label="销售方名称"
-                  value={manualInvoiceFormState.sellerName}
-                  onChange={(event) => {
-                    updateManualInvoiceField("sellerName", event.target.value);
-                  }}
-                  slotProps={{ htmlInput: { "aria-label": `${item.material.material_id} 销售方名称` } }}
-                />
-                <TextField
-                  select
-                  label="费用类型"
-                  aria-label={`${item.material.material_id} 费用类型`}
-                  value={manualInvoiceFormState.expenseType}
-                  onChange={(event) => {
-                    updateManualInvoiceField("expenseType", event.target.value as ExpenseType);
-                  }}
-                  error={Boolean(manualInvoiceErrors.expenseType)}
-                  helperText={manualInvoiceErrors.expenseType}
-                  >
-                    {taskAllowedExpenseTypes.map((expenseType) => (
-                      <MenuItem key={expenseType} value={expenseType}>
-                        {formatExpenseType(expenseType)}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </div>
-              {manualInvoiceSubmitError ? (
-                <p className="field-error field-error-block">{manualInvoiceSubmitError}</p>
-              ) : null}
-              <div className="inline-actions">
-                <Button variant="outlined" type="submit" disabled={isSavingManualInvoice}>
-                  {isSavingManualInvoice ? "保存中..." : "保存发票字段"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>当前分摊方案与确认状态</h4>
-            <StatusBadge tone="info">{item.splits.length} 条分摊</StatusBadge>
-          </div>
-          {invoice && task ? (
-            <>
-              <div className="member-status-section-header">
-                <h5>调整分配对象与备注</h5>
-                <StatusBadge tone={task.status === "open" ? "info" : "neutral"}>
-                  {task.status === "open" ? "当前可编辑" : `当前${formatTaskStatus(task.status)}，不可编辑`}
-                </StatusBadge>
-              </div>
-              {splitDraftRows.map((draft, index) => (
-                <div key={draft.key} className="admin-form-grid">
-                  <TextField
-                    select
-                    label={`分配对象 ${index + 1}`}
-                    aria-label={`${invoice.id} 分摊行 ${index + 1} 成员`}
-                    value={draft.member_id}
-                    onChange={(event) => {
-                      updateSplitDraft(invoice.id, draft.key, {
-                        member_id: event.target.value,
-                      });
-                    }}
-                    disabled={
-                      task.status !== "open"
-                      || updatingSplitInvoiceId === invoice.id
-                    }
-                  >
-                    {task.member_ids.map((memberId) => (
-                      <MenuItem key={memberId} value={memberId}>
-                        {formatMemberLabel(memberId)}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                  <TextField
-                    label="金额（元）"
-                    type="text"
-                    inputMode="decimal"
-                    value={draft.amount_yuan}
-                    onChange={(event) => {
-                      updateSplitDraft(invoice.id, draft.key, {
-                        amount_yuan: event.target.value,
-                      });
-                    }}
-                    disabled={
-                      task.status !== "open"
-                      || updatingSplitInvoiceId === invoice.id
-                    }
-                    slotProps={{ htmlInput: { "aria-label": `${invoice.id} 分摊行 ${index + 1} 金额` } }}
-                  />
-                  <TextField
-                    label="备注"
-                    type="text"
-                    value={draft.note}
-                    onChange={(event) => {
-                      updateSplitDraft(invoice.id, draft.key, {
-                        note: event.target.value,
-                      });
-                    }}
-                    disabled={
-                      task.status !== "open"
-                      || updatingSplitInvoiceId === invoice.id
-                    }
-                    slotProps={{ htmlInput: { "aria-label": `${invoice.id} 分摊行 ${index + 1} 备注` } }}
-                  />
-                  <Box sx={{ display: "flex", alignItems: "center" }}>
-                    <Button
-                      type="button"
-                      variant="outlined"
-                      onClick={() => {
-                        removeSplitDraft(invoice.id, draft.key);
-                      }}
-                      disabled={
-                        task.status !== "open"
-                        || updatingSplitInvoiceId === invoice.id
-                        || splitDraftRows.length <= 1
-                      }
-                    >
-                      移除
-                    </Button>
-                  </Box>
-                </div>
-              ))}
-              <div className="inline-actions">
-                <Button
-                  type="button"
-                  variant="outlined"
-                  onClick={() => {
-                    addSplitDraft(invoice.id, task.member_ids);
-                  }}
-                  disabled={
-                    task.status !== "open"
-                    || updatingSplitInvoiceId === invoice.id
-                  }
-                >
-                  新增分摊对象
-                </Button>
-                <Button
-                  type="button"
-                  variant="outlined"
-                  onClick={() => {
-                    void handleSplitSave(item);
-                  }}
-                  disabled={
-                    task.status !== "open"
-                    || updatingSplitInvoiceId === invoice.id
-                    || (
-                      item.splits.length > 0
-                      && session !== null
-                      && !haveSplitDraftsChanged(
-                        item,
-                        splitDraftRows,
-                        session.actorId,
-                      )
-                    )
-                  }
-                >
-                  {updatingSplitInvoiceId === invoice.id ? "保存中..." : "保存分摊方案"}
-                </Button>
-              </div>
-              <p className="field-hint">
-                {(() => {
-                  const summary = summarizeSplitDrafts(splitDraftRows);
-                  if (summary.hasInvalidAmount) {
-                    return "请使用最多两位小数的金额格式；保存后，受影响成员需要重新确认费用。";
-                  }
-                  return `当前分摊合计 ${formatCurrencyFromCents(summary.totalCents)}，发票金额 ${formatCurrencyFromCents(invoice.amount_cents)}。保存后，受影响成员需要重新确认费用。`;
-                })()}
-              </p>
-              {splitErrors[invoice.id] ? (
-                <p className="field-error field-error-block">{splitErrors[invoice.id]}</p>
-              ) : null}
-            </>
-          ) : (
-            <p className="field-hint">当前材料还没有形成发票主记录，暂时无法调整金额分配对象。</p>
-          )}
-          {item.splits.length > 0 ? (
-            <>
-              <p className="field-hint">以下为当前已保存的分摊与确认状态。</p>
-              <ul className="member-status-message-list" aria-label={`${item.material.material_id} 分摊列表`}>
-                {item.splits.map((split) => {
-                  const confirmation = item.confirmations.find((entry) => entry.split_id === split.id) ?? null;
-                  return (
-                    <li key={split.id}>
-                      <strong>{formatMemberLabel(split.member_id)}</strong>
-                      <span>分摊金额：{formatCurrencyFromCents(split.amount_cents)}</span>
-                      <span>备注：{split.note ?? "无"}</span>
-                      <span>确认状态：{confirmation ? formatConfirmationStatus(confirmation.status) : "待确认"}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          ) : invoice ? (
-            <p className="field-hint">当前还没有已保存的分摊记录，保存后会在这里显示最新确认状态。</p>
-          ) : null}
-          {item.relatedExpenseDetails.length > 0 && task ? (
-            <p className="field-hint">
-              当前发票已有 {item.relatedExpenseDetails.length} 条与你相关的费用明细，可直接在本页的
-              <Button
-                component={Link}
-                variant="text"
-                size="small"
-                to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations")}
-                sx={{ minWidth: "auto", px: 0.75, verticalAlign: "baseline" }}
-              >
-                费用确认区
-              </Button>
-              提交确认或异议。
-            </p>
-          ) : null}
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>关联附件与缺失项</h4>
-            <StatusBadge tone="info">
-              附件 {item.supportingMaterials.length} 份 / 缺失 {item.missingMaterials.length} 项
-            </StatusBadge>
-          </div>
-          {item.supportingMaterials.length > 0 ? (
-            <ul className="member-status-message-list">
-              {item.supportingMaterials.map((material) => (
-                <li key={material.id}>
-                  <strong>{formatMaterialType(material.material_type)} / {material.original_filename}</strong>
-                  <span>上传时间：{formatDateTime(material.created_at)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="field-hint">当前这张发票还没有已关联的辅助材料。</p>
-          )}
-          {item.missingMaterials.length > 0 ? (
-            <ul className="member-status-message-list" aria-label={`${item.material.material_id} 缺失材料列表`}>
-              {item.missingMaterials.map((missingMaterial) => (
-                <li key={`${missingMaterial.invoice_id}:${missingMaterial.required_material_type}:${missingMaterial.source_rule_code}`}>
-                  <strong>{formatMaterialType(missingMaterial.required_material_type)}</strong>
-                  <span>{missingMaterial.message}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>下一步动作</h4>
-            <StatusBadge tone="info">优先留在当前工作台</StatusBadge>
-          </div>
-          <div className="inline-actions">
-            {task ? (
-              <>
-                <Button component={Link} variant="outlined" size="small" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-upload")}>
-                  去上传区补材料
-                </Button>
-                <Button component={Link} variant="outlined" size="small" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations")}>
-                  去确认区处理
-                </Button>
-                <Button component={Link} variant="outlined" size="small" to={buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices")}>
-                  回到当前发票列表
-                </Button>
-              </>
-            ) : null}
-          </div>
-        </section>
-      </>
-    );
-  }
-
-  function renderSelectedSharedWorkbenchInvoice(item: TaskSharedInvoiceItem) {
-    return (
-      <>
-        <div className="member-status-section-header">
-          <div>
-            <p className="task-card-id">共享摘要 / {item.invoice_id}</p>
-            <h2>{item.invoice_number}</h2>
-          </div>
-          <StatusBadge tone="info">{formatExpenseType(item.expense_type)}</StatusBadge>
-        </div>
-
-        <dl className="task-meta-grid member-status-meta-grid">
-          <div>
-            <dt>上传成员</dt>
-            <dd>{item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}</dd>
-          </div>
-          <div>
-            <dt>发票金额</dt>
-            <dd>{formatCurrencyFromCents(item.amount_cents)}</dd>
-          </div>
-          <div>
-            <dt>开票日期</dt>
-            <dd>{item.issue_date ?? "未填写"}</dd>
-          </div>
-          <div>
-            <dt>最近更新</dt>
-            <dd>{formatDateTime(item.updated_at)}</dd>
-          </div>
-        </dl>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>基础元数据</h4>
-            <StatusBadge tone="info">只读摘要</StatusBadge>
-          </div>
-          <ul className="member-status-message-list">
-            <li>
-              <strong>发票抬头</strong>
-              <span>{item.buyer_name}</span>
-            </li>
-            <li>
-              <strong>销售方</strong>
-              <span>{item.seller_name ?? "未填写"}</span>
-            </li>
-          </ul>
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>当前分摊去向</h4>
-            <StatusBadge tone="info">{item.splits.length} 条</StatusBadge>
-          </div>
-          {item.splits.length > 0 ? (
-            <ul className="member-status-message-list">
-              {item.splits.map((split) => (
-                <li key={`${item.invoice_id}:${split.member_id}`}>
-                  <strong>{formatMemberLabel(split.member_id)}</strong>
-                  <span>{formatCurrencyFromCents(split.amount_cents)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="field-hint">当前还没有已保存的分摊方案。</p>
-          )}
-        </section>
-
-        <section className="member-status-section">
-          <div className="member-status-section-header">
-            <h4>必要附件摘要</h4>
-            <StatusBadge tone="info">{item.supporting_materials.length} 类</StatusBadge>
-          </div>
-          <p className="field-hint">{formatSupportingMaterialSummary(item)}</p>
-        </section>
-      </>
     );
   }
 
@@ -3755,295 +1887,6 @@ export function MemberInvoiceWorkbenchPage() {
         </SectionCard>
       ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" ? (
-        <SectionCard
-          title="识别结果"
-          description="系统已按状态整理材料，优先展示需要你确认的内容；正常材料默认只显示摘要。"
-          action={<StatusBadge tone="info">{workbenchState.items.length} 份材料</StatusBadge>}
-        >
-          <div className="page-stack">
-            {materialResultGroups.map((group) => (
-              <section key={group.key} className="member-status-section" aria-label={`${group.title} 材料列表`}>
-                <div className="member-status-section-header">
-                  <div>
-                    <h4>{group.title}</h4>
-                    <p className="field-hint">{group.description}</p>
-                  </div>
-                  <StatusBadge tone={group.items.length > 0 ? group.tone : "neutral"}>{group.items.length} 份</StatusBadge>
-                </div>
-                {group.items.length > 0 ? (
-                  <ul className="invoice-material-list" aria-label={`${group.title} 材料卡片`}>
-                    {group.items.slice(0, MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT).map((item) => renderMaterialResultCard(item, group))}
-                  </ul>
-                ) : (
-                  <p className="field-hint">当前没有这一类材料。</p>
-                )}
-                {group.items.length > MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT ? (
-                  <p className="field-hint">
-                    还有 {group.items.length - MATERIAL_RESULT_DEFAULT_VISIBLE_COUNT} 份材料已收进下方发票处理列表，页面默认不展开全部。
-                  </p>
-                ) : null}
-              </section>
-            ))}
-          </div>
-        </SectionCard>
-      ) : null}
-
-      {workbenchState.status === "ready" && activeTab === "invoices" && draftSummary ? (
-        <SectionCard
-          title="报销草稿汇总"
-          description="金额会随识别结果、分摊和确认状态自动更新。"
-        >
-          <dl className="task-meta-grid member-status-meta-grid">
-            <div>
-              <dt>当前已识别总金额</dt>
-              <dd>{formatCurrencyFromCents(draftSummary.recognizedAmountCents)}</dd>
-            </div>
-            <div>
-              <dt>待确认金额</dt>
-              <dd>{formatCurrencyFromCents(draftSummary.pendingConfirmationAmountCents)}</dd>
-            </div>
-            <div>
-              <dt>缺失材料数量</dt>
-              <dd>{draftSummary.missingMaterialCount}</dd>
-            </div>
-            <div>
-              <dt>风险项数量</dt>
-              <dd>{draftSummary.riskItemCount}</dd>
-            </div>
-          </dl>
-          <section className="member-status-section">
-            <div className="member-status-section-header">
-              <h4>每位成员金额</h4>
-              <StatusBadge tone={draftSummary.memberAmountsCents.size > 0 ? "info" : "neutral"}>
-                {draftSummary.memberAmountsCents.size} 人
-              </StatusBadge>
-            </div>
-            {draftSummary.memberAmountsCents.size > 0 ? (
-              <ul className="member-status-message-list" aria-label="每位成员金额">
-                {[...draftSummary.memberAmountsCents.entries()].map(([memberId, amountCents]) => (
-                  <li key={memberId}>
-                    <strong>{formatMemberLabel(memberId)}</strong>
-                    <span>{formatCurrencyFromCents(amountCents)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="field-hint">系统还没有形成成员金额分配。</p>
-            )}
-          </section>
-        </SectionCard>
-      ) : null}
-
-      {workbenchState.status === "ready" && activeTab === "invoices" ? (
-        <SectionCard
-          title="提交确认"
-          description="所有必要项确认后，再把报销草稿提交给管理员审核。"
-          action={(
-            <StatusBadge tone={canSubmitReimbursementConfirmation ? "success" : "warning"}>
-              {canSubmitReimbursementConfirmation ? "可以提交" : "暂不能提交"}
-            </StatusBadge>
-          )}
-        >
-          {submitBlockers.length > 0 ? (
-            <>
-              <p className="field-hint">还需要处理以下事项后才能提交：</p>
-              <ul className="member-status-message-list" aria-label="提交阻塞原因">
-                {submitBlockers.map((blocker) => (
-                  <li key={blocker}>{blocker}</li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="field-hint">当前没有阻塞项，可以提交给管理员审核。</p>
-          )}
-          <div className="inline-actions">
-            <Button
-              type="button"
-              variant="contained"
-              disabled={!canSubmitReimbursementConfirmation || runningInvoiceBatchAction !== null}
-              onClick={handleSubmitReimbursementConfirmation}
-            >
-              {runningInvoiceBatchAction === "submit" ? "正在提交..." : "提交报销确认"}
-            </Button>
-          </div>
-          {invoiceBatchActionError ? <ApiErrorNotice error={invoiceBatchActionError} /> : null}
-          {invoiceBatchActionFeedback ? (
-            <p className="field-hint">{buildInvoiceBatchFeedbackMessage(invoiceBatchActionFeedback)}</p>
-          ) : null}
-        </SectionCard>
-      ) : null}
-
-      {workbenchState.status === "ready" ? (
-        <SectionCard
-          title="高级处理"
-          description="低频操作集中在这里：查看发票详情、补充缺失材料或确认个人费用。"
-        >
-          <Tabs
-            value={activeTab}
-            onChange={handleTabChange}
-            aria-label="成员单任务工作台标签页"
-            sx={{ borderBottom: 1, borderColor: "divider" }}
-          >
-            <Tab value="invoices" label="材料详情" id="member-workbench-tab-invoices" />
-            <Tab value="missing-materials" label="缺失材料" id="member-workbench-tab-missing-materials" />
-            <Tab value="confirmations" label="费用确认" id="member-workbench-tab-confirmations" />
-          </Tabs>
-        </SectionCard>
-      ) : null}
-
-      {workbenchState.status === "ready" && activeTab === "confirmations" ? (
-        <div id="member-workbench-confirmations">
-          <SectionCard
-            title="确认当前分到本人名下的费用"
-            description="确认动作现在直接留在当前任务工作台中；先看下面的识别和分摊上下文，再在这里提交确认或异议。"
-            action={(
-              <StatusBadge tone={confirmationItems.some((item) => getCurrentConfirmationStatus(item.detail) === "pending") ? "warning" : "success"}>
-                待确认 {confirmationItems.filter((item) => getCurrentConfirmationStatus(item.detail) === "pending").length} 条
-              </StatusBadge>
-            )}
-          >
-            {confirmationSubmitError ? <ApiErrorNotice error={confirmationSubmitError} /> : null}
-
-            {confirmationItems.length === 0 ? (
-              <p className="field-hint">当前任务下还没有分配到你名下、需要你处理的费用确认项。</p>
-            ) : (
-              <section className="member-confirmation-list" aria-label="工作台费用确认列表">
-                {confirmationItems.map((item) => {
-                  const currentStatus = getCurrentConfirmationStatus(item.detail);
-                  const disputeReason = disputeReasons[item.detail.split_id] ?? "";
-                  const disputeError = disputeErrors[item.detail.split_id];
-                  const isSubmitting = submittingConfirmationSplitId === item.detail.split_id;
-                  const isStale = staleConfirmationSplitId === item.detail.split_id;
-                  const hasFeedback = confirmationFeedback?.splitId === item.detail.split_id;
-
-                  return (
-                    <article key={item.detail.split_id} className="status-card member-confirmation-card">
-                      <div className="member-status-section-header">
-                        <div>
-                          <p className="task-card-id">费用明细 {item.detail.split_id}</p>
-                          <h2>{item.detail.invoice.invoice_number}</h2>
-                        </div>
-                        <StatusBadge tone={currentStatus === "confirmed" ? "success" : currentStatus === "disputed" ? "danger" : "warning"}>
-                          {formatConfirmationStatus(currentStatus)}
-                        </StatusBadge>
-                      </div>
-
-                      <dl className="task-meta-grid member-status-meta-grid">
-                        <div>
-                          <dt>归属金额</dt>
-                          <dd>{formatCurrencyFromCents(item.detail.amount_cents)}</dd>
-                        </div>
-                        <div>
-                          <dt>发票总额</dt>
-                          <dd>{formatCurrencyFromCents(item.detail.invoice.amount_cents)}</dd>
-                        </div>
-                        <div>
-                          <dt>费用类型</dt>
-                          <dd>{formatExpenseType(item.detail.invoice.expense_type)}</dd>
-                        </div>
-                        <div>
-                          <dt>确认状态</dt>
-                          <dd>{formatConfirmationStatus(currentStatus)}</dd>
-                        </div>
-                        <div>
-                          <dt>关联附件</dt>
-                          <dd>{item.supportingMaterials.length} 份</dd>
-                        </div>
-                        <div>
-                          <dt>成员备注</dt>
-                          <dd>{item.detail.note ?? "无"}</dd>
-                        </div>
-                      </dl>
-
-                      <TextField
-                        label="异议原因"
-                        aria-label={`工作台异议原因 ${item.detail.split_id}`}
-                        value={disputeReason}
-                        placeholder="如果金额、归属或附件关联不正确，请写明原因。"
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setDisputeReasons((current) => ({
-                            ...current,
-                            [item.detail.split_id]: nextValue,
-                          }));
-                          setDisputeErrors((current) => {
-                            if (!(item.detail.split_id in current)) {
-                              return current;
-                            }
-                            const next = { ...current };
-                            delete next[item.detail.split_id];
-                            return next;
-                          });
-                        }}
-                        error={Boolean(disputeError)}
-                        helperText={disputeError}
-                        multiline
-                        minRows={3}
-                        fullWidth
-                      />
-
-                      <div className="inline-actions">
-                        <Button
-                          type="button"
-                          variant="contained"
-                          disabled={isSubmitting}
-                          onClick={() => {
-                            void handleConfirmationSubmit(item, "confirmed");
-                          }}
-                        >
-                          {isSubmitting ? "提交中..." : "确认这笔费用"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outlined"
-                          disabled={isSubmitting}
-                          onClick={() => {
-                            void handleConfirmationSubmit(item, "disputed");
-                          }}
-                        >
-                          {isSubmitting ? "提交中..." : "提交异议"}
-                        </Button>
-                        <Button
-                          component={Link}
-                          variant="outlined"
-                          to={buildWorkbenchTaskAnchor(workbenchState.task.id, `#workbench-invoice-${item.detail.invoice.id}`)}
-                        >
-                          查看对应发票上下文
-                        </Button>
-                        {isStale ? (
-                          <Button
-                            type="button"
-                            variant="outlined"
-                            onClick={() => {
-                              setStaleConfirmationSplitId(null);
-                              setWorkbenchReloadVersion((current) => current + 1);
-                            }}
-                          >
-                            重新加载明细
-                          </Button>
-                        ) : null}
-                      </div>
-
-                      {hasFeedback ? (
-                        <p className="confirmation-feedback">
-                          {confirmationFeedback.status === "confirmed" ? "已提交确认，工作台已刷新最新确认状态。" : "已提交异议，工作台已刷新最新确认状态。"}
-                        </p>
-                      ) : null}
-                      {isStale ? (
-                        <p className="field-error-block">
-                          当前费用明细版本已失效，通常是管理员刚修改了分摊金额或成员归属；请刷新后再确认。
-                        </p>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </section>
-            )}
-          </SectionCard>
-        </div>
-      ) : null}
-
       {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 && sharedInvoices.length === 0 && pendingSupportingMaterialLinkageItems.length === 0 ? (
         <EmptyState
           title="当前任务下还没有可查看的发票"
@@ -4059,8 +1902,8 @@ export function MemberInvoiceWorkbenchPage() {
       {workbenchState.status === "ready" && activeTab === "invoices" && (workbenchState.items.length > 0 || sharedInvoices.length > 0 || pendingSupportingMaterialLinkageItems.length > 0) ? (
         <section id="member-workbench-invoices" className="page-stack">
           <SectionCard
-            title="成员提交队列"
-            description="第一屏先看哪些发票已经可以提交、哪些仍被具体问题阻塞；只有在需要修正时再展开详情。"
+            title="需要处理的发票列表"
+            description="工作台只保留摘要列表；点击进入单张发票处理页面后再补字段、调分摊或处理附件。"
             action={(
               <StatusBadge tone={problemInvoiceCount > 0 ? "warning" : "success"}>
                 {problemInvoiceCount > 0 ? `${problemInvoiceCount} 张仍待处理` : "当前可提交结构稳定"}
@@ -4077,7 +1920,7 @@ export function MemberInvoiceWorkbenchPage() {
               </StatusBadge>
             </div>
             <p className="field-hint">
-              默认不再要求你先钻进某一张票的完整详情；先看下面的分组，再决定要展开处理哪一张。
+              默认不再把每张票的完整处理表单堆在工作台；先看下面的分组，再进入具体发票处理。
             </p>
 
             <section
@@ -4188,7 +2031,7 @@ export function MemberInvoiceWorkbenchPage() {
                   <h4>可提交发票</h4>
                   <p className="field-hint">
                     {workbenchState.task.status === "open"
-                      ? "这些发票当前没有识别、附件、分摊或确认问题，可以直接纳入批量提交。"
+                      ? "这些发票当前没有识别、附件、分摊或确认问题，可以直接纳入批量提交；如需修改仍从单张发票页面进入。"
                       : "这些发票的结构已经闭合，但当前任务状态不允许成员继续提交或撤回。"}
                   </p>
                 </div>
@@ -4395,29 +2238,20 @@ export function MemberInvoiceWorkbenchPage() {
             {sharedInvoices.length > 0 ? (
               <>
                 <div className="member-status-section-header">
-                  <h4>任务内其他成员已上传发票</h4>
+                  <h4>所有发票列表</h4>
                   <StatusBadge tone="info">{sharedInvoices.length} 张</StatusBadge>
                 </div>
                 <p className="field-hint">
                   这里仅共享发票基础信息、当前分摊去向和必要附件摘要；不提供原始文件下载或支付截图全文。
                 </p>
                 <ul className="invoice-material-list" aria-label="共享发票选择列表">
-                  {sharedInvoices.map((item) => {
-                    const isSelected = resolvedInvoiceWorkbenchKey === buildInvoiceWorkbenchSelectionKey({
-                      kind: "shared",
-                      invoiceId: item.invoice_id,
-                    });
-                    return (
+                  {sharedInvoices.map((item) => (
                       <li key={item.invoice_id}>
                         <button
                           type="button"
-                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
-                          aria-pressed={isSelected}
+                          className="invoice-material-button"
                           onClick={() => {
-                            setSelectedInvoiceWorkbenchKey(buildInvoiceWorkbenchSelectionKey({
-                              kind: "shared",
-                              invoiceId: item.invoice_id,
-                            }));
+                            void navigate(buildInvoiceDetailPath(workbenchState.task.id, item.invoice_id));
                           }}
                         >
                           <div className="task-card-header">
@@ -4447,31 +2281,10 @@ export function MemberInvoiceWorkbenchPage() {
                           </dl>
                         </button>
                       </li>
-                    );
-                  })}
+                  ))}
                 </ul>
               </>
             ) : null}
-          </SectionCard>
-
-          <SectionCard
-            title="展开的发票详情"
-            description="只有在需要更正字段、处理附件、调整分摊或确认时，才继续查看这一层完整上下文。"
-          >
-            <article
-              className="status-card admin-form-card admin-review-detail-panel"
-              id={selectedInvoiceDetailAnchorId}
-              aria-label="成员发票工作台列表"
-              tabIndex={-1}
-            >
-              {selectedOwnWorkbenchItem ? (
-                renderSelectedOwnWorkbenchItem(selectedOwnWorkbenchItem)
-              ) : selectedSharedWorkbenchInvoice ? (
-                renderSelectedSharedWorkbenchInvoice(selectedSharedWorkbenchInvoice)
-              ) : (
-                <p className="field-hint">当前任务下还没有可展示的发票详情。</p>
-              )}
-            </article>
           </SectionCard>
         </section>
       ) : null}

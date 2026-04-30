@@ -18,6 +18,12 @@ from trms_backend.application.recognition_preparation import (
     RecognitionTaskExecutionConflictError,
     RecognitionTaskExecutionNotFoundError,
 )
+from trms_backend.application.recognition_invoice_auto_create import (
+    RecognitionInvoiceAutoCreateService,
+)
+from trms_backend.application.supporting_material_auto_link import (
+    SupportingMaterialAutoLinkService,
+)
 from trms_backend.domain.audit_logs import AuditLogRepository
 from trms_backend.domain.auth import UserRole
 from trms_backend.domain.auth import AuthRepository
@@ -53,6 +59,15 @@ def build_recognition_router(
         auth_repository
     )
     metrics = metrics_collector or NoOpMetricsCollector()
+    recognition_invoice_auto_create_service = RecognitionInvoiceAutoCreateService(
+        task_repository=task_repository,
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        supporting_material_auto_link_service=SupportingMaterialAutoLinkService(
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+        ),
+    )
 
     def ensure_recognition_task_manager_access(
         *,
@@ -204,6 +219,7 @@ def build_recognition_router(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="recognition task not found",
             )
+        recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
         refresh_validations_for_material(
             updated.material_id,
             task_repository=task_repository,
@@ -284,6 +300,7 @@ def build_recognition_router(
                 detail=str(error),
             ) from error
 
+        recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
         refresh_validations_for_material(
             updated.material_id,
             task_repository=task_repository,

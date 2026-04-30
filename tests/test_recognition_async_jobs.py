@@ -5,8 +5,13 @@ from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
+from trms_backend.application.recognition_llm import (
+    RecognitionLlmClient,
+    RecognitionLlmExtractionResult,
+)
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
+from trms_backend.domain.recognitions import RecognitionFieldResult
 from trms_backend.domain.audit_logs import AuditLogResult
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
@@ -22,6 +27,14 @@ from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
 from test_tasks_api import admin_auth_headers, create_task as create_admin_task
+
+
+class FakeRecognitionLlmClient(RecognitionLlmClient):
+    def __init__(self, result: RecognitionLlmExtractionResult) -> None:
+        self._result = result
+
+    def recognize(self, *, material, document_input) -> RecognitionLlmExtractionResult:
+        return self._result
 
 
 def build_text_pdf_bytes() -> bytes:
@@ -82,21 +95,33 @@ def create_task(client: TestClient) -> str:
     return task["id"]
 
 
-def upload_material(client: TestClient, task_id: str) -> str:
+def upload_material(
+    client: TestClient,
+    task_id: str,
+    *,
+    material_type: str | None = "invoice",
+) -> str:
+    form_data = {
+        "submitter_id": "2250001",
+        "channel": "web",
+    }
+    if material_type is not None:
+        form_data["material_type"] = material_type
     response = client.post(
         f"/api/tasks/{task_id}/materials",
-        data={
-            "submitter_id": "2250001",
-            "channel": "web",
-            "material_type": "invoice",
-        },
+        data=form_data,
         files={"files": ("async-ticket.pdf", build_text_pdf_bytes(), "application/pdf")},
     )
     assert response.status_code == 201
     return response.json()["items"][0]["id"]
 
 
-def build_processor(tmp_path, runtime_config) -> RecognitionAsyncJobProcessor:
+def build_processor(
+    tmp_path,
+    runtime_config,
+    *,
+    recognition_llm_client: RecognitionLlmClient | None = None,
+) -> RecognitionAsyncJobProcessor:
     session_factory = build_session_factory(runtime_config.database_url)
     init_database(session_factory)
     material_repository = SqlAlchemyMaterialRepository(session_factory)
@@ -112,6 +137,7 @@ def build_processor(tmp_path, runtime_config) -> RecognitionAsyncJobProcessor:
         recognition_task_repository,
         audit_log_repository,
         resolve_recognition_llm_capability(runtime_config),
+        recognition_llm_client,
     )
     return RecognitionAsyncJobProcessor(
         task_repository=task_repository,
@@ -164,3 +190,138 @@ def test_recognition_async_processor_consumes_pending_task_and_preserves_idempot
     assert audit_logs[0].detail["failure_stage"] == "ai"
     assert audit_logs[0].detail["failure_reason"] == "llm_provider_not_configured"
     assert "raw_response" not in audit_logs[0].detail
+
+
+def test_recognition_async_processor_auto_creates_invoice_after_successful_recognition(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    material_id = upload_material(client, task_id)
+    processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="invoice",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "invoice_number": RecognitionFieldResult(
+                        value="ASYNC-AUTO-001",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "buyer_name": RecognitionFieldResult(
+                        value="同济大学",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "tax_number": RecognitionFieldResult(
+                        value="12100000425006117D",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=45678,
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="registration",
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert processor.run_once() == 1
+
+    invoices_response = client.get(
+        f"/api/tasks/{task_id}/invoices",
+        headers=admin_auth_headers(client),
+    )
+    assert invoices_response.status_code == 200
+    invoices = invoices_response.json()["items"]
+    assert len(invoices) == 1
+    assert invoices[0]["material_id"] == material_id
+    assert invoices[0]["invoice_number"] == "ASYNC-AUTO-001"
+    assert invoices[0]["amount_cents"] == 45678
+
+    validations_response = client.get(
+        f"/api/invoices/{invoices[0]['id']}/validations",
+        headers=admin_auth_headers(client),
+    )
+    assert validations_response.status_code == 200
+    assert validations_response.json()["items"]
+
+
+def test_recognition_async_processor_auto_creates_invoice_after_default_material_type_is_recognized(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    material_id = upload_material(client, task_id, material_type=None)
+    processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="invoice",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "invoice_number": RecognitionFieldResult(
+                        value="ASYNC-DEFAULT-AUTO-001",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "buyer_name": RecognitionFieldResult(
+                        value="同济大学",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "tax_number": RecognitionFieldResult(
+                        value="12100000425006117D",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=45678,
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="registration",
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert processor.run_once() == 1
+
+    invoices_response = client.get(
+        f"/api/tasks/{task_id}/invoices",
+        headers=admin_auth_headers(client),
+    )
+    assert invoices_response.status_code == 200
+    invoices = invoices_response.json()["items"]
+    assert len(invoices) == 1
+    assert invoices[0]["material_id"] == material_id
+    assert invoices[0]["invoice_number"] == "ASYNC-DEFAULT-AUTO-001"
+
+    materials_response = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
+    assert materials_response.status_code == 200
+    assert materials_response.json()["items"][0]["material_type"] == "invoice"

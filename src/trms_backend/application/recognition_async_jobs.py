@@ -11,6 +11,12 @@ from trms_backend.application.recognition_preparation import (
     RecognitionTaskExecutionConflictError,
     RecognitionTaskExecutionNotFoundError,
 )
+from trms_backend.application.recognition_invoice_auto_create import (
+    RecognitionInvoiceAutoCreateService,
+)
+from trms_backend.application.supporting_material_auto_link import (
+    SupportingMaterialAutoLinkService,
+)
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
 from trms_backend.domain.recognitions import RecognitionTaskRepository
@@ -43,6 +49,15 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
         self._recognition_preparation_service = recognition_preparation_service
         self._batch_size = batch_size
         self._metrics_collector = metrics_collector or NoOpMetricsCollector()
+        self._recognition_invoice_auto_create_service = RecognitionInvoiceAutoCreateService(
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            supporting_material_auto_link_service=SupportingMaterialAutoLinkService(
+                material_repository=material_repository,
+                invoice_repository=invoice_repository,
+            ),
+        )
 
     def run_once(self) -> int:
         processed_count = 0
@@ -66,6 +81,7 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
                 )
                 continue
 
+            self._recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
             refresh_validations_for_material(
                 updated.material_id,
                 task_repository=self._task_repository,

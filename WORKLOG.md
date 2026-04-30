@@ -1,5 +1,75 @@
 # WORKLOG
 
+## 2026-04-30 23:14 - Split member workbench into per-invoice processing and auto-create invoices
+
+### 完成内容
+- 完成任务“拆分成员工作台单票处理页并在识别成功后自动建票校验”。
+- 新增 [recognition_invoice_auto_create.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_invoice_auto_create.py)：
+  - 识别任务成功、发票必填字段完整且字段状态均为 `recognized` 时，自动按材料创建/更新发票；
+  - 仅允许已归属、类型为发票、费用类别符合任务配置的材料自动建票；
+  - 建票后自动关联辅助材料并刷新校验。
+- 接入自动建票路径：
+  - [materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)
+  - [recognitions.py](/home/gsh/workspace/TRMS/src/trms_backend/api/recognitions.py)
+  - [recognition_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_async_jobs.py)
+- 重构成员端工作台：
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 只保留当前状态、比赛报销项目、上传入口、需要处理的发票列表、所有发票列表和批量提交撤回区；
+  - 不再在工作台内默认展开每张发票的字段、附件、分摊和确认表单。
+- 新增单张发票处理页：
+  - [member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - [member-invoice-paths.ts](/home/gsh/workspace/TRMS/web/src/app/member-invoice-paths.ts)
+  - 路由 `/member/invoices/:invoiceId` 和 `/member/materials/:materialId/invoice`；
+  - 支持补字段、修改材料类型、重新识别、修改分摊金额、本人费用确认、查看附件与缺失材料。
+- 补充/更新测试：
+  - [test_recognition_execution_api.py](/home/gsh/workspace/TRMS/tests/test_recognition_execution_api.py)
+  - [test_recognition_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_recognition_async_jobs.py)
+  - [member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+  - [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)
+  - [member-legacy-route-redirects.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-legacy-route-redirects.test.tsx)
+  - [main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+
+### 根因
+- 旧成员工作台把识别结果、发票字段、附件、分摊和确认都堆在同一个页面，上传材料多时形成长页面，且“修改 / 指定归属 / 查看候选发票”等动作定位不清。
+- 识别成功后的建票动作只在人工保存发票字段路径闭合，导致真实 LLM 已识别出发票号码、金额、抬头、税号和费用类型后，材料仍停留在“识别成功但无发票”的状态。
+- 本轮真实测试还确认了一个运行时原因：修改 worker 代码后，已运行的 worker 进程不会热加载；未重启 worker 时，新识别能成功并收敛材料类型，但不会加载本轮新增的自动建票逻辑。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_recognition_async_jobs.py tests/test_recognition_execution_api.py`
+  - 26 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-detail.test.tsx`
+  - 1 个测试文件、2 个用例通过。
+- 已通过前端类型检查：
+  - `cd web && npx tsc --noEmit`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过。
+  - Alembic 升降级验证通过。
+  - pytest 491 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning。
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径警告，Vite 仍有既有 chunk size 警告。
+  - Docker Compose 配置检查通过。
+  - `git diff --check` 通过。
+
+### Firefox 真实实测
+- 使用当前运行后端 `127.0.0.1:9876`、当前 Firefox DevTools、真实成员 bearer session 和 `/home/gsh/财务/ICPC区域赛/区域赛报销/武汉/` 下真实 PDF 完成实测。
+- 为避免当前前端 `.env` 中 `VITE_API_BASE_URL=http://10.200.63.65:9876/api` 导致 Firefox CORS/网络失败，重启本地 Vite 到 `http://127.0.0.1:5173` 并显式设置 `VITE_API_BASE_URL=http://127.0.0.1:9876/api`。
+- 创建并开放实测任务 `ea411086-ae90-4d01-a7fc-e50d24ca2ec3`，成员为 `2250001`、`2250002`。
+- 上传真实文件：
+  - `yc/dzfp_25422000000202631946_同济大学_20251102093106.pdf`
+  - `yc/dzfp_25422000000202621931_同济大学_20251102092948.pdf`
+- 第二份文件在重启 worker 后真实通过：
+  - 识别任务 `b56f56c7-31a2-444b-bf82-897cfe0f4858` 状态为 `succeeded`；
+  - LLM 输出字段包含 `document_family=invoice`、`material_type=invoice`、`invoice_number=25422000000202621931`、`amount_cents=52422`、`buyer_name=同济大学`、`tax_number=12100000425006125J`、`expense_type=hotel`；
+  - 自动生成发票 `b71ed94c-e35d-4dcc-a504-bdb616ed6d66`，并产生校验结果；
+  - Firefox 页面显示工作台为摘要列表，点击发票进入单张发票处理页，能看到字段补录、分摊金额、本人费用确认和附件区。
+
+### 风险与后续
+- 第一份真实文件在 worker 重启前处理完成，没有自动建票；这是旧 worker 进程未加载本轮代码造成的运行态残留。若要修复该历史材料，需要重新识别或人工保存字段触发建票。
+- Firefox DevTools 未能直接给透明覆盖的 `<input type=file>` 上传文件，本轮真实文件上传通过同一后端材料上传 API 完成；随后用 Firefox 验证工作台和单票页真实状态。
+- 当前真实 LLM 主路径不再出现 `llm_output_invalid`；但识别准确性仍取决于 provider 输出和票据质量，不能把本次两份 PDF 的成功外推为全部材料都必然成功。
+
 ## 2026-04-30 21:43 - Collapse recognition result list and tighten LLM classification enums
 
 ### 完成内容

@@ -44,6 +44,9 @@ from trms_backend.application.recognition_preparation import (
     RecognitionTaskExecutionConflictError,
     RecognitionTaskExecutionNotFoundError,
 )
+from trms_backend.application.recognition_invoice_auto_create import (
+    RecognitionInvoiceAutoCreateService,
+)
 from trms_backend.application.recognition_audit import record_recognition_result_audit
 from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
@@ -111,6 +114,12 @@ def build_material_router(
     supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
         material_repository=material_repository,
         invoice_repository=invoice_repository,
+    )
+    recognition_invoice_auto_create_service = RecognitionInvoiceAutoCreateService(
+        task_repository=task_repository,
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        supporting_material_auto_link_service=supporting_material_auto_link_service,
     )
 
     def dispatch_recognition_tasks_for_uploaded_materials(
@@ -196,6 +205,7 @@ def build_material_router(
                 RecognitionMaterialNotFoundError,
             ):
                 continue
+            recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
             refresh_validations_for_material(
                 updated.material_id,
                 task_repository=task_repository,

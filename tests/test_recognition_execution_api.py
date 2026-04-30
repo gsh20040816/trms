@@ -310,6 +310,159 @@ def test_submit_material_executes_recognition_immediately_in_in_process_mode(tmp
     assert fake_llm.calls[0]["material_id"] == material_id
 
 
+def test_submit_material_auto_creates_invoice_and_validations_after_successful_recognition(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "material_type": RecognitionFieldResult(
+                    value="invoice",
+                    source="ai",
+                    confidence=0.99,
+                ),
+                "invoice_number": RecognitionFieldResult(
+                    value="AUTO-INVOICE-001",
+                    source="ai",
+                    confidence=0.99,
+                ),
+                "issue_date": RecognitionFieldResult(
+                    value="2026-04-01",
+                    source="ai",
+                    confidence=0.98,
+                ),
+                "buyer_name": RecognitionFieldResult(
+                    value="同济大学",
+                    source="ai",
+                    confidence=0.98,
+                ),
+                "tax_number": RecognitionFieldResult(
+                    value="12100000425006117D",
+                    source="ai",
+                    confidence=0.98,
+                ),
+                "seller_name": RecognitionFieldResult(
+                    value="示例供应商",
+                    source="ai",
+                    confidence=0.97,
+                ),
+                "amount_cents": RecognitionFieldResult(
+                    value=12345,
+                    source="ai",
+                    confidence=0.97,
+                ),
+                "expense_type": RecognitionFieldResult(
+                    value="registration",
+                    source="ai",
+                    confidence=0.96,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path, async_job_mode="in_process"),
+        recognition_llm_client=fake_llm,
+    )
+    task_id = create_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("auto-created.pdf", build_text_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    material_id = response.json()["items"][0]["id"]
+    invoices_response = client.get(
+        f"/api/tasks/{task_id}/invoices",
+        headers=admin_auth_headers(client),
+    )
+    assert invoices_response.status_code == 200
+    invoices = invoices_response.json()["items"]
+    assert len(invoices) == 1
+    assert invoices[0]["material_id"] == material_id
+    assert invoices[0]["invoice_number"] == "AUTO-INVOICE-001"
+    assert invoices[0]["amount_cents"] == 12345
+    assert invoices[0]["member_submission_status"] == "unsubmitted"
+
+    validations_response = client.get(
+        f"/api/invoices/{invoices[0]['id']}/validations",
+        headers=admin_auth_headers(client),
+    )
+    assert validations_response.status_code == 200
+    assert validations_response.json()["items"]
+
+
+def test_successful_recognition_with_low_confidence_required_field_does_not_auto_create_invoice(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "material_type": RecognitionFieldResult(
+                    value="invoice",
+                    source="ai",
+                    confidence=0.99,
+                ),
+                "invoice_number": RecognitionFieldResult(
+                    value="LOW-CONF-001",
+                    source="ai",
+                    confidence=0.99,
+                ),
+                "buyer_name": RecognitionFieldResult(
+                    value="同济大学",
+                    source="ai",
+                    confidence=0.4,
+                    status=RecognitionFieldStatus.NEEDS_CONFIRMATION,
+                ),
+                "tax_number": RecognitionFieldResult(
+                    value="12100000425006117D",
+                    source="ai",
+                    confidence=0.98,
+                ),
+                "amount_cents": RecognitionFieldResult(
+                    value=12345,
+                    source="ai",
+                    confidence=0.97,
+                ),
+                "expense_type": RecognitionFieldResult(
+                    value="registration",
+                    source="ai",
+                    confidence=0.96,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path, async_job_mode="in_process"),
+        recognition_llm_client=fake_llm,
+    )
+    task_id = create_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("needs-confirmation.pdf", build_text_pdf_bytes(), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["items"][0]["recognition_status"] == "needs_confirmation"
+    invoices_response = client.get(
+        f"/api/tasks/{task_id}/invoices",
+        headers=admin_auth_headers(client),
+    )
+    assert invoices_response.status_code == 200
+    assert invoices_response.json()["items"] == []
+
+
 def test_submit_material_short_circuits_recognition_when_provider_is_not_configured(tmp_path):
     client = make_client(tmp_path)
     sample_path = tmp_path / "provider-missing.pdf"

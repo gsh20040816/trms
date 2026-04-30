@@ -154,6 +154,9 @@ function buildInvoice() {
     seller_name: "中国铁路",
     amount_cents: 12345,
     expense_type: "railway",
+    member_submission_status: "unsubmitted",
+    submitted_by_member_id: null,
+    submitted_at: null,
     created_at: "2026-04-28T12:10:00+08:00",
     updated_at: "2026-04-28T12:10:00+08:00",
   };
@@ -170,6 +173,155 @@ function buildValidation(ruleCode: string, message: string) {
     message,
     evidence: {},
     created_at: "2026-04-28T12:10:00+08:00",
+  };
+}
+
+function buildMemberWorkbenchSummary(state: {
+  materialUploaded: boolean;
+  invoiceSaved: boolean;
+  splitSaved: boolean;
+  confirmed: boolean;
+}) {
+  const material = state.materialUploaded ? buildMaterial() : null;
+  const invoice = state.invoiceSaved ? buildInvoice() : null;
+  const split = state.splitSaved
+    ? {
+        id: "SPLIT-001",
+        invoice_id: "INV-001",
+        member_id: "2250001",
+        amount_cents: 12345,
+        note: "self paid",
+        version: 1,
+        is_active: true,
+        created_at: "2026-04-28T12:15:00+08:00",
+        updated_at: "2026-04-28T12:15:00+08:00",
+      }
+    : null;
+  const confirmation = state.confirmed
+    ? {
+        id: "CONF-001",
+        split_id: "SPLIT-001",
+        member_id: "2250001",
+        split_version: 1,
+        split_amount_cents: 12345,
+        split_note: "self paid",
+        is_current: true,
+        status: "confirmed",
+        dispute_reason: null,
+        confirmed_at: "2026-04-28T12:20:00+08:00",
+        updated_at: "2026-04-28T12:20:00+08:00",
+      }
+    : null;
+  const materialStatus = material
+    ? {
+        material_id: material.id,
+        submitter_id: "2250001",
+        material_type: "invoice",
+        original_filename: "ticket.pdf",
+        material_status: "assigned",
+        recognition_status: invoice ? "succeeded" : "needs_confirmation",
+        recognition_failure_stage: null,
+        recognition_failure_reason: null,
+        invoice_id: invoice?.id ?? null,
+        invoice_number: invoice?.invoice_number ?? null,
+        validation_status: invoice ? "passed" : "pending",
+        validation_messages: [],
+        created_at: "2026-04-28T12:05:00+08:00",
+      }
+    : null;
+  const expenseDetail = split && invoice
+    ? {
+        split_id: "SPLIT-001",
+        split_version: 1,
+        member_id: "2250001",
+        amount_cents: 12345,
+        note: "self paid",
+        created_at: "2026-04-28T12:15:00+08:00",
+        updated_at: "2026-04-28T12:15:00+08:00",
+        invoice,
+        confirmation: confirmation
+          ? {
+              id: "CONF-001",
+              member_id: "2250001",
+              split_version: 1,
+              status: "confirmed",
+              dispute_reason: null,
+              confirmed_at: "2026-04-28T12:20:00+08:00",
+              updated_at: "2026-04-28T12:20:00+08:00",
+            }
+          : null,
+      }
+    : null;
+
+  return {
+    task_id: "TASK-E2E",
+    actor_id: "2250001",
+    report: {
+      task_id: "TASK-E2E",
+      actor_id: "2250001",
+      total_expense_amount_cents: state.splitSaved ? 12345 : 0,
+      counts: {
+        material_count: material ? 1 : 0,
+        missing_material_count: 0,
+        expense_detail_count: expenseDetail ? 1 : 0,
+        recognition_pending_count: 0,
+        recognition_succeeded_count: invoice ? 1 : 0,
+        recognition_failed_count: 0,
+        recognition_needs_confirmation_count: material && !invoice ? 1 : 0,
+        validation_passed_count: invoice ? 2 : 0,
+        validation_failed_count: 0,
+        validation_pending_count: 0,
+        validation_not_applicable_count: 0,
+        confirmed_expense_count: state.confirmed ? 1 : 0,
+        pending_confirmation_count: state.splitSaved && !state.confirmed ? 1 : 0,
+        disputed_confirmation_count: 0,
+        missing_confirmation_count: 0,
+      },
+      materials: materialStatus ? [materialStatus] : [],
+      missing_materials: [],
+      expense_details: expenseDetail ? [expenseDetail] : [],
+    },
+    items: materialStatus
+      ? [
+          {
+            material: materialStatus,
+            invoice,
+            recognition: {
+              id: "REC-001",
+              material_id: "MAT-001",
+              status: invoice ? "succeeded" : "needs_confirmation",
+              failure: null,
+              recognized_fields: {
+                invoice_number: { value: "INV-E2E-001", source: "ai", confidence: 0.95, status: "recognized", updated_at: "2026-04-28T12:06:00+08:00" },
+                buyer_name: { value: invoice ? "同济大学" : "Tongji ACM Lab", source: invoice ? "manual" : "ocr", confidence: invoice ? 1 : 0.41, status: invoice ? "recognized" : "needs_confirmation", updated_at: "2026-04-28T12:06:30+08:00" },
+                tax_number: { value: invoice ? "91310000TEST00001" : "WRONG-TAX", source: invoice ? "manual" : "ocr", confidence: invoice ? 1 : 0.32, status: invoice ? "recognized" : "needs_confirmation", updated_at: "2026-04-28T12:07:00+08:00" },
+                amount_cents: { value: 12345, source: "ai", confidence: 0.97, status: "recognized", updated_at: "2026-04-28T12:07:30+08:00" },
+                transaction_time: { value: "2026-10-28T09:30:00+08:00", source: "pdf_text", confidence: 0.88, status: "recognized", updated_at: "2026-04-28T12:08:00+08:00" },
+                expense_type: { value: "railway", source: "ai", confidence: 0.93, status: "recognized", updated_at: "2026-04-28T12:08:30+08:00" },
+              },
+              manual_corrections: [],
+              created_at: "2026-04-28T12:05:30+08:00",
+              updated_at: "2026-04-28T12:10:00+08:00",
+            },
+            validations: invoice
+              ? [
+                  buildValidation("invoice_title_match", "发票抬头匹配"),
+                  buildValidation("invoice_tax_number_match", "税号匹配"),
+                ]
+              : [],
+            supporting_materials: [],
+            splits: split ? [split] : [],
+            confirmations: confirmation ? [confirmation] : [],
+            related_expense_details: expenseDetail ? [expenseDetail] : [],
+            missing_materials: [],
+            queue_group: !invoice ? "recognition_review" : state.splitSaved && !state.confirmed ? "confirmation_incomplete" : "ready",
+            blocking_reasons: !invoice ? ["recognition_review"] : state.splitSaved && !state.confirmed ? ["confirmation_incomplete"] : [],
+            ready_for_submission: Boolean(invoice && (!state.splitSaved || state.confirmed)),
+          },
+        ]
+      : [],
+    pending_supporting_material_linkage_items: [],
+    shared_invoices: [],
   };
 }
 
@@ -483,6 +635,10 @@ describe("frontend main flow e2e placeholder", () => {
             },
           ] : [],
         }));
+      }
+
+      if (url === "/api/tasks/TASK-E2E/member-workbench?actor_id=2250001") {
+        return Promise.resolve(jsonResponse(buildMemberWorkbenchSummary(workflowState)));
       }
 
       if (url === "/api/tasks/TASK-E2E/shared-invoices?actor_id=2250001") {
@@ -865,18 +1021,18 @@ describe("frontend main flow e2e placeholder", () => {
 
       cleanup();
       setMockSession("member");
-      renderRoute("/member/invoices/workbench?taskId=TASK-E2E#member-workbench-confirmations");
+      renderRoute("/member/invoices/INV-001?taskId=TASK-E2E");
 
-      expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
-      expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
-      const detailList = await screen.findByLabelText("工作台费用确认列表");
+      expect(await screen.findByRole("heading", { level: 1, name: "INV-E2E-001" })).toBeInTheDocument();
+      expect(await screen.findByText("本人费用确认")).toBeInTheDocument();
+      const detailList = await screen.findByLabelText("单张发票费用确认列表");
       const detailCard = within(detailList).getByRole("heading", { name: "INV-E2E-001" }).closest("article");
       if (!detailCard) {
         throw new Error("Expected expense detail card for INV-E2E-001.");
       }
       fireEvent.click(within(detailCard).getByRole("button", { name: "确认这笔费用" }));
 
-      expect(await screen.findByText("待确认 0 条")).toBeInTheDocument();
+      expect(await screen.findByText("已确认这笔费用。")).toBeInTheDocument();
 
       cleanup();
       setMockSession("admin");

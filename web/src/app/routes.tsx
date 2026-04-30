@@ -10,6 +10,7 @@ import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
 import { AdminTaskListPage } from "./admin-task-list";
 import { MemberInvoiceWorkbenchPage } from "./member-invoice-workbench";
+import { MemberInvoiceDetailPage } from "./member-invoice-detail";
 import { MemberTaskListPage } from "./member-task-list";
 import { MockLoginPage, ProtectedRoleRoute } from "./auth";
 import { LegacyMemberWorkbenchRedirect } from "./legacy-member-workbench-redirect";
@@ -62,12 +63,20 @@ export const routes: RouteObject[] = [
             element: <MemberInvoiceWorkbenchPage />,
           },
           {
+            path: "invoices/:invoiceId",
+            element: <MemberInvoiceDetailPage />,
+          },
+          {
+            path: "materials/:materialId/invoice",
+            element: <MemberInvoiceDetailPage />,
+          },
+          {
             path: "materials/missing",
             element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-missing-materials" />,
           },
           {
             path: "expenses/confirm",
-            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-confirmations" />,
+            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-invoices" />,
           },
         ],
       },

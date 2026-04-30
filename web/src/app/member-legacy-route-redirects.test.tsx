@@ -159,11 +159,12 @@ describe("member legacy routes", () => {
     expect(missingRouter.state.location.hash).toBe("#member-workbench-missing-materials");
   });
 
-  it("redirects legacy confirmation route to the workbench confirmation section", async () => {
+  it("redirects legacy confirmation route to the workbench invoice list", async () => {
     const router = renderLegacyRoute("/member/expenses/confirm?taskId=TASK-OPEN");
 
-    expect(await screen.findByText("确认当前分到本人名下的费用")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
+    expect(await screen.findByText("当前任务下还没有可查看的发票")).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/member/invoices/workbench");
-    expect(router.state.location.hash).toBe("#member-workbench-confirmations");
+    expect(router.state.location.hash).toBe("#member-workbench-invoices");
   });
 });
