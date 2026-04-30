@@ -19,6 +19,7 @@ import type {
   TaskReviewSummaryMaterialItem,
   ValidationResult,
 } from "../lib/api/types";
+import { formatCurrencyFromCents, formatInvoiceAmountFromCents } from "../lib/currency";
 import {
   describeRecognitionFailure,
   formatConfirmationStatus,
@@ -72,10 +73,6 @@ type ReviewMaterialDetailItem = {
   primaryInvoice: TaskReviewSummaryInvoiceItem | null;
   relatedInvoices: TaskReviewSummaryInvoiceItem[];
 };
-
-function formatCurrencyFromCents(cents: number) {
-  return `￥${(cents / 100).toFixed(2)}`;
-}
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -255,7 +252,10 @@ function isPreviewableContentType(contentType: string | null) {
   return contentType === "application/pdf" || Boolean(contentType?.startsWith("image/"));
 }
 
-function describeRecognitionFieldValue(value: unknown) {
+function describeRecognitionFieldValue(value: unknown, fieldName?: string) {
+  if (fieldName === "amount_cents") {
+    return typeof value === "number" ? formatInvoiceAmountFromCents(value) : formatInvoiceAmountFromCents(null);
+  }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
@@ -845,7 +845,9 @@ export function AdminReviewOverviewPage() {
                               {recognitionEntries.map(([fieldName, field]) => (
                                 <article key={fieldName} className="recognition-field-card">
                                   <h4>{formatFieldLabel(fieldName)}</h4>
-                                  <p className="recognition-field-value">{describeRecognitionFieldValue(field.value)}</p>
+                                  <p className="recognition-field-value">
+                                    {describeRecognitionFieldValue(field.value, fieldName)}
+                                  </p>
                                   <dl className="task-meta-grid admin-review-detail-field-grid">
                                     <div>
                                       <dt>来源</dt>

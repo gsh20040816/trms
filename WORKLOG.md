@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-01 01:05 - Fix admin invoice amount display units
+
+### 完成内容
+- 完成任务“修复管理员材料审核发票金额显示单位错误”。
+- 新增共享金额格式化工具 [currency.ts](/home/gsh/workspace/TRMS/web/src/lib/currency.ts)，统一处理 `amount_cents -> ￥xx.xx` 展示，并为缺失金额提供“未识别金额/待补录”占位文案。
+- 调整 [admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)：
+  - 管理员材料审核“识别字段”标签页中，`recognized_fields.amount_cents` 不再直接显示分单位整数，而是统一按元格式化；
+  - 辅助材料关联发票摘要继续走同一金额格式化口径。
+- 调整 [admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 与 [admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)，复用同一共享金额格式化函数，避免管理员相关入口继续各自维护金额展示逻辑。
+- 补充 [admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx) 回归测试，覆盖：
+  - 管理员材料审核识别字段金额显示为真实元金额；
+  - 辅助材料关联发票摘要金额显示为真实元金额；
+  - 识别金额缺失时显示“未识别金额/待补录”。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，标记该任务已完成。
+
+### 根因
+- 管理员材料审核页的识别字段详情对所有识别值统一走字符串渲染路径，`amount_cents` 被当成普通数字直接展示，导致分单位整数被误看作元金额。
+- 管理员复核相关多个入口各自维护 `cents -> yuan` 展示逻辑，没有统一收口，导致金额单位边界容易再次漂移。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-review-overview.test.tsx admin-invoice-editor.test.tsx admin-corrections-reminders.test.tsx`
+  - 3 个测试文件、9 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 495 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮只修复管理员材料审核链路和相关摘要金额显示；成员端金额展示未改动，因为当前任务范围不包含成员 UI 收口。
+- 当前金额占位文案统一为“未识别金额/待补录”；若后续需要区分“未识别”和“管理员尚未补录”两种状态，应基于明确字段状态再拆文案，而不是重新回退到显示 `0` 或原始整数。
+
 ## 2026-05-01 需求拆分 - 发票摘要与管理员面板 UI 收口
 
 ### 完成内容

@@ -8,6 +8,7 @@ import TextField from "@mui/material/TextField";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
+import { formatCurrencyFromCents } from "../lib/currency";
 import type {
   ExpenseType,
   MaterialReminderRecord,
@@ -78,10 +79,6 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatCurrencyFromCents(cents: number) {
-  return `￥${(cents / 100).toFixed(2)}`;
 }
 
 function formatExpenseType(expenseType: ExpenseType) {

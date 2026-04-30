@@ -21,6 +21,7 @@ import type {
   TaskReviewSummaryMaterialItem,
   ValidationResult,
 } from "../lib/api/types";
+import { formatInvoiceAmountFromCents } from "../lib/currency";
 import {
   describeRecognitionFailure,
   formatMemberLabel,
@@ -216,10 +217,6 @@ function formatValidationSeverity(severity: string) {
 
 function formatRevalidationStatus(status: string) {
   return REVALIDATION_STATUS_LABELS[status] ?? status;
-}
-
-function formatCurrencyFromCents(cents: number) {
-  return `￥${(cents / 100).toFixed(2)}`;
 }
 
 function formatAmountInputFromCents(cents: number | null) {
@@ -431,7 +428,10 @@ function getFieldCorrections(
 
 function describeRecognitionFieldValue(field: RecognitionFieldResult, fieldName: string) {
   if (fieldName === "amount_cents" && typeof field.value === "number") {
-    return formatCurrencyFromCents(field.value);
+    return formatInvoiceAmountFromCents(field.value);
+  }
+  if (fieldName === "amount_cents") {
+    return formatInvoiceAmountFromCents(null);
   }
   if (fieldName === "expense_type" && typeof field.value === "string") {
     return formatExpenseType(field.value);
