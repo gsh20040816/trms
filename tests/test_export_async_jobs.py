@@ -1,4 +1,6 @@
+import json
 from io import BytesIO
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 
@@ -426,3 +428,126 @@ def test_export_async_processor_reports_specific_merged_pdf_failure_reason(tmp_p
     assert audit_logs[1].detail["status"] == "failed"
     assert audit_logs[1].detail["artifact"] is None
     assert audit_logs[1].detail["failure_reason"] == status_body["failure_reason"]
+
+
+def test_export_async_processor_persists_reimbursement_package_zip_with_manifest(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-a.pdf",
+        material_content=build_pdf_bytes(),
+        split_items=[{"member_id": "2250001", "amount_cents": 12345}],
+    )
+    upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="payment.png",
+        content_type="image/png",
+        content=build_png_bytes(),
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(
+        client,
+        task_id,
+        kind="reimbursement_package",
+        format="zip",
+    )
+    processor = build_processor(tmp_path, runtime_config)
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+
+    status_response = client.get(
+        f"/api/tasks/exports/{export_job['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert status_response.status_code == 200
+    status_body = status_response.json()
+    assert status_body["status"] == "succeeded"
+    assert status_body["failure_reason"] is None
+    assert status_body["artifact"]["filename"] == f"{task_id}-reimbursement-package.zip"
+    assert status_body["artifact"]["content_type"] == "application/zip"
+
+    artifact_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=admin_auth_headers(client),
+    )
+    assert artifact_download.status_code == 200
+    assert artifact_download.headers["content-type"].startswith("application/zip")
+    assert (
+        artifact_download.headers["content-disposition"]
+        == f'attachment; filename="{task_id}-reimbursement-package.zip"'
+    )
+
+    with ZipFile(BytesIO(artifact_download.content)) as archive:
+        names = set(archive.namelist())
+        assert names == {
+            "reimbursement-summary.csv",
+            "member-details.csv",
+            "invoice-details.csv",
+            "missing-materials.csv",
+            "finance-draft.json",
+            "merged-printing.pdf",
+            "manifest.json",
+        }
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        assert manifest["task_id"] == task_id
+        assert manifest["task_data_version"] == status_body["task_data_version"]
+        assert manifest["exported_by"] == "admin-1"
+        assert manifest["warnings"] == []
+        artifact_names = {item["filename"] for item in manifest["artifacts"]}
+        assert artifact_names == names - {"manifest.json"}
+        assert len(manifest["materials"]) == 2
+        assert len(PdfReader(BytesIO(archive.read("merged-printing.pdf"))).pages) == 2
+
+
+def test_export_async_processor_rejects_stale_reimbursement_package_job(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-a.pdf",
+        material_content=build_pdf_bytes(),
+        split_items=[{"member_id": "2250001", "amount_cents": 12345}],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(
+        client,
+        task_id,
+        kind="reimbursement_package",
+        format="zip",
+    )
+    update_task_row(
+        tmp_path,
+        task_id,
+        project_info="Main flow integration scaffold (revised)",
+    )
+    processor = build_processor(tmp_path, runtime_config)
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+
+    status_response = client.get(
+        f"/api/tasks/exports/{export_job['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert status_response.status_code == 200
+    status_body = status_response.json()
+    assert status_body["status"] == "failed"
+    assert status_body["artifact"] is None
+    assert status_body["failure_reason"] == (
+        "task data changed since export job was requested; create a new export job"
+    )

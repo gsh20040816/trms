@@ -50,6 +50,7 @@ const EXPORT_KIND_LABELS: Record<ExportArtifactKind, string> = {
   missing_materials: "缺失材料清单",
   finance_draft: "财务填报草稿",
   merged_pdf: "PDF 合并材料包",
+  reimbursement_package: "完整报销材料包",
 };
 
 const EXPORT_KIND_DESCRIPTIONS: Record<ExportArtifactKind, string> = {
@@ -59,6 +60,8 @@ const EXPORT_KIND_DESCRIPTIONS: Record<ExportArtifactKind, string> = {
   missing_materials: "按成员和费用列出仍缺失的支付记录、比赛通知或行程材料。",
   finance_draft: "输出项目、报销人、发票及分摊摘要，供人工录入财务系统。",
   merged_pdf: "校验材料并按系统默认顺序合并 PDF/图片，生成可下载的打印材料包。",
+  reimbursement_package:
+    "生成一个 ZIP 完整材料包，内含合并 PDF、汇总/明细、缺失清单、财务草稿和 manifest。",
 };
 
 const EXPORT_FORMAT_LABELS: Record<ExportArtifactFormat, string> = {
@@ -66,6 +69,7 @@ const EXPORT_FORMAT_LABELS: Record<ExportArtifactFormat, string> = {
   csv: "CSV",
   json: "在线预览",
   pdf: "PDF",
+  zip: "ZIP",
 };
 
 const PREFERRED_JOB_FORMATS: Record<ExportArtifactKind, ExportArtifactFormat> = {
@@ -75,6 +79,7 @@ const PREFERRED_JOB_FORMATS: Record<ExportArtifactKind, ExportArtifactFormat> = 
   missing_materials: "xlsx",
   finance_draft: "xlsx",
   merged_pdf: "pdf",
+  reimbursement_package: "zip",
 };
 
 function formatExportKind(kind: ExportArtifactKind) {
@@ -122,6 +127,14 @@ function buildPreviewDescriptor(capability: TaskExportCapability) {
       available: true,
       buttonLabel: "查看草稿预览",
       placeholderLabel: "在线草稿预览",
+    };
+  }
+
+  if (capability.kind === "reimbursement_package") {
+    return {
+      available: false,
+      buttonLabel: "预览暂不支持",
+      placeholderLabel: "仅支持后台生成",
     };
   }
 
@@ -340,6 +353,9 @@ export function AdminExportTasksPage() {
           content = stringifyStructuredPreview(
             await trmsApi.exportMergedPdfPlan(taskId, session.actorId),
           );
+          break;
+        case "reimbursement_package":
+          content = "";
           break;
         default:
           content = "";

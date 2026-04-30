@@ -765,6 +765,12 @@ describe("frontend main flow e2e placeholder", () => {
               implemented: false,
               implemented_formats: [],
             },
+            {
+              kind: "reimbursement_package",
+              formats: ["zip"],
+              implemented: true,
+              implemented_formats: ["zip"],
+            },
           ],
         }));
       }

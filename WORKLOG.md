@@ -1,5 +1,51 @@
 # WORKLOG
 
+## 2026-04-30 10:22 - Add reimbursement package async export artifact
+
+### 完成内容
+- 完成任务“新增 `reimbursement_package` 完整材料包导出类型”。
+- 调整后端导出领域与异步导出处理：
+  - 在 [exports.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/exports.py) 新增 `reimbursement_package` 导出类型与 `zip` 格式支持；
+  - 新增完整材料包 `manifest` 数据模型，记录任务数据版本、生成时间、导出人、子文件 hash、warning 和材料清单；
+  - 在 [export_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/export_async_jobs.py) 新增完整材料包 ZIP 生成分支，复用现有报销汇总、成员明细、发票明细、缺失材料、财务草稿和 merged PDF 构建能力；
+  - ZIP 产物固定包含：
+    - `reimbursement-summary.csv`
+    - `member-details.csv`
+    - `invoice-details.csv`
+    - `missing-materials.csv`
+    - `finance-draft.json`
+    - `merged-printing.pdf`
+    - `manifest.json`
+- 调整前端导出类型声明与导出页最小兼容：
+  - 在 [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 补齐 `reimbursement_package` / `zip` 类型；
+  - 在 [admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx) 补齐完整材料包文案、首选格式和“仅支持后台生成”的预览占位，避免新枚举打破导出页编译与现有交互。
+- 补充测试：
+  - 更新 [test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)，覆盖导出能力列表新增 `reimbursement_package`；
+  - 更新 [test_export_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_export_async_jobs.py)，新增完整材料包 ZIP 成功、`manifest.json` 内容和任务数据版本变化拒绝回归，并继续覆盖 merged PDF 子产物失败；
+  - 更新 [admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx) 和 [main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)，补齐新导出类型的前端 mock 能力列表。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，将当前任务标记为已完成。
+
+### 根因
+- 现有导出体系虽然已经具备 CSV、JSON、merged PDF 的异步生成、持久化和下载能力，但管理员最终拿到的仍是一组分散导出项，而不是一个面向真实提交的完整交付物。
+- 这导致管理员仍需要自己判断“哪些文件应该一起打包、这份导出对应哪版任务数据、子文件是否完整”，与交互简化方案里“一键下载完整材料包”的目标不一致。
+
+### 保守假设
+- 本轮 `manifest.json` 的 `warnings` 先保守输出为空列表，不额外发明新的 warning 聚合规则；原因是当前任务目标是先把完整材料包产物落地，并保证不会在子产物失败时伪装成功。
+- 完整材料包沿用现有 merged PDF 的严格可读性检查：只要 merged PDF 子产物因材料缺失、加密或损坏失败，整包直接失败，不生成残缺 ZIP。
+- 本轮只新增后端完整材料包类型和前端最小兼容，不修改管理员导出页主动作；“主动作收敛为生成完整材料包”仍保留为下一条独立任务。
+
+### 影响范围
+- 修改了后端导出领域模型、异步导出 worker、前端导出类型与导出页文案，以及导出相关前后端测试。
+- 没有改动管理员导出页主流程、下载授权模型、数据库 schema、成员工作台或其它业务流程。
+
+### 验证结果
+- 已通过定向验证：
+  - `uv run pytest tests/test_exports_api.py tests/test_export_async_jobs.py`
+    - 29 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning
+  - `cd web && npm test -- admin-export-tasks.test.tsx main-flow-e2e-placeholder.test.tsx`
+    - 3 个用例通过；Vitest 仍有既有 `--localstorage-file` 路径警告
+
+
 ## 2026-04-30 10:15 - Attach readiness overview and priority anomaly queue to admin task detail
 
 ### 完成内容

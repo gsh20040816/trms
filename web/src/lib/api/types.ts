@@ -49,9 +49,10 @@ export type ExportArtifactKind =
   | "invoice_details"
   | "missing_materials"
   | "finance_draft"
-  | "merged_pdf";
+  | "merged_pdf"
+  | "reimbursement_package";
 
-export type ExportArtifactFormat = "xlsx" | "csv" | "json" | "pdf";
+export type ExportArtifactFormat = "xlsx" | "csv" | "json" | "pdf" | "zip";
 
 export type TaskExportJobStatus = "pending" | "running" | "succeeded" | "failed";
 export type RecognitionTaskStatus = "pending" | "succeeded" | "failed" | "needs_confirmation";

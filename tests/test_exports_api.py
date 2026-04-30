@@ -228,6 +228,7 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
         "missing_materials",
         "finance_draft",
         "merged_pdf",
+        "reimbursement_package",
     }
     assert supported_by_kind["reimbursement_summary"]["formats"] == ["xlsx", "csv"]
     assert supported_by_kind["reimbursement_summary"]["implemented"] is True
@@ -247,6 +248,9 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert supported_by_kind["merged_pdf"]["formats"] == ["pdf"]
     assert supported_by_kind["merged_pdf"]["implemented"] is True
     assert supported_by_kind["merged_pdf"]["implemented_formats"] == ["pdf"]
+    assert supported_by_kind["reimbursement_package"]["formats"] == ["zip"]
+    assert supported_by_kind["reimbursement_package"]["implemented"] is True
+    assert supported_by_kind["reimbursement_package"]["implemented_formats"] == ["zip"]
 
 
 def test_task_administrator_can_export_reimbursement_summary_csv(tmp_path):

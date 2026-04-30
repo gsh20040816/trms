@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from datetime import timezone
+from io import BytesIO
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from trms_backend.application.async_jobs import AsyncJobProcessor
 from trms_backend.application.merged_pdf_export import render_merged_pdf_bytes
@@ -15,12 +19,14 @@ from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
     ExportArtifactFormat,
     ExportArtifactKind,
+    ReimbursementPackageManifestArtifact,
     StoredExportArtifactRecord,
     MergedPdfSourceMaterialError,
     TaskExportFormatNotImplementedError,
     TaskExportJobRecord,
     TaskExportJobRepository,
     TaskExportJobStatus,
+    build_reimbursement_package_manifest,
     build_finance_draft_export,
     build_invoice_details_export,
     build_member_details_export,
@@ -334,6 +340,149 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                     materials_by_id=materials_by_id,
                     material_bytes_by_id=material_bytes_by_id,
                 ),
+            )
+
+        if export_job.kind is ExportArtifactKind.REIMBURSEMENT_PACKAGE:
+            for material in materials:
+                try:
+                    material_bytes_by_id[material.id] = self._material_file_storage.read(
+                        storage_key=material.storage_key
+                    )
+                except FileNotFoundError as error:
+                    raise MergedPdfSourceMaterialError(
+                        material.id,
+                        "file content is missing from storage",
+                    ) from error
+
+            generated_at = export_job.updated_at.astimezone(timezone.utc)
+            reimbursement_summary = build_reimbursement_summary_export(
+                task,
+                actor_id=export_job.requested_by,
+                format=ExportArtifactFormat.CSV,
+                invoices=invoices,
+                splits_by_invoice_id=splits_by_invoice_id,
+                generated_at=generated_at,
+            )
+            member_details = build_member_details_export(
+                task,
+                actor_id=export_job.requested_by,
+                format=ExportArtifactFormat.CSV,
+                invoices=invoices,
+                splits_by_invoice_id=splits_by_invoice_id,
+                confirmations_by_split_id=confirmations_by_split_id,
+                generated_at=generated_at,
+            )
+            invoice_details = build_invoice_details_export(
+                task,
+                actor_id=export_job.requested_by,
+                format=ExportArtifactFormat.CSV,
+                invoices=invoices,
+                materials_by_id=materials_by_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+                generated_at=generated_at,
+            )
+            missing_materials = build_missing_materials_export(
+                task,
+                actor_id=export_job.requested_by,
+                format=ExportArtifactFormat.CSV,
+                invoices=invoices,
+                materials_by_id=materials_by_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+                generated_at=generated_at,
+            )
+            finance_draft = build_finance_draft_export(
+                task,
+                actor_id=export_job.requested_by,
+                format=ExportArtifactFormat.JSON,
+                invoices=invoices,
+                materials_by_id=materials_by_id,
+                validations_by_invoice_id=validations_by_invoice_id,
+                splits_by_invoice_id=splits_by_invoice_id,
+                generated_at=generated_at,
+            )
+            merged_pdf_plan = build_merged_pdf_export_plan(
+                task,
+                actor_id=export_job.requested_by,
+                format=ExportArtifactFormat.PDF,
+                materials=materials,
+                material_bytes_by_id=material_bytes_by_id,
+                generated_at=generated_at,
+            )
+            merged_pdf_bytes = render_merged_pdf_bytes(
+                export_plan=merged_pdf_plan,
+                materials_by_id=materials_by_id,
+                material_bytes_by_id=material_bytes_by_id,
+            )
+            artifact_entries = [
+                (
+                    "reimbursement-summary.csv",
+                    "text/csv",
+                    render_reimbursement_summary_csv(reimbursement_summary).encode("utf-8"),
+                ),
+                (
+                    "member-details.csv",
+                    "text/csv",
+                    render_member_details_csv(member_details).encode("utf-8"),
+                ),
+                (
+                    "invoice-details.csv",
+                    "text/csv",
+                    render_invoice_details_csv(invoice_details).encode("utf-8"),
+                ),
+                (
+                    "missing-materials.csv",
+                    "text/csv",
+                    render_missing_materials_csv(missing_materials).encode("utf-8"),
+                ),
+                (
+                    "finance-draft.json",
+                    "application/json",
+                    json.dumps(
+                        finance_draft.model_dump(mode="json"),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8"),
+                ),
+                (
+                    "merged-printing.pdf",
+                    "application/pdf",
+                    merged_pdf_bytes,
+                ),
+            ]
+            manifest = build_reimbursement_package_manifest(
+                task,
+                actor_id=export_job.requested_by,
+                snapshot=self._build_current_export_snapshot(task),
+                generated_at=generated_at,
+                artifacts=[
+                    ReimbursementPackageManifestArtifact(
+                        filename=filename,
+                        content_type=content_type,
+                        size_bytes=len(content),
+                        sha256=hashlib.sha256(content).hexdigest(),
+                    )
+                    for filename, content_type, content in artifact_entries
+                ],
+                materials=materials,
+                warnings=[],
+            )
+            manifest_bytes = json.dumps(
+                manifest.model_dump(mode="json"),
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            archive_buffer = BytesIO()
+            with ZipFile(archive_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
+                for filename, _, content in artifact_entries:
+                    archive.writestr(filename, content)
+                archive.writestr("manifest.json", manifest_bytes)
+            return self._save_artifact(
+                task_id=task.id,
+                filename=f"{task.id}-reimbursement-package.zip",
+                content_type="application/zip",
+                content=archive_buffer.getvalue(),
             )
 
         raise TaskExportFormatNotImplementedError(

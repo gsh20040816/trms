@@ -104,6 +104,12 @@ function buildCapabilities(taskId: string, exportAllowed: boolean) {
         implemented: true,
         implemented_formats: ["pdf"],
       },
+      {
+        kind: "reimbursement_package",
+        formats: ["zip"],
+        implemented: true,
+        implemented_formats: ["zip"],
+      },
     ],
   };
 }

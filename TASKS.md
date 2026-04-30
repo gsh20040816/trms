@@ -88,7 +88,7 @@
     - 正常材料不要求管理员逐张点开确认，异常队列优先展示需要处理的项目
     - 前端测试覆盖就绪度展示、阻塞入口跳转和全部通过状态
 
-- [ ] 新增 `reimbursement_package` 完整材料包导出类型
+- [x] 新增 `reimbursement_package` 完整材料包导出类型
   - Done when:
     - 导出领域模型新增完整材料包类型，异步导出可生成一个 ZIP 产物
     - ZIP 至少包含 merged PDF、报销汇总、成员明细、发票明细、缺失材料清单、财务草稿和 `manifest.json`

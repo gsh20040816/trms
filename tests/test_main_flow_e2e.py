@@ -450,9 +450,12 @@ def test_main_flow_e2e_scaffold_covers_submission_to_export_gate(tmp_path):
         "missing_materials",
         "finance_draft",
         "merged_pdf",
+        "reimbursement_package",
     }
     assert supported_kinds["merged_pdf"]["implemented"] is True
     assert supported_kinds["merged_pdf"]["implemented_formats"] == ["pdf"]
+    assert supported_kinds["reimbursement_package"]["implemented"] is True
+    assert supported_kinds["reimbursement_package"]["implemented_formats"] == ["zip"]
 
     export_job_response = client.post(
         f"/api/tasks/{task_id}/exports",

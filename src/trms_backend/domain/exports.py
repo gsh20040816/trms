@@ -27,6 +27,7 @@ class ExportArtifactKind(StrEnum):
     MISSING_MATERIALS = "missing_materials"
     FINANCE_DRAFT = "finance_draft"
     MERGED_PDF = "merged_pdf"
+    REIMBURSEMENT_PACKAGE = "reimbursement_package"
 
 
 class ExportArtifactFormat(StrEnum):
@@ -34,6 +35,7 @@ class ExportArtifactFormat(StrEnum):
     CSV = "csv"
     JSON = "json"
     PDF = "pdf"
+    ZIP = "zip"
 
 
 class TaskExportCapability(BaseModel):
@@ -365,6 +367,30 @@ class MergedPdfExportPlan(BaseModel):
 class TaskExportVersionSnapshot(BaseModel):
     task_status: TaskStatus
     task_data_version: str = Field(min_length=64, max_length=64)
+
+
+class ReimbursementPackageManifestArtifact(BaseModel):
+    filename: str
+    content_type: str
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class ReimbursementPackageManifestMaterial(BaseModel):
+    material_id: str
+    material_type: MaterialType
+    original_filename: str
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class ReimbursementPackageManifest(BaseModel):
+    task_id: str
+    task_data_version: str = Field(min_length=64, max_length=64)
+    generated_at: datetime
+    exported_by: str = Field(min_length=1)
+    artifacts: list[ReimbursementPackageManifestArtifact]
+    warnings: list[str] = Field(default_factory=list)
+    materials: list[ReimbursementPackageManifestMaterial]
 
 
 class TaskExportJobRepository(Protocol):
@@ -997,6 +1023,42 @@ def build_merged_pdf_export_plan(
     )
 
 
+def build_reimbursement_package_manifest(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    snapshot: TaskExportVersionSnapshot,
+    generated_at: datetime,
+    artifacts: list[ReimbursementPackageManifestArtifact],
+    materials: list[MaterialRecord],
+    warnings: list[str] | None = None,
+) -> ReimbursementPackageManifest:
+    boundary = build_task_export_boundary(task, actor_id=actor_id)
+    if not boundary.export_allowed:
+        raise TaskExportJobNotReadyError(boundary.blocking_reasons)
+
+    return ReimbursementPackageManifest(
+        task_id=task.id,
+        task_data_version=snapshot.task_data_version,
+        generated_at=generated_at,
+        exported_by=boundary.administrator_id,
+        artifacts=artifacts,
+        warnings=list(warnings or []),
+        materials=[
+            ReimbursementPackageManifestMaterial(
+                material_id=material.id,
+                material_type=material.material_type,
+                original_filename=material.original_filename,
+                sha256=material.sha256,
+            )
+            for material in sorted(
+                materials,
+                key=lambda item: (item.created_at, item.id),
+            )
+        ],
+    )
+
+
 def update_task_export_job_status(
     task: ReimbursementTask,
     *,
@@ -1182,6 +1244,12 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
         formats=[ExportArtifactFormat.PDF],
         implemented=True,
         implemented_formats=[ExportArtifactFormat.PDF],
+    ),
+    TaskExportCapability(
+        kind=ExportArtifactKind.REIMBURSEMENT_PACKAGE,
+        formats=[ExportArtifactFormat.ZIP],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.ZIP],
     ),
 ]
 
