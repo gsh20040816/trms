@@ -250,12 +250,25 @@ function renderAdminSplitEditorRoute(entry = "/admin/tasks/TASK-ALPHA/splits") {
 }
 
 async function chooseSplitMember(row: HTMLElement, memberId: string) {
-  act(() => {
+  await act(async () => {
     fireEvent.mouseDown(within(row).getByRole("combobox", { name: "归属成员" }));
+    await Promise.resolve();
   });
-  const option = await screen.findByRole("option", { name: memberId });
+  const optionName = memberId.length > 0 && memberId !== "请选择成员"
+    ? `成员 ${memberId}`
+    : "请选择成员";
+  const option = await screen.findByRole("option", { name: optionName });
   await act(async () => {
     fireEvent.click(option);
+    await Promise.resolve();
+  });
+}
+
+async function filterSplitMember(row: HTMLElement, keyword: string) {
+  await act(async () => {
+    fireEvent.change(within(row).getByLabelText("归属成员搜索"), {
+      target: { value: keyword },
+    });
     await Promise.resolve();
   });
 }
@@ -557,5 +570,37 @@ describe("admin split editor page", () => {
     });
 
     expect(await screen.findByText("已保存 2 条分摊，合计 ￥70.00。任务摘要已重新拉取，当前确认状态以下方最新数据为准。")).toBeInTheDocument();
+  });
+
+  it("filters split member options by keyword and shows no-result hint", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-ALPHA") {
+        return Promise.resolve(jsonResponse(buildTask()));
+      }
+
+      if (url === "/api/tasks/TASK-ALPHA/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReviewSummary()));
+      }
+
+      throw new Error(`Unhandled fetch URL in split member filter test: ${url}`);
+    });
+
+    renderAdminSplitEditorRoute();
+
+    const firstRow = await screen.findByRole("group", { name: "分摊行 1" });
+
+    await filterSplitMember(firstRow, "03");
+    await act(async () => {
+      fireEvent.mouseDown(within(firstRow).getByRole("combobox", { name: "归属成员" }));
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("option", { name: "成员 2250003" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "成员 2250001" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "成员 2250002" })).not.toBeInTheDocument();
+
+    await filterSplitMember(firstRow, "999");
+    expect(await screen.findByRole("option", { name: "没有匹配的成员" })).toBeInTheDocument();
   });
 });

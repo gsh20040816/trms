@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 
 import Button from "@mui/material/Button";
-import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { InvoiceSummaryRow } from "../components/invoice-summary-row";
+import { TaskMemberAutocomplete } from "../components/task-member-autocomplete";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import { formatCurrencyFromCents } from "../lib/currency";
@@ -510,27 +510,19 @@ export function AdminCorrectionsRemindersPage() {
 
             <form onSubmit={handleReminderSubmit}>
               <div className="admin-form-grid">
-                <TextField
-                  select
+                <TaskMemberAutocomplete
                   label="提醒对象成员"
                   value={memberId}
+                  options={visibleTask.member_ids}
                   error={Boolean(formErrors.memberId)}
-                  helperText={formErrors.memberId}
-                  onChange={(event) => {
-                    setMemberId(event.target.value);
+                  helperText={formErrors.memberId ?? undefined}
+                  placeholder="输入成员编号关键字筛选"
+                  onChange={(nextValue) => {
+                    setMemberId(nextValue);
                     setFormErrors((current) => ({ ...current, memberId: undefined }));
                   }}
-                >
-                  {visibleTask.member_ids.length > 0 ? (
-                    visibleTask.member_ids.map((taskMemberId) => (
-                      <MenuItem key={taskMemberId} value={taskMemberId}>
-                        {formatMemberLabel(taskMemberId)}
-                      </MenuItem>
-                    ))
-                  ) : (
-                    <MenuItem value="">当前任务没有可提醒成员</MenuItem>
-                  )}
-                </TextField>
+                  disabled={visibleTask.member_ids.length === 0}
+                />
 
                 <TextField
                   className="admin-form-field-full"

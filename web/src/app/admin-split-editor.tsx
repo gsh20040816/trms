@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import Button from "@mui/material/Button";
-import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { InvoiceSummaryRow } from "../components/invoice-summary-row";
+import { TaskMemberAutocomplete } from "../components/task-member-autocomplete";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
@@ -683,25 +683,20 @@ export function AdminSplitEditorPage() {
                         </div>
 
                         <div className="admin-form-grid split-editor-form-grid">
-                          <TextField
-                            select
+                          <TaskMemberAutocomplete
                             label="归属成员"
-                            name={`member-${row.rowId}`}
                             value={row.memberId}
-                            onChange={(event) => {
-                              updateRow(row.rowId, "memberId", event.target.value);
+                            name={`member-${row.rowId}`}
+                            options={visibleTask.member_ids}
+                            includeEmptyOption
+                            emptyOptionLabel="请选择成员"
+                            placeholder="输入成员编号关键字筛选"
+                            onChange={(nextValue) => {
+                              updateRow(row.rowId, "memberId", nextValue);
                             }}
                             error={Boolean(formErrors[row.rowId]?.memberId)}
                             helperText={formErrors[row.rowId]?.memberId}
-                            fullWidth
-                          >
-                            <MenuItem value="">请选择成员</MenuItem>
-                            {visibleTask.member_ids.map((memberId) => (
-                              <MenuItem key={memberId} value={memberId}>
-                                {memberId}
-                              </MenuItem>
-                            ))}
-                          </TextField>
+                          />
 
                           <TextField
                             label="分摊金额（元）"

@@ -354,4 +354,50 @@ describe("AdminCorrectionsRemindersPage", () => {
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
     expect(screen.getByText("成员 2250002 不在当前任务成员名单中。")).toBeInTheDocument();
   });
+
+  it("filters reminder members by keyword and shows no-result hint", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-REVIEW") {
+        return Promise.resolve(jsonResponse(buildTask()));
+      }
+
+      if (url === "/api/tasks/TASK-REVIEW/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReviewSummary()));
+      }
+
+      if (url === "/api/tasks/TASK-REVIEW/material-reminders?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      throw new Error(`Unhandled fetch URL in member filter test: ${url}`);
+    });
+
+    renderCorrectionsRoute();
+
+    await screen.findByRole("heading", { name: "管理员人工更正与补材料提醒" });
+
+    const memberInput = screen.getByLabelText("提醒对象成员搜索");
+    await act(async () => {
+      fireEvent.change(memberInput, {
+        target: { value: "02" },
+      });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("option", { name: "成员 2250002" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "成员 2250001" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(memberInput, {
+        target: { value: "999" },
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("option", { name: "没有匹配的成员" })).toBeInTheDocument();
+  });
 });

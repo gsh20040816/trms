@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-05-02 01:15 - Add member search when admins pick task participants
+
+### 完成内容
+- 完成任务“管理员选择比赛参与成员时提供搜索框”。
+- 抽出可复用任务成员筛选控件 [task-member-autocomplete.tsx](/home/gsh/workspace/TRMS/web/src/components/task-member-autocomplete.tsx)：
+  - 组件使用“搜索输入 + 成员选择下拉”的双控件结构；
+  - 搜索框按字符串包含关系过滤当前任务成员；
+  - 下拉始终只展示当前匹配结果，空结果时显示明确的“没有匹配的成员”占位项；
+  - helper text 同步展示空查询、匹配中和无结果三种状态。
+- 管理员两条直接选择任务成员的主路径接入搜索：
+  - [admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx) 的“提醒对象成员”现在可先搜索再选择；
+  - [admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx) 的“归属成员”现在支持按关键字过滤任务成员，再保存分摊。
+- 补齐前端测试：
+  - [admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx) 覆盖部分匹配与无结果提示；
+  - [admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx) 覆盖分摊编辑里的成员筛选与无结果提示。
+
+### 根因
+- 现有管理员页面在多个场景下直接把 `task.member_ids` 整体渲染为长下拉列表，没有任何过滤能力。
+- 当比赛成员变多时，管理员需要在纯列表里逐项扫视才能找到目标成员，既慢，也容易误选。
+- 问题的本质不是“成员数据不够”，而是“已有任务成员列表缺少局部搜索入口”；因此应在现有选择路径上增加前端过滤，而不是扩改后端任务模型。
+
+### 风险与影响面
+- 本轮只修改前端选择交互，没有改任务成员的后端数据结构、权限判断或保存协议。
+- 当前搜索仍基于任务内字符串成员标识做包含匹配；这是符合当前任务模型的最小实现。后续若要切到“用户名 / 显示名称 / 学号”三元展示，需要在下一任务统一替换成员展示口径，而不是在这一轮提前引入半套新模型。
+- 分摊编辑和提醒记录现在都采用相同筛选控件；若后续还有其他管理员成员选择入口，可直接复用，避免再出现一处有搜索、一处无搜索的 UI 漂移。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-corrections-reminders.test.tsx admin-split-editor.test.tsx`
+  - 2 个测试文件、8 个用例通过。
+- 仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 520 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 00:36 - Collapse supporting material ownership choice into a single select
 
 ### 完成内容
