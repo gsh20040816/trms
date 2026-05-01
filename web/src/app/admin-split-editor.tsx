@@ -451,8 +451,12 @@ export function AdminSplitEditorPage() {
     }
 
     const confirmed = await confirm({
-      title: "确认覆盖保存当前分摊方案？",
-      description: `任务 ${visibleTask.competition_name}（${visibleTask.id}）的发票 ${selectedInvoice.invoice_number} 将按当前表单覆盖保存 ${formRows.length} 条分摊。服务端可能把受影响成员的确认状态重置为待确认，请确认金额和归属成员已核对无误。`,
+      title: amountDifferenceCents === 0 ? "确认覆盖保存当前分摊方案？" : "确认保存未闭合的分摊方案？",
+      description: amountDifferenceCents === 0
+        ? `任务 ${visibleTask.competition_name}（${visibleTask.id}）的发票 ${selectedInvoice.invoice_number} 将按当前表单覆盖保存 ${formRows.length} 条分摊。服务端可能把受影响成员的确认状态重置为待确认，请确认金额和归属成员已核对无误。`
+        : amountDifferenceCents > 0
+          ? `任务 ${visibleTask.competition_name}（${visibleTask.id}）的发票 ${selectedInvoice.invoice_number} 当前分摊合计比票面金额多出 ${formatCurrencyFromCents(amountDifferenceCents)}。这会留下超额报销风险；确认后仍会保存，但该发票会继续保留“分摊未完成”门禁。`
+          : `任务 ${visibleTask.competition_name}（${visibleTask.id}）的发票 ${selectedInvoice.invoice_number} 当前分摊合计比票面金额少了 ${formatCurrencyFromCents(Math.abs(amountDifferenceCents))}。这表示仍有未报销金额；确认后仍会保存，但该发票会继续保留“分摊未完成”门禁。`,
       confirmLabel: "确认保存分摊",
       cancelLabel: "继续编辑",
       destructive: true,

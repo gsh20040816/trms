@@ -45,7 +45,7 @@ def test_replace_invoice_splits(tmp_path):
     assert [item["version"] for item in response.json()["items"]] == [2, 1]
 
 
-def test_replace_invoice_splits_rejects_amount_mismatch(tmp_path):
+def test_replace_invoice_splits_allows_amount_mismatch(tmp_path):
     client = make_client(tmp_path)
     invoice_id = create_invoice(client)
 
@@ -54,8 +54,20 @@ def test_replace_invoice_splits_rejects_amount_mismatch(tmp_path):
         json={"actor_id": "2250001", "items": [{"member_id": "2250001", "amount_cents": 100}]},
     )
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "split amount total must equal invoice amount"
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "id": response.json()["items"][0]["id"],
+            "invoice_id": invoice_id,
+            "member_id": "2250001",
+            "amount_cents": 100,
+            "note": None,
+            "version": 2,
+            "is_active": True,
+            "created_at": response.json()["items"][0]["created_at"],
+            "updated_at": response.json()["items"][0]["updated_at"],
+        }
+    ]
 
 
 def test_replace_invoice_splits_rejects_non_member(tmp_path):

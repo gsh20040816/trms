@@ -140,7 +140,7 @@ def test_split_command_reports_json(monkeypatch, tmp_path, capsys):
     }
 
 
-def test_split_command_shows_backend_amount_mismatch_error(monkeypatch, tmp_path, capsys):
+def test_split_command_allows_backend_partial_reimbursement_split(monkeypatch, tmp_path, capsys):
     config_dir = tmp_path / "config"
     monkeypatch.setenv("TRMS_CLI_CONFIG_DIR", str(config_dir))
     save_token_session(
@@ -155,10 +155,26 @@ def test_split_command_shows_backend_amount_mismatch_error(monkeypatch, tmp_path
         seen["url"] = url
         seen["headers"] = headers
         seen["payload"] = payload
-        raise CliError(
-            "request failed with status 409: split amount total must equal invoice amount",
-            code="http_error",
-        )
+        return 200, {
+            "items": [
+                {
+                    "id": "split-101",
+                    "invoice_id": "invoice-003",
+                    "member_id": "2250001",
+                    "amount_cents": 6000,
+                    "note": None,
+                    "version": 1,
+                },
+                {
+                    "id": "split-102",
+                    "invoice_id": "invoice-003",
+                    "member_id": "2250002",
+                    "amount_cents": 100,
+                    "note": None,
+                    "version": 1,
+                },
+            ]
+        }
 
     monkeypatch.setattr("trms_cli.cli.put_json", fake_put_json)
 
@@ -175,8 +191,7 @@ def test_split_command_shows_backend_amount_mismatch_error(monkeypatch, tmp_path
     )
 
     captured = capsys.readouterr()
-    assert exit_code == 1
-    assert captured.out == ""
+    assert exit_code == 0
     assert seen["url"] == "http://127.0.0.1:8000/api/invoices/invoice-003/splits"
     assert seen["headers"] == build_cli_request_headers(access_token="stored-access-token")
     assert seen["payload"] == {
@@ -186,9 +201,13 @@ def test_split_command_shows_backend_amount_mismatch_error(monkeypatch, tmp_path
             {"member_id": "2250002", "amount_cents": 100},
         ],
     }
-    assert captured.err == (
-        "Error: request failed with status 409: "
-        "split amount total must equal invoice amount\n"
+    assert captured.err == ""
+    assert captured.out == (
+        "Updated splits for invoice invoice-003\n"
+        "Count: 2\n"
+        "split_id\tmember_id\tamount_cents\tversion\tnote\n"
+        "split-101\t2250001\t6000\t1\t\n"
+        "split-102\t2250002\t100\t1\t\n"
     )
 
 

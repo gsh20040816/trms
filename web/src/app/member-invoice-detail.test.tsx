@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import type { ExpenseSplitRecord, InvoiceRecord, TaskMemberWorkbenchSummary } from "../lib/api/types";
@@ -249,6 +249,15 @@ describe("MemberInvoiceDetailPage", () => {
     }
     fireEvent.change(splitAmountInput, { target: { value: "100.00" } });
     fireEvent.click(await screen.findByRole("button", { name: "保存金额归属" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("当前分摊合计 ￥100.00，比发票金额 ￥123.45 少了 ￥23.45。这表示仍有未报销金额；确认后仍会保存，但这张发票会继续停留在“分摊未完成”。")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "仍然保存" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
     await waitFor(() => {
       expect(requests.some((request) => request.method === "PUT" && request.url === "/api/invoices/INV-READY-001/splits")).toBe(true);
     });
@@ -257,6 +266,44 @@ describe("MemberInvoiceDetailPage", () => {
     await waitFor(() => {
       expect(requests.some((request) => request.method === "POST" && request.url === "/api/recognition-tasks/REC-NEW-001/execute")).toBe(true);
     });
+  });
+
+  it("does not save splits when the member cancels the partial reimbursement confirmation", async () => {
+    const requests: Array<{ method: string; url: string; body: unknown }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      requests.push({ method, url, body: init?.body ? JSON.parse(init.body as string) : null });
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(buildSummary()));
+      }
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    renderDetail();
+
+    const amountInputs = await screen.findAllByLabelText("金额（元）");
+    const splitAmountInput = amountInputs[1];
+    if (!splitAmountInput) {
+      throw new Error("Expected split amount input.");
+    }
+    fireEvent.change(splitAmountInput, { target: { value: "100.00" } });
+    fireEvent.click(await screen.findByRole("button", { name: "保存金额归属" }));
+
+    const confirmDialog = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "继续编辑" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(requests.some((request) => request.method === "PUT" && request.url === "/api/invoices/INV-READY-001/splits")).toBe(false);
   });
 
   it("does not ask the member to confirm the same invoice amount again", async () => {

@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-05-01 23:22 - Allow partial reimbursement splits with confirmation prompt
+
+### 完成内容
+- 完成任务“允许发票部分报销，并把‘分摊金额之和必须等于发票金额’改为确认提示”。
+- 后端调整 [splits.py](/home/gsh/workspace/TRMS/src/trms_backend/api/splits.py)：
+  - 删除保存分摊时“分摊金额合计必须等于发票金额”的 `409` 拦截；
+  - 保留成员权限、任务成员约束、重复成员校验、已提交发票成员不可改等既有边界不变。
+- 成员端调整 [member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)：
+  - 单张发票页保存金额归属前，若分摊合计不等于票面金额，会弹出确认对话框；
+  - 差额大于 0 时明确提示“超额报销风险”，差额小于 0 时明确提示“仍有未报销金额”；
+  - 用户确认后允许保存，取消后不发起保存请求；
+  - 页面提示文案同步改为“允许保存，但该发票仍会停留在分摊未完成”。
+- 管理员端调整 [admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)：
+  - 分摊编辑页沿用同一业务口径；
+  - 若分摊未闭合，保存前改为风险确认，而不是依赖后端报错；
+  - 闭合分摊时仍保留原确认文案。
+- 更新测试：
+  - [test_splits_api.py](/home/gsh/workspace/TRMS/tests/test_splits_api.py) 改为覆盖“不闭合分摊仍可保存”；
+  - [test_cli_split.py](/home/gsh/workspace/TRMS/tests/test_cli_split.py) 改为覆盖 CLI 可提交部分报销分摊；
+  - [member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx) 覆盖成员端不闭合分摊的确认保存与取消不保存；
+  - [admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx) 覆盖管理员端不闭合分摊确认文案与确认后保存。
+
+### 根因
+- 现有实现把“分摊金额合计等于发票金额”同时当成了“保存时硬约束”和“后续提交/导出门禁”。
+- 这导致“部分报销”这种真实业务场景根本无法落库，用户也无法先把当前已报销部分保存下来，再继续补齐或由管理员复核。
+- 实际需要区分两个边界：
+  - 保存层：允许记录当前分摊方案；
+  - 流程门禁层：分摊未闭合时，仍不得视为已完成，不得进入可提交/可导出状态。
+
+### 风险与影响面
+- 本轮只放开“保存分摊”动作，没有放开成员工作台、任务就绪度和后续确认门禁中对 `split_incomplete` 的判断。
+- 因此，部分报销分摊现在可以保存，但相关发票仍会继续停留在“分摊未完成”，不会被误判为可提交或可导出。
+- CLI 当前只放开后端保存路径，没有额外增加交互式确认；这是当前 CLI 非交互设计下的保守延续，后续若产品要求 CLI 也显式提醒，可单独补充。
+
+### 验证结果
+- 已通过定向后端/CLI 测试：
+  - `uv run pytest tests/test_splits_api.py tests/test_cli_split.py`
+  - 15 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-detail.test.tsx admin-split-editor.test.tsx`
+  - 8 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 510 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-01 23:34 - Prioritize local transport e-invoice auto-linking for itineraries
 
 ### 完成内容

@@ -507,10 +507,32 @@ describe("admin split editor page", () => {
       }
 
       if (url === "/api/invoices/INV-1/splits" && init?.method === "PUT") {
-        return Promise.resolve(jsonResponse(
-          { detail: "split amount total must equal invoice amount" },
-          { status: 409 },
-        ));
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "SPLIT-1",
+              invoice_id: "INV-1",
+              member_id: "2250001",
+              amount_cents: 6000,
+              note: "self paid",
+              version: 2,
+              is_active: true,
+              created_at: "2026-04-28T10:00:00+08:00",
+              updated_at: "2026-04-28T10:10:00+08:00",
+            },
+            {
+              id: "SPLIT-2",
+              invoice_id: "INV-1",
+              member_id: "2250002",
+              amount_cents: 1000,
+              note: "team shared",
+              version: 2,
+              is_active: true,
+              created_at: "2026-04-28T10:00:00+08:00",
+              updated_at: "2026-04-28T10:10:00+08:00",
+            },
+          ],
+        }));
       }
 
       throw new Error(`Unhandled fetch URL in split rejection test: ${url}`);
@@ -525,6 +547,7 @@ describe("admin split editor page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "保存费用分摊" }));
     const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("任务 全国邀请赛（TASK-ALPHA）的发票 INV-001 当前分摊合计比票面金额少了 ￥53.45。这表示仍有未报销金额；确认后仍会保存，但该发票会继续保留“分摊未完成”门禁。")).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(within(confirmDialog).getByRole("button", { name: "确认保存分摊" }));
       await Promise.resolve();
@@ -533,7 +556,6 @@ describe("admin split editor page", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
-    expect(screen.getByText("分摊金额合计必须等于发票金额。")).toBeInTheDocument();
+    expect(await screen.findByText("已保存 2 条分摊，合计 ￥70.00。任务摘要已重新拉取，当前确认状态以下方最新数据为准。")).toBeInTheDocument();
   });
 });

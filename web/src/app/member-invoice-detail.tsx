@@ -8,6 +8,7 @@ import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { InvoiceSummaryRow } from "../components/invoice-summary-row";
+import { useConfirmDialog } from "../components/use-confirm-dialog";
 import {
   EmptyState,
   PageHeader,
@@ -380,6 +381,7 @@ export function MemberInvoiceDetailPage() {
   const [searchParams] = useSearchParams();
   const taskId = searchParams.get("taskId") ?? "";
   const { showError, showSuccess, showWarning } = useSnackbar();
+  const { confirm } = useConfirmDialog();
   const [detailState, setDetailState] = useState<DetailState>({ status: "loading" });
   const [reloadVersion, setReloadVersion] = useState(0);
   const [materialTypeDraft, setMaterialTypeDraft] = useState<MaterialType | null>(null);
@@ -561,6 +563,22 @@ export function MemberInvoiceDetailPage() {
     if (normalizedItems.length === 0) {
       setSplitError("至少保留一条分摊记录。");
       return;
+    }
+    const totalSplitAmountCents = normalizedItems.reduce((sum, item) => sum + item.amount_cents, 0);
+    if (totalSplitAmountCents !== invoice.amount_cents) {
+      const amountDifferenceCents = totalSplitAmountCents - invoice.amount_cents;
+      const confirmed = await confirm({
+        title: "确认保存未闭合的金额归属？",
+        description: amountDifferenceCents > 0
+          ? `当前分摊合计 ${formatCurrencyFromCents(totalSplitAmountCents)}，比发票金额 ${formatCurrencyFromCents(invoice.amount_cents)} 多出 ${formatCurrencyFromCents(amountDifferenceCents)}。这会留下超额报销风险；确认后仍会保存，但这张发票会继续停留在“分摊未完成”。`
+          : `当前分摊合计 ${formatCurrencyFromCents(totalSplitAmountCents)}，比发票金额 ${formatCurrencyFromCents(invoice.amount_cents)} 少了 ${formatCurrencyFromCents(Math.abs(amountDifferenceCents))}。这表示仍有未报销金额；确认后仍会保存，但这张发票会继续停留在“分摊未完成”。`,
+        confirmLabel: "仍然保存",
+        cancelLabel: "继续编辑",
+        destructive: true,
+      });
+      if (!confirmed) {
+        return;
+      }
     }
     setSavingSplits(true);
     setSplitError(null);
@@ -787,7 +805,9 @@ export function MemberInvoiceDetailPage() {
                 <p className="field-hint">
                   {splitSummary.hasInvalidAmount
                     ? "请使用最多两位小数的金额格式。"
-                    : `当前分摊合计 ${formatCurrencyFromCents(splitSummary.totalCents)}，发票金额 ${formatCurrencyFromCents(invoice.amount_cents)}。`}
+                    : splitSummary.totalCents === invoice.amount_cents
+                      ? `当前分摊合计 ${formatCurrencyFromCents(splitSummary.totalCents)}，发票金额 ${formatCurrencyFromCents(invoice.amount_cents)}。`
+                      : `当前分摊合计 ${formatCurrencyFromCents(splitSummary.totalCents)}，发票金额 ${formatCurrencyFromCents(invoice.amount_cents)}。保存时会要求你确认仍存在未报销金额或超额风险。`}
                 </p>
                 {splitError ? <p className="field-error field-error-block">{splitError}</p> : null}
                 <div className="inline-actions">

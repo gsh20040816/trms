@@ -125,13 +125,6 @@ def build_split_router(
                 detail=f"split members are not in task: {', '.join(unknown_members)}",
             )
 
-        total_cents = sum(item.amount_cents for item in replace_payload.items)
-        if total_cents != invoice.amount_cents:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="split amount total must equal invoice amount",
-            )
-
         previous_splits = split_repository.list_by_invoice(invoice_id)
         replaced_items = split_repository.replace_for_invoice(invoice_id, replace_payload.items)
         record_invoice_split_replace_audit(
