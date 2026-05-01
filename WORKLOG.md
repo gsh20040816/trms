@@ -1,5 +1,71 @@
 # WORKLOG
 
+## 2026-05-01 22:05 - Fix recognition-time auto linking and local transport e-ticket handling
+
+### 完成内容
+- 完成任务“修复识别前错误自动归票、补齐市内交通电子票规则并提高上传阈值”。
+- 只读检查当前运行实例数据库 `sqlite:///./trms.db` 后确认：
+  - 票号 `25319166100007042896` 对应铁路发票 `0b96d3fd-3edc-4ca6-8ae6-6e19c4c15a64`；
+  - 该票错误关联了 23 个材料，其中大部分已识别为独立发票，另有高德打车行程单和酒店/报名费/航空/洛谷等不应挂在铁路票下的材料。
+- 已对当前运行实例做受控数据修正：
+  - 修改前备份：`/tmp/trms-before-25319166100007042896-link-cleanup-20260501215736.db`；
+  - 删除 `25319166100007042896` 的 23 条错误附件链接，并刷新该票校验；
+  - 使用修复后的 `expense_type_candidate` fallback，为 `25319166100007434740.pdf` 补建铁路发票记录；
+  - 从原始 PDF 文本确认桔子出行发票号 `25312000000355846530`，为 `【桔子出行-72.86元-1个行程】高德打车电子发票.pdf` 补建市内交通发票；
+  - 将 72.86 元行程单关联到 `25312000000355846530`，将 42.50 元行程单关联到 `25312000000355838261`，并刷新两张市内交通发票校验；
+  - 修正后 `25319166100007042896` 剩余附件链接数为 0；当前库中识别成功但未成票的发票型材料数为 0；市内交通两张票的网约车行程规则均为 `passed`；仍有 1 个待确认材料 `Screenshot_20251119-161841.支付宝.png`。
+- 调整自动归票 [supporting_material_auto_link.py](/home/gsh/workspace/TRMS/src/trms_backend/application/supporting_material_auto_link.py)：
+  - 只允许 `payment_record`、`competition_notice`、`itinerary`、`order_screenshot` 进入自动附件关联；
+  - 默认 `other_attachment` 不再在识别前被自动挂到单候选发票，避免后续识别成发票后污染附件表。
+- 调整识别完成后的编排：
+  - [materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py) 和 [recognition_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_async_jobs.py) 在识别完成、材料类型更新之后，再对真实附件类型执行单候选自动关联并刷新校验。
+- 调整自动建票 [recognition_invoice_auto_create.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_invoice_auto_create.py)：
+  - 发票识别结果缺少 `expense_type` 但存在合法 `expense_type_candidate` 时，可用候选费用类型自动建票。
+- 调整市内交通网约车规则 [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py)：
+  - 市内交通电子发票/电子票按网约车处理；
+  - 只要存在网约车证据，就要求行程信息；关联行程单后通过。
+- 调整识别提示词 [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - prompt 版本提升到 `trms-recognition-v4`；
+  - 明确市内交通电子发票/电子票应分类为 `invoice`、费用类型为 `local_transport`，并作为需要匹配行程单的网约车证据；
+  - 要求市内交通电子发票尽量抽取可见发票号。
+- 调整上传阈值 [materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/materials.py)：
+  - 默认上传大小从 10MiB 提升到 64MiB，后端上传和 CLI 本地预检共用该常量。
+- 更新测试：
+  - [test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py) 覆盖默认材料类型不在识别前自动归票；
+  - [test_recognition_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_recognition_async_jobs.py) 覆盖 `expense_type_candidate` 自动建票和识别后真实附件自动关联；
+  - [test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py) 覆盖市内交通电子票缺行程失败、有关联行程通过；
+  - [test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py) 覆盖提示词版本和新增规则。
+
+### 根因
+- 上传接口在识别前会按上传时的材料类型触发自动归票；成员省略材料类型时默认是 `other_attachment`，而旧自动归票逻辑把所有非 `invoice` 的已归属材料都视为可自动关联附件。
+- 这导致同一成员上传多张发票时，后续真实发票在识别前先作为 `other_attachment` 挂到第一张已有发票；识别完成后材料类型变为 `invoice`，但旧链接没有被清理。
+- 识别自动建票要求 `expense_type` 必须存在，未使用分类阶段稳定产出的 `expense_type_candidate`，所以部分字段足够的发票没有成票。
+- 市内交通电子发票的识别提示没有明确“电子票即网约车证据、必须匹配行程单”，校验层也未对该业务规则形成确定性约束。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_materials_api.py::test_default_material_type_does_not_auto_link_before_recognition tests/test_recognition_async_jobs.py::test_recognition_async_processor_auto_creates_invoice_from_expense_type_candidate tests/test_recognition_async_jobs.py::test_recognition_async_processor_auto_links_default_upload_after_support_type_is_recognized tests/test_invoice_validation_rules.py::test_local_transport_invoice_is_treated_as_rideshare_electronic_ticket tests/test_invoice_validation_rules.py::test_local_transport_electronic_invoice_passes_when_trip_record_is_linked tests/test_recognition_llm.py::test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_prompt`
+  - 6 个用例通过。
+- 已通过相关集合：
+  - `uv run pytest tests/test_materials_api.py tests/test_recognition_async_jobs.py tests/test_invoice_validation_rules.py tests/test_recognition_llm.py tests/test_cli_submit.py tests/test_material_upload_integration.py`
+  - 102 个用例通过。
+- 首次仓库级验证发现 `tests/test_async_jobs.py` 中 3 个 worker 边界测试失败；根因是识别后附件自动关联在成功无字段/失败任务路径上读取了 fake material repository。已收窄为“仅识别成功且识别结果明确为可自动归票附件类型时读取材料并归票”，随后相关回归通过：
+  - `uv run pytest tests/test_async_jobs.py::test_recognition_async_processor_skips_duplicate_delivery_after_conflict tests/test_async_jobs.py::test_recognition_async_processor_uses_worker_threads_for_batch_uploads tests/test_async_jobs.py::test_recognition_async_processor_logs_processed_and_skipped_jobs tests/test_recognition_async_jobs.py::test_recognition_async_processor_auto_links_default_upload_after_support_type_is_recognized`
+  - 4 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 504 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮只对当前 SQLite 运行实例做了明确对象的数据修正，没有批量重跑所有历史识别任务。
+- `Screenshot_20251119-161841.支付宝.png` 仍处于待确认状态，识别摘要显示它像酒店订单/支付上下文，但置信度未达到自动更新材料类型和自动归票边界，仍需要人工确认或后续重识别。
+- 市内交通发票号缺失的根因是识别抽取遗漏；本轮用真实 PDF 文本补齐当前库数据，并通过 prompt v4 降低后续复发概率。
+
 ## 2026-05-01 12:20 - Enable threaded recognition worker for batch invoice uploads
 
 ### 完成内容

@@ -188,6 +188,35 @@ def test_submit_supporting_material_auto_links_to_single_candidate_invoice(tmp_p
     ]
 
 
+def test_default_material_type_does_not_auto_link_before_recognition(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    invoice_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"fake-pdf-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+    create_invoice(client, invoice_material_id)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+        },
+        files={"files": ("unclassified.pdf", b"fake-pdf-content", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    material_id = response.json()["items"][0]["id"]
+    assert response.json()["items"][0]["material_type"] == "other_attachment"
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, material_id) == []
+
+
 def test_submit_pending_assignment_material_without_resolved_identity(tmp_path):
     client = make_client(tmp_path)
 

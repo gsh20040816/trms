@@ -433,6 +433,56 @@ def test_local_transport_rideshare_trip_rule_covers_passed_failed_pending_paths(
     assert result.status is expected_status
 
 
+def test_local_transport_invoice_is_treated_as_rideshare_electronic_ticket():
+    result = validate_local_transport_rideshare_trip_requirement(
+        make_invoice(expense_type=ExpenseType.LOCAL_TRANSPORT),
+        recognition_task=make_recognition(
+            "material-invoice",
+            recognized_fields={
+                "material_type": "invoice",
+                "expense_type": "local_transport",
+            },
+        ),
+        supporting_materials=[],
+        supporting_material_recognitions={},
+    )
+
+    assert result.rule_code == LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE
+    assert result.status is ValidationStatus.FAILED
+    assert result.message == "网约车费用缺少行程信息"
+    assert result.evidence["rideshare_detections"][-1]["field_name"] == (
+        "local_transport_electronic_invoice_policy"
+    )
+
+
+def test_local_transport_electronic_invoice_passes_when_trip_record_is_linked():
+    itinerary = make_material("itinerary-1", material_type=MaterialType.ITINERARY)
+
+    result = validate_local_transport_rideshare_trip_requirement(
+        make_invoice(expense_type=ExpenseType.LOCAL_TRANSPORT),
+        recognition_task=make_recognition(
+            "material-invoice",
+            recognized_fields={
+                "material_type": "invoice",
+                "expense_type": "local_transport",
+            },
+        ),
+        supporting_materials=[itinerary],
+        supporting_material_recognitions={
+            "itinerary-1": make_recognition(
+                "itinerary-1",
+                recognized_fields={
+                    "transport_mode": "taxi",
+                    "trip_route": "虹桥站 至 同济大学嘉定校区",
+                },
+            )
+        },
+    )
+
+    assert result.rule_code == LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE
+    assert result.status is ValidationStatus.PASSED
+
+
 @pytest.mark.parametrize(
     ("transaction_time", "expected_status"),
     [

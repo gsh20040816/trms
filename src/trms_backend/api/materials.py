@@ -212,6 +212,9 @@ def build_material_router(
             ):
                 continue
             recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
+            material = material_repository.get(updated.material_id)
+            if material is not None:
+                supporting_material_auto_link_service.auto_link_for_material(material)
             refresh_validations_for_material(
                 updated.material_id,
                 task_repository=task_repository,

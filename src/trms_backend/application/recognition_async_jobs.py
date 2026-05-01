@@ -16,11 +16,17 @@ from trms_backend.application.recognition_invoice_auto_create import (
     RecognitionInvoiceAutoCreateService,
 )
 from trms_backend.application.supporting_material_auto_link import (
+    AUTO_LINKABLE_SUPPORTING_MATERIAL_TYPES,
     SupportingMaterialAutoLinkService,
 )
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.materials import MaterialRepository
-from trms_backend.domain.recognitions import RecognitionTaskRecord, RecognitionTaskRepository
+from trms_backend.domain.recognitions import (
+    RecognitionFieldStatus,
+    RecognitionTaskRecord,
+    RecognitionTaskRepository,
+    RecognitionTaskStatus,
+)
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import TaskRepository
@@ -56,16 +62,17 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
         self._batch_size = batch_size
         self._max_workers = max(1, max_workers)
         self._metrics_collector = metrics_collector or NoOpMetricsCollector()
+        self._supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+        )
         self._recognition_invoice_auto_create_service = RecognitionInvoiceAutoCreateService(
             task_repository=task_repository,
             material_repository=material_repository,
             invoice_repository=invoice_repository,
             split_repository=split_repository,
             confirmation_repository=confirmation_repository,
-            supporting_material_auto_link_service=SupportingMaterialAutoLinkService(
-                material_repository=material_repository,
-                invoice_repository=invoice_repository,
-            ),
+            supporting_material_auto_link_service=self._supporting_material_auto_link_service,
         )
 
     @property
@@ -109,7 +116,12 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
             )
             return 0
 
-        self._recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
+        if updated.status is RecognitionTaskStatus.SUCCEEDED:
+            self._recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
+            if _recognizes_auto_linkable_supporting_material(updated):
+                material = self._material_repository.get(updated.material_id)
+                if material is not None:
+                    self._supporting_material_auto_link_service.auto_link_for_material(material)
         refresh_validations_for_material(
             updated.material_id,
             task_repository=self._task_repository,
@@ -131,6 +143,17 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
             ),
         )
         return 1
+
+
+def _recognizes_auto_linkable_supporting_material(task: RecognitionTaskRecord) -> bool:
+    material_type = task.recognized_fields.get("material_type")
+    if (
+        material_type is None
+        or material_type.status is not RecognitionFieldStatus.RECOGNIZED
+        or not isinstance(material_type.value, str)
+    ):
+        return False
+    return material_type.value in {item.value for item in AUTO_LINKABLE_SUPPORTING_MATERIAL_TYPES}
 
 
 class NoOpAsyncJobProcessor(AsyncJobProcessor):

@@ -31,7 +31,6 @@ _REQUIRED_INVOICE_FIELD_NAMES = frozenset(
         "buyer_name",
         "tax_number",
         "amount_cents",
-        "expense_type",
     }
 )
 
@@ -103,6 +102,8 @@ def _build_invoice_create_from_recognition(
 ) -> InvoiceCreate | None:
     if not _REQUIRED_INVOICE_FIELD_NAMES.issubset(recognized_fields):
         return None
+    if "expense_type" not in recognized_fields and "expense_type_candidate" not in recognized_fields:
+        return None
 
     values: dict[str, Any] = {}
     for field_name in (
@@ -121,6 +122,11 @@ def _build_invoice_create_from_recognition(
         if field.status is not RecognitionFieldStatus.RECOGNIZED:
             return None
         values[field_name] = field.value
+    if "expense_type" not in values:
+        field = recognized_fields.get("expense_type_candidate")
+        if field is None or field.status is not RecognitionFieldStatus.RECOGNIZED:
+            return None
+        values["expense_type"] = field.value
 
     expense_type = values.get("expense_type")
     if not isinstance(expense_type, str):

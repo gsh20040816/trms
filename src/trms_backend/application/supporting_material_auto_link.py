@@ -12,6 +12,15 @@ from trms_backend.domain.materials import (
     MaterialType,
 )
 
+AUTO_LINKABLE_SUPPORTING_MATERIAL_TYPES = frozenset(
+    {
+        MaterialType.PAYMENT_RECORD,
+        MaterialType.COMPETITION_NOTICE,
+        MaterialType.ITINERARY,
+        MaterialType.ORDER_SCREENSHOT,
+    }
+)
+
 
 class SupportingMaterialAutoLinkService:
     def __init__(
@@ -66,7 +75,7 @@ class SupportingMaterialAutoLinkService:
     def _is_auto_linkable_supporting_material(self, material: MaterialRecord) -> bool:
         if not _is_assigned_supporting_link_context(material):
             return False
-        if material.material_type is MaterialType.INVOICE:
+        if material.material_type not in AUTO_LINKABLE_SUPPORTING_MATERIAL_TYPES:
             return False
         if self._invoice_repository.list_by_supporting_material(material.id):
             return False

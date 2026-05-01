@@ -15,7 +15,7 @@ SUPPORTED_MATERIAL_UPLOAD_CONTENT_TYPES = (
     "image/png",
     "image/webp",
 )
-MAX_MATERIAL_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+MAX_MATERIAL_UPLOAD_SIZE_BYTES = 64 * 1024 * 1024
 
 
 class SubmissionChannel(StrEnum):

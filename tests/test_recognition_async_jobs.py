@@ -28,7 +28,11 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
-from test_tasks_api import admin_auth_headers, create_task as create_admin_task
+from test_tasks_api import (
+    admin_auth_headers,
+    create_invoice,
+    create_task as create_admin_task,
+)
 
 
 class FakeRecognitionLlmClient(RecognitionLlmClient):
@@ -331,3 +335,143 @@ def test_recognition_async_processor_auto_creates_invoice_after_default_material
     )
     assert materials_response.status_code == 200
     assert materials_response.json()["items"][0]["material_type"] == "invoice"
+
+
+def test_recognition_async_processor_auto_creates_invoice_from_expense_type_candidate(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    material_id = upload_material(client, task_id)
+    processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="invoice",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type_candidate": RecognitionFieldResult(
+                        value="railway",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "invoice_number": RecognitionFieldResult(
+                        value="ASYNC-CANDIDATE-001",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "buyer_name": RecognitionFieldResult(
+                        value="同济大学",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "tax_number": RecognitionFieldResult(
+                        value="12100000425006117D",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=35400,
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert processor.run_once() == 1
+
+    invoices_response = client.get(
+        f"/api/tasks/{task_id}/invoices",
+        headers=admin_auth_headers(client),
+    )
+    assert invoices_response.status_code == 200
+    invoices = invoices_response.json()["items"]
+    assert len(invoices) == 1
+    assert invoices[0]["material_id"] == material_id
+    assert invoices[0]["invoice_number"] == "ASYNC-CANDIDATE-001"
+    assert invoices[0]["expense_type"] == "railway"
+
+
+def test_recognition_async_processor_auto_links_default_upload_after_support_type_is_recognized(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    invoice_material_id = upload_material(client, task_id)
+    create_invoice(client, invoice_material_id)
+    build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="invoice",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="registration",
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                    "invoice_number": RecognitionFieldResult(
+                        value="ASYNC-LINK-BASE-001",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "buyer_name": RecognitionFieldResult(
+                        value="同济大学",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "tax_number": RecognitionFieldResult(
+                        value="12100000425006117D",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=45678,
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                },
+            )
+        ),
+    ).run_once()
+    support_material_id = upload_material(client, task_id, material_type=None)
+    support_processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="payment_record",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type_candidate": RecognitionFieldResult(
+                        value="registration",
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert support_processor.run_once() == 1
+
+    invoice_repository = SqlAlchemyInvoiceRepository(
+        build_session_factory(runtime_config.database_url)
+    )
+    linked_invoices = invoice_repository.list_by_supporting_material(support_material_id)
+    assert [invoice.material_id for invoice in linked_invoices] == [invoice_material_id]

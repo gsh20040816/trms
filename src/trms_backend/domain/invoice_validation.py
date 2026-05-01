@@ -623,6 +623,22 @@ def validate_local_transport_rideshare_trip_requirement(
         supporting_materials,
         supporting_material_recognitions,
     )
+    if requires_local_transport_validation and _is_local_transport_electronic_invoice(
+        recognition_task
+    ):
+        rideshare_detections.append(
+            {
+                "material_id": invoice.material_id,
+                "material_type": MaterialType.INVOICE.value,
+                "field_name": "local_transport_electronic_invoice_policy",
+                "field_value": "local_transport_invoice_requires_rideshare_trip",
+                "is_rideshare": True,
+                "recognition_task_id": recognition_task.id if recognition_task is not None else None,
+                "recognition_task_status": (
+                    recognition_task.status.value if recognition_task is not None else None
+                ),
+            }
+        )
     trip_information_materials = _collect_trip_information_materials(
         invoice,
         recognition_task,
@@ -1032,11 +1048,25 @@ def _decide_rideshare_requirement(
         for item in rideshare_detections
         if isinstance(item.get("is_rideshare"), bool)
     }
-    if rideshare_values == {True}:
+    if True in rideshare_values:
         return True
     if rideshare_values == {False}:
         return False
     return None
+
+
+def _is_local_transport_electronic_invoice(
+    recognition_task: RecognitionTaskRecord | None,
+) -> bool:
+    if recognition_task is None:
+        return False
+    for field_name in ("material_type", "document_family"):
+        field_result = recognition_task.recognized_fields.get(field_name)
+        if field_result is None:
+            continue
+        if field_result.value == MaterialType.INVOICE.value:
+            return True
+    return False
 
 
 def _collect_trip_information_materials(

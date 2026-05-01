@@ -23,7 +23,7 @@ from trms_backend.domain.recognitions import (
 from trms_backend.runtime_config import LLMProviderConfig
 
 LOW_CONFIDENCE_THRESHOLD = 0.8
-PROMPT_VERSION = "trms-recognition-v3"
+PROMPT_VERSION = "trms-recognition-v4"
 _CONFIDENCE_TEXT_TO_FLOAT = {
     "high": 0.95,
     "medium": 0.7,
@@ -784,6 +784,7 @@ def _build_classification_chat_completions_payload(
             "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
             "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
             "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
+            "For local_transport electronic invoices or e-tickets, classify them as invoice, set expense_type_candidate.value=local_transport, and treat them as rideshare evidence requiring a matching itinerary/order trip record.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
             "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
             "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
@@ -810,6 +811,7 @@ def _build_classification_chat_completions_payload(
                     "classification_confidence.value must equal the overall classification confidence in [0, 1]. "
                     "Never invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi. "
                     "Map invoice subtypes to material_type.value='invoice' and platform order subtypes to material_type.value='order_screenshot'. "
+                    "Local_transport electronic invoices or e-tickets must be classified as invoice, assigned expense_type_candidate.value='local_transport', and treated as rideshare evidence requiring a matching itinerary/order trip record. "
                     "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "
                     "payment records, competition notices, travel itineraries, train or flight documents, rideshare receipts, "
                     "hotel invoices, and platform order screenshots. "
@@ -863,6 +865,8 @@ def _build_extraction_chat_completions_payload(
             "For Chinese invoices, only extract buyer_name and tax_number when they are explicitly visible on the document.",
             "If the document only shows a date but not a complete time, keep transaction_time absent instead of inventing a time.",
             "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
+            "For local_transport electronic invoices or e-tickets, set expense_type.value=local_transport and populate is_rideshare.value=true when that field is available in the selected schema.",
+            "For local_transport electronic invoices, extract the invoice_number when it is visible; do not omit it just because the document is a platform-issued electronic ticket.",
         ],
     }
     user_prompt_json = json.dumps(user_prompt, ensure_ascii=False)
@@ -886,6 +890,8 @@ def _build_extraction_chat_completions_payload(
                     "For amount_cents, convert RMB yuan to integer cents and ignore currency symbols or separators. "
                     "For transaction_time, use the clearest transaction or issue timestamp on the document; if only a date is present, leave the field absent. "
                     "For expense_type, choose only a TRMS enum value that is directly supported by the document evidence. "
+                    "For local_transport electronic invoices or e-tickets, choose expense_type='local_transport' and populate is_rideshare=true when that field is available. "
+                    "For local_transport electronic invoices, extract a visible invoice_number instead of omitting it as a platform ticket identifier. "
                     "For scanned PDFs or photos, rely only on the visible content in the supplied file, not on filename guesses."
                 ),
             },

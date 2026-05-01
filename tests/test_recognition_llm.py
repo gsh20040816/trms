@@ -260,7 +260,7 @@ def test_openai_compatible_recognition_client_uses_json_object_response_format()
     assert captured_requests[0]["authorization"] == "Bearer sk-test"
     assert captured_requests[0]["payload"]["response_format"] == {"type": "json_object"}
     assert captured_requests[1]["payload"]["response_format"] == {"type": "json_object"}
-    assert "Prompt version: trms-recognition-v3." in captured_requests[0]["payload"]["messages"][0]["content"]
+    assert "Prompt version: trms-recognition-v4." in captured_requests[0]["payload"]["messages"][0]["content"]
     assert "Stage 1 only" in captured_requests[0]["payload"]["messages"][1]["content"]
     assert "Selected schema: invoice." in captured_requests[1]["payload"]["messages"][0]["content"]
     assert result.recognized_fields["invoice_number"].value == "INV-001"
@@ -272,7 +272,7 @@ def test_openai_compatible_recognition_client_uses_json_object_response_format()
     assert result.recognized_fields["classification_confidence"].value == 0.97
     assert result.raw_response["classification"]["attempts"] == 1
     assert result.raw_response["classification"]["request"]["user_prompt"]["prompt_version"] == (
-        "trms-recognition-v3"
+        "trms-recognition-v4"
     )
     assert (
         result.raw_response["classification"]["request"]["user_prompt"]["recognition_input"]["source"]
@@ -373,12 +373,13 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
             "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
             "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
             "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
+            "For local_transport electronic invoices or e-tickets, classify them as invoice, set expense_type_candidate.value=local_transport, and treat them as rideshare evidence requiring a matching itinerary/order trip record.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
             "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
             "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
             "classification_confidence.value must be a float between 0 and 1 describing the overall confidence of the classification result.",
         ],
-        "prompt_version": "trms-recognition-v3",
+        "prompt_version": "trms-recognition-v4",
         "stage": "classification",
     }
     assert extraction_user_prompt["stage"] == "metadata_extraction"
@@ -1023,7 +1024,7 @@ def test_openai_compatible_recognition_client_rejects_non_json_content():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_not_json"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v3"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v4"
     assert error.value.raw_response["raw_content"] == "not-json"
 
 
@@ -1045,7 +1046,7 @@ def test_openai_compatible_recognition_client_rejects_missing_fields_output():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_missing_fields"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v3"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v4"
     assert error.value.raw_response["parsed_content"]["output"]["document_family"] is None
     assert error.value.raw_response["parsed_content"]["output"]["classification_confidence"] is None
 
@@ -1091,7 +1092,7 @@ def test_openai_compatible_recognition_client_reports_invalid_schema_details():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_invalid"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v3"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v4"
     assert error.value.raw_response["parsed_content"] == {
         "output": {
             "document_family": {
