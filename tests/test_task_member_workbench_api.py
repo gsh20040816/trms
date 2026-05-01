@@ -349,6 +349,88 @@ def test_member_workbench_summary_redacts_shared_attachment_details_and_recognit
     assert all("original_filename" not in item for item in shared_item["supporting_materials"])
 
 
+def test_member_workbench_pending_linkage_keeps_remaining_candidates_after_partial_attachment(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    first_invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="shared-first.pdf",
+    )
+    first_invoice_id = create_invoice(
+        client,
+        first_invoice_material_id,
+        actor_id="2250001",
+        invoice_number="PARTIAL-001",
+        amount_cents=12345,
+        expense_type="railway",
+    )
+    mark_recognition_succeeded(client, first_invoice_material_id)
+
+    second_invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="shared-second.pdf",
+    )
+    second_invoice_id = create_invoice(
+        client,
+        second_invoice_material_id,
+        actor_id="2250001",
+        invoice_number="PARTIAL-002",
+        amount_cents=23456,
+        expense_type="railway",
+    )
+    mark_recognition_succeeded(client, second_invoice_material_id)
+
+    supporting_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="order_screenshot",
+        filename="shared-order.png",
+        content_type="image/png",
+    )
+    attach_response = client.put(
+        f"/api/invoices/{first_invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+    assert attach_response.status_code == 200
+
+    response = client.get(
+        f"/api/tasks/{task_id}/member-workbench",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    item = next(
+        item
+        for item in body["pending_supporting_material_linkage_items"]
+        if item["material_id"] == supporting_material_id
+    )
+    assert item["linked_invoices"] == [
+        {
+            "invoice_id": first_invoice_id,
+            "invoice_number": "PARTIAL-001",
+            "amount_cents": 12345,
+            "expense_type": "railway",
+        }
+    ]
+    assert item["candidate_invoices"] == [
+        {
+            "invoice_id": second_invoice_id,
+            "invoice_number": "PARTIAL-002",
+            "amount_cents": 23456,
+            "expense_type": "railway",
+        }
+    ]
+
+
 def test_non_member_cannot_view_member_workbench_summary(tmp_path):
     client = make_client(tmp_path)
     task_id, _ = create_ready_workbench_fixture(client)

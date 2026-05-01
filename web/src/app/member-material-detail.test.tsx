@@ -124,6 +124,14 @@ function buildMaterialSummary(
         material_type: materialType,
         original_filename: `${materialType}.pdf`,
         pending_reason: "multiple_candidates",
+        linked_invoices: [
+          {
+            invoice_id: "INV-LINKED-001",
+            invoice_number: "INV-LINKED-001",
+            amount_cents: 8888,
+            expense_type: "railway",
+          },
+        ],
         candidate_invoices: [
           {
             invoice_id: "INV-CANDIDATE-001",
@@ -204,6 +212,8 @@ describe("MemberMaterialDetailPage", () => {
     expect(recognizedFieldSection).toBeInTheDocument();
     expect(within(recognizedFieldSection).getByText(fieldLabel)).toBeInTheDocument();
     expect(within(recognizedFieldSection).getByText(expectedValue)).toBeInTheDocument();
+    expect(screen.getByLabelText("当前已关联发票列表")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "已关联发票 INV-LINKED-001" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "候选发票 INV-CANDIDATE-001" })).toBeInTheDocument();
   });
 });

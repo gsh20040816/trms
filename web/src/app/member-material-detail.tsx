@@ -474,9 +474,36 @@ export function MemberMaterialDetailPage() {
           <SectionCard title="归属发票参考" description="当前页只展示候选归属和跳转入口，真正的归属确认仍在工作台中完成。">
             {pendingLinkageItem ? (
               <>
+                {pendingLinkageItem.linked_invoices.length > 0 ? (
+                  <>
+                    <p className="field-hint">
+                      当前材料已关联到 {pendingLinkageItem.linked_invoices.length} 张发票；如果还需要补到其他发票，继续在下方候选列表里处理。
+                    </p>
+                    <ul className="invoice-material-list" aria-label="当前已关联发票列表">
+                      {pendingLinkageItem.linked_invoices.map((linkedInvoice) => (
+                        <li key={linkedInvoice.invoice_id}>
+                          <InvoiceSummaryRow
+                            filename={item.material.original_filename}
+                            invoiceNumber={linkedInvoice.invoice_number}
+                            amountLabel={formatCurrencyFromCents(linkedInvoice.amount_cents)}
+                            validationLabel="已关联"
+                            validationTone="success"
+                            supportingMaterialCount={1}
+                            statusHint={`费用类型 ${formatExpenseType(linkedInvoice.expense_type)}`}
+                            trailingContent={<StatusBadge tone="success">已关联</StatusBadge>}
+                            action={{
+                              ariaLabel: `已关联发票 ${linkedInvoice.invoice_number}`,
+                              onClick: () => { void navigate(buildInvoiceDetailPath(currentTaskId, linkedInvoice.invoice_id)); },
+                            }}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
                 <p className="field-hint">
                   {pendingLinkageItem.pending_reason === "multiple_candidates"
-                    ? "系统找到多张候选发票，尚未自动归属。"
+                    ? "系统找到仍可继续关联的候选发票，尚未自动补齐全部归属。"
                     : "系统暂时没有找到安全候选发票，请先补发票或回工作台处理。"}
                 </p>
                 {pendingLinkageItem.candidate_invoices.length > 0 ? (

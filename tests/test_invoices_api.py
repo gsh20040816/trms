@@ -2053,6 +2053,59 @@ def test_detach_supporting_material_removes_invoice_association(tmp_path):
     assert listed.json()["items"] == []
 
 
+def test_detach_supporting_material_only_removes_target_link_when_material_is_shared(tmp_path):
+    client = make_client(tmp_path)
+    task_id, first_material_id = create_material(client)
+    first_invoice_id = client.post(
+        f"/api/materials/{first_material_id}/invoice",
+        json=valid_invoice_payload(),
+    ).json()["invoice"]["id"]
+
+    second_invoice_material_id = upload_material(
+        client,
+        task_id,
+        filename="second-invoice.pdf",
+    )
+    second_invoice_response = client.post(
+        f"/api/materials/{second_invoice_material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "invoice_number": "INV-SECOND-001",
+            "amount_cents": 22222,
+        },
+    )
+    assert second_invoice_response.status_code == 201
+    second_invoice_id = second_invoice_response.json()["invoice"]["id"]
+
+    supporting_material_id = upload_supporting_material(client, task_id)
+    first_attach = client.put(
+        f"/api/invoices/{first_invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
+    assert first_attach.status_code == 200
+    second_attach = client.put(
+        f"/api/invoices/{second_invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
+    assert second_attach.status_code == 200
+
+    detach_response = client.delete(
+        f"/api/invoices/{first_invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
+
+    assert detach_response.status_code == 200
+    assert detach_response.json()["status"] == "deleted"
+
+    first_listed = client.get(f"/api/invoices/{first_invoice_id}/supporting-materials")
+    assert first_listed.status_code == 200
+    assert first_listed.json()["items"] == []
+
+    second_listed = client.get(f"/api/invoices/{second_invoice_id}/supporting-materials")
+    assert second_listed.status_code == 200
+    assert [item["id"] for item in second_listed.json()["items"]] == [supporting_material_id]
+
+
 def test_upload_supporting_material_keeps_unlinked_when_no_invoice_candidate(tmp_path):
     client = make_client(tmp_path)
     task = create_admin_task(client)

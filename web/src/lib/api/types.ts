@@ -774,6 +774,7 @@ export type PendingSupportingMaterialLinkageItem = {
   material_type: MaterialType;
   original_filename: string;
   pending_reason: PendingSupportingMaterialLinkageReason;
+  linked_invoices: PendingSupportingMaterialLinkageCandidateInvoiceSummary[];
   candidate_invoices: PendingSupportingMaterialLinkageCandidateInvoiceSummary[];
   created_at: ApiDateTime;
 };

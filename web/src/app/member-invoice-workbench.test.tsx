@@ -312,6 +312,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
           material_type: "payment_record",
           original_filename: "pay.png",
           pending_reason: "multiple_candidates",
+          linked_invoices: [
+            {
+              invoice_id: "INV-LINKED-001",
+              invoice_number: "INV-LINKED-001",
+              amount_cents: 8000,
+              expense_type: "hotel",
+            },
+          ],
           candidate_invoices: [
             {
               invoice_id: "INV-READY-001",
@@ -328,6 +336,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
     expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
+    expect(screen.getByText(/当前已关联：INV-LINKED-001/)).toBeInTheDocument();
+    expect(screen.getByText(/仍可继续关联的候选发票：INV-READY-001/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
   });
 

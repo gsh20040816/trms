@@ -200,6 +200,7 @@ def test_admin_can_list_pending_supporting_material_linkage_items(tmp_path):
         "material_type": "competition_notice",
         "original_filename": "member-three-notice.pdf",
         "pending_reason": "no_candidate",
+        "linked_invoices": [],
         "candidate_invoices": [],
         "created_at": items_by_id[member_three_pending_supporting]["created_at"],
     }
@@ -273,6 +274,84 @@ def test_member_only_sees_own_pending_supporting_material_linkage_items(tmp_path
         member_two_pending_supporting
     ]
     assert member_two_response.json()["items"][0]["pending_reason"] == "no_candidate"
+
+
+def test_pending_supporting_material_linkage_keeps_remaining_candidates_after_one_link_exists(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    first_invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250002",
+        material_type="invoice",
+        filename="member-two-first.pdf",
+    )
+    second_invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250002",
+        material_type="invoice",
+        filename="member-two-second.pdf",
+    )
+    first_invoice_id = create_invoice(
+        client,
+        first_invoice_material_id,
+        actor_id="2250002",
+        invoice_number="M2-001",
+        amount_cents=20000,
+        expense_type="railway",
+    )
+    second_invoice_id = create_invoice(
+        client,
+        second_invoice_material_id,
+        actor_id="2250002",
+        invoice_number="M2-002",
+        amount_cents=30000,
+        expense_type="hotel",
+    )
+    supporting_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250002",
+        material_type="payment_record",
+        filename="member-two-payment.png",
+        content_type="image/png",
+    )
+
+    attach_response = client.put(
+        f"/api/invoices/{first_invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
+    assert attach_response.status_code == 200
+
+    response = client.get(
+        f"/api/tasks/{task_id}/supporting-material-linkage",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    item = next(
+        item for item in body["items"] if item["material_id"] == supporting_material_id
+    )
+    assert item["pending_reason"] == "multiple_candidates"
+    assert item["linked_invoices"] == [
+        {
+            "invoice_id": first_invoice_id,
+            "invoice_number": "M2-001",
+            "amount_cents": 20000,
+            "expense_type": "railway",
+        }
+    ]
+    assert item["candidate_invoices"] == [
+        {
+            "invoice_id": second_invoice_id,
+            "invoice_number": "M2-002",
+            "amount_cents": 30000,
+            "expense_type": "hotel",
+        }
+    ]
 
 
 def test_outsider_cannot_view_task_supporting_material_linkage(tmp_path):

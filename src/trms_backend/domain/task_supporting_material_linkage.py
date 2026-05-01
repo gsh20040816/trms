@@ -28,6 +28,9 @@ class PendingSupportingMaterialLinkageItem(BaseModel):
     material_type: MaterialType
     original_filename: str
     pending_reason: PendingSupportingMaterialLinkageReason
+    linked_invoices: list[PendingSupportingMaterialLinkageCandidateInvoiceSummary] = Field(
+        default_factory=list
+    )
     candidate_invoices: list[PendingSupportingMaterialLinkageCandidateInvoiceSummary] = Field(
         default_factory=list
     )
@@ -64,9 +67,6 @@ def build_task_supporting_material_linkage_report(
             continue
         if not include_all_members and material.submitter_id != normalized_actor_id:
             continue
-        if linked_invoice_ids_by_material_id.get(material.id):
-            continue
-
         candidate_invoices = [
             invoice
             for invoice in invoices
@@ -76,14 +76,33 @@ def build_task_supporting_material_linkage_report(
                 materials_by_id=materials_by_id,
             )
         ]
-        if len(candidate_invoices) == 1:
+        linked_invoice_ids = set(linked_invoice_ids_by_material_id.get(material.id, []))
+
+        if len(candidate_invoices) == 0:
+            if linked_invoice_ids:
+                continue
+            pending_reason = PendingSupportingMaterialLinkageReason.NO_CANDIDATE
+            linked_invoices: list[InvoiceRecord] = []
+            remaining_candidate_invoices: list[InvoiceRecord] = []
+        else:
+            linked_invoices = [
+                invoice for invoice in candidate_invoices if invoice.id in linked_invoice_ids
+            ]
+            remaining_candidate_invoices = [
+                invoice for invoice in candidate_invoices if invoice.id not in linked_invoice_ids
+            ]
+            if not linked_invoice_ids and len(remaining_candidate_invoices) == 1:
+                continue
+            if len(remaining_candidate_invoices) == 0:
+                continue
+            pending_reason = PendingSupportingMaterialLinkageReason.MULTIPLE_CANDIDATES
+
+        if (
+            pending_reason is PendingSupportingMaterialLinkageReason.NO_CANDIDATE
+            and linked_invoices
+        ):
             continue
 
-        pending_reason = (
-            PendingSupportingMaterialLinkageReason.NO_CANDIDATE
-            if len(candidate_invoices) == 0
-            else PendingSupportingMaterialLinkageReason.MULTIPLE_CANDIDATES
-        )
         items.append(
             PendingSupportingMaterialLinkageItem(
                 material_id=material.id,
@@ -91,6 +110,15 @@ def build_task_supporting_material_linkage_report(
                 material_type=material.material_type,
                 original_filename=material.original_filename,
                 pending_reason=pending_reason,
+                linked_invoices=[
+                    PendingSupportingMaterialLinkageCandidateInvoiceSummary(
+                        invoice_id=invoice.id,
+                        invoice_number=invoice.invoice_number,
+                        amount_cents=invoice.amount_cents,
+                        expense_type=invoice.expense_type,
+                    )
+                    for invoice in linked_invoices
+                ],
                 candidate_invoices=[
                     PendingSupportingMaterialLinkageCandidateInvoiceSummary(
                         invoice_id=invoice.id,
@@ -98,7 +126,7 @@ def build_task_supporting_material_linkage_report(
                         amount_cents=invoice.amount_cents,
                         expense_type=invoice.expense_type,
                     )
-                    for invoice in candidate_invoices
+                    for invoice in remaining_candidate_invoices
                 ],
                 created_at=material.created_at,
             )

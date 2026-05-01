@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-05-02 00:34 - Support using one material as attachment for multiple invoices
+
+### 完成内容
+- 完成任务“支持同一材料作为多张发票的附件”。
+- 后端待关联读模型从“未关联 or 已完成”二元状态收敛为“已关联 + 仍可继续关联候选”两层状态：
+  - [task_supporting_material_linkage.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_supporting_material_linkage.py) 为待关联项新增 `linked_invoices`；
+  - 同一材料即使已经挂到一张发票，只要同提交人下仍存在其他候选发票，就继续保留在待关联列表中，并只把“尚未关联的剩余候选”暴露给前端；
+  - 对“无候选”场景继续保留原有 `no_candidate` 语义。
+- 前端成员主路径同步支持多对多附件归属展示：
+  - [member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx) 新增“当前已关联发票列表”，并把候选区文案调整为“仍可继续关联的候选发票”；
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 在待关联辅助材料区同时展示“当前已关联”与“仍可继续关联的候选发票”，不再把“已有一条关联”误判为无需处理；
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 同步新增 `linked_invoices` 类型定义。
+- 补充后端和前端测试：
+  - [test_supporting_material_linkage_api.py](/home/gsh/workspace/TRMS/tests/test_supporting_material_linkage_api.py) 覆盖“先关联一张后，仍保留其余候选”；
+  - [test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py) 覆盖成员工作台待关联区的部分已关联场景；
+  - [test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py) 覆盖“同一材料挂两张发票后，删除其中一条关联不影响另一条”；
+  - [member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx)、[member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 覆盖“已关联 + 仍可继续关联”的新展示口径。
+
+### 根因
+- 数据库层原本就是 `invoice_supporting_material_links` 关联表，天然允许同一材料挂多张发票；真正把系统限制成“单张归属”的不是表结构，而是读模型和前端交互假设。
+- 之前 `build_task_supporting_material_linkage_report(...)` 只要发现材料已有任意关联，就直接把它从待关联列表移除。
+- 这会导致同一材料一旦先挂到某张发票，成员后续再也看不到它对其他候选发票的继续关联入口，从业务结果上等价于“单材料只能归属一张票”。
+
+### 风险与影响面
+- 本轮没有改数据库结构，也没有放宽权限边界；成员仍只能操作自己提交的附件，管理员仍可操作任务内全部附件。
+- 当前多对多支持主要体现在“人工继续关联”与“单条解除不误删其他关联”两条主路径；自动归票仍保持保守策略，不会因为已有一条关联就主动去补挂更多发票。
+- 工作台待关联区现在会继续显示“部分已关联但仍有剩余候选”的材料；这是需求要求的显式行为变化。若后续产品希望进一步把多候选收口成统一下拉，需要在后续任务“收口附件归属选择，改为统一下拉归属发票”中继续做 UI 收敛，而不是在本轮再扩改写路径。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_supporting_material_linkage_api.py tests/test_task_member_workbench_api.py`
+  - 9 个用例通过。
+- 已通过附件解除相关后端测试：
+  - `uv run pytest tests/test_invoices_api.py -k 'detach_supporting_material'`
+  - 2 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-material-detail.test.tsx member-invoice-workbench.test.tsx`
+  - 2 个测试文件、11 个用例通过。
+- 仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 520 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 00:20 - Add paper invoice entry and admin receipt confirmation
 
 ### 完成内容

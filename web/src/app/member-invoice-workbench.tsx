@@ -2643,9 +2643,17 @@ export function MemberInvoiceWorkbenchPage() {
                           <>
                             <strong>{formatMaterialType(item.material_type)} / {item.original_filename}</strong>
                             <span>{formatPendingSupportingMaterialLinkageReason(item.pending_reason)}</span>
+                            {item.linked_invoices.length > 0 ? (
+                              <span>
+                                当前已关联：
+                                {item.linked_invoices.map((linkedInvoice) => (
+                                  `${linkedInvoice.invoice_number}（${formatExpenseType(linkedInvoice.expense_type)} / ${formatCurrencyFromCents(linkedInvoice.amount_cents)}）`
+                                )).join("；")}
+                              </span>
+                            ) : null}
                             {item.candidate_invoices.length > 0 ? (
                               <span>
-                                候选发票：
+                                仍可继续关联的候选发票：
                                 {item.candidate_invoices.map((candidate) => (
                                   `${candidate.invoice_number}（${formatExpenseType(candidate.expense_type)} / ${formatCurrencyFromCents(candidate.amount_cents)}）`
                                 )).join("；")}
