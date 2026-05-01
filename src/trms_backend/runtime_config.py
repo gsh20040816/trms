@@ -32,6 +32,7 @@ DEFAULT_ASYNC_JOB_MODE_BY_ENV: dict[RuntimeEnvironment, AsyncJobMode] = {
     "production": "worker",
 }
 DEFAULT_ASYNC_JOB_POLL_INTERVAL_SECONDS = 5.0
+DEFAULT_ASYNC_JOB_WORKER_CONCURRENCY = 4
 DEFAULT_ALLOW_ADMIN_SELF_REGISTER_BY_ENV: dict[RuntimeEnvironment, bool] = {
     "development": True,
     "test": True,
@@ -93,6 +94,7 @@ class LLMProviderConfig(BaseModel):
 class AsyncJobConfig(BaseModel):
     mode: AsyncJobMode
     worker_poll_interval_seconds: float = Field(gt=0, le=300)
+    worker_concurrency: int = Field(ge=1, le=32)
 
     @field_validator("mode")
     @classmethod
@@ -356,6 +358,7 @@ class RuntimeConfig(BaseModel):
                 "async_jobs": {
                     "mode": self.async_jobs.mode,
                     "worker_poll_interval_seconds": self.async_jobs.worker_poll_interval_seconds,
+                    "worker_concurrency": self.async_jobs.worker_concurrency,
                 },
                 "auth": self.auth.to_safe_log_fields(),
                 "llm_provider": (
@@ -394,6 +397,7 @@ def load_runtime_config(
     storage_s3_key_prefix: str | None = None,
     async_job_mode: str | None = None,
     async_job_poll_interval_seconds: str | float | int | None = None,
+    async_job_worker_concurrency: str | int | None = None,
     auth_allow_admin_self_register: bool | str | None = None,
     auth_bootstrap_admin_token: str | None = None,
     auth_telegram_inbound_token: str | None = None,
@@ -525,6 +529,12 @@ def load_runtime_config(
     )
     if raw_async_job_poll_interval_seconds is None:
         raw_async_job_poll_interval_seconds = DEFAULT_ASYNC_JOB_POLL_INTERVAL_SECONDS
+    raw_async_job_worker_concurrency = _resolve_value(
+        async_job_worker_concurrency,
+        environment_variables.get("TRMS_ASYNC_JOB_WORKER_CONCURRENCY"),
+    )
+    if raw_async_job_worker_concurrency is None:
+        raw_async_job_worker_concurrency = DEFAULT_ASYNC_JOB_WORKER_CONCURRENCY
     raw_auth_allow_admin_self_register = _resolve_value(
         auth_allow_admin_self_register,
         environment_variables.get("TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER"),
@@ -607,6 +617,7 @@ def load_runtime_config(
                 "async_jobs": {
                     "mode": raw_async_job_mode,
                     "worker_poll_interval_seconds": raw_async_job_poll_interval_seconds,
+                    "worker_concurrency": raw_async_job_worker_concurrency,
                 },
                 "auth": {
                     "allow_admin_self_register": raw_auth_allow_admin_self_register,

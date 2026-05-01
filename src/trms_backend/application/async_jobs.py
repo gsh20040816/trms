@@ -57,6 +57,10 @@ class AsyncJobWorker:
         return self._config.worker_poll_interval_seconds
 
     @property
+    def worker_concurrency(self) -> int:
+        return self._config.worker_concurrency
+
+    @property
     def registered_job_types(self) -> tuple[str, ...]:
         return tuple(processor.job_type for processor in self._processors)
 
@@ -69,6 +73,7 @@ class AsyncJobWorker:
                 {
                     "mode": self.mode,
                     "poll_interval_seconds": self.poll_interval_seconds,
+                    "worker_concurrency": self.worker_concurrency,
                     "registered_job_types": list(self.registered_job_types),
                 }
             ),
@@ -99,6 +104,7 @@ class AsyncJobWorker:
                     sanitize_log_fields(
                         {
                             "sleep_seconds": self._config.worker_poll_interval_seconds,
+                            "worker_concurrency": self.worker_concurrency,
                             "registered_job_types": list(self.registered_job_types),
                         }
                     ),

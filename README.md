@@ -127,6 +127,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_API_PORT`
 - `TRMS_ASYNC_JOB_MODE`
 - `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS`
+- `TRMS_ASYNC_JOB_WORKER_CONCURRENCY`
 - `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER`
 - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
 - `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`
@@ -236,6 +237,7 @@ Telegram 入站可信边界：
 - 开发和测试环境默认使用 `in_process`，便于当前同步接口和本地排障。
 - `TRMS_ENV=production` 时默认切换为 `worker`，并拒绝 `TRMS_ASYNC_JOB_MODE=in_process`，避免把耗时任务长期留在请求线程。
 - `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS` 默认 `5`，用于 worker 空闲轮询间隔。
+- `TRMS_ASYNC_JOB_WORKER_CONCURRENCY` 默认 `4`，用于 worker 模式下并发处理待识别材料，支持成员批量上传发票后同时消费多条识别任务。
 - 当前 worker 已可消费待执行的识别任务，并沿用现有识别状态、失败原因和重试历史查询接口。
 - 当前 worker 已可消费待执行的导出任务，并为已实现的 CSV / JSON / merged PDF 导出落盘产物、更新状态、失败原因和重试历史查询。
 - 导出产物需通过导出任务下载接口访问；当前真实合并 PDF 已实现，XLSX 导出仍未实现。

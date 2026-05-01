@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-05-01 12:20 - Enable threaded recognition worker for batch invoice uploads
+
+### 完成内容
+- 完成任务“将 worker 识别任务改为可配置多线程并发处理”。
+- 调整 [recognition_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_async_jobs.py)：
+  - `RecognitionAsyncJobProcessor` 新增 `max_workers`；
+  - 单轮轮询取得多条待识别任务时，通过线程池并发执行识别、自动建票和校验刷新；
+  - 默认构造仍保持单线程，worker 入口按运行配置显式传入并发数，避免影响请求内同步路径和既有单元测试语义。
+- 调整运行配置 [runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)：
+  - 新增 `TRMS_ASYNC_JOB_WORKER_CONCURRENCY`，默认 `4`；
+  - 限制取值范围为 `1..32`，非法配置启动时直接报错。
+- 调整 worker 入口与日志：
+  - [__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py) 将并发配置传给识别处理器；
+  - [async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/async_jobs.py) 在 worker 启动和轮询日志中记录并发值。
+- 更新部署与文档：
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)、[.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)、[docker-compose.yml](/home/gsh/workspace/TRMS/deploy/docker-compose.yml) 增加并发配置；
+  - [README.md](/home/gsh/workspace/TRMS/README.md) 和 [生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md) 说明配置边界。
+- 更新测试：
+  - [test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py) 覆盖 worker 并发日志和批量识别任务并发执行；
+  - [test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py) 覆盖配置默认值、读取和非法值拒绝。
+
+### 根因
+- 批量上传链路已经支持一次提交多个文件、部分成功和为每个有效材料创建识别任务；阻塞点在独立 worker 识别处理器仍按 `for pending_task in list_pending(...)` 串行执行。
+- 真实发票识别通常受 PDF/图片处理和外部 LLM/VLM 调用耗时影响，串行消费会把同批发票排成队列，放大用户批量上传后的等待时间。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_async_jobs.py tests/test_runtime_config.py tests/test_recognition_async_jobs.py tests/test_material_upload_integration.py`
+  - 43 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 499 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮并发的是单个 worker 进程内的识别任务消费，不改变数据库轮询模型，也不引入 Redis Broker；多 worker 进程之间仍依赖既有状态更新幂等边界避免重复交付造成错误结果。
+- 并发数默认 4，真实生产环境应结合 LLM/VLM provider 的限流、数据库连接数和对象存储吞吐调整。
+
 ## 2026-05-01 11:43 - Cancel location-range invoice rule and restructure workbench lists
 
 ### 完成内容

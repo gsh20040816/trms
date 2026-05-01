@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from threading import Event, Lock, Thread
 
 import trms_backend.__main__ as backend_main
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
@@ -40,6 +41,7 @@ def test_async_job_worker_run_once_aggregates_registered_processors():
     result = worker.run_once()
 
     assert worker.registered_job_types == ("recognition", "export")
+    assert worker.worker_concurrency == 4
     assert result.processed_counts == {"recognition": 2, "export": 1}
     assert result.total_processed == 3
 
@@ -66,6 +68,7 @@ def test_async_job_worker_run_once_emits_iteration_logs(monkeypatch):
 
     assert any("worker_poll_start" in entry for entry in entries)
     assert any("worker_poll_complete" in entry for entry in entries)
+    assert any("'worker_concurrency': 4" in entry for entry in entries)
     assert any("'processed_counts': {'recognition': 2}" in entry for entry in entries)
 
 
@@ -127,6 +130,7 @@ def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
     class FakeWorker:
         mode = "worker"
         poll_interval_seconds = 5.0
+        worker_concurrency = 4
         registered_job_types = ("recognition", "export")
 
         def run_once(self) -> None:
@@ -161,6 +165,7 @@ def test_worker_entry_configures_info_logging(monkeypatch):
     class FakeWorker:
         mode = "worker"
         poll_interval_seconds = 5.0
+        worker_concurrency = 4
         registered_job_types = ("recognition",)
 
         def run_once(self) -> None:
@@ -275,6 +280,80 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
         "failed_rule_counts": {},
         "pending_rule_counts": {},
     }
+
+
+def test_recognition_async_processor_uses_worker_threads_for_batch_uploads(monkeypatch):
+    monkeypatch.setattr(
+        recognition_async_jobs,
+        "refresh_validations_for_material",
+        lambda material_id, **_: None,
+    )
+
+    now = datetime.now(timezone.utc)
+    tasks = [
+        RecognitionTaskRecord(
+            id=f"recognition-{index}",
+            material_id=f"material-{index}",
+            status=RecognitionTaskStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+        )
+        for index in range(3)
+    ]
+    active_lock = Lock()
+    concurrent_execution_observed = Event()
+    release = Event()
+    active_count = 0
+    max_active_count = 0
+
+    class FakeRecognitionTaskRepository:
+        def list_pending(self, *, limit: int):
+            assert limit == 10
+            return tasks
+
+    class FakeRecognitionPreparationService:
+        def execute(self, recognition_task_id: str) -> RecognitionTaskRecord:
+            nonlocal active_count, max_active_count
+            with active_lock:
+                active_count += 1
+                max_active_count = max(max_active_count, active_count)
+                if active_count >= 2:
+                    concurrent_execution_observed.set()
+            release.wait(timeout=1)
+            with active_lock:
+                active_count -= 1
+            task = next(item for item in tasks if item.id == recognition_task_id)
+            return task.model_copy(update={"status": RecognitionTaskStatus.FAILED})
+
+    processor = RecognitionAsyncJobProcessor(
+        task_repository=object(),
+        material_repository=object(),
+        invoice_repository=object(),
+        validation_repository=object(),
+        recognition_task_repository=FakeRecognitionTaskRepository(),
+        split_repository=object(),
+        confirmation_repository=object(),
+        recognition_preparation_service=FakeRecognitionPreparationService(),
+        max_workers=2,
+        metrics_collector=InMemoryMetricsCollector(),
+    )
+
+    worker_done = Event()
+    processed_counts: list[int] = []
+
+    def run_processor() -> None:
+        processed_counts.append(processor.run_once())
+        worker_done.set()
+
+    thread = Thread(target=run_processor)
+    thread.start()
+    assert concurrent_execution_observed.wait(timeout=1)
+    release.set()
+    assert worker_done.wait(timeout=1)
+    thread.join(timeout=1)
+
+    assert processed_counts == [3]
+    assert max_active_count >= 2
 
 
 def test_recognition_async_processor_logs_processed_and_skipped_jobs(monkeypatch):

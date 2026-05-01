@@ -33,6 +33,7 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.api_port == 9876
     assert config.async_jobs.mode == "in_process"
     assert config.async_jobs.worker_poll_interval_seconds == 5
+    assert config.async_jobs.worker_concurrency == 4
     assert config.auth.allow_admin_self_register is True
     assert config.auth.bootstrap_admin_token is None
     assert config.auth.telegram_inbound_token is None
@@ -211,6 +212,19 @@ def test_load_runtime_config_rejects_invalid_async_job_mode():
         load_runtime_config(env={"TRMS_ASYNC_JOB_MODE": "sidecar"})
 
     assert "async_jobs.mode" in str(exc_info.value)
+
+
+def test_load_runtime_config_reads_async_job_worker_concurrency():
+    config = load_runtime_config(env={"TRMS_ASYNC_JOB_WORKER_CONCURRENCY": "8"})
+
+    assert config.async_jobs.worker_concurrency == 8
+
+
+def test_load_runtime_config_rejects_invalid_async_job_worker_concurrency():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(env={"TRMS_ASYNC_JOB_WORKER_CONCURRENCY": "0"})
+
+    assert "worker_concurrency" in str(exc_info.value)
 
 
 def test_load_runtime_config_reads_llm_provider_and_normalizes_base_url():

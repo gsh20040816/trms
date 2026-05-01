@@ -131,6 +131,7 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
                     split_repository=split_repository,
                     confirmation_repository=confirmation_repository,
                     recognition_preparation_service=recognition_preparation_service,
+                    max_workers=effective_config.async_jobs.worker_concurrency,
                     metrics_collector=metrics_collector,
                 ),
                 ExportAsyncJobProcessor(
@@ -173,6 +174,7 @@ def run_worker_command(argv: Sequence[str]) -> int:
         {
             "mode": worker.mode,
             "poll_interval_seconds": worker.poll_interval_seconds,
+            "worker_concurrency": worker.worker_concurrency,
             "registered_job_types": list(worker.registered_job_types),
             "environment": config.environment,
             "file_storage": effective_config.file_storage.to_safe_log_fields(),
