@@ -774,6 +774,7 @@ export function AdminInvoiceEditorPage() {
                         <InvoiceSummaryRow
                           filename={material.original_filename}
                           invoiceNumber={invoice?.invoice_number ?? null}
+                          amountLabel={formatInvoiceAmountFromCents(invoice?.amount_cents ?? null)}
                           validationLabel={buildInvoiceSummaryValidation(validations, invoice !== null).label}
                           validationTone={buildInvoiceSummaryValidation(validations, invoice !== null).tone}
                           supportingMaterialCount={item.invoiceItem?.supporting_material_ids.length ?? 0}

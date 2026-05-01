@@ -1694,6 +1694,54 @@ select:focus {
   cursor: pointer;
 }
 
+.member-workbench-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.28fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.member-workbench-sidebar {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.member-workbench-nav-button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.member-workbench-nav-button .MuiButton-startIcon,
+.member-workbench-nav-button .MuiButton-endIcon {
+  margin: 0;
+}
+
+.member-workbench-nav-button span,
+.member-workbench-nav-button small {
+  display: block;
+  width: 100%;
+}
+
+.member-workbench-nav-button small {
+  margin-top: 2px;
+  color: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.72;
+}
+
+.member-workbench-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
 .invoice-summary-row-shell {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1755,28 +1803,43 @@ select:focus {
   outline-color: rgba(217, 119, 6, 0.35);
 }
 
-.invoice-summary-grid {
+.invoice-summary-lines {
   display: grid;
-  grid-template-columns: minmax(180px, 2.1fr) minmax(110px, 1.1fr) minmax(88px, 0.9fr) minmax(72px, 0.7fr);
-  gap: 12px;
+  gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
-  align-items: center;
 }
 
-.invoice-summary-cell {
+.invoice-summary-line {
   min-width: 0;
   color: #0f172a;
   font-size: 0.93rem;
   font-weight: 600;
   line-height: 1.35;
+}
+
+.invoice-summary-number,
+.invoice-summary-file {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.invoice-summary-number {
+  color: #0f172a;
+  font-weight: 800;
+}
+
 .invoice-summary-file {
-  color: #132238;
+  color: #475569;
+}
+
+.invoice-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #64748b;
+  font-size: 0.86rem;
 }
 
 .invoice-summary-validation {
@@ -1930,6 +1993,7 @@ select:focus {
   .invoice-editor-layout,
   .split-editor-layout,
   .admin-review-workspace,
+  .member-workbench-layout,
   .task-meta-grid,
   .task-detail-grid,
   .admin-review-summary-grid,
@@ -1941,6 +2005,10 @@ select:focus {
   }
 
   .admin-workspace-sidebar {
+    position: static;
+  }
+
+  .member-workbench-sidebar {
     position: static;
   }
 
@@ -1963,10 +2031,6 @@ select:focus {
     flex-direction: column;
     align-items: stretch;
     padding: 6px 12px 12px;
-  }
-
-  .invoice-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .invoice-summary-side {

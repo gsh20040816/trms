@@ -4,7 +4,6 @@ from trms_backend.domain.audit_logs import AuditLogResult
 from trms_backend.domain.invoice_validation import (
     AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
-    COMPETITION_LOCATION_RANGE_RULE_CODE,
     COMPETITION_TIME_RANGE_RULE_CODE,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
@@ -205,6 +204,10 @@ def validation_by_code(response_body, rule_code: str):
     return next(item for item in response_body["validations"] if item["rule_code"] == rule_code)
 
 
+def validation_rule_codes(response_body) -> set[str]:
+    return {item["rule_code"] for item in response_body["validations"]}
+
+
 def manual_corrections_by_field(recognition_task: dict, field_name: str) -> list[dict]:
     return [
         item
@@ -367,44 +370,7 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         "issue_date": "2026-11-04",
         "time_source": "transaction_time",
     }
-    competition_location_validation = validation_by_code(
-        body, COMPETITION_LOCATION_RANGE_RULE_CODE
-    )
-    assert competition_location_validation["severity"] == "warning"
-    assert competition_location_validation["status"] == "pending"
-    assert competition_location_validation["message"] == (
-        "缺少可用于比赛地点范围校验的地点信息，需人工确认"
-    )
-    assert competition_location_validation["evidence"] == {
-        "expense_type": "railway",
-        "supported_expense_types": [
-            "railway",
-            "airfare",
-            "local_transport",
-            "hotel",
-        ],
-        "requires_competition_location_validation": True,
-        "competition_location": "Shanghai",
-        "location_field_groups": [
-            ["transaction_location"],
-            ["transaction_city"],
-            ["location"],
-            ["city"],
-            ["merchant_location"],
-            ["hotel_city"],
-            ["trip_route"],
-            ["trip_itinerary"],
-            ["departure_location", "arrival_location"],
-            ["departure_city", "arrival_city"],
-            ["origin_location", "destination_location"],
-            ["from_location", "to_location"],
-            ["trip_start_location", "trip_end_location"],
-            ["pickup_location", "dropoff_location"],
-            ["start_location", "end_location"],
-        ],
-        "matched_location_materials": [],
-        "unmatched_location_materials": [],
-    }
+    assert "invoice_competition_location_range" not in validation_rule_codes(body)
 
 
 def test_task_administrator_can_record_invoice_for_member_material(tmp_path):
@@ -699,12 +665,12 @@ def test_create_invoice_warns_when_transaction_time_is_outside_default_competiti
     }
 
 
-def test_create_invoice_passes_competition_location_validation_when_route_matches_task_city(
+def test_create_invoice_omits_competition_location_validation_when_route_matches_task_city(
     tmp_path,
 ):
     client = make_client(tmp_path)
     _, material_id = create_material(client)
-    recognition_task_id = set_recognition_result(
+    set_recognition_result(
         client,
         material_id,
         document_type="invoice",
@@ -727,61 +693,13 @@ def test_create_invoice_passes_competition_location_validation_when_route_matche
     response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
 
     assert response.status_code == 201
-    competition_location_validation = validation_by_code(
-        response.json(),
-        COMPETITION_LOCATION_RANGE_RULE_CODE,
-    )
-    assert competition_location_validation["severity"] == "warning"
-    assert competition_location_validation["status"] == "passed"
-    assert competition_location_validation["message"] == "交易地点与比赛地点或往返路径基础匹配"
-    assert competition_location_validation["evidence"] == {
-        "expense_type": "railway",
-        "supported_expense_types": [
-            "railway",
-            "airfare",
-            "local_transport",
-            "hotel",
-        ],
-        "requires_competition_location_validation": True,
-        "competition_location": "Shanghai",
-        "location_field_groups": [
-            ["transaction_location"],
-            ["transaction_city"],
-            ["location"],
-            ["city"],
-            ["merchant_location"],
-            ["hotel_city"],
-            ["trip_route"],
-            ["trip_itinerary"],
-            ["departure_location", "arrival_location"],
-            ["departure_city", "arrival_city"],
-            ["origin_location", "destination_location"],
-            ["from_location", "to_location"],
-            ["trip_start_location", "trip_end_location"],
-            ["pickup_location", "dropoff_location"],
-            ["start_location", "end_location"],
-        ],
-        "matched_location_materials": [
-            {
-                "material_id": material_id,
-                "material_type": "invoice",
-                "matched_fields": {
-                    "departure_location": "Nanjing South Railway Station",
-                    "arrival_location": "Shanghai Hongqiao Railway Station",
-                },
-                "competition_location_match": True,
-                "recognition_task_id": recognition_task_id,
-                "recognition_task_status": "succeeded",
-            }
-        ],
-        "unmatched_location_materials": [],
-    }
+    assert "invoice_competition_location_range" not in validation_rule_codes(response.json())
 
 
-def test_create_invoice_warns_when_competition_location_does_not_match_route(tmp_path):
+def test_create_invoice_omits_competition_location_validation_when_route_does_not_match(tmp_path):
     client = make_client(tmp_path)
     _, material_id = create_material(client)
-    recognition_task_id = set_recognition_result(
+    set_recognition_result(
         client,
         material_id,
         document_type="invoice",
@@ -804,57 +722,7 @@ def test_create_invoice_warns_when_competition_location_does_not_match_route(tmp
     response = client.post(f"/api/materials/{material_id}/invoice", json=valid_invoice_payload())
 
     assert response.status_code == 201
-    competition_location_validation = validation_by_code(
-        response.json(),
-        COMPETITION_LOCATION_RANGE_RULE_CODE,
-    )
-    assert competition_location_validation["severity"] == "warning"
-    assert competition_location_validation["status"] == "failed"
-    assert competition_location_validation["message"] == (
-        "交易地点与比赛地点或往返路径不匹配，需人工确认"
-    )
-    assert competition_location_validation["evidence"] == {
-        "expense_type": "railway",
-        "supported_expense_types": [
-            "railway",
-            "airfare",
-            "local_transport",
-            "hotel",
-        ],
-        "requires_competition_location_validation": True,
-        "competition_location": "Shanghai",
-        "location_field_groups": [
-            ["transaction_location"],
-            ["transaction_city"],
-            ["location"],
-            ["city"],
-            ["merchant_location"],
-            ["hotel_city"],
-            ["trip_route"],
-            ["trip_itinerary"],
-            ["departure_location", "arrival_location"],
-            ["departure_city", "arrival_city"],
-            ["origin_location", "destination_location"],
-            ["from_location", "to_location"],
-            ["trip_start_location", "trip_end_location"],
-            ["pickup_location", "dropoff_location"],
-            ["start_location", "end_location"],
-        ],
-        "matched_location_materials": [],
-        "unmatched_location_materials": [
-            {
-                "material_id": material_id,
-                "material_type": "invoice",
-                "matched_fields": {
-                    "departure_location": "Nanjing South Railway Station",
-                    "arrival_location": "Suzhou Railway Station",
-                },
-                "competition_location_match": False,
-                "recognition_task_id": recognition_task_id,
-                "recognition_task_status": "succeeded",
-            }
-        ],
-    }
+    assert "invoice_competition_location_range" not in validation_rule_codes(response.json())
 
 
 def test_create_registration_invoice_fails_when_competition_notice_is_missing(tmp_path):
@@ -1614,7 +1482,7 @@ def test_attach_payment_record_marks_amount_match_pending_when_amount_missing(tm
     }
 
 
-def test_retry_invoice_recognition_revalidates_failed_competition_location_to_pass(tmp_path):
+def test_retry_invoice_recognition_keeps_competition_location_rule_cancelled(tmp_path):
     client = make_client(tmp_path)
     _, material_id = create_material(client)
     set_recognition_result(
@@ -1641,10 +1509,7 @@ def test_retry_invoice_recognition_revalidates_failed_competition_location_to_pa
 
     assert create_response.status_code == 201
     invoice_id = create_response.json()["invoice"]["id"]
-    assert validation_by_code(
-        create_response.json(),
-        COMPETITION_LOCATION_RANGE_RULE_CODE,
-    )["status"] == "failed"
+    assert "invoice_competition_location_range" not in validation_rule_codes(create_response.json())
 
     retry_create = client.post(
         f"/api/materials/{material_id}/recognition-tasks",
@@ -1686,27 +1551,10 @@ def test_retry_invoice_recognition_revalidates_failed_competition_location_to_pa
     validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
 
     assert validations_response.status_code == 200
-    competition_location_validation = next(
-        item
-        for item in validations_response.json()["items"]
-        if item["rule_code"] == COMPETITION_LOCATION_RANGE_RULE_CODE
-    )
-    assert competition_location_validation["status"] == "passed"
-    assert competition_location_validation["message"] == "交易地点与比赛地点或往返路径基础匹配"
-    assert competition_location_validation["evidence"]["matched_location_materials"] == [
-        {
-            "material_id": material_id,
-            "material_type": "invoice",
-            "matched_fields": {
-                "departure_location": "Nanjing South Railway Station",
-                "arrival_location": "Shanghai Hongqiao Railway Station",
-            },
-            "competition_location_match": True,
-            "recognition_task_id": retry_task_id,
-            "recognition_task_status": "succeeded",
-        }
-    ]
-    assert competition_location_validation["evidence"]["unmatched_location_materials"] == []
+    assert retry_task_id
+    assert {
+        item["rule_code"] for item in validations_response.json()["items"]
+    }.isdisjoint({"invoice_competition_location_range"})
 
 
 def test_list_invoice_validations_returns_structured_evidence(tmp_path):

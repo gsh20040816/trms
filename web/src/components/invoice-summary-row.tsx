@@ -9,6 +9,7 @@ type InvoiceSummaryRowTone = "success" | "warning" | "neutral";
 type InvoiceSummaryRowProps = {
   filename: string;
   invoiceNumber: string | null;
+  amountLabel: string;
   validationLabel: string;
   validationTone: InvoiceSummaryRowTone;
   supportingMaterialCount: number;
@@ -32,6 +33,7 @@ type InvoiceSummaryRowProps = {
 export function InvoiceSummaryRow({
   filename,
   invoiceNumber,
+  amountLabel,
   validationLabel,
   validationTone,
   supportingMaterialCount,
@@ -51,6 +53,7 @@ export function InvoiceSummaryRow({
   const summaryButtonClassName = highlight
     ? "invoice-summary-row-button invoice-summary-row-button-warning"
     : "invoice-summary-row-button";
+  const invoiceNumberLabel = `票号 ${invoiceNumber ?? "待补录"}`;
 
   return (
     <div className={summaryRowClassName}>
@@ -73,17 +76,20 @@ export function InvoiceSummaryRow({
           aria-label={action.ariaLabel}
           onClick={action.onClick}
         >
-          <span className="invoice-summary-grid">
-            <span className="invoice-summary-cell invoice-summary-file" title={filename}>
+          <span className="invoice-summary-lines">
+            <span className="invoice-summary-line invoice-summary-number" title={invoiceNumberLabel}>
+              {invoiceNumberLabel}
+            </span>
+            <span className="invoice-summary-line invoice-summary-file" title={filename}>
               {filename}
             </span>
-            <span className="invoice-summary-cell" title={invoiceNumber ?? "待补录票号"}>
-              票号 {invoiceNumber ?? "待补录"}
+            <span className="invoice-summary-line invoice-summary-meta">
+              <span title={amountLabel}>{amountLabel}</span>
+              <span className={`invoice-summary-validation invoice-summary-validation-${validationTone}`}>
+                {validationLabel}
+              </span>
+              <span>附件 {supportingMaterialCount}</span>
             </span>
-            <span className={`invoice-summary-cell invoice-summary-validation invoice-summary-validation-${validationTone}`}>
-              {validationLabel}
-            </span>
-            <span className="invoice-summary-cell">附件 {supportingMaterialCount}</span>
           </span>
           <span className="invoice-summary-side">
             {statusHint ? (
@@ -97,17 +103,20 @@ export function InvoiceSummaryRow({
         </button>
       ) : (
         <div className={`${summaryButtonClassName} invoice-summary-row-static`}>
-          <span className="invoice-summary-grid">
-            <span className="invoice-summary-cell invoice-summary-file" title={filename}>
+          <span className="invoice-summary-lines">
+            <span className="invoice-summary-line invoice-summary-number" title={invoiceNumberLabel}>
+              {invoiceNumberLabel}
+            </span>
+            <span className="invoice-summary-line invoice-summary-file" title={filename}>
               {filename}
             </span>
-            <span className="invoice-summary-cell" title={invoiceNumber ?? "待补录票号"}>
-              票号 {invoiceNumber ?? "待补录"}
+            <span className="invoice-summary-line invoice-summary-meta">
+              <span title={amountLabel}>{amountLabel}</span>
+              <span className={`invoice-summary-validation invoice-summary-validation-${validationTone}`}>
+                {validationLabel}
+              </span>
+              <span>附件 {supportingMaterialCount}</span>
             </span>
-            <span className={`invoice-summary-cell invoice-summary-validation invoice-summary-validation-${validationTone}`}>
-              {validationLabel}
-            </span>
-            <span className="invoice-summary-cell">附件 {supportingMaterialCount}</span>
           </span>
           <span className="invoice-summary-side">
             {statusHint ? (

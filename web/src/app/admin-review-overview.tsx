@@ -986,6 +986,7 @@ export function AdminReviewOverviewPage() {
                                   <InvoiceSummaryRow
                                     filename={filename}
                                     invoiceNumber={invoiceItem.invoice.invoice_number}
+                                    amountLabel={formatCurrencyFromCents(invoiceItem.invoice.amount_cents)}
                                     validationLabel={summaryValidation.label}
                                     validationTone={summaryValidation.tone}
                                     supportingMaterialCount={invoiceItem.supporting_material_ids.length}

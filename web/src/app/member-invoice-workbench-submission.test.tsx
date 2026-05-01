@@ -392,7 +392,7 @@ function buildWorkbenchFetchMock(options: WorkbenchFetchOptions = {}) {
   });
 }
 
-function renderWorkbenchRoute(entry = "/member/invoices/workbench?taskId=TASK-OPEN") {
+function renderWorkbenchRoute(entry = "/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices") {
   const router = createMemoryRouter(routes, {
     initialEntries: [entry],
   });

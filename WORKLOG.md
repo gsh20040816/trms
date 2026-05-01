@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-05-01 11:43 - Cancel location-range invoice rule and restructure workbench lists
+
+### 完成内容
+- 完成任务“取消发票地点范围规则并统一工作台发票摘要”。
+- 后端调整 [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py)：
+  - `validate_invoice(...)` 不再生成 `invoice_competition_location_range`；
+  - 保留 `validate_competition_location_range(...)` 和其单元测试，作为后续若要重新启用规则时的独立规则边界，本轮不删除地点字段解析辅助代码。
+- 前端调整统一发票摘要组件 [invoice-summary-row.tsx](/home/gsh/workspace/TRMS/web/src/components/invoice-summary-row.tsx)：
+  - 发票摘要统一改为三行：第一行票号，第二行原始文件名，第三行金额、校验状态、附件数量；
+  - 管理员发票录入、材料审核/成员提醒、分摊确认、成员工作台和成员单票共享摘要均通过该组件展示金额与状态。
+- 调整成员工作台 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 改为左右分栏；
+  - 左侧类别从上到下为“工作状态”“上传页面”“发票查看页面”；
+  - 右侧只展示当前类别内容，发票查看页面继续展示发票列表，并保持点击进入单张发票处理页。
+- 更新样式 [styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)，为成员工作台侧栏和三行发票摘要补齐响应式布局。
+- 更新测试：
+  - 后端：[test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py)、[test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)、[test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)、[test_main_flow_e2e.py](/home/gsh/workspace/TRMS/tests/test_main_flow_e2e.py)
+  - 前端：[admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx)、[admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)、[admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)、[admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)、[member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)、[member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)、[member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+
+### 根因
+- `invoice_competition_location_range` 对真实材料依赖地点文本识别质量和宽泛字符串匹配，当前证据链不足以稳定判断“地点不匹配”，导致大量需要人工确认的噪音。
+- 管理员多个窄面板复用横向四列摘要时，长文件名和票号会挤占金额、状态、附件数量，造成与分摊确认页不一致且易溢出。
+- 成员工作台之前按页面纵向堆叠工作状态、上传和发票列表，虽然减少了单票详情堆叠，但仍没有形成稳定的左侧分类导航。
+
+### 验证结果
+- 已通过后端定向测试：
+  - `uv run pytest tests/test_invoice_validation_rules.py tests/test_invoices_api.py tests/test_exports_api.py tests/test_main_flow_e2e.py`
+  - 91 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning。
+- 已通过前端定向测试：
+  - `cd web && npm test -- admin-split-editor.test.tsx admin-corrections-reminders.test.tsx admin-invoice-editor.test.tsx admin-review-overview.test.tsx member-invoice-workbench-layout.test.tsx member-invoice-workbench.test.tsx member-invoice-detail.test.tsx`
+  - 7 个测试文件、23 个用例通过；Vitest 仍有既有 `--localstorage-file` 路径 warning。
+- 仓库级验证待本记录后执行 `./scripts/verify.sh`。
+
+### 风险与后续
+- 本轮取消的是地点范围规则在发票主校验链路中的输出，不删除规则函数本身；如果未来要重新启用，必须先基于真实数据定义更可靠的地点证据和容错策略。
+- 成员工作台旧的 `#member-workbench-missing-materials` / `#member-workbench-confirmations` hash 现在会落到“工作状态”，避免直接断页；缺失材料作为工作状态的一部分展示，不再作为独立左侧类别。
+
 ## 2026-05-01 02:10 - Remove internal identifiers from admin primary paths
 
 ### 完成内容

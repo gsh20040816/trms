@@ -145,18 +145,18 @@ describe("member legacy routes", () => {
     const statusRouter = renderLegacyRoute("/member/materials/status?taskId=TASK-OPEN");
 
     expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
-    expect(await screen.findByText("当前任务下还没有可查看的发票")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "需要你处理的事项" })).toBeInTheDocument();
     expect(statusRouter.state.location.pathname).toBe("/member/invoices/workbench");
-    expect(statusRouter.state.location.hash).toBe("#member-workbench-invoices");
+    expect(statusRouter.state.location.hash).toBe("#member-workbench-status");
 
     cleanup();
     clearMockSession();
     setMockSession("member");
     const missingRouter = renderLegacyRoute("/member/materials/missing?taskId=TASK-OPEN");
 
-    expect(await screen.findByText("当前任务没有待补的缺失材料")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "需要你处理的事项" })).toBeInTheDocument();
     expect(missingRouter.state.location.pathname).toBe("/member/invoices/workbench");
-    expect(missingRouter.state.location.hash).toBe("#member-workbench-missing-materials");
+    expect(missingRouter.state.location.hash).toBe("#member-workbench-status");
   });
 
   it("redirects legacy confirmation route to the workbench invoice list", async () => {

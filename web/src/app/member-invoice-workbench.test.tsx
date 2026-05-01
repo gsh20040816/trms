@@ -245,10 +245,13 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
   it("keeps the workbench concise and links invoice summary rows to the per-invoice page", async () => {
     mockCommonFetch();
-    const router = renderRoute();
+    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     expect(await screen.findByRole("heading", { name: "比赛报销项目" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "上传报销材料" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "用户工作台分类" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /工作状态/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /上传页面/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /发票查看页面/ })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "需要处理的发票列表" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "发票字段" })).not.toBeInTheDocument();
@@ -263,7 +266,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
   it("submits selected ready invoices from the workbench", async () => {
     mockCommonFetch();
-    renderRoute();
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     expect(await screen.findByText("未提交列表已选 0 / 1")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("批量选择发票 INV-READY-001"));
@@ -293,7 +296,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
         },
       ],
     }));
-    renderRoute();
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
     expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
@@ -356,7 +359,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
         },
       },
     }));
-    renderRoute();
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     const problemSection = await screen.findByRole("region", { name: "问题发票分组" });
     const summaryList = within(problemSection).getByRole("list", { name: "识别失败或待确认 发票摘要列表" });

@@ -102,7 +102,7 @@ type InvoiceQueueGroup = {
 
 type ReadyInvoiceSelectionListKey = "unsubmitted" | "submitted";
 
-type WorkbenchTab = "invoices" | "missing-materials" | "confirmations";
+type WorkbenchTab = "status" | "upload" | "invoices";
 
 type WorkbenchInvoiceItem = {
   material: TaskMemberMaterialStatusItem;
@@ -166,9 +166,9 @@ const RECENT_UPLOAD_AUTO_REFRESH_INTERVAL_MS = 2000;
 const RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS = 10;
 
 const WORKBENCH_TAB_HASHES: Record<WorkbenchTab, string> = {
+  status: "#member-workbench-status",
+  upload: "#member-workbench-upload",
   invoices: "#member-workbench-invoices",
-  "missing-materials": "#member-workbench-missing-materials",
-  confirmations: "#member-workbench-confirmations",
 };
 
 const INVOICE_QUEUE_GROUP_METADATA: Record<Exclude<InvoiceQueueGroupKey, "ready">, Omit<InvoiceQueueGroup, "items" | "key">> = {
@@ -243,13 +243,13 @@ function buildWorkbenchTaskAnchor(taskId: string, hash: string) {
 }
 
 function resolveWorkbenchTab(hash: string): WorkbenchTab {
-  if (hash === WORKBENCH_TAB_HASHES.confirmations) {
-    return "confirmations";
+  if (hash === WORKBENCH_TAB_HASHES.upload) {
+    return "upload";
   }
-  if (hash === WORKBENCH_TAB_HASHES["missing-materials"]) {
-    return "missing-materials";
+  if (hash === WORKBENCH_TAB_HASHES.invoices) {
+    return "invoices";
   }
-  return "invoices";
+  return "status";
 }
 
 function buildWorkbenchTabAnchor(taskId: string, tab: WorkbenchTab) {
@@ -331,7 +331,7 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
       id: "confirmations",
       title: "确认本人费用",
       detail: `当前有 ${report.counts.pending_confirmation_count + report.counts.missing_confirmation_count} 条费用还未完成确认。`,
-      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-confirmations"),
+      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-status"),
       tone: "info",
       label: "去确认区处理",
     });
@@ -1001,7 +1001,7 @@ function buildUploadProcessingSnapshot(
         steps: ["received", "recognized", "linked", "action_required"],
         transitioning: false,
         actionLabel: "去确认区处理",
-        actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-confirmations"),
+        actionHref: buildWorkbenchTaskAnchor(taskId, "#member-workbench-status"),
       };
     }
   }
@@ -1347,11 +1347,33 @@ export function MemberInvoiceWorkbenchPage() {
   );
   const hasRecentUploadTransitioningItems = recentUploadProcessingSnapshots.some((item) => item.transitioning);
   const canAutoRefreshRecentUploadStatus = (
-    activeTab === "invoices"
+    activeTab === "upload"
     && uploadResult !== null
     && hasRecentUploadTransitioningItems
     && uploadProcessingRefreshAttempts < RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS
   );
+  const workbenchNavigationItems = selectedTask
+    ? [
+      {
+        key: "status" as const,
+        label: "工作状态",
+        description: `${pendingActionCount > 0 ? `${pendingActionCount} 项待处理` : "当前无明显异常"}`,
+        to: buildWorkbenchTabAnchor(selectedTask.id, "status"),
+      },
+      {
+        key: "upload" as const,
+        label: "上传页面",
+        description: selectedTask.status === "open" ? "可继续补交材料" : `当前${formatTaskStatus(selectedTask.status)}`,
+        to: buildWorkbenchTabAnchor(selectedTask.id, "upload"),
+      },
+      {
+        key: "invoices" as const,
+        label: "发票查看页面",
+        description: `本人 ${workbenchState.status === "ready" ? workbenchState.items.length : 0} 张 / 共享 ${sharedInvoices.length} 张`,
+        to: buildWorkbenchTabAnchor(selectedTask.id, "invoices"),
+      },
+    ]
+    : [];
 
   useEffect(() => {
     if (!canAutoRefreshRecentUploadStatus) {
@@ -1648,6 +1670,7 @@ export function MemberInvoiceWorkbenchPage() {
         <InvoiceSummaryRow
           filename={item.material.original_filename}
           invoiceNumber={item.invoice?.invoice_number ?? null}
+          amountLabel={item.invoice ? formatCurrencyFromCents(item.invoice.amount_cents) : "金额待补录"}
           validationLabel={validationSummary.label}
           validationTone={validationSummary.tone}
           supportingMaterialCount={item.supportingMaterials.length}
@@ -1786,41 +1809,59 @@ export function MemberInvoiceWorkbenchPage() {
         <SectionCard title="正在汇总当前任务" description="正在整理你的材料、识别结果、金额分配和确认状态。" />
       ) : null}
 
-      {workbenchState.status === "ready" ? (
-        <SectionCard
-          title="需要你处理的事项"
-          description="系统只把无法自动判断、材料缺失或存在冲突的事项列出来。"
-          action={(
-            <StatusBadge tone={pendingActionCount > 0 ? (abnormalCount > 0 ? "warning" : "info") : "success"}>
-              {pendingActionCount > 0 ? `${pendingActionCount} 项仍待处理` : "当前无明显异常"}
-            </StatusBadge>
-          )}
-        >
-          <ul className="error-detail-list" aria-label="待处理事项列表">
-            {pendingActions.map((action) => (
-              <li key={action.id}>
-                <strong>{action.title}</strong>
-                <span>{action.detail}</span>
-                <Button component={Link} variant="text" size="small" to={action.to} sx={{ justifyContent: "flex-start", width: "fit-content", px: 0 }}>
-                  {action.label}
-                </Button>
-              </li>
+      {selectedTask ? (
+        <section className="member-workbench-layout" aria-label="用户工作台">
+          <aside className="member-workbench-sidebar" aria-label="用户工作台分类">
+            {workbenchNavigationItems.map((item) => (
+              <Button
+                key={item.key}
+                component={Link}
+                variant={activeTab === item.key ? "contained" : "text"}
+                to={item.to}
+                className="member-workbench-nav-button"
+              >
+                <span>{item.label}</span>
+                <small>{item.description}</small>
+              </Button>
             ))}
-          </ul>
-        </SectionCard>
-      ) : null}
+          </aside>
 
-      {selectedTask && activeTab === "invoices" ? (
-        <div id="member-workbench-upload">
-          <SectionCard
-            title="上传报销材料"
-            description="将发票、车票、住宿凭证、支付截图拖到这里。上传后系统会自动识别类型、金额、日期、费用类别和归属建议。"
-            action={(
-              <StatusBadge tone={selectedTask.status === "open" ? "info" : "neutral"}>
-                {selectedTask.status === "open" ? "当前可补交" : `当前${formatTaskStatus(selectedTask.status)}，不可补交`}
-              </StatusBadge>
-            )}
-          >
+          <div className="member-workbench-main">
+            {workbenchState.status === "ready" && activeTab === "status" ? (
+              <SectionCard
+                title="需要你处理的事项"
+                description="系统只把无法自动判断、材料缺失或存在冲突的事项列出来。"
+                action={(
+                  <StatusBadge tone={pendingActionCount > 0 ? (abnormalCount > 0 ? "warning" : "info") : "success"}>
+                    {pendingActionCount > 0 ? `${pendingActionCount} 项仍待处理` : "当前无明显异常"}
+                  </StatusBadge>
+                )}
+              >
+                <ul className="error-detail-list" aria-label="待处理事项列表">
+                  {pendingActions.map((action) => (
+                    <li key={action.id}>
+                      <strong>{action.title}</strong>
+                      <span>{action.detail}</span>
+                      <Button component={Link} variant="text" size="small" to={action.to} sx={{ justifyContent: "flex-start", width: "fit-content", px: 0 }}>
+                        {action.label}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </SectionCard>
+            ) : null}
+
+            {activeTab === "upload" ? (
+              <div id="member-workbench-upload">
+                <SectionCard
+                  title="上传报销材料"
+                  description="将发票、车票、住宿凭证、支付截图拖到这里。上传后系统会自动识别类型、金额、日期、费用类别和归属建议。"
+                  action={(
+                    <StatusBadge tone={selectedTask.status === "open" ? "info" : "neutral"}>
+                      {selectedTask.status === "open" ? "当前可补交" : `当前${formatTaskStatus(selectedTask.status)}，不可补交`}
+                    </StatusBadge>
+                  )}
+                >
             {selectedTask.status === "open" ? (
               <form
                 className="page-stack"
@@ -1866,38 +1907,38 @@ export function MemberInvoiceWorkbenchPage() {
                 当前任务已不在开放提交阶段。若仍需补材料，请根据下面的异常提示联系管理员重新开放任务，或使用专项页面查看历史记录。
               </p>
             )}
-          </SectionCard>
-        </div>
-      ) : null}
+                </SectionCard>
+              </div>
+            ) : null}
 
-      {activeTab === "invoices" && uploadSubmitError ? <ApiErrorNotice error={uploadSubmitError} /> : null}
+            {activeTab === "upload" && uploadSubmitError ? <ApiErrorNotice error={uploadSubmitError} /> : null}
 
-      {activeTab === "invoices" && uploadResult ? (
-        <SectionCard
-          title="最近上传处理状态"
-          description="这里不仅保留逐文件上传结果，还会继续展示系统对这批材料的识别、归票和后续待办状态。"
-          action={(
-            <div className="inline-actions">
-              <StatusBadge tone={uploadResult.status === "failed" ? "warning" : "success"}>
-                {uploadResult.status === "success"
-                  ? "全部成功"
-                  : uploadResult.status === "partial_success"
-                    ? "部分成功"
-                    : "全部失败"}
-              </StatusBadge>
-              <Button
-                type="button"
-                variant="outlined"
-                size="small"
-                onClick={() => {
-                  setWorkbenchReloadVersion((current) => current + 1);
-                }}
+            {activeTab === "upload" && uploadResult ? (
+              <SectionCard
+                title="最近上传处理状态"
+                description="这里不仅保留逐文件上传结果，还会继续展示系统对这批材料的识别、归票和后续待办状态。"
+                action={(
+                  <div className="inline-actions">
+                    <StatusBadge tone={uploadResult.status === "failed" ? "warning" : "success"}>
+                      {uploadResult.status === "success"
+                        ? "全部成功"
+                        : uploadResult.status === "partial_success"
+                          ? "部分成功"
+                          : "全部失败"}
+                    </StatusBadge>
+                    <Button
+                      type="button"
+                      variant="outlined"
+                      size="small"
+                      onClick={() => {
+                        setWorkbenchReloadVersion((current) => current + 1);
+                      }}
+                    >
+                      刷新处理状态
+                    </Button>
+                  </div>
+                )}
               >
-                刷新处理状态
-              </Button>
-            </div>
-          )}
-        >
           {formatRecognitionDispatchMessage(uploadResult.recognition_dispatch) ? (
             <p className="field-hint">{formatRecognitionDispatchMessage(uploadResult.recognition_dispatch)}</p>
           ) : null}
@@ -1961,32 +2002,32 @@ export function MemberInvoiceWorkbenchPage() {
               ))}
             </ul>
           ) : null}
-        </SectionCard>
-      ) : null}
+              </SectionCard>
+            ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 && sharedInvoices.length === 0 && pendingSupportingMaterialLinkageItems.length === 0 ? (
-        <EmptyState
-          title="当前任务下还没有可查看的发票"
-          description="先上传本人发票材料，或者等待任务内其他成员产生可共享查看的发票摘要。"
-          action={(
-            <Button component={Link} variant="contained" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
-              去上传区
-            </Button>
-          )}
-        />
-      ) : null}
+            {workbenchState.status === "ready" && activeTab === "invoices" && workbenchState.items.length === 0 && sharedInvoices.length === 0 && pendingSupportingMaterialLinkageItems.length === 0 ? (
+              <EmptyState
+                title="当前任务下还没有可查看的发票"
+                description="先上传本人发票材料，或者等待任务内其他成员产生可共享查看的发票摘要。"
+                action={(
+                  <Button component={Link} variant="contained" to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}>
+                    去上传区
+                  </Button>
+                )}
+              />
+            ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "invoices" && (workbenchState.items.length > 0 || sharedInvoices.length > 0 || pendingSupportingMaterialLinkageItems.length > 0) ? (
-        <section id="member-workbench-invoices" className="page-stack">
-          <SectionCard
-            title="需要处理的发票列表"
-            description="工作台只保留摘要列表；点击进入单张发票处理页面后再补字段、调分摊或处理附件。"
-            action={(
-              <StatusBadge tone={problemInvoiceCount > 0 ? "warning" : "success"}>
-                {problemInvoiceCount > 0 ? `${problemInvoiceCount} 张仍待处理` : "当前可提交结构稳定"}
-              </StatusBadge>
-            )}
-          >
+            {workbenchState.status === "ready" && activeTab === "invoices" && (workbenchState.items.length > 0 || sharedInvoices.length > 0 || pendingSupportingMaterialLinkageItems.length > 0) ? (
+              <section id="member-workbench-invoices" className="page-stack">
+                <SectionCard
+                  title="需要处理的发票列表"
+                  description="工作台只保留摘要列表；点击进入单张发票处理页面后再补字段、调分摊或处理附件。"
+                  action={(
+                    <StatusBadge tone={problemInvoiceCount > 0 ? "warning" : "success"}>
+                      {problemInvoiceCount > 0 ? `${problemInvoiceCount} 张仍待处理` : "当前可提交结构稳定"}
+                    </StatusBadge>
+                  )}
+                >
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">Invoice Queue</p>
@@ -2401,6 +2442,7 @@ export function MemberInvoiceWorkbenchPage() {
                       <InvoiceSummaryRow
                         filename={item.original_filename}
                         invoiceNumber={item.invoice_number}
+                        amountLabel={formatCurrencyFromCents(item.amount_cents)}
                         validationLabel={formatSharedInvoiceValidationLabel(item.validation_status)}
                         validationTone={mapValidationStatusToSummaryTone(item.validation_status)}
                         supportingMaterialCount={item.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
@@ -2422,14 +2464,13 @@ export function MemberInvoiceWorkbenchPage() {
                 </ul>
               </>
             ) : null}
-          </SectionCard>
-        </section>
-      ) : null}
+                </SectionCard>
+              </section>
+            ) : null}
 
-      {workbenchState.status === "ready" && activeTab === "missing-materials" ? (
-        <section id="member-workbench-missing-materials" className="member-status-list" aria-label="工作台缺失材料列表">
-          {missingMaterials.length > 0 ? (
-            missingMaterials.map((missingMaterial) => (
+            {workbenchState.status === "ready" && activeTab === "status" && missingMaterials.length > 0 ? (
+              <section id="member-workbench-missing-materials" className="member-status-list" aria-label="工作台缺失材料列表">
+                {missingMaterials.map((missingMaterial) => (
               <article
                 key={`${missingMaterial.invoice_id}:${missingMaterial.required_material_type}:${missingMaterial.source_rule_code}`}
                 className="task-card member-status-card"
@@ -2473,13 +2514,10 @@ export function MemberInvoiceWorkbenchPage() {
                   </Button>
                 </div>
               </article>
-            ))
-          ) : (
-            <EmptyState
-              title="当前任务没有待补的缺失材料"
-              description="至少在当前聚合结果里，系统没有发现仍阻塞复核的缺失项。"
-            />
-          )}
+                ))}
+              </section>
+            ) : null}
+          </div>
         </section>
       ) : null}
 

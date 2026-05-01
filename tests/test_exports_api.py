@@ -503,10 +503,10 @@ def test_task_administrator_can_export_invoice_details_csv_with_validation_summa
         "amount_cents": "12345",
         "expense_type": "railway",
         "submitter_id": "2250001",
-        "validation_status": "pending",
+        "validation_status": "passed",
         "failed_rule_codes": "",
-        "pending_rule_codes": "invoice_competition_location_range",
-        "abnormal_validation_messages": "缺少可用于比赛地点范围校验的地点信息，需人工确认",
+        "pending_rule_codes": "",
+        "abnormal_validation_messages": "",
     }
     assert rows[1] == {
         "invoice_number": "INV-001",
@@ -734,9 +734,9 @@ def test_task_administrator_can_export_finance_draft_json(tmp_path):
             "issue_date": "2026-11-04",
             "transaction_time": "2026-11-01T08:00:00",
             "submitter_id": "2250003",
-            "validation_status": "pending",
+            "validation_status": "passed",
             "failed_rule_codes": [],
-            "pending_rule_codes": ["invoice_competition_location_range"],
+            "pending_rule_codes": [],
             "split_items": [
                 {
                     "member_id": "2250003",
@@ -756,9 +756,9 @@ def test_task_administrator_can_export_finance_draft_json(tmp_path):
             "issue_date": "2026-11-04",
             "transaction_time": "2026-11-01T08:00:00",
             "submitter_id": "2250001",
-            "validation_status": "pending",
+            "validation_status": "passed",
             "failed_rule_codes": [],
-            "pending_rule_codes": ["invoice_competition_location_range"],
+            "pending_rule_codes": [],
             "split_items": [
                 {
                     "member_id": "2250001",

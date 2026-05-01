@@ -129,13 +129,6 @@ def validate_invoice(
             supporting_material_recognitions,
         ),
         validate_competition_time_range(invoice, task),
-        validate_competition_location_range(
-            invoice,
-            task,
-            recognition_task,
-            supporting_materials,
-            supporting_material_recognitions,
-        ),
     ]
 
 

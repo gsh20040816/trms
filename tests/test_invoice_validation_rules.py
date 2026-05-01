@@ -198,6 +198,24 @@ def test_duplicate_invoice_rule_covers_passed_and_failed_paths(
     assert duplicate_validation.evidence["duplicate_invoice_id"] == duplicate_invoice_id
 
 
+def test_invoice_validation_no_longer_emits_competition_location_range_rule():
+    results = validate_invoice(
+        make_invoice(expense_type=ExpenseType.RAILWAY),
+        make_task(),
+        duplicate_invoice_id=None,
+        recognition_task=make_recognition(
+            "material-invoice",
+            recognized_fields={
+                "departure_location": "Nanjing South Railway Station",
+                "arrival_location": "Suzhou Railway Station",
+            },
+        ),
+    )
+
+    rule_codes = [result.rule_code for result in results]
+    assert COMPETITION_LOCATION_RANGE_RULE_CODE not in rule_codes
+
+
 @pytest.mark.parametrize(
     ("supporting_materials", "expected_status"),
     [

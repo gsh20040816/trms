@@ -436,11 +436,12 @@ export function AdminCorrectionsRemindersPage() {
                       <InvoiceSummaryRow
                         filename={item.filename}
                         invoiceNumber={item.invoiceNumber}
+                        amountLabel={formatCurrencyFromCents(item.amountCents)}
                         validationLabel={item.abnormalValidations.some((validation) => validation.status === "failed") ? "校验失败" : "校验待确认"}
                         validationTone="warning"
                         supportingMaterialCount={0}
                         statusHint={`待确认分摊 ${item.pendingSplitCount} 条；异议分摊 ${item.disputedSplitCount} 条`}
-                        trailingContent={<StatusBadge tone="info">{formatCurrencyFromCents(item.amountCents)}</StatusBadge>}
+                        trailingContent={<StatusBadge tone="info">{formatExpenseType(item.expenseType)}</StatusBadge>}
                       />
                       <div className="admin-review-inline-metadata">
                         <span className="token-chip">{formatExpenseType(item.expenseType)}</span>

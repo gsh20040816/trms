@@ -387,7 +387,7 @@ def test_main_flow_e2e_scaffold_covers_submission_to_export_gate(tmp_path):
     review_body_after_split = review_summary_after_split.json()
     assert review_body_after_split["counts"]["material_count"] == 1
     assert review_body_after_split["counts"]["invoice_count"] == 1
-    assert review_body_after_split["counts"]["validation_count"] >= 3
+    assert review_body_after_split["counts"]["validation_count"] >= 2
     assert review_body_after_split["counts"]["missing_confirmation_count"] == 0
     assert review_body_after_split["counts"]["pending_confirmation_count"] == 0
 

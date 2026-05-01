@@ -555,6 +555,7 @@ export function AdminSplitEditorPage() {
                       <InvoiceSummaryRow
                         filename={material?.original_filename ?? invoice.invoice_number}
                         invoiceNumber={invoice.invoice_number}
+                        amountLabel={formatCurrencyFromCents(invoice.amount_cents)}
                         validationLabel={buildInvoiceSummaryValidation(item.invoiceItem).label}
                         validationTone={buildInvoiceSummaryValidation(item.invoiceItem).tone}
                         supportingMaterialCount={item.invoiceItem.supporting_material_ids.length}

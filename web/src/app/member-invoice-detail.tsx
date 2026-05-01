@@ -660,11 +660,12 @@ export function MemberInvoiceDetailPage() {
           <InvoiceSummaryRow
             filename={sharedInvoice.original_filename}
             invoiceNumber={sharedInvoice.invoice_number}
+            amountLabel={formatCurrencyFromCents(sharedInvoice.amount_cents)}
             validationLabel={formatSharedInvoiceValidationLabel(sharedInvoice.validation_status)}
             validationTone={mapSharedInvoiceValidationTone(sharedInvoice.validation_status)}
             supportingMaterialCount={sharedInvoice.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
             statusHint={`上传成员 ${sharedInvoice.submitter_id ? formatMemberLabel(sharedInvoice.submitter_id) : "未记录"}；费用类型 ${formatExpenseType(sharedInvoice.expense_type)}`}
-            trailingContent={<StatusBadge tone="info">{formatCurrencyFromCents(sharedInvoice.amount_cents)}</StatusBadge>}
+            trailingContent={<StatusBadge tone="info">{formatExpenseType(sharedInvoice.expense_type)}</StatusBadge>}
           />
         </SectionCard>
       ) : null}

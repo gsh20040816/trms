@@ -11,9 +11,9 @@ function jsonResponse(body: unknown) {
   });
 }
 
-function renderWorkbench() {
+function renderWorkbench(entry = "/member/invoices/workbench?taskId=TASK-OPEN") {
   const router = createMemoryRouter(routes, {
-    initialEntries: ["/member/invoices/workbench?taskId=TASK-OPEN"],
+    initialEntries: [entry],
   });
   act(() => {
     render(<RouterProvider router={router} />);
@@ -96,7 +96,10 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
     renderWorkbench();
 
     expect(await screen.findByRole("heading", { name: "比赛报销项目" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "上传报销材料" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "用户工作台分类" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /工作状态/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /上传页面/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /发票查看页面/ })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "识别结果" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "报销草稿汇总" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
@@ -229,7 +232,7 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
       throw new Error(`Unhandled request ${url}`);
     });
 
-    renderWorkbench();
+    renderWorkbench("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     const readySection = await screen.findByRole("region", { name: "未提交发票列表" });
     expect(within(readySection).getByRole("button", { name: /未提交发票 invoice\.pdf INV-001/ })).toBeInTheDocument();

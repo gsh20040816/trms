@@ -56,7 +56,7 @@ export const routes: RouteObject[] = [
           },
           {
             path: "materials/status",
-            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-invoices" />,
+            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-status" />,
           },
           {
             path: "invoices/workbench",
@@ -72,7 +72,7 @@ export const routes: RouteObject[] = [
           },
           {
             path: "materials/missing",
-            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-missing-materials" />,
+            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-status" />,
           },
           {
             path: "expenses/confirm",
