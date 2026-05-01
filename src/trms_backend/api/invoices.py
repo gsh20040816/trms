@@ -105,6 +105,7 @@ def build_invoice_router(
     supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
         material_repository=material_repository,
         invoice_repository=invoice_repository,
+        recognition_task_repository=recognition_task_repository,
     )
     invoice_split_default_service = InvoiceSplitDefaultService(
         split_repository=split_repository,

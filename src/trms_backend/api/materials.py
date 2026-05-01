@@ -118,6 +118,7 @@ def build_material_router(
     supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
         material_repository=material_repository,
         invoice_repository=invoice_repository,
+        recognition_task_repository=recognition_task_repository,
     )
     recognition_invoice_auto_create_service = RecognitionInvoiceAutoCreateService(
         task_repository=task_repository,
@@ -214,7 +215,10 @@ def build_material_router(
             recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
             material = material_repository.get(updated.material_id)
             if material is not None:
-                supporting_material_auto_link_service.auto_link_for_material(material)
+                supporting_material_auto_link_service.auto_link_for_material(
+                    material,
+                    recognition_task=updated,
+                )
             refresh_validations_for_material(
                 updated.material_id,
                 task_repository=task_repository,

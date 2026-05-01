@@ -495,6 +495,101 @@ def test_openai_classification_prompt_includes_tax_seal_and_direct_voucher_rules
     assert result.recognized_fields["is_reimbursement_voucher"].value is True
 
 
+def test_openai_itinerary_extraction_prompt_requests_local_transport_amount_and_time():
+    captured_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    build_classification_output(
+                                        document_family="itinerary",
+                                        material_type="itinerary",
+                                        expense_type_candidate="local_transport",
+                                        is_reimbursement_voucher=False,
+                                        classification_confidence=0.94,
+                                        field_confidence=0.94,
+                                    ),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "amount_cents": {
+                                            "value": 4250,
+                                            "confidence": 0.95,
+                                        },
+                                        "transaction_time": {
+                                            "value": "2026-04-28T09:30:00+08:00",
+                                            "confidence": 0.93,
+                                        },
+                                        "expense_type": {
+                                            "value": "local_transport",
+                                            "confidence": 0.94,
+                                        },
+                                    }
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    extraction_request = captured_requests[1]
+    extraction_user_prompt = json.loads(extraction_request["messages"][1]["content"])
+    assert extraction_user_prompt["selected_schema"]["name"] == "itinerary"
+    assert extraction_user_prompt["selected_schema"]["allowed_fields"] == [
+        "transaction_time",
+        "amount_cents",
+        "location",
+        "expense_type",
+        "trip_route",
+        "transport_mode",
+        "cabin_class",
+        "departure_airport_code",
+        "arrival_airport_code",
+        "return_departure_airport_code",
+        "return_arrival_airport_code",
+    ]
+    assert (
+        "For itinerary materials that describe local_transport trips, extract amount_cents "
+        "and transaction_time whenever the trip record shows them, and keep "
+        "expense_type.value=local_transport."
+    ) in extraction_user_prompt["instructions"]
+    assert result.recognized_fields["amount_cents"].value == 4250
+    assert result.raw_response["selected_schema"]["name"] == "itinerary"
+
+
 def test_openai_compatible_recognition_client_runs_airfare_route_stage_for_airfare_invoice():
     captured_requests = []
 

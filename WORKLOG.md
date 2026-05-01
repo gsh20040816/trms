@@ -1,5 +1,64 @@
 # WORKLOG
 
+## 2026-05-01 23:34 - Prioritize local transport e-invoice auto-linking for itineraries
+
+### 完成内容
+- 完成任务“分析市内交通费用材料归票策略，并让行程单优先自动归属到对应电子发票”。
+- 将归票策略直接落实到 [supporting_material_auto_link.py](/home/gsh/workspace/TRMS/src/trms_backend/application/supporting_material_auto_link.py)：
+  - 仅当 `itinerary` 的最新识别结果明确为 `local_transport` 或 `expense_type_candidate=local_transport` 时，才进入市内交通归票优先逻辑；
+  - 候选发票先收敛为“同任务、同提交人、费用类型为 `local_transport`”的发票，避免把市内交通行程单误挂到铁路、住宿等其他票据；
+  - 取消 `itinerary` 在“刚上传、尚未识别”阶段的预归票，避免出现 `发票 A -> 行程单 B -> 行程单 A -> 发票 B` 时把 `行程单 B` 先错误挂到 `发票 A`；
+  - 只有在识别结果给出正向证据后才允许自动归票；当前正向证据为“行程单金额精确匹配发票金额”，其次是“行程单日期与发票交易日期同日”；
+  - 若仍存在并列最高分，则明确不自动绑定，保留人工处理，避免误绑。
+- 统一补齐自动归票触发点：
+  - [recognition_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_async_jobs.py)、[materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)、[invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py)、[recognitions.py](/home/gsh/workspace/TRMS/src/trms_backend/api/recognitions.py) 现在都为自动归票服务注入识别仓库；
+  - 管理员手动回填/重放识别结果后，也会复用同一归票策略刷新附件归属。
+- 更新识别提示词 [recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)：
+  - `itinerary` 结构化提取新增 `amount_cents`；
+  - 提示词明确要求市内交通行程单尽量抽取金额和时间，并保持 `expense_type=local_transport`，为多张网约车电子发票并存时提供更稳定的自动归票证据。
+- 新增/更新测试：
+  - [test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py) 覆盖“先有行程单、后建多类发票”时优先归属到市内交通发票；
+  - [test_recognition_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_recognition_async_jobs.py) 覆盖“先有多张发票、后识别行程单”的自动归票，以及多张市内交通发票并存时拒绝误绑；
+  - [test_recognition_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_recognition_async_jobs.py) 额外覆盖用户指出的 `发票 A -> 行程单 B -> 行程单 A -> 发票 B` 时序，确认 `行程单 B` 不会在预识别阶段误挂到 `发票 A`，且 `发票 B` 成票后会正确回补；
+  - [test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py) 覆盖 `itinerary` 提示词已要求提取市内交通金额/时间。
+
+### 根因
+- 上传接口在分发识别任务之前，会先按用户显式 `material_type` 对新材料做一次自动归票；对 `itinerary` 而言，这一步发生在识别之前，没有金额、日期等可比对证据。
+- 这会在 `发票 A -> 行程单 B -> 行程单 A -> 发票 B` 这类真实时序里，把 `行程单 B` 因“当前只有 1 张候选发票”而错误挂到 `发票 A`，后续即使 `发票 B` 成票也不会自动纠正。
+- 另外，识别完成后的自动归票路径如果再回库读取最新识别结果，会保留一个短暂时序窗；本轮已改为把当前 `updated recognition` 直接透传给自动归票服务，避免同轮识别后退回旧视图。
+
+### 归票策略
+- 适用范围：只对 `itinerary` 且识别为 `local_transport` 的材料启用优先归票。
+- 证据优先级：
+  - 1. 候选发票必须是同提交人的 `local_transport` 发票；
+  - 2. 行程单必须先完成识别，未识别前不自动归票；
+  - 3. 行程单 `amount_cents` 与发票金额完全一致时优先；
+  - 4. 行程单日期与发票交易日期同日时进一步加分。
+- 冲突处理：
+  - 若没有正向证据，即使当前只剩 1 张候选市内交通发票，也不自动归属；
+  - 若多张票分数并列，则不自动归属。
+- 误绑防护：
+  - 不做文件名模糊匹配；
+  - 不做路线文本模糊匹配；
+  - 在没有收敛到唯一最优候选前，不跨费用类型自动挂票。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_async_jobs.py tests/test_invoices_api.py -k 'local_transport or backfills_itinerary_link_when_invoice_is_recognized_later or mislink_future_itinerary_to_existing_invoice'`
+  - 6 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 510 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 当前自动归票仍没有引入路线文本相似度或平台订单号级别证据；这是有意收口，优先避免误绑，而不是为了更高命中率引入脆弱模糊匹配。
+- 若后续发现同一成员同日同金额的网约车发票仍频繁冲突，下一步应优先补充“平台订单号/行程序号”级识别字段，而不是直接放宽自动归票条件。
+
 ## 2026-05-01 22:48 - Split member material detail pages by recognized material type
 
 ### 完成内容

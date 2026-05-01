@@ -32,6 +32,7 @@ from test_tasks_api import (
     admin_auth_headers,
     create_invoice,
     create_task as create_admin_task,
+    valid_task_payload,
 )
 
 
@@ -475,3 +476,421 @@ def test_recognition_async_processor_auto_links_default_upload_after_support_typ
     )
     linked_invoices = invoice_repository.list_by_supporting_material(support_material_id)
     assert [invoice.material_id for invoice in linked_invoices] == [invoice_material_id]
+
+
+def test_recognition_async_processor_prioritizes_local_transport_invoice_for_itinerary(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"fee_categories": ["railway", "local_transport"]},
+    )
+    client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    task_id = task["id"]
+    railway_material_id = upload_material(client, task_id, material_type="invoice")
+    local_transport_material_id = upload_material(client, task_id, material_type="invoice")
+    create_invoice(
+        client,
+        railway_material_id,
+        expense_type="railway",
+        amount_cents=12345,
+        invoice_number="ASYNC-RAIL-001",
+    )
+    local_transport_invoice_id = create_invoice(
+        client,
+        local_transport_material_id,
+        expense_type="local_transport",
+        amount_cents=4250,
+        invoice_number="ASYNC-RIDE-001",
+        seller_name="滴滴出行",
+    )
+    itinerary_material_id = upload_material(client, task_id, material_type="itinerary")
+    processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="itinerary",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=4250,
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                    "transaction_time": RecognitionFieldResult(
+                        value="2026-11-01T08:00:00+00:00",
+                        source="ai",
+                        confidence=0.94,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert processor.run_once() == 1
+
+    invoice_repository = SqlAlchemyInvoiceRepository(
+        build_session_factory(runtime_config.database_url)
+    )
+    linked_invoices = invoice_repository.list_by_supporting_material(itinerary_material_id)
+    assert [invoice.id for invoice in linked_invoices] == [local_transport_invoice_id]
+
+
+def test_recognition_async_processor_does_not_auto_link_ambiguous_local_transport_itinerary(
+    tmp_path,
+):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"fee_categories": ["local_transport"]},
+    )
+    client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    task_id = task["id"]
+    first_invoice_material_id = upload_material(client, task_id, material_type="invoice")
+    second_invoice_material_id = upload_material(client, task_id, material_type="invoice")
+    create_invoice(
+        client,
+        first_invoice_material_id,
+        expense_type="local_transport",
+        amount_cents=4250,
+        invoice_number="ASYNC-RIDE-101",
+        seller_name="滴滴出行",
+    )
+    create_invoice(
+        client,
+        second_invoice_material_id,
+        expense_type="local_transport",
+        amount_cents=4250,
+        invoice_number="ASYNC-RIDE-102",
+        seller_name="高德出行",
+    )
+    itinerary_material_id = upload_material(client, task_id, material_type="itinerary")
+    processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="itinerary",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert processor.run_once() == 1
+
+    invoice_repository = SqlAlchemyInvoiceRepository(
+        build_session_factory(runtime_config.database_url)
+    )
+    linked_invoices = invoice_repository.list_by_supporting_material(itinerary_material_id)
+    assert linked_invoices == []
+
+
+def test_recognition_async_processor_backfills_itinerary_link_when_invoice_is_recognized_later(
+    tmp_path,
+):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"fee_categories": ["local_transport"]},
+    )
+    client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    task_id = task["id"]
+    itinerary_material_id = upload_material(client, task_id, material_type="itinerary")
+    itinerary_processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="itinerary",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=4250,
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert itinerary_processor.run_once() == 1
+
+    invoice_repository = SqlAlchemyInvoiceRepository(
+        build_session_factory(runtime_config.database_url)
+    )
+    assert invoice_repository.list_by_supporting_material(itinerary_material_id) == []
+
+    invoice_material_id = upload_material(client, task_id, material_type="invoice")
+    invoice_processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="invoice",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "invoice_number": RecognitionFieldResult(
+                        value="ASYNC-RIDE-LATE-001",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "buyer_name": RecognitionFieldResult(
+                        value="同济大学",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "tax_number": RecognitionFieldResult(
+                        value="12100000425006117D",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=4250,
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert invoice_processor.run_once() == 1
+
+    linked_invoices = invoice_repository.list_by_supporting_material(itinerary_material_id)
+    assert [invoice.material_id for invoice in linked_invoices] == [invoice_material_id]
+
+
+def test_recognition_async_processor_does_not_mislink_future_itinerary_to_existing_invoice(
+    tmp_path,
+):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"fee_categories": ["local_transport"]},
+    )
+    client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    task_id = task["id"]
+    invoice_a_material_id = upload_material(client, task_id, material_type="invoice")
+    invoice_a_processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="invoice",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "invoice_number": RecognitionFieldResult(
+                        value="ASYNC-RIDE-A",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "buyer_name": RecognitionFieldResult(
+                        value="同济大学",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "tax_number": RecognitionFieldResult(
+                        value="12100000425006117D",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "seller_name": RecognitionFieldResult(
+                        value="滴滴出行",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=3000,
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert invoice_a_processor.run_once() == 1
+
+    itinerary_b_material_id = upload_material(client, task_id, material_type="itinerary")
+    itinerary_b_processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="itinerary",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=5000,
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert itinerary_b_processor.run_once() == 1
+
+    invoice_repository = SqlAlchemyInvoiceRepository(
+        build_session_factory(runtime_config.database_url)
+    )
+    invoice_a_id = invoice_repository.get_by_material(invoice_a_material_id).id
+    assert invoice_repository.list_by_supporting_material(itinerary_b_material_id) == []
+
+    itinerary_a_material_id = upload_material(client, task_id, material_type="itinerary")
+    itinerary_a_processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="itinerary",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=3000,
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert itinerary_a_processor.run_once() == 1
+    linked_to_invoice_a = invoice_repository.list_by_supporting_material(itinerary_a_material_id)
+    assert [invoice.id for invoice in linked_to_invoice_a] == [invoice_a_id]
+
+    invoice_b_material_id = upload_material(client, task_id, material_type="invoice")
+    invoice_b_processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=FakeRecognitionLlmClient(
+            RecognitionLlmExtractionResult(
+                raw_response={"provider": "fake-worker"},
+                recognized_fields={
+                    "material_type": RecognitionFieldResult(
+                        value="invoice",
+                        source="ai",
+                        confidence=0.99,
+                    ),
+                    "expense_type": RecognitionFieldResult(
+                        value="local_transport",
+                        source="ai",
+                        confidence=0.97,
+                    ),
+                    "invoice_number": RecognitionFieldResult(
+                        value="ASYNC-RIDE-B",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "buyer_name": RecognitionFieldResult(
+                        value="同济大学",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "tax_number": RecognitionFieldResult(
+                        value="12100000425006117D",
+                        source="ai",
+                        confidence=0.98,
+                    ),
+                    "amount_cents": RecognitionFieldResult(
+                        value=5000,
+                        source="ai",
+                        confidence=0.96,
+                    ),
+                },
+            )
+        ),
+    )
+
+    assert invoice_b_processor.run_once() == 1
+
+    linked_to_invoice_b = invoice_repository.list_by_supporting_material(itinerary_b_material_id)
+    assert [invoice.material_id for invoice in linked_to_invoice_b] == [invoice_b_material_id]

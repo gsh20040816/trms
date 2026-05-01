@@ -1912,6 +1912,73 @@ def test_create_invoice_auto_links_existing_same_submitter_supporting_materials_
     ]
 
 
+def test_create_invoice_prioritizes_local_transport_itinerary_when_multiple_invoice_candidates_exist(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"fee_categories": ["railway", "local_transport"]},
+    )
+    client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    task_id = task["id"]
+    railway_material_id = upload_material(client, task_id, filename="railway.pdf")
+    local_transport_material_id = upload_material(client, task_id, filename="taxi.pdf")
+    itinerary_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="itinerary",
+        filename="ride-itinerary.png",
+    )
+    set_recognition_result(
+        client,
+        itinerary_material_id,
+        document_type="itinerary",
+        recognized_fields={
+            "expense_type": {
+                "value": "local_transport",
+                "source": "ai",
+                "confidence": 0.96,
+                "status": "recognized",
+            },
+            "amount_cents": {
+                "value": 4250,
+                "source": "ai",
+                "confidence": 0.95,
+                "status": "recognized",
+            },
+        },
+    )
+    create_invoice_for_material(
+        client,
+        railway_material_id,
+        expense_type="railway",
+        amount_cents=12345,
+        invoice_number="INV-RAIL-001",
+    )
+
+    response = client.post(
+        f"/api/materials/{local_transport_material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "invoice_number": "INV-RIDE-001",
+            "seller_name": "滴滴出行",
+            "amount_cents": 4250,
+            "expense_type": "local_transport",
+        },
+    )
+
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+    listed = client.get(f"/api/invoices/{invoice_id}/supporting-materials")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [itinerary_material_id]
+
+
 def test_detach_supporting_material_removes_invoice_association(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)

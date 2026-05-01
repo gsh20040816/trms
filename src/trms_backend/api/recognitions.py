@@ -63,16 +63,18 @@ def build_recognition_router(
         auth_repository
     )
     metrics = metrics_collector or NoOpMetricsCollector()
+    supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        recognition_task_repository=recognition_task_repository,
+    )
     recognition_invoice_auto_create_service = RecognitionInvoiceAutoCreateService(
         task_repository=task_repository,
         material_repository=material_repository,
         invoice_repository=invoice_repository,
         split_repository=split_repository,
         confirmation_repository=confirmation_repository,
-        supporting_material_auto_link_service=SupportingMaterialAutoLinkService(
-            material_repository=material_repository,
-            invoice_repository=invoice_repository,
-        ),
+        supporting_material_auto_link_service=supporting_material_auto_link_service,
     )
 
     def ensure_recognition_task_manager_access(
@@ -226,6 +228,12 @@ def build_recognition_router(
                 detail="recognition task not found",
             )
         recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
+        material = material_repository.get(updated.material_id)
+        if material is not None:
+            supporting_material_auto_link_service.auto_link_for_material(
+                material,
+                recognition_task=updated,
+            )
         refresh_validations_for_material(
             updated.material_id,
             task_repository=task_repository,
@@ -240,7 +248,6 @@ def build_recognition_router(
             failure_stage=updated.failure.stage if updated.failure is not None else None,
         )
         if payload.result is not None or payload.failure is not None:
-            material = material_repository.get(updated.material_id)
             record_recognition_result_audit(
                 audit_log_repository,
                 actor_id=identity.actor_id,
@@ -307,6 +314,12 @@ def build_recognition_router(
             ) from error
 
         recognition_invoice_auto_create_service.try_upsert_invoice_from_recognition(updated)
+        material = material_repository.get(updated.material_id)
+        if material is not None:
+            supporting_material_auto_link_service.auto_link_for_material(
+                material,
+                recognition_task=updated,
+            )
         refresh_validations_for_material(
             updated.material_id,
             task_repository=task_repository,

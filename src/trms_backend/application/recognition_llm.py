@@ -323,6 +323,7 @@ class RecognitionOrderScreenshotExtractionOutput(BaseModel):
 
 class RecognitionItineraryExtractionOutput(BaseModel):
     transaction_time: RecognitionDatetimeField | None = None
+    amount_cents: RecognitionIntegerField | None = None
     location: RecognitionTextField | None = None
     expense_type: RecognitionExpenseTypeField | None = None
     trip_route: RecognitionTextField | None = None
@@ -395,8 +396,8 @@ _ORDER_SCREENSHOT_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
 _ITINERARY_EXTRACTION_SCHEMA = RecognitionExtractionSchemaDefinition(
     name="itinerary",
     description=(
-        "For travel itineraries and ticket details. Extract time, location, expense "
-        "type, route, transport mode, and cabin or seat class."
+        "For travel itineraries and ticket details. Extract time, fare amount, location, "
+        "expense type, route, transport mode, and cabin or seat class."
     ),
     output_model=RecognitionItineraryExtractionOutput,
 )
@@ -867,6 +868,7 @@ def _build_extraction_chat_completions_payload(
             "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
             "For local_transport electronic invoices or e-tickets, set expense_type.value=local_transport and populate is_rideshare.value=true when that field is available in the selected schema.",
             "For local_transport electronic invoices, extract the invoice_number when it is visible; do not omit it just because the document is a platform-issued electronic ticket.",
+            "For itinerary materials that describe local_transport trips, extract amount_cents and transaction_time whenever the trip record shows them, and keep expense_type.value=local_transport.",
         ],
     }
     user_prompt_json = json.dumps(user_prompt, ensure_ascii=False)
@@ -892,6 +894,7 @@ def _build_extraction_chat_completions_payload(
                     "For expense_type, choose only a TRMS enum value that is directly supported by the document evidence. "
                     "For local_transport electronic invoices or e-tickets, choose expense_type='local_transport' and populate is_rideshare=true when that field is available. "
                     "For local_transport electronic invoices, extract a visible invoice_number instead of omitting it as a platform ticket identifier. "
+                    "For itinerary materials that describe local_transport trips, extract amount_cents and transaction_time whenever the trip record shows them, and keep expense_type='local_transport'. "
                     "For scanned PDFs or photos, rely only on the visible content in the supplied file, not on filename guesses."
                 ),
             },

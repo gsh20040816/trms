@@ -65,6 +65,7 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
         self._supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
             material_repository=material_repository,
             invoice_repository=invoice_repository,
+            recognition_task_repository=recognition_task_repository,
         )
         self._recognition_invoice_auto_create_service = RecognitionInvoiceAutoCreateService(
             task_repository=task_repository,
@@ -121,7 +122,10 @@ class RecognitionAsyncJobProcessor(AsyncJobProcessor):
             if _recognizes_auto_linkable_supporting_material(updated):
                 material = self._material_repository.get(updated.material_id)
                 if material is not None:
-                    self._supporting_material_auto_link_service.auto_link_for_material(material)
+                    self._supporting_material_auto_link_service.auto_link_for_material(
+                        material,
+                        recognition_task=updated,
+                    )
         refresh_validations_for_material(
             updated.material_id,
             task_repository=self._task_repository,
