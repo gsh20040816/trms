@@ -22,12 +22,13 @@ import type {
 } from "../lib/api/types";
 import { formatCurrencyFromCents, formatInvoiceAmountFromCents } from "../lib/currency";
 import {
+  buildTaskMemberSummaryMap,
   describeRecognitionFailure,
   formatConfirmationStatus,
   formatExpenseType,
   formatFieldLabel,
   formatMaterialType,
-  formatMemberLabel,
+  formatTaskMemberLabel,
   formatRecognitionStatus,
   formatSubmissionChannel,
   formatTaskStatus,
@@ -368,6 +369,7 @@ export function AdminReviewOverviewPage() {
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleSummary = state.status === "ready" && !isForeignTask ? state.reviewSummary : null;
   const visibleOverdueSummary = state.status === "ready" && !isForeignTask ? state.overdueSummary : null;
+  const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
   const selectedDetailItem = visibleSummary
     ? detailItems.find((item) => item.materialItem.material.id === selectedMaterialId) ?? null
     : null;
@@ -583,7 +585,7 @@ export function AdminReviewOverviewPage() {
                 <ul className="token-list" aria-label="未完成确认成员">
                   {outstandingMemberIds.map((memberId) => (
                     <li key={memberId} className="token-chip">
-                      {formatMemberLabel(memberId)}
+                      {formatTaskMemberLabel(memberId, memberSummaryMap)}
                     </li>
                   ))}
                 </ul>
@@ -595,7 +597,7 @@ export function AdminReviewOverviewPage() {
                 <ul className="token-list" aria-label="逾期未确认成员">
                   {visibleOverdueSummary.overdue_member_ids.map((memberId) => (
                     <li key={memberId} className="token-chip">
-                      {formatMemberLabel(memberId)}
+                      {formatTaskMemberLabel(memberId, memberSummaryMap)}
                     </li>
                   ))}
                 </ul>
@@ -608,7 +610,7 @@ export function AdminReviewOverviewPage() {
                   {disputedItems.map(({ invoiceNumber, split, confirmation }) => (
                     <li key={split.id}>
                       <strong>
-                        {formatMemberLabel(split.member_id)} / {invoiceNumber} / {formatCurrencyFromCents(split.amount_cents)}
+                        {formatTaskMemberLabel(split.member_id, memberSummaryMap)} / {invoiceNumber} / {formatCurrencyFromCents(split.amount_cents)}
                       </strong>
                       <span>{confirmation.dispute_reason ?? "未填写异议原因"}</span>
                       <span>提交时间：{formatDateTime(confirmation.updated_at)}</span>
@@ -647,7 +649,7 @@ export function AdminReviewOverviewPage() {
                     <div className="task-meta-grid admin-review-meta-grid">
                       <div>
                         <dt>成员提示</dt>
-                        <dd>{material.submitter_id_hint ? formatMemberLabel(material.submitter_id_hint) : "未提供"}</dd>
+                        <dd>{material.submitter_id_hint ? formatTaskMemberLabel(material.submitter_id_hint, memberSummaryMap) : "未提供"}</dd>
                       </div>
                       <div>
                         <dt>上传时间</dt>
@@ -708,7 +710,7 @@ export function AdminReviewOverviewPage() {
                           <div className="admin-review-inline-metadata">
                             <span className="token-chip">{formatMaterialType(material.material_type)}</span>
                             <span className="token-chip">{formatSubmissionChannel(material.channel)}</span>
-                            <span className="token-chip">{formatMemberLabel(material.submitter_id)}</span>
+                            <span className="token-chip">{formatTaskMemberLabel(material.submitter_id, memberSummaryMap)}</span>
                           </div>
                           <dl className="task-meta-grid invoice-editor-summary-grid">
                             <div>
@@ -764,7 +766,7 @@ export function AdminReviewOverviewPage() {
                   <div className="admin-review-inline-metadata">
                     <span className="token-chip">{formatMaterialType(selectedMaterial.material_type)}</span>
                     <span className="token-chip">{formatSubmissionChannel(selectedMaterial.channel)}</span>
-                    <span className="token-chip">{formatMemberLabel(selectedMaterial.submitter_id)}</span>
+                    <span className="token-chip">{formatTaskMemberLabel(selectedMaterial.submitter_id, memberSummaryMap)}</span>
                     {selectedInvoice ? (
                       <span className="token-chip">{formatExpenseType(selectedInvoice.invoice.expense_type)}</span>
                     ) : null}
@@ -1026,7 +1028,7 @@ export function AdminReviewOverviewPage() {
                               {selectedInvoice.splits.map(({ split, confirmation }) => (
                                 <li key={split.id}>
                                   <strong>
-                                    {formatMemberLabel(split.member_id)} / {formatCurrencyFromCents(split.amount_cents)}
+                                    {formatTaskMemberLabel(split.member_id, memberSummaryMap)} / {formatCurrencyFromCents(split.amount_cents)}
                                   </strong>
                                   <StatusBadge tone={buildConfirmationBadgeTone(confirmation)}>
                                     {confirmation ? formatConfirmationStatus(confirmation.status) : "未提交确认"}

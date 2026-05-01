@@ -17,6 +17,7 @@ import {
 import { useSnackbar } from "../components/use-snackbar";
 import { ApiError } from "../lib/api/client";
 import { trmsApi } from "../lib/api/trms";
+import { formatUserIdentityLabel } from "../lib/ui-text";
 import type {
   ConfirmationStatus,
   ExpenseDetailItem,
@@ -374,7 +375,7 @@ export function MemberExpenseConfirmationPage() {
           eyebrow="费用确认"
           title="成员费用确认"
           description="在单任务上下文中核对当前分到自己名下的费用、关联附件和确认状态。"
-          meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
+          meta={`当前成员：${formatUserIdentityLabel(session)}`}
           actions={(
             <div className="page-actions">
               <Button
@@ -467,7 +468,7 @@ export function MemberExpenseConfirmationPage() {
                 </div>
                 <div>
                   <dt>当前成员</dt>
-                  <dd>{session.displayName}{session.memberCode ? `（${session.memberCode}）` : ""}</dd>
+                  <dd>{formatUserIdentityLabel(session)}</dd>
                 </div>
               </dl>
             ) : null}

@@ -128,6 +128,10 @@ describe("admin task detail page", () => {
           competition_end_date: "2026-05-03",
           deadline: "2026-05-10T18:00:00+08:00",
           member_ids: ["2250001", "2250002"],
+          member_summaries: [
+            { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+            { member_id: "2250002", username: "member2", display_name: "李四", student_id: "2250002" },
+          ],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
           project_info: "Project A",
@@ -194,8 +198,8 @@ describe("admin task detail page", () => {
     );
 
     const members = within(screen.getByLabelText("任务成员名单"));
-    expect(members.getByText("成员 2250001")).toBeInTheDocument();
-    expect(members.getByText("成员 2250002")).toBeInTheDocument();
+    expect(members.getByText("张三 / member1 / 2250001")).toBeInTheDocument();
+    expect(members.getByText("李四 / member2 / 2250002")).toBeInTheDocument();
 
     const categories = within(screen.getByLabelText("任务费用类别"));
     expect(categories.getByText("参赛费")).toBeInTheDocument();

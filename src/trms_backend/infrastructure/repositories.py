@@ -267,6 +267,22 @@ class SqlAlchemyAuthRepository(AuthRepository):
             row, active_role = record
             return _authenticated_user_from_row(row, active_role=UserRole(active_role))
 
+    def list_users_by_member_identifiers(self, identifiers: list[str]) -> list[AuthenticatedUser]:
+        normalized_identifiers = [identifier.strip() for identifier in identifiers if identifier.strip()]
+        if not normalized_identifiers:
+            return []
+
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(select(UserAccountRow)).all()
+
+        matched_users = [
+            _authenticated_user_from_row(row)
+            for row in rows
+            if row.member_code in normalized_identifiers or row.actor_id in normalized_identifiers
+        ]
+        matched_users.sort(key=lambda user: normalized_identifiers.index(user.member_code or user.actor_id))
+        return matched_users
+
     def create_session(self, *, user_id: str, token_hash: str, active_role: UserRole) -> None:
         with session_scope(self._session_factory) as session:
             session.add(

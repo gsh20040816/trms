@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 
 import { useSnackbar } from "../components/use-snackbar";
 import { ApiError } from "../lib/api/client";
+import { formatUserIdentityLabel } from "../lib/ui-text";
 import { summarizeUnknownError } from "../lib/api/errors";
 import {
   buildLoginPath,
@@ -288,9 +289,9 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
                     fullWidth
                   />
                   <TextField
-                    label="成员编号"
+                    label="学号"
                     name="member_code"
-                    placeholder="仅成员账号需要"
+                    placeholder="仅成员账号需要，例如 2250001"
                     value={memberCode}
                     onChange={(event) => setMemberCode(event.target.value)}
                     disabled={role !== "member"}
@@ -388,8 +389,7 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
                 当前已登录
               </Typography>
               <Typography variant="body1" sx={{ mt: 1 }}>
-                你当前以 {activeRoleRoute.loginLabel} 身份登录，姓名为 {session.displayName}
-                {session.memberCode ? `（${session.memberCode}）` : ""}。
+                你当前以 {activeRoleRoute.loginLabel} 身份登录，身份信息为 {formatUserIdentityLabel(session)}。
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 {session.isMock

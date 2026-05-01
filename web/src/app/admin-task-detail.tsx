@@ -24,7 +24,7 @@ import type {
   TaskStatus,
   TaskUpdateInput,
 } from "../lib/api/types";
-import { formatExpenseType, formatMemberLabel, formatTaskStatus } from "../lib/ui-text";
+import { buildTaskMemberSummaryMap, formatExpenseType, formatTaskMemberLabel, formatTaskStatus } from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -353,6 +353,7 @@ export function AdminTaskDetailPage() {
   const isForeignTask = task ? task.administrator_id !== session.actorId : false;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleReadiness = state.status === "ready" && !isForeignTask ? state.readiness : null;
+  const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
   const isDraftEditable = visibleTask?.status === "draft";
 
   function updateField<Key extends keyof TaskEditFormState>(
@@ -851,7 +852,7 @@ export function AdminTaskDetailPage() {
                   <ul className="token-list" aria-label="任务成员名单">
                     {formState.memberIds.map((memberId) => (
                       <li key={memberId} className="token-chip">
-                        {formatMemberLabel(memberId)}
+                        {formatTaskMemberLabel(memberId, memberSummaryMap)}
                       </li>
                     ))}
                   </ul>

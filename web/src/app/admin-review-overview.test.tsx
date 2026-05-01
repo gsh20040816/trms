@@ -94,6 +94,11 @@ describe("AdminReviewOverviewPage", () => {
           competition_end_date: "2026-05-03",
           deadline: "2026-05-10T18:00:00+08:00",
           member_ids: ["2250001", "2250002", "2250003"],
+          member_summaries: [
+            { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+            { member_id: "2250002", username: "member2", display_name: "李四", student_id: "2250002" },
+            { member_id: "2250003", username: "member3", display_name: "王五", student_id: "2250003" },
+          ],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
           project_info: "ACM 竞赛项目",
@@ -365,7 +370,7 @@ describe("AdminReviewOverviewPage", () => {
 
     const pendingList = within(screen.getByLabelText("待归属材料列表"));
     expect(pendingList.getByText("pending-pay.pdf")).toBeInTheDocument();
-    expect(pendingList.getByText("成员 2250003")).toBeInTheDocument();
+    expect(pendingList.getByText("王五 / member3 / 2250003")).toBeInTheDocument();
     expect(pendingList.queryByText(/TASK-REVIEW/)).not.toBeInTheDocument();
     expect(pendingList.queryByText(/材料编号/)).not.toBeInTheDocument();
 

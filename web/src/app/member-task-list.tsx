@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
+import { formatUserIdentityLabel } from "../lib/ui-text";
 import type { ReimbursementTask, TaskStatus } from "../lib/api/types";
 import { formatTaskStatus } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
@@ -224,8 +225,7 @@ export function MemberTaskListPage() {
               先看我参与的任务，再进入单任务发票工作台处理上传、补材料和费用确认。
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-              当前成员：{session.displayName}
-              {session.memberCode ? `（${session.memberCode}）` : ""}
+              当前成员：{formatUserIdentityLabel(session)}
             </Typography>
           </Box>
           <Button

@@ -45,11 +45,13 @@ import type {
   ValidationResult,
 } from "../lib/api/types";
 import {
+  buildTaskMemberSummaryMap,
   describeRecognitionFailure,
   formatExpenseType,
   formatMaterialType,
-  formatMemberLabel,
+  formatTaskMemberLabel,
   formatTaskStatus,
+  formatUserIdentityLabel,
   formatValidationRule,
 } from "../lib/ui-text";
 import { findOversizedFile, MAX_UPLOAD_FILE_SIZE_LABEL } from "../lib/upload-validation";
@@ -463,8 +465,9 @@ function summarizePendingActionsWithLinkage(
   return actions;
 }
 
-function collectAbnormalReasons(item: WorkbenchInvoiceItem) {
+function collectAbnormalReasons(item: WorkbenchInvoiceItem, task: ReimbursementTask | null = null) {
   const reasons: string[] = [];
+  const memberSummaryMap = buildTaskMemberSummaryMap(task?.member_summaries);
   const recognitionStatus = getRecognitionStatus(item);
   const recognitionFailure = getRecognitionFailure(item);
 
@@ -487,7 +490,7 @@ function collectAbnormalReasons(item: WorkbenchInvoiceItem) {
   }
   for (const confirmation of item.confirmations) {
     if (confirmation.status === "disputed" && confirmation.dispute_reason) {
-      reasons.push(`${formatMemberLabel(confirmation.member_id)}提出异议：${confirmation.dispute_reason}`);
+      reasons.push(`${formatTaskMemberLabel(confirmation.member_id, memberSummaryMap)}提出异议：${confirmation.dispute_reason}`);
     }
   }
 
@@ -1403,7 +1406,7 @@ export function MemberInvoiceWorkbenchPage() {
     if (workbenchState.status !== "ready") {
       return 0;
     }
-    return workbenchState.items.reduce((count, item) => count + collectAbnormalReasons(item).length, 0);
+    return workbenchState.items.reduce((count, item) => count + collectAbnormalReasons(item, workbenchState.task).length, 0);
   }, [workbenchState]);
   const pendingActionCount = pendingActions.filter((action) => action.id !== "done").length;
   const invoiceQueueGroups = useMemo(
@@ -1909,7 +1912,7 @@ export function MemberInvoiceWorkbenchPage() {
           eyebrow="成员材料提交"
           title="比赛报销材料提交"
           description="先批量上传发票、车票、住宿凭证、支付截图和比赛通知；系统生成报销草稿后，你只处理需要确认的事项。"
-          meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
+          meta={`当前成员：${formatUserIdentityLabel(session)}`}
           actions={(
             <div className="page-actions">
               <Button component={Link} variant="outlined" to="/member">
@@ -1969,6 +1972,9 @@ export function MemberInvoiceWorkbenchPage() {
               ))}
             </TextField>
             {selectedTask ? (
+              (() => {
+                const memberSummaryMap = buildTaskMemberSummaryMap(selectedTask.member_summaries);
+                return (
               <dl className="task-meta-grid member-status-meta-grid">
                 <div>
                   <dt>比赛名称</dt>
@@ -1988,7 +1994,7 @@ export function MemberInvoiceWorkbenchPage() {
                 </div>
                 <div>
                   <dt>参赛成员</dt>
-                  <dd>{selectedTask.member_ids.map((memberId) => formatMemberLabel(memberId)).join("、")}</dd>
+                  <dd>{selectedTask.member_ids.map((memberId) => formatTaskMemberLabel(memberId, memberSummaryMap)).join("、")}</dd>
                 </div>
                 <div>
                   <dt>发票抬头</dt>
@@ -1999,6 +2005,8 @@ export function MemberInvoiceWorkbenchPage() {
                   <dd>{selectedTask.tax_number}</dd>
                 </div>
               </dl>
+                );
+              })()
             ) : null}
           </div>
         </SectionCard>
@@ -2799,7 +2807,7 @@ export function MemberInvoiceWorkbenchPage() {
                         validationLabel={formatSharedInvoiceValidationLabel(item.validation_status)}
                         validationTone={mapValidationStatusToSummaryTone(item.validation_status)}
                         supportingMaterialCount={item.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
-                        statusHint={`上传成员 ${item.submitter_id ? formatMemberLabel(item.submitter_id) : "未记录"}；${formatSupportingMaterialSummary(item)}`}
+                        statusHint={`上传成员 ${item.submitter_id ? formatTaskMemberLabel(item.submitter_id, buildTaskMemberSummaryMap(workbenchState.status === "ready" ? workbenchState.task.member_summaries : [])) : "未记录"}；${formatSupportingMaterialSummary(item)}`}
                         trailingContent={(
                           <StatusBadge tone="info">
                             {formatExpenseType(item.expense_type)}

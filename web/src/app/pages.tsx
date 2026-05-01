@@ -24,6 +24,7 @@ import { AppShell } from "../components/AppShell";
 import { SnackbarProvider } from "../components/AppSnackbar";
 import { ConfirmDialogProvider } from "../components/ConfirmDialog";
 import { AppThemeProvider } from "../theme/AppThemeProvider";
+import { formatUserIdentityLabel } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 import { roleRoutes, type UserRole } from "./role-routes";
 
@@ -202,7 +203,7 @@ function AuthenticatedHomePage() {
               />
               <Chip
                 size="small"
-                label={`${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
+                label={formatUserIdentityLabel(session)}
                 variant="outlined"
               />
             </Stack>

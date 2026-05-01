@@ -4,12 +4,14 @@ import Box from "@mui/material/Box";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
-import { formatMemberLabel } from "../lib/ui-text";
+import type { TaskMemberSummary } from "../lib/api/types";
+import { buildTaskMemberSummaryMap, formatTaskMemberLabel } from "../lib/ui-text";
 
 type TaskMemberAutocompleteProps = {
   label: string;
   value: string;
   options: string[];
+  memberSummaries?: TaskMemberSummary[] | null;
   onChange: (value: string) => void;
   disabled?: boolean;
   error?: boolean;
@@ -35,6 +37,7 @@ export function TaskMemberAutocomplete({
   label,
   value,
   options,
+  memberSummaries,
   onChange,
   disabled = false,
   error = false,
@@ -49,6 +52,10 @@ export function TaskMemberAutocomplete({
   const filteredOptions = useMemo(
     () => options.filter((memberId) => matchesMember(memberId, keyword)),
     [keyword, options],
+  );
+  const memberSummaryMap = useMemo(
+    () => buildTaskMemberSummaryMap(memberSummaries),
+    [memberSummaries],
   );
   const selectValue = filteredOptions.includes(value) ? value : "";
 
@@ -93,7 +100,7 @@ export function TaskMemberAutocomplete({
         ) : null}
         {filteredOptions.map((memberId) => (
           <MenuItem key={memberId} value={memberId}>
-            {formatMemberLabel(memberId)}
+            {formatTaskMemberLabel(memberId, memberSummaryMap)}
           </MenuItem>
         ))}
         {filteredOptions.length === 0 ? (

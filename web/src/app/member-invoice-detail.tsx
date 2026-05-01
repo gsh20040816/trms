@@ -32,13 +32,15 @@ import type {
   TaskSharedInvoiceItem,
 } from "../lib/api/types";
 import {
+  buildTaskMemberSummaryMap,
   describeRecognitionFailure,
   formatConfirmationStatus,
   formatExpenseType,
   formatMaterialType,
-  formatMemberLabel,
+  formatTaskMemberLabel,
   formatRecognitionStatus,
   formatTaskStatus,
+  formatUserIdentityLabel,
   formatValidationRule,
   formatValidationStatus,
 } from "../lib/ui-text";
@@ -442,6 +444,7 @@ export function MemberInvoiceDetailPage() {
   const sharedInvoice = detailState.status === "ready" ? detailState.sharedInvoice : null;
   const invoice = findPrimaryInvoice(item, sharedInvoice);
   const task = detailState.status === "ready" ? detailState.task : null;
+  const memberSummaryMap = task ? buildTaskMemberSummaryMap(task.member_summaries) : new Map();
   const abnormalReasons = useMemo(() => (item ? collectAbnormalReasons(item) : []), [item]);
   const allowedExpenseTypes = task ? buildAllowedExpenseTypes(task) : [];
   const splitSummary = summarizeSplitDrafts(splitDrafts);
@@ -650,7 +653,7 @@ export function MemberInvoiceDetailPage() {
           eyebrow="单张发票处理"
           title={invoice?.invoice_number ?? item?.material.original_filename ?? "发票处理"}
           description="在这个页面补齐字段、修改材料类型、调整分摊金额，并查看校验与附件状态。"
-          meta={task ? `${task.competition_name} / ${formatTaskStatus(task.status)}` : `当前成员：${session.displayName}`}
+          meta={task ? `${task.competition_name} / ${formatTaskStatus(task.status)}` : `当前成员：${formatUserIdentityLabel(session)}`}
           actions={(
             <div className="page-actions">
               <Button component={Link} variant="outlined" to={taskId ? `/member/invoices/workbench?taskId=${encodeURIComponent(taskId)}` : "/member/invoices/workbench"}>
@@ -688,7 +691,7 @@ export function MemberInvoiceDetailPage() {
             validationLabel={formatSharedInvoiceValidationLabel(sharedInvoice.validation_status)}
             validationTone={mapSharedInvoiceValidationTone(sharedInvoice.validation_status)}
             supportingMaterialCount={sharedInvoice.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
-            statusHint={`上传成员 ${sharedInvoice.submitter_id ? formatMemberLabel(sharedInvoice.submitter_id) : "未记录"}；费用类型 ${formatExpenseType(sharedInvoice.expense_type)}`}
+            statusHint={`上传成员 ${sharedInvoice.submitter_id ? formatTaskMemberLabel(sharedInvoice.submitter_id, memberSummaryMap) : "未记录"}；费用类型 ${formatExpenseType(sharedInvoice.expense_type)}`}
             trailingContent={<StatusBadge tone="info">{formatExpenseType(sharedInvoice.expense_type)}</StatusBadge>}
           />
         </SectionCard>
@@ -797,7 +800,7 @@ export function MemberInvoiceDetailPage() {
                   <div key={draft.key} className="admin-form-grid">
                     <TextField select label={`归属对象 ${index + 1}`} value={draft.member_id} disabled={!canEditSplits} onChange={(event) => { updateSplitDraft(draft.key, { member_id: event.target.value }); }}>
                       {task.member_ids.map((memberId) => (
-                        <MenuItem key={memberId} value={memberId}>{formatMemberLabel(memberId)}</MenuItem>
+                        <MenuItem key={memberId} value={memberId}>{formatTaskMemberLabel(memberId, memberSummaryMap)}</MenuItem>
                       ))}
                     </TextField>
                     <TextField label="金额（元）" value={draft.amount_yuan} disabled={!canEditSplits} onChange={(event) => { updateSplitDraft(draft.key, { amount_yuan: event.target.value }); }} />
@@ -830,7 +833,7 @@ export function MemberInvoiceDetailPage() {
                       const confirmation = item.confirmations.find((entry) => entry.split_id === split.id) ?? null;
                       return (
                         <li key={split.id}>
-                          <strong>{formatMemberLabel(split.member_id)}</strong>
+                          <strong>{formatTaskMemberLabel(split.member_id, memberSummaryMap)}</strong>
                           <span>归属金额：{formatCurrencyFromCents(split.amount_cents)}</span>
                           <span>确认状态：{confirmation ? formatConfirmationStatus(confirmation.status) : "已指定"}</span>
                         </li>

@@ -6,6 +6,7 @@ import type {
   RecognitionTaskStatus,
   SubmissionChannel,
   TaskExportJobStatus,
+  TaskMemberSummary,
   TaskStatus,
   ValidationSeverity,
   ValidationStatus,
@@ -97,7 +98,7 @@ export const FIELD_LABELS: Record<string, string> = {
   role: "角色",
   display_name: "姓名",
   actor_id: "身份编号",
-  member_code: "成员编号",
+  member_code: "学号",
   member_ids: "成员名单",
   competition_name: "任务名称",
   competition_location: "比赛地点",
@@ -197,6 +198,59 @@ export function formatMemberLabel(memberId: string | null | undefined) {
     return "待确认成员";
   }
   return `成员 ${memberId}`;
+}
+
+export function buildTaskMemberSummaryMap(memberSummaries: TaskMemberSummary[] | null | undefined) {
+  return new Map(
+    (memberSummaries ?? []).map((summary) => [summary.member_id, summary] as const),
+  );
+}
+
+export function formatTaskMemberSummary(summary: TaskMemberSummary | null | undefined) {
+  if (!summary) {
+    return "待确认成员";
+  }
+
+  const displayName = summary.display_name?.trim();
+  const username = summary.username?.trim();
+  const studentId = summary.student_id?.trim();
+  const parts = [displayName, username, studentId].filter((value, index, items): value is string => (
+    Boolean(value) && items.indexOf(value) === index
+  ));
+  if (parts.length > 0) {
+    return parts.join(" / ");
+  }
+  return summary.member_id;
+}
+
+export function formatTaskMemberLabel(
+  memberId: string | null | undefined,
+  memberSummaries: Map<string, TaskMemberSummary> | TaskMemberSummary[] | null | undefined,
+) {
+  if (!memberId) {
+    return "待确认成员";
+  }
+
+  const summary = memberSummaries instanceof Map
+    ? (memberSummaries.get(memberId) ?? null)
+    : (memberSummaries ?? []).find((item) => item.member_id === memberId) ?? null;
+  if (!summary) {
+    return memberId;
+  }
+  return formatTaskMemberSummary(summary);
+}
+
+export function formatUserIdentityLabel(identity: {
+  displayName: string;
+  username?: string | null;
+  memberCode?: string | null;
+}) {
+  const parts = [
+    identity.displayName?.trim(),
+    identity.username?.trim() || null,
+    identity.memberCode?.trim() || null,
+  ].filter((value, index, items): value is string => Boolean(value) && items.indexOf(value) === index);
+  return parts.join(" / ");
 }
 
 export function describeRecognitionFailure(failure: RecognitionFailureDetail | null) {

@@ -149,6 +149,9 @@ class AuthRepository(Protocol):
     def get_user_by_token_hash(self, token_hash: str) -> AuthenticatedUser | None:
         raise NotImplementedError
 
+    def list_users_by_member_identifiers(self, identifiers: list[str]) -> list[AuthenticatedUser]:
+        raise NotImplementedError
+
     def create_session(self, *, user_id: str, token_hash: str, active_role: UserRole) -> None:
         raise NotImplementedError
 

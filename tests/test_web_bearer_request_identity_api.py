@@ -234,7 +234,26 @@ def test_admin_bearer_task_management_routes_bind_to_owned_tasks(tmp_path):
         headers=auth_headers(admin_token),
     )
     assert own_members_response.status_code == 200
-    assert own_members_response.json()["items"] == ["2250001", "2250002", "2250003"]
+    assert own_members_response.json()["items"] == [
+        {
+            "member_id": "2250001",
+            "username": None,
+            "display_name": None,
+            "student_id": "2250001",
+        },
+        {
+            "member_id": "2250002",
+            "username": None,
+            "display_name": None,
+            "student_id": "2250002",
+        },
+        {
+            "member_id": "2250003",
+            "username": None,
+            "display_name": None,
+            "student_id": "2250003",
+        },
+    ]
 
     outsider_members_response = client.get(
         f"/api/tasks/{task_id}/members",
@@ -251,7 +270,20 @@ def test_admin_bearer_task_management_routes_bind_to_owned_tasks(tmp_path):
         json={"member_ids": ["2250001", "2250002"]},
     )
     assert update_members_response.status_code == 200
-    assert update_members_response.json()["items"] == ["2250001", "2250002"]
+    assert update_members_response.json()["items"] == [
+        {
+            "member_id": "2250001",
+            "username": None,
+            "display_name": None,
+            "student_id": "2250001",
+        },
+        {
+            "member_id": "2250002",
+            "username": None,
+            "display_name": None,
+            "student_id": "2250002",
+        },
+    ]
 
     outsider_update_members_response = client.put(
         f"/api/tasks/{task_id}/members",

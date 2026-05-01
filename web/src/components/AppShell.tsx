@@ -43,6 +43,7 @@ import {
   useAuthSession,
 } from "../app/auth-store";
 import { roleRoutes, type UserRole } from "../app/role-routes";
+import { formatUserIdentityLabel } from "../lib/ui-text";
 import { useAppTheme } from "../theme/use-app-theme";
 import { useSnackbar } from "./use-snackbar";
 
@@ -160,8 +161,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {session ? (
         <Box sx={{ px: 2, py: 1.5 }}>
           <Typography variant="subtitle2" component="div" noWrap>
-            {session.displayName}
-            {session.memberCode ? `（${session.memberCode}）` : ""}
+            {formatUserIdentityLabel(session)}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {activeRole?.loginLabel ?? "已登录"}

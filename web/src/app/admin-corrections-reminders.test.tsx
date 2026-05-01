@@ -35,6 +35,10 @@ function buildTask() {
     competition_end_date: "2026-05-03",
     deadline: "2026-05-10T18:00:00+08:00",
     member_ids: ["2250001", "2250002"],
+    member_summaries: [
+      { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+      { member_id: "2250002", username: "member2", display_name: "李四", student_id: "2250002" },
+    ],
     fee_categories: ["registration", "hotel"],
     administrator_id: "admin-1",
     project_info: "ACM 竞赛项目",
@@ -288,13 +292,13 @@ describe("AdminCorrectionsRemindersPage", () => {
 
     const reminderList = within(await screen.findByLabelText("补材料提醒列表"));
     expect(reminderList.getByText("请补充支付记录。")).toBeInTheDocument();
-    expect(reminderList.getByText("成员 2250001")).toBeInTheDocument();
+    expect(reminderList.getByText("张三 / member1 / 2250001")).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
       await Promise.resolve();
     });
-    fireEvent.click(await screen.findByRole("option", { name: "成员 2250002" }));
+    fireEvent.click(await screen.findByRole("option", { name: "李四 / member2 / 2250002" }));
     fireEvent.change(screen.getByLabelText("提醒内容"), {
       target: { value: "请补充比赛通知，并在补交后重新确认金额。" },
     });
@@ -303,7 +307,7 @@ describe("AdminCorrectionsRemindersPage", () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText("已保存对成员 2250002的内部提醒记录；系统不会自动发送消息。")).toBeInTheDocument();
+    expect(await screen.findByText("已保存对李四 / member2 / 2250002的内部提醒记录；系统不会自动发送消息。")).toBeInTheDocument();
     const updatedReminderList = within(screen.getByLabelText("补材料提醒列表"));
     expect(updatedReminderList.getByText("请补充比赛通知，并在补交后重新确认金额。")).toBeInTheDocument();
   });
@@ -342,7 +346,7 @@ describe("AdminCorrectionsRemindersPage", () => {
       fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
       await Promise.resolve();
     });
-    fireEvent.click(await screen.findByRole("option", { name: "成员 2250002" }));
+    fireEvent.click(await screen.findByRole("option", { name: "李四 / member2 / 2250002" }));
     fireEvent.change(screen.getByLabelText("提醒内容"), {
       target: { value: "请补交材料。" },
     });
@@ -389,8 +393,8 @@ describe("AdminCorrectionsRemindersPage", () => {
       fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
       await Promise.resolve();
     });
-    expect(await screen.findByRole("option", { name: "成员 2250002" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "成员 2250001" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "李四 / member2 / 2250002" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "张三 / member1 / 2250001" })).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.change(memberInput, {

@@ -88,6 +88,7 @@ from trms_backend.domain.tasks import (
     TaskCreateInput,
     TaskCompletionValidationError,
     MissingTaskInvoiceConfigError,
+    ReimbursementTask,
     TaskMembersUpdate,
     TaskRepository,
     TaskPublishValidationError,
@@ -95,6 +96,7 @@ from trms_backend.domain.tasks import (
     TaskStatus,
     TaskStatusUpdate,
     TaskUpdateInput,
+    build_task_member_summaries,
     can_transition,
     close_expired_open_tasks,
     ensure_task_can_enter_ready_to_export,
@@ -167,6 +169,14 @@ def build_task_router(
         audit_log_repository=audit_log_repository,
     )
 
+    def enrich_task_member_summaries(task: ReimbursementTask) -> ReimbursementTask:
+        users = auth_repository.list_users_by_member_identifiers(task.member_ids)
+        return task.model_copy(
+            update={
+                "member_summaries": build_task_member_summaries(task.member_ids, users),
+            }
+        )
+
     def ensure_task_management_role(
         identity: RequestIdentity,
         *,
@@ -199,7 +209,7 @@ def build_task_router(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(error),
             ) from error
-        return repository.create(task_create)
+        return enrich_task_member_summaries(repository.create(task_create))
 
     @router.get("")
     def list_tasks(
@@ -212,10 +222,10 @@ def build_task_router(
                 member_id,
                 field_name="member_id",
             )
-            return repository.list_for_member(resolved_member_id)
+            return [enrich_task_member_summaries(task) for task in repository.list_for_member(resolved_member_id)]
         if identity.is_authenticated and identity.actor_id is not None:
             return [
-                task
+                enrich_task_member_summaries(task)
                 for task in repository.list()
                 if task.administrator_id == identity.actor_id
             ]
@@ -234,7 +244,7 @@ def build_task_router(
             task,
             forbidden_detail="actor is not allowed to view this task",
         )
-        return task
+        return enrich_task_member_summaries(task)
 
     @router.get("/{task_id}/members")
     def get_task_members(
@@ -249,7 +259,7 @@ def build_task_router(
             task,
             forbidden_detail="actor is not allowed to view task members for this task",
         )
-        return {"items": task.member_ids}
+        return {"items": enrich_task_member_summaries(task).member_summaries}
 
     @router.post("/{task_id}/automatic-reminder-tasks", status_code=status.HTTP_201_CREATED)
     def generate_automatic_reminder_tasks(
@@ -1064,7 +1074,7 @@ def build_task_router(
         updated = repository.update_member_ids(task_id, payload.member_ids)
         if updated is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        return {"items": updated.member_ids}
+        return {"items": enrich_task_member_summaries(updated).member_summaries}
 
     @router.put("/{task_id}")
     def update_task(
@@ -1088,7 +1098,7 @@ def build_task_router(
         updated = repository.update_task(task_id, payload)
         if updated is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        return updated
+        return enrich_task_member_summaries(updated)
 
     @router.patch("/{task_id}/status")
     def update_task_status(
@@ -1156,7 +1166,10 @@ def build_task_router(
                 detail=str(TaskCompletionValidationError()),
             )
 
-        return repository.update_status(task_id, payload.target_status)
+        updated_task = repository.update_status(task_id, payload.target_status)
+        if updated_task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        return enrich_task_member_summaries(updated_task)
 
     @router.post("/deadline-check")
     def run_task_deadline_check():

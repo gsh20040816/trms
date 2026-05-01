@@ -168,6 +168,7 @@ export type ReimbursementTask = {
   competition_end_date: ApiDate;
   deadline: ApiDateTime;
   member_ids: string[];
+  member_summaries?: TaskMemberSummary[];
   fee_categories: string[];
   administrator_id: string;
   project_info: string;
@@ -213,6 +214,13 @@ export type TaskStatusUpdate = {
 
 export type TaskMembersUpdate = {
   member_ids: string[];
+};
+
+export type TaskMemberSummary = {
+  member_id: string;
+  username: string | null;
+  display_name: string | null;
+  student_id: string | null;
 };
 
 export type MaterialRecord = {

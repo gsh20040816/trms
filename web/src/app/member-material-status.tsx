@@ -16,6 +16,7 @@ import {
 } from "../components/dashboard";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
+import { formatUserIdentityLabel } from "../lib/ui-text";
 import type {
   ExpenseType,
   InvoiceRecord,
@@ -746,7 +747,7 @@ export function MemberMaterialStatusPage() {
           eyebrow="材料状态"
           title="成员材料状态"
           description="在单任务上下文中跟进本人材料的识别进度、发票校验异常和缺失材料提示。"
-          meta={`当前成员：${memberSession.displayName}${memberSession.memberCode ? `（${memberSession.memberCode}）` : ""}`}
+          meta={`当前成员：${formatUserIdentityLabel(memberSession)}`}
           actions={(
             <div className="page-actions">
               <StatusBadge tone="info">当前可见任务 {visibleTasks.length} 个</StatusBadge>

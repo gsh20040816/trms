@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
+from trms_backend.domain.auth import AuthenticatedUser
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 from trms_backend.domain.invoices import (
     ExpenseType,
@@ -217,6 +218,7 @@ class ReimbursementTask(BaseModel):
     competition_end_date: date
     deadline: datetime
     member_ids: list[str]
+    member_summaries: list["TaskMemberSummary"] = Field(default_factory=list)
     fee_categories: list[str]
     administrator_id: str
     project_info: str
@@ -225,6 +227,35 @@ class ReimbursementTask(BaseModel):
     tax_number: str
     created_at: datetime
     updated_at: datetime
+
+
+class TaskMemberSummary(BaseModel):
+    member_id: str
+    username: str | None = None
+    display_name: str | None = None
+    student_id: str | None = None
+
+
+def build_task_member_summaries(
+    member_ids: list[str],
+    users: list[AuthenticatedUser],
+) -> list[TaskMemberSummary]:
+    users_by_member_identifier = {
+        (user.member_code or user.actor_id): user
+        for user in users
+    }
+    summaries: list[TaskMemberSummary] = []
+    for member_id in member_ids:
+        user = users_by_member_identifier.get(member_id)
+        summaries.append(
+            TaskMemberSummary(
+                member_id=member_id,
+                username=user.username if user else None,
+                display_name=user.display_name if user else None,
+                student_id=user.member_code if user else member_id,
+            )
+        )
+    return summaries
 
 
 class TaskRepository(Protocol):

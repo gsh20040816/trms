@@ -455,6 +455,20 @@ def test_get_missing_task_returns_404(tmp_path):
 
 def test_get_task_members_returns_member_list(tmp_path):
     client = make_client(tmp_path)
+    register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="member-actor-1",
+        member_code="2250001",
+    )
+    register_and_get_token(
+        client,
+        username="member2",
+        role="member",
+        actor_id="member-actor-2",
+        member_code="2250002",
+    )
     created = create_task(client)
 
     response = client.get(
@@ -463,7 +477,28 @@ def test_get_task_members_returns_member_list(tmp_path):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"items": ["2250001", "2250002", "2250003"]}
+    assert response.json() == {
+        "items": [
+            {
+                "member_id": "2250001",
+                "username": "member1",
+                "display_name": "member1",
+                "student_id": "2250001",
+            },
+            {
+                "member_id": "2250002",
+                "username": "member2",
+                "display_name": "member2",
+                "student_id": "2250002",
+            },
+            {
+                "member_id": "2250003",
+                "username": None,
+                "display_name": None,
+                "student_id": "2250003",
+            },
+        ]
+    }
 
 
 def test_task_queries_require_bearer_and_enforce_scope(tmp_path):
@@ -623,6 +658,20 @@ def test_list_material_reminders_rejects_non_administrator(tmp_path):
 
 def test_update_task_members_allows_replace_in_draft(tmp_path):
     client = make_client(tmp_path)
+    register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="member-actor-1",
+        member_code="2250001",
+    )
+    register_and_get_token(
+        client,
+        username="member3",
+        role="member",
+        actor_id="member-actor-3",
+        member_code="2250003",
+    )
     created = create_task(client)
 
     response = client.put(
@@ -632,7 +681,28 @@ def test_update_task_members_allows_replace_in_draft(tmp_path):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"items": ["2250001", "2250003", "2250999"]}
+    assert response.json() == {
+        "items": [
+            {
+                "member_id": "2250001",
+                "username": "member1",
+                "display_name": "member1",
+                "student_id": "2250001",
+            },
+            {
+                "member_id": "2250003",
+                "username": "member3",
+                "display_name": "member3",
+                "student_id": "2250003",
+            },
+            {
+                "member_id": "2250999",
+                "username": None,
+                "display_name": None,
+                "student_id": "2250999",
+            },
+        ]
+    }
 
     fetched = client.get(
         f"/api/tasks/{created['id']}",

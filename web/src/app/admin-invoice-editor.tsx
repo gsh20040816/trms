@@ -26,9 +26,10 @@ import type {
 } from "../lib/api/types";
 import { formatInvoiceAmountFromCents } from "../lib/currency";
 import {
+  buildTaskMemberSummaryMap,
   describeRecognitionFailure,
   formatMaterialType,
-  formatMemberLabel,
+  formatTaskMemberLabel,
   formatValidationRule,
 } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
@@ -438,14 +439,19 @@ function buildInvoiceSummaryValidation(validations: ValidationResult[], hasInvoi
   return { label: "校验通过", tone: "success" as const };
 }
 
-function buildMaterialStatusHint(item: InvoiceMaterialItem) {
+function buildMaterialStatusHint(item: InvoiceMaterialItem, task: ReimbursementTask | null) {
+  const memberSummaryMap = buildTaskMemberSummaryMap(task?.member_summaries);
   const invoice = item.invoiceItem?.invoice ?? null;
   if (invoice?.is_paper_invoice) {
     return invoice.paper_invoice_received
       ? "纸质发票，管理员已确认收票"
       : "纸质发票，待管理员确认收票";
   }
-  return `提交人 ${formatMemberLabel(item.materialItem.material.submitter_id)}；${formatRecognitionStatus(item.materialItem.latest_recognition?.status ?? "pending")}`;
+  return `提交人 ${formatTaskMemberLabel(item.materialItem.material.submitter_id, memberSummaryMap)}；${formatRecognitionStatus(item.materialItem.latest_recognition?.status ?? "pending")}`;
+}
+
+function formatActorDisplay(value: string | null | undefined) {
+  return value && value.trim().length > 0 ? value : "尚未确认";
 }
 
 function findSelectedItem(items: InvoiceMaterialItem[], materialId: string) {
@@ -823,7 +829,7 @@ export function AdminInvoiceEditorPage() {
                           validationLabel={buildInvoiceSummaryValidation(validations, invoice !== null).label}
                           validationTone={buildInvoiceSummaryValidation(validations, invoice !== null).tone}
                           supportingMaterialCount={item.invoiceItem?.supporting_material_ids.length ?? 0}
-                          statusHint={buildMaterialStatusHint(item)}
+                          statusHint={buildMaterialStatusHint(item, visibleTask)}
                           trailingContent={(
                             <StatusBadge tone={invoice ? "success" : "warning"}>
                               {invoice ? "已存在发票记录" : "待录入"}
@@ -863,7 +869,7 @@ export function AdminInvoiceEditorPage() {
                 <dl className="task-meta-grid invoice-editor-summary-grid">
                   <div>
                     <dt>提交成员</dt>
-                    <dd>{formatMemberLabel(selectedItem.materialItem.material.submitter_id)}</dd>
+                    <dd>{formatTaskMemberLabel(selectedItem.materialItem.material.submitter_id, visibleTask.member_summaries ?? [])}</dd>
                   </div>
                   <div>
                     <dt>比赛名称</dt>
@@ -1203,7 +1209,7 @@ export function AdminInvoiceEditorPage() {
                           </div>
                           <div>
                             <dt>确认人</dt>
-                            <dd>{selectedInvoice.paper_invoice_received_by ? formatMemberLabel(selectedInvoice.paper_invoice_received_by) : "尚未确认"}</dd>
+                            <dd>{formatActorDisplay(selectedInvoice.paper_invoice_received_by)}</dd>
                           </div>
                           <div>
                             <dt>确认时间</dt>

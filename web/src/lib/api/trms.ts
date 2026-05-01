@@ -42,6 +42,7 @@ import type {
   TaskExportJobRequest,
   TaskSharedInvoiceReport,
   TaskMemberStatusReport,
+  TaskMemberSummary,
   TaskMemberWorkbenchSummary,
   TaskReadinessSummary,
   TaskMembersUpdate,
@@ -286,7 +287,7 @@ export const trmsApi = {
   },
 
   listTaskMembers(taskId: string) {
-    return apiClient.request<ApiListResponse<string>>(`/tasks/${encodeSegment(taskId)}/members`);
+    return apiClient.request<ApiListResponse<TaskMemberSummary>>(`/tasks/${encodeSegment(taskId)}/members`);
   },
 
   listTaskMaterials(taskId: string) {

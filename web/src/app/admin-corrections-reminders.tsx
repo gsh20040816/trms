@@ -18,7 +18,7 @@ import type {
   TaskReviewSummary,
   ValidationResult,
 } from "../lib/api/types";
-import { formatMemberLabel } from "../lib/ui-text";
+import { buildTaskMemberSummaryMap, formatTaskMemberLabel } from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -242,6 +242,14 @@ export function AdminCorrectionsRemindersPage() {
     () => (pageState.status === "ready" ? buildInvoiceCorrectionActions(pageState.summary) : []),
     [pageState],
   );
+  const memberSummaryMap = useMemo(
+    () => (
+      pageState.status === "ready"
+        ? buildTaskMemberSummaryMap(pageState.task.member_summaries)
+        : new Map()
+    ),
+    [pageState],
+  );
 
   if (!session || session.role !== "admin") {
     return null;
@@ -307,7 +315,7 @@ export function AdminCorrectionsRemindersPage() {
       });
       setContent("");
       setFormErrors({});
-      setSubmitFeedback(`已保存对${formatMemberLabel(reminder.member_id)}的内部提醒记录；系统不会自动发送消息。`);
+      setSubmitFeedback(`已保存对${formatTaskMemberLabel(reminder.member_id, memberSummaryMap)}的内部提醒记录；系统不会自动发送消息。`);
     } catch (error) {
       setSubmitError(error);
     } finally {
@@ -386,7 +394,7 @@ export function AdminCorrectionsRemindersPage() {
                         </StatusBadge>
                       </div>
                       <div className="admin-review-inline-metadata">
-                        <span className="token-chip">提交人 {item.submitterId ? formatMemberLabel(item.submitterId) : "未解析"}</span>
+                        <span className="token-chip">提交人 {item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析"}</span>
                         <span className="token-chip">
                           低置信度字段 {item.lowConfidenceFieldNames.length} 个
                         </span>
@@ -514,9 +522,10 @@ export function AdminCorrectionsRemindersPage() {
                   label="提醒对象成员"
                   value={memberId}
                   options={visibleTask.member_ids}
+                  memberSummaries={visibleTask.member_summaries}
                   error={Boolean(formErrors.memberId)}
                   helperText={formErrors.memberId ?? undefined}
-                  placeholder="输入成员编号关键字筛选"
+                  placeholder="输入成员姓名、用户名或学号筛选"
                   onChange={(nextValue) => {
                     setMemberId(nextValue);
                     setFormErrors((current) => ({ ...current, memberId: undefined }));
@@ -556,7 +565,7 @@ export function AdminCorrectionsRemindersPage() {
                 <ul className="admin-review-list" aria-label="补材料提醒列表">
                   {visibleReminders.map((reminder) => (
                     <li key={reminder.id}>
-                      <strong>{formatMemberLabel(reminder.member_id)}</strong>
+                      <strong>{formatTaskMemberLabel(reminder.member_id, memberSummaryMap)}</strong>
                       <span>{reminder.content}</span>
                       <span>记录时间：{formatDateTime(reminder.created_at)}</span>
                     </li>

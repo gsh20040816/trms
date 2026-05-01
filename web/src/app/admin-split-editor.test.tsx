@@ -48,6 +48,11 @@ function buildTask() {
     competition_end_date: "2026-05-03",
     deadline: "2026-05-10T18:00:00+08:00",
     member_ids: ["2250001", "2250002", "2250003"],
+    member_summaries: [
+      { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+      { member_id: "2250002", username: "member2", display_name: "李四", student_id: "2250002" },
+      { member_id: "2250003", username: "member3", display_name: "王五", student_id: "2250003" },
+    ],
     fee_categories: ["railway", "hotel"],
     administrator_id: "admin-1",
     project_info: "Project A",
@@ -255,7 +260,11 @@ async function chooseSplitMember(row: HTMLElement, memberId: string) {
     await Promise.resolve();
   });
   const optionName = memberId.length > 0 && memberId !== "请选择成员"
-    ? `成员 ${memberId}`
+    ? ({
+      "2250001": "张三 / member1 / 2250001",
+      "2250002": "李四 / member2 / 2250002",
+      "2250003": "王五 / member3 / 2250003",
+    }[memberId] ?? memberId)
     : "请选择成员";
   const option = await screen.findByRole("option", { name: optionName });
   await act(async () => {
@@ -422,7 +431,7 @@ describe("admin split editor page", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    expect(await screen.findByText(/2250003 · ￥43.45/)).toBeInTheDocument();
+    expect(await screen.findByText(/王五 \/ member3 \/ 2250003 · ￥43.45/)).toBeInTheDocument();
     expect(replaceSplitsRequestCount).toBe(1);
     expect(screen.getByText("已确认 1 / 3")).toBeInTheDocument();
   });
@@ -596,9 +605,9 @@ describe("admin split editor page", () => {
       fireEvent.mouseDown(within(firstRow).getByRole("combobox", { name: "归属成员" }));
       await Promise.resolve();
     });
-    expect(await screen.findByRole("option", { name: "成员 2250003" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "成员 2250001" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "成员 2250002" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "王五 / member3 / 2250003" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "张三 / member1 / 2250001" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "李四 / member2 / 2250002" })).not.toBeInTheDocument();
 
     await filterSplitMember(firstRow, "999");
     expect(await screen.findByRole("option", { name: "没有匹配的成员" })).toBeInTheDocument();

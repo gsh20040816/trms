@@ -11,9 +11,18 @@ import { trmsApi } from "../lib/api/trms";
 import type {
   MissingMaterialItem,
   ReimbursementTask,
+  TaskMemberSummary,
   VisibleMissingMaterialList,
 } from "../lib/api/types";
-import { formatExpenseType, formatMaterialType, formatMemberLabel, formatTaskStatus, formatValidationRule } from "../lib/ui-text";
+import {
+  buildTaskMemberSummaryMap,
+  formatExpenseType,
+  formatMaterialType,
+  formatTaskMemberLabel,
+  formatTaskStatus,
+  formatUserIdentityLabel,
+  formatValidationRule,
+} from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -70,13 +79,18 @@ function pickSelectedTaskId(
   return tasks[0]?.id ?? "";
 }
 
-function buildGroupDescriptor(item: MissingMaterialItem, groupMode: GroupMode) {
+function buildGroupDescriptorWithMembers(
+  item: MissingMaterialItem,
+  groupMode: GroupMode,
+  memberSummaries: TaskMemberSummary[],
+) {
+  const memberSummaryMap = buildTaskMemberSummaryMap(memberSummaries);
   if (groupMode === "member") {
     return {
       key: item.member_id ?? "__unresolved__",
       title: item.member_id ?? "未解析提交人",
       subtitle: item.member_id
-        ? `${formatMemberLabel(item.member_id)}涉及 ${formatExpenseType(item.expense_type)} 等待补材料项`
+        ? `${formatTaskMemberLabel(item.member_id, memberSummaryMap)}涉及 ${formatExpenseType(item.expense_type)} 等待补材料项`
         : "当前缺失项尚未归到具体成员",
     };
   }
@@ -85,7 +99,7 @@ function buildGroupDescriptor(item: MissingMaterialItem, groupMode: GroupMode) {
     return {
       key: item.invoice_id,
       title: `发票 ${item.invoice_number}`,
-      subtitle: `${formatExpenseType(item.expense_type)} / ${formatMemberLabel(item.member_id)}`,
+      subtitle: `${formatExpenseType(item.expense_type)} / ${formatTaskMemberLabel(item.member_id, memberSummaryMap)}`,
     };
   }
 
@@ -96,7 +110,11 @@ function buildGroupDescriptor(item: MissingMaterialItem, groupMode: GroupMode) {
   };
 }
 
-function buildMissingMaterialGroups(items: MissingMaterialItem[], groupMode: GroupMode) {
+function buildMissingMaterialGroups(
+  items: MissingMaterialItem[],
+  groupMode: GroupMode,
+  memberSummaries: TaskMemberSummary[],
+) {
   const groups = new Map<string, MissingMaterialGroup>();
   const sortedItems = [...items].sort((left, right) =>
     right.detected_at.localeCompare(left.detected_at)
@@ -105,7 +123,7 @@ function buildMissingMaterialGroups(items: MissingMaterialItem[], groupMode: Gro
   );
 
   for (const item of sortedItems) {
-    const descriptor = buildGroupDescriptor(item, groupMode);
+    const descriptor = buildGroupDescriptorWithMembers(item, groupMode, memberSummaries);
     const existing = groups.get(descriptor.key);
     if (existing) {
       existing.items.push(item);
@@ -133,9 +151,12 @@ function buildMissingMaterialSummary(items: MissingMaterialItem[]) {
 
 function MissingMaterialGroupList({
   groups,
+  memberSummaries,
 }: {
   groups: MissingMaterialGroup[];
+  memberSummaries: TaskMemberSummary[];
 }) {
+  const memberSummaryMap = buildTaskMemberSummaryMap(memberSummaries);
   return (
     <section className="admin-review-record-list" aria-label="缺失材料分组列表">
       {groups.map((group) => (
@@ -156,7 +177,7 @@ function MissingMaterialGroupList({
                 <strong>
                   {item.invoice_number} / {formatMaterialType(item.required_material_type)}
                 </strong>
-                <span>相关成员：{formatMemberLabel(item.member_id)}</span>
+                <span>相关成员：{formatTaskMemberLabel(item.member_id, memberSummaryMap)}</span>
                 <span>费用类型：{formatExpenseType(item.expense_type)}</span>
                 <span>问题类型：{formatValidationRule(item.source_rule_code)}</span>
                 <span>{item.message}</span>
@@ -212,9 +233,14 @@ export function AdminMissingMaterialsPage() {
     };
   }, [session, taskId]);
 
+  const adminTaskMemberSummaries = state.status === "ready" ? state.task.member_summaries ?? [] : [];
   const readyGroups = useMemo(
-    () => (state.status === "ready" ? buildMissingMaterialGroups(state.list.items, groupMode) : []),
-    [groupMode, state],
+    () => (
+      state.status === "ready"
+        ? buildMissingMaterialGroups(state.list.items, groupMode, adminTaskMemberSummaries)
+        : []
+    ),
+    [adminTaskMemberSummaries, groupMode, state],
   );
 
   if (!session || session.role !== "admin") {
@@ -365,7 +391,7 @@ export function AdminMissingMaterialsPage() {
               <p>当前没有发现需要补充的材料，可以继续推进其他复核事项。</p>
             </section>
           ) : (
-            <MissingMaterialGroupList groups={readyGroups} />
+            <MissingMaterialGroupList groups={readyGroups} memberSummaries={adminTaskMemberSummaries} />
           )}
         </>
       ) : null}
@@ -463,9 +489,14 @@ export function MemberMissingMaterialsPage() {
     };
   }, [selectedTaskId, session, taskState]);
 
+  const selectedTaskMemberSummaries = listState.status === "ready" ? listState.task.member_summaries ?? [] : [];
   const readyGroups = useMemo(
-    () => (listState.status === "ready" ? buildMissingMaterialGroups(listState.list.items, groupMode) : []),
-    [groupMode, listState],
+    () => (
+      listState.status === "ready"
+        ? buildMissingMaterialGroups(listState.list.items, groupMode, selectedTaskMemberSummaries)
+        : []
+    ),
+    [groupMode, listState, selectedTaskMemberSummaries],
   );
 
   if (!session || session.role !== "member") {
@@ -501,7 +532,7 @@ export function MemberMissingMaterialsPage() {
           eyebrow="我的待补材料"
           title="我的缺失材料"
           description="在单任务上下文中查看当前仍需补充的材料，并快速跳回上传入口。"
-          meta={`当前成员：${session.displayName}${session.memberCode ? `（${session.memberCode}）` : ""}`}
+          meta={`当前成员：${formatUserIdentityLabel(session)}`}
           actions={(
             <div className="page-actions">
               <Link
@@ -621,7 +652,7 @@ export function MemberMissingMaterialsPage() {
       ) : null}
 
       {selectedTask && listState.status === "ready" && listState.list.items.length > 0 ? (
-        <MissingMaterialGroupList groups={readyGroups} />
+        <MissingMaterialGroupList groups={readyGroups} memberSummaries={selectedTaskMemberSummaries} />
       ) : null}
     </RoleWorkspace>
   );

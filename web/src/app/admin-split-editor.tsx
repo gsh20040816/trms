@@ -16,6 +16,7 @@ import type {
   TaskReviewSummaryInvoiceItem,
   TaskReviewSummaryMaterialItem,
 } from "../lib/api/types";
+import { buildTaskMemberSummaryMap, formatTaskMemberLabel } from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -338,6 +339,7 @@ export function AdminSplitEditorPage() {
   const isForeignTask = task ? task.administrator_id !== session.actorId : false;
   const visibleTask = pageState.status === "ready" && !isForeignTask ? pageState.task : null;
   const visibleSummary = pageState.status === "ready" && !isForeignTask ? pageState.summary : null;
+  const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
   const selectedInvoiceItem = visibleSummary
     ? findSelectedInvoiceItem(splitInvoiceItems, selectedInvoiceId)
     : null;
@@ -688,9 +690,10 @@ export function AdminSplitEditorPage() {
                             value={row.memberId}
                             name={`member-${row.rowId}`}
                             options={visibleTask.member_ids}
+                            memberSummaries={visibleTask.member_summaries}
                             includeEmptyOption
                             emptyOptionLabel="请选择成员"
-                            placeholder="输入成员编号关键字筛选"
+                            placeholder="输入成员姓名、用户名或学号筛选"
                             onChange={(nextValue) => {
                               updateRow(row.rowId, "memberId", nextValue);
                             }}
@@ -778,7 +781,7 @@ export function AdminSplitEditorPage() {
                         <li key={split.id}>
                           <div className="task-card-header">
                             <strong>
-                              {split.member_id} · {formatCurrencyFromCents(split.amount_cents)}
+                              {formatTaskMemberLabel(split.member_id, memberSummaryMap)} · {formatCurrencyFromCents(split.amount_cents)}
                             </strong>
                             <StatusBadge tone={confirmation?.status === "confirmed" ? "success" : confirmation?.status === "disputed" ? "danger" : "warning"}>
                               {confirmation?.is_current

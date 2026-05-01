@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-05-02 02:02 - Replace raw member IDs with username, display name, and student ID
+
+### 完成内容
+- 完成任务“去掉成员编号展示，仅保留用户名、显示名称和学号”。
+- 后端任务接口补齐成员摘要数据：
+  - [auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py) 的 `AuthRepository` 新增按任务成员标识批量查询用户能力；
+  - [repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py) 支持按 `actor_id/member_code` 匹配用户；
+  - [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py) 新增 `TaskMemberSummary` 和 `build_task_member_summaries(...)`；
+  - [api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py) 现在会为 `create/list/get/update/status` 等任务返回值补上 `member_summaries`，并把 `GET/PUT /api/tasks/{task_id}/members` 统一升级为摘要列表响应。
+- 前端任务相关成员展示改为“显示名称 / 用户名 / 学号”口径：
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)、[trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)、[ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts) 新增任务成员摘要类型、用户身份格式化和任务成员格式化工具；
+  - [task-member-autocomplete.tsx](/home/gsh/workspace/TRMS/web/src/components/task-member-autocomplete.tsx) 的管理员成员选择控件现在展示成员摘要，不再直接渲染裸编号；
+  - 管理员主路径 [admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)、[admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)、[admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)、[admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)、[admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 已改用成员摘要展示；
+  - 成员主路径 [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)、[member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)、[task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 以及全局身份区 [AppShell.tsx](/home/gsh/workspace/TRMS/web/src/components/AppShell.tsx)、[pages.tsx](/home/gsh/workspace/TRMS/web/src/app/pages.tsx)、[member-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/member-task-list.tsx)、[member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx)、[member-expense-confirmation.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.tsx)、[auth.tsx](/home/gsh/workspace/TRMS/web/src/app/auth.tsx) 统一改为显示名称 / 用户名 / 学号，并把 `member_code` 的用户文案从“成员编号”改为“学号”。
+- 同步更新后端与前端测试夹具：
+  - 后端更新 [test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py)、[test_web_bearer_request_identity_api.py](/home/gsh/workspace/TRMS/tests/test_web_bearer_request_identity_api.py)；
+  - 前端更新 [admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)、[admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)、[admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)、[admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx)。
+
+### 根因
+- 任务模型和复核/分摊/提醒等读模型过去只携带 `member_id` 这类字符串标识，前端没有用户名、显示名称和学号可用，只能直接渲染裸编号。
+- 成员登录态自身虽然已有 `username / display_name / member_code`，但任务相关接口没有把这些资料带出来，导致同一成员在账号区和任务处理区出现两套完全不同的展示口径。
+- 真正要修复的是“任务接口缺成员摘要 + 前端缺统一格式化”，而不是再继续在页面里手工拼 `成员 2250001` 之类的过渡文案。
+
+### 风险与影响面
+- 当前任务成员摘要采用“按 `actor_id/member_code` 匹配用户，匹配不到时仅保留原成员标识作为学号/占位值”的保守策略，没有改动任务权限判断和任务成员底层存储。
+- 这意味着历史任务如果录入的是纯自由文本且没有对应账号资料，前端仍可能只能展示原始字符串；但不会再默认渲染“成员 {id}”这种误导性的编号前缀。
+- 纸票确认人等管理员 `actor_id` 不属于成员摘要口径，本轮刻意保留原始管理员标识显示，避免把管理员编号错误伪装成成员学号。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py tests/test_web_bearer_request_identity_api.py`
+  - 57 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-task-detail.test.tsx admin-corrections-reminders.test.tsx admin-split-editor.test.tsx task-missing-materials.test.tsx member-invoice-detail.test.tsx member-invoice-workbench.test.tsx admin-review-overview.test.tsx`
+  - 7 个测试文件、30 个用例通过。
+  - `cd web && npm test -- admin-review-overview.test.tsx member-invoice-workbench.test.tsx member-invoice-detail.test.tsx admin-invoice-editor.test.tsx task-missing-materials.test.tsx`
+  - 5 个测试文件、23 个用例通过。
+  - `cd web && npm test -- App.test.tsx member-task-list.test.tsx member-material-status.test.tsx member-expense-confirmation.test.tsx member-invoice-workbench.test.tsx member-invoice-detail.test.tsx task-missing-materials.test.tsx admin-corrections-reminders.test.tsx admin-split-editor.test.tsx`
+  - 9 个测试文件、41 个用例通过。
+- 仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 520 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍有 2 条 `react-hooks/exhaustive-deps` warning，Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 01:15 - Add member search when admins pick task participants
 
 ### 完成内容
