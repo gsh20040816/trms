@@ -438,6 +438,16 @@ function buildInvoiceSummaryValidation(validations: ValidationResult[], hasInvoi
   return { label: "校验通过", tone: "success" as const };
 }
 
+function buildMaterialStatusHint(item: InvoiceMaterialItem) {
+  const invoice = item.invoiceItem?.invoice ?? null;
+  if (invoice?.is_paper_invoice) {
+    return invoice.paper_invoice_received
+      ? "纸质发票，管理员已确认收票"
+      : "纸质发票，待管理员确认收票";
+  }
+  return `提交人 ${formatMemberLabel(item.materialItem.material.submitter_id)}；${formatRecognitionStatus(item.materialItem.latest_recognition?.status ?? "pending")}`;
+}
+
 function findSelectedItem(items: InvoiceMaterialItem[], materialId: string) {
   return items.find((item) => item.materialItem.material.id === materialId) ?? null;
 }
@@ -494,6 +504,7 @@ export function AdminInvoiceEditorPage() {
   const [saveFeedback, setSaveFeedback] = useState<SaveFeedback | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirmingPaperReceipt, setIsConfirmingPaperReceipt] = useState(false);
   const [detailTab, setDetailTab] = useState<InvoiceDetailTab>("actions");
   const [previewState, setPreviewState] = useState<InvoicePreviewState>({ status: "idle" });
   const latestSelectedMaterialIdRef = useRef(selectedMaterialId);
@@ -721,6 +732,31 @@ export function AdminInvoiceEditorPage() {
     }
   }
 
+  async function handleConfirmPaperReceipt() {
+    if (!session || !selectedInvoice) {
+      return;
+    }
+    setSubmitError(null);
+    setIsConfirmingPaperReceipt(true);
+    try {
+      const response = await trmsApi.confirmPaperInvoiceReceipt(selectedInvoice.id, {
+        actor_id: session.actorId,
+      });
+      setSaveFeedback({
+        materialId: selectedItem?.materialItem.material.id ?? "",
+        invoiceNumber: response.invoice.invoice_number,
+        validationCount: response.validations.length,
+        failedValidationCount: countFailedValidations(response.validations),
+        pendingValidationCount: countPendingValidations(response.validations),
+      });
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      setSubmitError(error);
+    } finally {
+      setIsConfirmingPaperReceipt(false);
+    }
+  }
+
   return (
     <div className="page-stack">
       <section className="status-card admin-task-detail-hero">
@@ -787,7 +823,7 @@ export function AdminInvoiceEditorPage() {
                           validationLabel={buildInvoiceSummaryValidation(validations, invoice !== null).label}
                           validationTone={buildInvoiceSummaryValidation(validations, invoice !== null).tone}
                           supportingMaterialCount={item.invoiceItem?.supporting_material_ids.length ?? 0}
-                          statusHint={`提交人 ${formatMemberLabel(material.submitter_id)}；${formatRecognitionStatus(item.materialItem.latest_recognition?.status ?? "pending")}`}
+                          statusHint={buildMaterialStatusHint(item)}
                           trailingContent={(
                             <StatusBadge tone={invoice ? "success" : "warning"}>
                               {invoice ? "已存在发票记录" : "待录入"}
@@ -1144,6 +1180,50 @@ export function AdminInvoiceEditorPage() {
                           </div>
                           <StatusBadge tone="success">已重新加载摘要</StatusBadge>
                         </div>
+                      </section>
+                    ) : null}
+
+                    {selectedInvoice?.is_paper_invoice ? (
+                      <section className="member-status-section">
+                        <div className="member-status-section-header">
+                          <div>
+                            <h4>纸票接收确认</h4>
+                            <p className="field-hint">
+                              这张发票属于成员手动录入的纸质发票；在你确认“已收到纸票”前，它会持续阻塞成员提交闭环和任务推进。
+                            </p>
+                          </div>
+                          <StatusBadge tone={selectedInvoice.paper_invoice_received ? "success" : "warning"}>
+                            {selectedInvoice.paper_invoice_received ? "已确认收票" : "待确认收票"}
+                          </StatusBadge>
+                        </div>
+                        <dl className="task-meta-grid invoice-editor-summary-grid">
+                          <div>
+                            <dt>收票状态</dt>
+                            <dd>{selectedInvoice.paper_invoice_received ? "已收到纸票" : "尚未确认"}</dd>
+                          </div>
+                          <div>
+                            <dt>确认人</dt>
+                            <dd>{selectedInvoice.paper_invoice_received_by ? formatMemberLabel(selectedInvoice.paper_invoice_received_by) : "尚未确认"}</dd>
+                          </div>
+                          <div>
+                            <dt>确认时间</dt>
+                            <dd>{selectedInvoice.paper_invoice_received_at ? formatDateTime(selectedInvoice.paper_invoice_received_at) : "尚未确认"}</dd>
+                          </div>
+                        </dl>
+                        {!selectedInvoice.paper_invoice_received ? (
+                          <div className="admin-form-footer">
+                            <Button
+                              type="button"
+                              variant="contained"
+                              disabled={isConfirmingPaperReceipt}
+                              onClick={() => {
+                                void handleConfirmPaperReceipt();
+                              }}
+                            >
+                              {isConfirmingPaperReceipt ? "正在确认收票..." : "确认已收到纸票"}
+                            </Button>
+                          </div>
+                        ) : null}
                       </section>
                     ) : null}
 

@@ -286,6 +286,7 @@ def create_app(
             auth_repository,
             task_repository,
             material_repository,
+            material_file_storage,
             invoice_repository,
             validation_repository,
             recognition_task_repository,

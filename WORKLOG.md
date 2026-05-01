@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-05-02 00:20 - Add paper invoice entry and admin receipt confirmation
+
+### 完成内容
+- 完成任务“添加纸质发票录入与管理员收票确认”。
+- 后端发票模型新增纸票状态字段：
+  - 在 [invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoices.py)、[models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)、[repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py) 中新增 `is_paper_invoice`、`paper_invoice_received`、`paper_invoice_received_at`、`paper_invoice_received_by`；
+  - 新增 Alembic 迁移 [20260501_02_add_paper_invoice_fields.py](/home/gsh/workspace/TRMS/alembic/versions/20260501_02_add_paper_invoice_fields.py)。
+- 新增纸质发票创建与收票确认 API：
+  - [api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py) 新增 `POST /api/tasks/{task_id}/paper-invoices`，成员可直接手动创建纸质发票；
+  - 该接口会生成一份受控占位材料并自动建票、初始化默认“全额归属本人”分摊；
+  - 新增 `PUT /api/invoices/{invoice_id}/paper-receipt`，仅管理员可确认“已收到纸票”。
+- 新增纸票门禁校验：
+  - [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py) 新增 `invoice_paper_receipt_required`；
+  - 未确认收票时输出 blocker failed，确认后转为 passed；
+  - [task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py) 同步把“仅有 blocker 校验失败”的发票视为不可提交，避免成员工作台把纸票错误显示为已就绪。
+- 前端新增成员录入入口与管理员确认入口：
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 增加“手动录入纸质发票”表单，成员可直接录入票号、金额、费用类型、抬头、税号等字段；
+  - 创建成功后会跳转到单票处理页，并明确提示“等待管理员确认收票”；
+  - [admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 对纸质发票显示收票状态、确认人、确认时间和“确认已收到纸票”动作。
+- 更新前后端测试：
+  - 后端更新 [test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py)、[test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)、[test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py)、[test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py)；
+  - 前端更新 [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)、[admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)。
+
+### 根因
+- 现有发票模型默认“每张发票都来自已上传电子材料”，没有表达“成员已录入纸票，但管理员还没线下收到原件”的状态。
+- 因此系统过去只能在“无票”与“电子票已上传”之间二选一，既不能让成员先录入纸票，也无法在导出前对“纸票是否已收齐”做显式门禁。
+- 这轮的核心不是再造一套特殊流程，而是给现有发票主链路补上“纸票”和“收票确认”两个明确状态，并让既有校验/工作台/任务推进都识别这两个状态。
+
+### 风险与影响面
+- 本轮采用“纸质发票 = 受控占位材料 + 纸票标记”的最小实现，而不是重构成“无材料发票”；这样能复用现有发票详情、分摊、确认、复核和权限主路径，避免改动扩散。
+- 占位材料只保存手动录入摘要，不代表真实纸票扫描件；管理员预览页会把它当作不可内联预览的占位文件处理，这是有意保守，不伪装成真实电子票附件。
+- 当前成员工作台把“单纯 blocker 校验失败但没有识别/附件/分摊问题”的发票统一归入 `recognition_review` 分组；这能正确阻塞提交，但分组文案仍偏泛化。若后续纸票、抬头不符等 blocker 场景继续增多，应单独拆出更精确的 `validation_blocker` 分组，而不是继续复用“识别待确认”文案。
+
+### 验证结果
+- 已通过纸票相关定向后端测试：
+  - `uv run pytest tests/test_invoice_validation_rules.py tests/test_invoices_api.py tests/test_tasks_api.py -k 'paper or receipt or ready_to_export'`
+  - 11 个用例通过。
+- 已通过纸票相关定向前端测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx admin-invoice-editor.test.tsx`
+  - 2 个测试文件、12 个用例通过。
+- 已通过前端类型与构建检查：
+  - `cd web && npx tsc --noEmit`
+  - `cd web && npm run build`
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 517 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-01 23:43 - Allow corporate transfer reference to replace payment records
 
 ### 完成内容

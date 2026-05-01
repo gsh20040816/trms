@@ -17,6 +17,8 @@ import type {
   LoginPayload,
   ManualInvoiceEntry,
   ManualInvoiceEntryResponse,
+  PaperInvoiceCreateRequest,
+  PaperInvoiceReceiptConfirmRequest,
   MaterialBatchUploadResponse,
   MaterialReminderCreate,
   MaterialReminderRecord,
@@ -382,6 +384,26 @@ export const trmsApi = {
       `/materials/${encodeSegment(materialId)}/invoice`,
       {
         method: "POST",
+        body: buildActorScopedBody(payload, ["actor_id"]),
+      },
+    );
+  },
+
+  createPaperInvoice(taskId: string, payload: PaperInvoiceCreateRequest) {
+    return apiClient.request<ManualInvoiceEntryResponse>(
+      `/tasks/${encodeSegment(taskId)}/paper-invoices`,
+      {
+        method: "POST",
+        body: buildActorScopedBody(payload, ["actor_id"]),
+      },
+    );
+  },
+
+  confirmPaperInvoiceReceipt(invoiceId: string, payload: PaperInvoiceReceiptConfirmRequest) {
+    return apiClient.request<ManualInvoiceEntryResponse>(
+      `/invoices/${encodeSegment(invoiceId)}/paper-receipt`,
+      {
+        method: "PUT",
         body: buildActorScopedBody(payload, ["actor_id"]),
       },
     );

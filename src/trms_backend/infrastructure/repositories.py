@@ -683,6 +683,10 @@ class SqlAlchemyInvoiceRepository:
                 row.tax_number = data.tax_number
                 row.seller_name = data.seller_name
                 row.corporate_transfer_reference = data.corporate_transfer_reference
+                row.is_paper_invoice = data.is_paper_invoice
+                row.paper_invoice_received = data.paper_invoice_received
+                row.paper_invoice_received_at = data.paper_invoice_received_at
+                row.paper_invoice_received_by = data.paper_invoice_received_by
                 row.amount_cents = data.amount_cents
                 row.expense_type = data.expense_type.value
                 row.updated_at = now
@@ -805,6 +809,24 @@ class SqlAlchemyInvoiceRepository:
             row.submitted_by_member_id = submitted_by_member_id
             row.submitted_at = submitted_at
             row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+        return _invoice_from_row(row)
+
+    def confirm_paper_invoice_received(
+        self,
+        *,
+        invoice_id: str,
+        received_by: str,
+        received_at: datetime,
+    ) -> InvoiceRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(InvoiceRow, invoice_id)
+            if row is None:
+                return None
+            row.paper_invoice_received = True
+            row.paper_invoice_received_by = received_by
+            row.paper_invoice_received_at = received_at
+            row.updated_at = received_at
             session.add(row)
         return _invoice_from_row(row)
 
@@ -1571,6 +1593,10 @@ def _invoice_from_row(row: InvoiceRow) -> InvoiceRecord:
         tax_number=row.tax_number,
         seller_name=row.seller_name,
         corporate_transfer_reference=row.corporate_transfer_reference,
+        is_paper_invoice=row.is_paper_invoice,
+        paper_invoice_received=row.paper_invoice_received,
+        paper_invoice_received_at=row.paper_invoice_received_at,
+        paper_invoice_received_by=row.paper_invoice_received_by,
         amount_cents=row.amount_cents,
         expense_type=ExpenseType(row.expense_type),
         member_submission_status=InvoiceMemberSubmissionStatus(row.member_submission_status),

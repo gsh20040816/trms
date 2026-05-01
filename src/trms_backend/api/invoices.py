@@ -1,4 +1,5 @@
-from datetime import date, datetime
+import re
+from datetime import date, datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -19,8 +20,12 @@ from trms_backend.application.recognition_audit import record_manual_recognition
 from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
 )
-from trms_backend.domain.audit_logs import AuditLogRepository
-from trms_backend.domain.auth import AuthRepository
+from trms_backend.domain.audit_logs import (
+    AuditLogCreate,
+    AuditLogRepository,
+    AuditLogResult,
+)
+from trms_backend.domain.auth import AuthRepository, UserRole
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.invoice_validation import validate_invoice
 from trms_backend.domain.invoices import (
@@ -33,15 +38,20 @@ from trms_backend.domain.invoices import (
     ensure_manual_invoice_entry_actor_allowed,
 )
 from trms_backend.domain.materials import (
+    MaterialCreate,
+    MaterialFileStorage,
     MaterialRepository,
     MaterialStatus,
     MaterialType,
+    SubmissionChannel,
 )
 from trms_backend.domain.recognitions import RecognitionTaskRepository
 from trms_backend.domain.splits import ExpenseSplitRepository
 from trms_backend.domain.tasks import (
     TaskExpenseTypeNotAllowedError,
     TaskRepository,
+    TaskStatus,
+    ensure_task_accepts_member_submission,
     ensure_task_allows_expense_type,
 )
 
@@ -88,10 +98,29 @@ class ManualInvoiceEntryRequest(BaseModel):
         )
 
 
+class PaperInvoiceCreateRequest(ManualInvoiceEntryRequest):
+    def to_domain(self, *, actor_id: str) -> ManualInvoiceEntry:
+        return ManualInvoiceEntry.model_validate(
+            super().to_domain(actor_id=actor_id).model_dump()
+            | {"is_paper_invoice": True}
+        )
+
+
+class PaperInvoiceReceiptConfirmRequest(BaseModel):
+    actor_id: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_actor_id(self) -> "PaperInvoiceReceiptConfirmRequest":
+        if self.actor_id is not None:
+            self.actor_id = self.actor_id.strip() or None
+        return self
+
+
 def build_invoice_router(
     auth_repository: AuthRepository,
     task_repository: TaskRepository,
     material_repository: MaterialRepository,
+    material_file_storage: MaterialFileStorage,
     invoice_repository: InvoiceRepository,
     validation_repository: ValidationRepository,
     recognition_task_repository: RecognitionTaskRepository,
@@ -115,6 +144,34 @@ def build_invoice_router(
         split_repository=split_repository,
         confirmation_repository=confirmation_repository,
     )
+
+    def build_validated_invoice_response(
+        *,
+        invoice,
+        task,
+        invoice_material_recognition,
+    ):
+        supporting_materials = load_supporting_materials(invoice.id)
+        supporting_material_recognitions = load_supporting_material_recognitions(
+            supporting_materials
+        )
+        validations = validation_repository.replace_for_invoice(
+            invoice.id,
+            validate_invoice(
+                invoice,
+                task,
+                invoice_repository.find_duplicate_invoice_id(
+                    invoice.task_id,
+                    invoice.invoice_number,
+                    invoice.id,
+                ),
+                invoice_material_recognition,
+                supporting_materials=supporting_materials,
+                supporting_material_recognitions=supporting_material_recognitions,
+            ),
+        )
+        metrics.record_validation_results(results=validations)
+        return {"invoice": invoice, "validations": validations}
 
     def load_supporting_materials(invoice_id: str) -> list:
         supporting_materials = []
@@ -157,6 +214,29 @@ def build_invoice_router(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="actor is not allowed to manage supporting materials for this task",
             )
+
+    def build_paper_invoice_placeholder_filename(invoice_number: str) -> str:
+        normalized_invoice_number = re.sub(r"[^A-Za-z0-9._-]+", "-", invoice_number).strip("-")
+        if not normalized_invoice_number:
+            normalized_invoice_number = "unnumbered"
+        return f"paper-invoice-{normalized_invoice_number}.txt"
+
+    def build_paper_invoice_placeholder_content(
+        *,
+        task_id: str,
+        actor_id: str,
+        invoice_number: str,
+        amount_cents: int,
+        expense_type: ExpenseType,
+    ) -> bytes:
+        return (
+            "manual paper invoice placeholder\n"
+            f"task_id={task_id}\n"
+            f"submitter_id={actor_id}\n"
+            f"invoice_number={invoice_number}\n"
+            f"amount_cents={amount_cents}\n"
+            f"expense_type={expense_type.value}\n"
+        ).encode("utf-8")
 
     @router.post("/api/materials/{material_id}/invoice", status_code=status.HTTP_201_CREATED)
     def create_invoice(
@@ -245,14 +325,18 @@ def build_invoice_router(
                 material=material,
             )
         supporting_material_auto_link_service.auto_link_for_invoice(invoice)
-        supporting_materials = load_supporting_materials(invoice.id)
-        supporting_material_recognitions = load_supporting_material_recognitions(
-            supporting_materials
-        )
         updated_recognition_task = recognition_task_repository.apply_manual_corrections(
             material_id=material_id,
             actor_id=manual_entry.actor_id,
-            corrected_fields=invoice_data.model_dump(mode="json"),
+            corrected_fields=invoice_data.model_dump(
+                mode="json",
+                exclude={
+                    "is_paper_invoice",
+                    "paper_invoice_received",
+                    "paper_invoice_received_at",
+                    "paper_invoice_received_by",
+                },
+            ),
             revalidation_field_names={
                 "invoice_number",
                 "issue_date",
@@ -278,23 +362,111 @@ def build_invoice_router(
             request_id=ensure_request_id(request),
             corrections=new_corrections,
         )
-        validations = validation_repository.replace_for_invoice(
-            invoice.id,
-            validate_invoice(
-                invoice,
-                task,
-                invoice_repository.find_duplicate_invoice_id(
-                    invoice.task_id,
-                    invoice.invoice_number,
-                    invoice.id,
-                ),
-                latest_effective_recognition,
-                supporting_materials=supporting_materials,
-                supporting_material_recognitions=supporting_material_recognitions,
+        return build_validated_invoice_response(
+            invoice=invoice,
+            task=task,
+            invoice_material_recognition=latest_effective_recognition,
+        )
+
+    @router.post("/api/tasks/{task_id}/paper-invoices", status_code=status.HTTP_201_CREATED)
+    def create_paper_invoice(
+        task_id: str,
+        request: Request,
+        payload: PaperInvoiceCreateRequest,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        task = task_repository.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            payload.actor_id,
+            field_name="actor_id",
+        )
+        if identity.role is not UserRole.MEMBER or resolved_actor_id not in task.member_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to create paper invoices for this task",
+            )
+        if task.status is not TaskStatus.OPEN:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="task is not open for member paper invoice submission",
+            )
+        try:
+            ensure_task_accepts_member_submission(task, submitter_id=resolved_actor_id)
+            manual_entry = payload.to_domain(actor_id=resolved_actor_id)
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from error
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        try:
+            ensure_task_allows_expense_type(task, manual_entry.expense_type)
+        except TaskExpenseTypeNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+
+        invoice_data = manual_entry.to_invoice_create()
+        stored_placeholder = material_file_storage.save(
+            task_id=task_id,
+            original_filename=build_paper_invoice_placeholder_filename(invoice_data.invoice_number),
+            content_type="text/plain",
+            content=build_paper_invoice_placeholder_content(
+                task_id=task_id,
+                actor_id=resolved_actor_id,
+                invoice_number=invoice_data.invoice_number,
+                amount_cents=invoice_data.amount_cents,
+                expense_type=invoice_data.expense_type,
             ),
         )
-        metrics.record_validation_results(results=validations)
-        return {"invoice": invoice, "validations": validations}
+        material = material_repository.create(
+            MaterialCreate(
+                status=MaterialStatus.ASSIGNED,
+                task_id=task_id,
+                submitter_id=resolved_actor_id,
+                task_id_hint=None,
+                submitter_id_hint=None,
+                channel=SubmissionChannel.WEB,
+                material_type=MaterialType.INVOICE,
+                storage_key=stored_placeholder.storage_key,
+                original_filename=stored_placeholder.original_filename,
+                content_type=stored_placeholder.content_type,
+                size_bytes=stored_placeholder.size_bytes,
+                sha256=stored_placeholder.sha256,
+            )
+        )
+        invoice = invoice_repository.upsert_for_material(task_id, material.id, invoice_data)
+        invoice_split_default_service.ensure_default_self_split(invoice=invoice, material=material)
+        audit_log_repository.create(
+            AuditLogCreate(
+                actor_id=resolved_actor_id,
+                object_type="invoice",
+                object_id=invoice.id,
+                action="create_paper_invoice",
+                result=AuditLogResult.SUCCEEDED,
+                summary=f"create paper invoice {invoice.id}",
+                detail={
+                    "material_id": material.id,
+                    "invoice_number": invoice.invoice_number,
+                    "is_paper_invoice": True,
+                },
+                task_id=task_id,
+                request_id=ensure_request_id(request),
+            )
+        )
+        return build_validated_invoice_response(
+            invoice=invoice,
+            task=task,
+            invoice_material_recognition=None,
+        )
 
     @router.get("/api/tasks/{task_id}/invoices")
     def list_invoices(
@@ -468,5 +640,73 @@ def build_invoice_router(
             metrics_collector=metrics,
         )
         return {"status": "deleted"}
+
+    @router.put("/api/invoices/{invoice_id}/paper-receipt")
+    def confirm_paper_invoice_receipt(
+        invoice_id: str,
+        request: Request,
+        payload: PaperInvoiceReceiptConfirmRequest,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        invoice = invoice_repository.get(invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+        if not invoice.is_paper_invoice:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="only paper invoices can be marked as received",
+            )
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            payload.actor_id,
+            field_name="actor_id",
+        )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to confirm paper invoice receipt for this task",
+        )
+        if scope is not TaskAccessScope.ADMINISTRATOR:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to confirm paper invoice receipt for this task",
+            )
+        updated_invoice = invoice_repository.confirm_paper_invoice_received(
+            invoice_id=invoice_id,
+            received_by=resolved_actor_id,
+            received_at=datetime.now(timezone.utc),
+        )
+        if updated_invoice is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+        audit_log_repository.create(
+            AuditLogCreate(
+                actor_id=resolved_actor_id,
+                object_type="invoice",
+                object_id=invoice_id,
+                action="confirm_paper_invoice_received",
+                result=AuditLogResult.SUCCEEDED,
+                summary=f"confirm paper invoice received for {invoice_id}",
+                detail={
+                    "paper_invoice_received": updated_invoice.paper_invoice_received,
+                    "paper_invoice_received_at": updated_invoice.paper_invoice_received_at,
+                    "paper_invoice_received_by": updated_invoice.paper_invoice_received_by,
+                },
+                task_id=task.id,
+                request_id=ensure_request_id(request),
+            )
+        )
+        validations = refresh_invoice_validations(
+            invoice_id,
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            validation_repository=validation_repository,
+            recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics,
+        )
+        return {"invoice": updated_invoice, "validations": validations or []}
 
     return router

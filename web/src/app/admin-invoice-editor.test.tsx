@@ -208,6 +208,10 @@ function buildReviewSummary(options?: {
             tax_number: "91310000TEST00001",
             seller_name: "中国铁路",
             corporate_transfer_reference: null,
+            is_paper_invoice: false,
+            paper_invoice_received: false,
+            paper_invoice_received_at: null as string | null,
+            paper_invoice_received_by: null as string | null,
             amount_cents: 12345,
             expense_type: "railway",
             created_at: "2026-04-28T09:10:00+08:00",
@@ -435,6 +439,57 @@ describe("admin invoice editor page", () => {
     const validationList = within(screen.getByLabelText("发票校验结果列表"));
     expect(validationList.getByText("税号需要核对")).toBeInTheDocument();
     expect(validationList.getByText("税号不匹配")).toBeInTheDocument();
+  });
+
+  it("allows administrators to confirm receipt for paper invoices", async () => {
+    let reviewSummary = buildReviewSummary({ withInvoice: true });
+    reviewSummary.invoices[0]!.invoice.is_paper_invoice = true;
+    reviewSummary.invoices[0]!.invoice.paper_invoice_received = false;
+    reviewSummary.invoices[0]!.invoice.paper_invoice_received_at = null;
+    reviewSummary.invoices[0]!.invoice.paper_invoice_received_by = null;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-ALPHA") {
+        return Promise.resolve(jsonResponse(buildTask()));
+      }
+      if (url === "/api/tasks/TASK-ALPHA/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(reviewSummary));
+      }
+      if (url === "/api/invoices/INV-1/paper-receipt" && init?.method === "PUT") {
+        reviewSummary = buildReviewSummary({ withInvoice: true });
+        reviewSummary.invoices[0]!.invoice.is_paper_invoice = true;
+        reviewSummary.invoices[0]!.invoice.paper_invoice_received = true;
+        reviewSummary.invoices[0]!.invoice.paper_invoice_received_at = "2026-04-28T09:20:00+08:00";
+        reviewSummary.invoices[0]!.invoice.paper_invoice_received_by = "admin-1";
+        return Promise.resolve(jsonResponse({
+          invoice: reviewSummary.invoices[0]!.invoice,
+          validations: [
+            {
+              id: "VAL-PAPER-1",
+              rule_code: "invoice_paper_receipt_required",
+              target_type: "invoice",
+              target_id: "INV-1",
+              severity: "blocker",
+              status: "passed",
+              message: "纸质发票已由管理员确认收到",
+              evidence: {},
+              created_at: "2026-04-28T09:20:00+08:00",
+            },
+          ],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in admin paper receipt test: ${url}`);
+    });
+
+    renderAdminInvoiceEditorRoute();
+
+    expect(await screen.findByRole("heading", { name: "纸票接收确认" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认已收到纸票" }));
+
+    expect(await screen.findByText("已确认收票")).toBeInTheDocument();
   });
 
   it("shows validation helper text and does not submit when required fields are empty", async () => {

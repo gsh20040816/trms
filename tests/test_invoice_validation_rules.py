@@ -9,6 +9,7 @@ from trms_backend.domain.invoice_validation import (
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     COMPETITION_TIME_RANGE_RULE_CODE,
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+    PAPER_INVOICE_RECEIPT_REQUIRED_RULE_CODE,
     PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
     PAYMENT_RECORD_REQUIRED_RULE_CODE,
     validate_airfare_cabin_requirement,
@@ -18,6 +19,7 @@ from trms_backend.domain.invoice_validation import (
     validate_competition_time_range,
     validate_invoice,
     validate_local_transport_rideshare_trip_requirement,
+    validate_paper_invoice_receipt_requirement,
     validate_payment_record_amount_match,
     validate_payment_record_requirement,
 )
@@ -301,6 +303,32 @@ def test_payment_record_amount_match_rule_is_not_applicable_with_corporate_trans
     assert result.status is ValidationStatus.NOT_APPLICABLE
     assert result.message == "已填写公对公转账编号，暂不执行支付记录金额匹配"
     assert result.evidence["matching_mode"] == "corporate_transfer_reference_exempt"
+
+
+def test_paper_invoice_receipt_requirement_blocks_until_admin_confirms_receipt():
+    invoice = make_invoice()
+    invoice.is_paper_invoice = True
+
+    result = validate_paper_invoice_receipt_requirement(invoice)
+
+    assert result.rule_code == PAPER_INVOICE_RECEIPT_REQUIRED_RULE_CODE
+    assert result.status is ValidationStatus.FAILED
+    assert result.message == "纸质发票待管理员确认已收到纸票"
+
+
+def test_paper_invoice_receipt_requirement_passes_after_admin_confirms_receipt():
+    invoice = make_invoice()
+    invoice.is_paper_invoice = True
+    invoice.paper_invoice_received = True
+    invoice.paper_invoice_received_at = NOW
+    invoice.paper_invoice_received_by = "admin-1"
+
+    result = validate_paper_invoice_receipt_requirement(invoice)
+
+    assert result.rule_code == PAPER_INVOICE_RECEIPT_REQUIRED_RULE_CODE
+    assert result.status is ValidationStatus.PASSED
+    assert result.message == "纸质发票已由管理员确认收到"
+    assert result.evidence["paper_invoice_received_by"] == "admin-1"
 
 
 @pytest.mark.parametrize(

@@ -151,6 +151,10 @@ class InvoiceRow(Base):
     tax_number: Mapped[str] = mapped_column(String(64), nullable=False)
     seller_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     corporate_transfer_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_paper_invoice: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    paper_invoice_received: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    paper_invoice_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paper_invoice_received_by: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     expense_type: Mapped[str] = mapped_column(String(64), nullable=False)
     member_submission_status: Mapped[str] = mapped_column(

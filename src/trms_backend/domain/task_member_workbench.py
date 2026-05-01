@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from trms_backend.domain.confirmations import ConfirmationRecord
 from trms_backend.domain.expense_details import ExpenseDetailItem
-from trms_backend.domain.invoices import InvoiceRecord, ValidationResult
+from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, ValidationStatus
 from trms_backend.domain.materials import MaterialRecord
 from trms_backend.domain.missing_materials import MissingMaterialItem
 from trms_backend.domain.recognitions import (
@@ -194,6 +194,7 @@ def build_task_member_workbench_summary(
         blocking_reasons = _collect_blocking_reasons(
             material=material,
             invoice=invoice,
+            validations=validations_by_invoice_id.get(invoice.id, []) if invoice is not None else [],
             missing_materials=missing_materials,
             splits=splits,
             confirmations=confirmations,
@@ -244,6 +245,7 @@ def _collect_blocking_reasons(
     *,
     material: TaskMemberMaterialStatusItem,
     invoice: InvoiceRecord | None,
+    validations: list[ValidationResult],
     missing_materials: list[MissingMaterialItem],
     splits: list[ExpenseSplitRecord],
     confirmations: list[ConfirmationRecord],
@@ -266,6 +268,11 @@ def _collect_blocking_reasons(
         reasons.append(TaskMemberWorkbenchBlockingReason.SPLIT_INCOMPLETE)
     if _has_confirmation_gap(invoice=invoice, splits=splits, confirmations=confirmations):
         reasons.append(TaskMemberWorkbenchBlockingReason.CONFIRMATION_INCOMPLETE)
+    if (
+        not reasons
+        and any(validation.status in {ValidationStatus.FAILED, ValidationStatus.PENDING} for validation in validations)
+    ):
+        reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_REVIEW)
 
     return reasons
 

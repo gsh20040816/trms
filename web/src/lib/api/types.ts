@@ -321,6 +321,10 @@ export type InvoiceRecord = {
   tax_number: string;
   seller_name: string | null;
   corporate_transfer_reference: string | null;
+  is_paper_invoice?: boolean;
+  paper_invoice_received?: boolean;
+  paper_invoice_received_at?: ApiDateTime | null;
+  paper_invoice_received_by?: string | null;
   amount_cents: number;
   expense_type: ExpenseType;
   member_submission_status: InvoiceMemberSubmissionStatus;
@@ -358,6 +362,12 @@ export type ManualInvoiceEntry = {
   corporate_transfer_reference?: string | null;
   amount_cents: number;
   expense_type: ExpenseType;
+};
+
+export type PaperInvoiceCreateRequest = ManualInvoiceEntry;
+
+export type PaperInvoiceReceiptConfirmRequest = {
+  actor_id: string;
 };
 
 export type ValidationResult = {

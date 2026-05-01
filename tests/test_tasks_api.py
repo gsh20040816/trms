@@ -928,6 +928,62 @@ def test_update_task_status_rejects_ready_to_export_when_blocker_validation_fail
     )
 
 
+def test_update_task_status_rejects_paper_invoice_before_admin_receipt_and_allows_after_confirmation(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = create_task(client)
+    open_task(client, task["id"])
+    member_token = register_and_get_token(
+        client,
+        username="paper-ready-member",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/paper-invoices",
+        json=valid_invoice_payload() | {
+            "invoice_number": "PAPER-READY-001",
+            "expense_type": "railway",
+            "amount_cents": 12345,
+        },
+        headers=auth_headers(member_token),
+    )
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["invoice"]["id"]
+    split_id = replace_invoice_splits(client, invoice_id)
+    confirm_split(client, split_id)
+    move_open_task_to_reviewing(client, task["id"])
+
+    blocked_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert blocked_response.status_code == 409
+    assert blocked_response.json()["detail"] == (
+        f"task review is incomplete: blocker validations are not resolved for invoices: {invoice_id}"
+    )
+
+    confirm_receipt_response = client.put(
+        f"/api/invoices/{invoice_id}/paper-receipt",
+        json={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+    assert confirm_receipt_response.status_code == 200
+
+    ready_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert ready_response.status_code == 200
+    assert ready_response.json()["status"] == "ready_to_export"
+
+
 def test_update_task_status_rejects_ready_to_export_when_member_confirmation_missing(tmp_path):
     client = make_client(tmp_path)
     task = create_task(client)

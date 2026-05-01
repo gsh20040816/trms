@@ -42,6 +42,10 @@ class InvoiceCreate(BaseModel):
     tax_number: str = Field(min_length=1)
     seller_name: str | None = None
     corporate_transfer_reference: str | None = None
+    is_paper_invoice: bool = False
+    paper_invoice_received: bool = False
+    paper_invoice_received_at: datetime | None = None
+    paper_invoice_received_by: str | None = None
     amount_cents: int = Field(gt=0)
     expense_type: ExpenseType
 
@@ -54,6 +58,8 @@ class InvoiceCreate(BaseModel):
             self.seller_name = self.seller_name.strip() or None
         if self.corporate_transfer_reference is not None:
             self.corporate_transfer_reference = self.corporate_transfer_reference.strip() or None
+        if self.paper_invoice_received_by is not None:
+            self.paper_invoice_received_by = self.paper_invoice_received_by.strip() or None
         return self
 
 
@@ -66,6 +72,7 @@ class ManualInvoiceEntry(BaseModel):
     tax_number: str = Field(min_length=1)
     seller_name: str | None = None
     corporate_transfer_reference: str | None = None
+    is_paper_invoice: bool = False
     amount_cents: int = Field(gt=0)
     expense_type: ExpenseType
 
@@ -82,7 +89,14 @@ class ManualInvoiceEntry(BaseModel):
         return self
 
     def to_invoice_create(self) -> InvoiceCreate:
-        return InvoiceCreate.model_validate(self.model_dump(exclude={"actor_id"}))
+        return InvoiceCreate.model_validate(
+            self.model_dump(exclude={"actor_id"})
+            | {
+                "paper_invoice_received": False,
+                "paper_invoice_received_at": None,
+                "paper_invoice_received_by": None,
+            }
+        )
 
 
 class InvoiceRecord(BaseModel):
@@ -96,6 +110,10 @@ class InvoiceRecord(BaseModel):
     tax_number: str
     seller_name: str | None
     corporate_transfer_reference: str | None = None
+    is_paper_invoice: bool = False
+    paper_invoice_received: bool = False
+    paper_invoice_received_at: datetime | None = None
+    paper_invoice_received_by: str | None = None
     amount_cents: int
     expense_type: ExpenseType
     member_submission_status: InvoiceMemberSubmissionStatus = InvoiceMemberSubmissionStatus.UNSUBMITTED
@@ -176,6 +194,15 @@ class InvoiceRepository(Protocol):
         status: InvoiceMemberSubmissionStatus,
         submitted_by_member_id: str | None,
         submitted_at: datetime | None,
+    ) -> InvoiceRecord | None:
+        raise NotImplementedError
+
+    def confirm_paper_invoice_received(
+        self,
+        *,
+        invoice_id: str,
+        received_by: str,
+        received_at: datetime,
     ) -> InvoiceRecord | None:
         raise NotImplementedError
 

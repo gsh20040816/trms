@@ -19,7 +19,13 @@ from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
-from test_tasks_api import admin_auth_headers, create_task as create_admin_task, valid_task_payload
+from test_tasks_api import (
+    admin_auth_headers,
+    auth_headers,
+    create_task as create_admin_task,
+    register_and_get_token,
+    valid_task_payload,
+)
 
 AIRPORT_CODE_FIELD_GROUPS = [
     ["departure_airport_code", "arrival_airport_code"],
@@ -364,6 +370,57 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
         "time_source": "transaction_time",
     }
     assert "invoice_competition_location_range" not in validation_rule_codes(body)
+
+
+def test_member_can_create_paper_invoice_and_admin_can_confirm_receipt(tmp_path):
+    client = make_client(tmp_path)
+    task = create_admin_task(client)
+    open_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert open_response.status_code == 200
+    member_token = register_and_get_token(
+        client,
+        username="paper-member",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/paper-invoices",
+        json=valid_invoice_payload() | {
+            "invoice_number": "PAPER-INV-001",
+            "expense_type": "registration",
+            "amount_cents": 8800,
+        },
+        headers=auth_headers(member_token),
+    )
+
+    assert create_response.status_code == 201
+    created_body = create_response.json()
+    assert created_body["invoice"]["is_paper_invoice"] is True
+    assert created_body["invoice"]["paper_invoice_received"] is False
+    assert created_body["invoice"]["material_id"]
+    receipt_validation = validation_by_code(created_body, "invoice_paper_receipt_required")
+    assert receipt_validation["status"] == "failed"
+    assert receipt_validation["message"] == "纸质发票待管理员确认已收到纸票"
+
+    confirm_response = client.put(
+        f"/api/invoices/{created_body['invoice']['id']}/paper-receipt",
+        json={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert confirm_response.status_code == 200
+    confirmed_body = confirm_response.json()
+    assert confirmed_body["invoice"]["paper_invoice_received"] is True
+    assert confirmed_body["invoice"]["paper_invoice_received_by"] == "admin-1"
+    receipt_validation = validation_by_code(confirmed_body, "invoice_paper_receipt_required")
+    assert receipt_validation["status"] == "passed"
+    assert receipt_validation["message"] == "纸质发票已由管理员确认收到"
 
 
 def test_task_administrator_can_record_invoice_for_member_material(tmp_path):

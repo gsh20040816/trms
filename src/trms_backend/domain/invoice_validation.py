@@ -16,6 +16,7 @@ PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS = 100_000
 PAYMENT_RECORD_REQUIRED_RULE_CODE = "invoice_payment_record_required"
 PAYMENT_RECORD_AMOUNT_MATCH_MODE = "exact_sum"
 PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE = "invoice_payment_record_amount_match"
+PAPER_INVOICE_RECEIPT_REQUIRED_RULE_CODE = "invoice_paper_receipt_required"
 COMPETITION_NOTICE_REQUIRED_RULE_CODE = "invoice_competition_notice_required"
 AIRFARE_ITINERARY_REQUIRED_RULE_CODE = "invoice_airfare_itinerary_required"
 AIRFARE_CABIN_PROOF_RULE_CODE = "invoice_airfare_cabin_proof_required"
@@ -103,6 +104,7 @@ def validate_invoice(
                 "duplicate_invoice_id": duplicate_invoice_id,
             },
         ),
+        validate_paper_invoice_receipt_requirement(invoice),
         validate_payment_record_requirement(invoice, supporting_materials),
         validate_payment_record_amount_match(
             invoice,
@@ -315,6 +317,57 @@ def validate_payment_record_requirement(
             "payment_record_material_ids": payment_record_material_ids,
             "corporate_transfer_reference": invoice.corporate_transfer_reference,
             "payment_evidence_mode": "missing",
+        },
+    )
+
+
+def validate_paper_invoice_receipt_requirement(
+    invoice: InvoiceRecord,
+) -> ValidationResult:
+    if not invoice.is_paper_invoice:
+        return _validation_result(
+            rule_code=PAPER_INVOICE_RECEIPT_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="当前不是纸质发票，无需确认收票",
+            evidence={
+                "is_paper_invoice": False,
+                "paper_invoice_received": invoice.paper_invoice_received,
+                "paper_invoice_received_at": (
+                    invoice.paper_invoice_received_at.isoformat()
+                    if invoice.paper_invoice_received_at is not None
+                    else None
+                ),
+                "paper_invoice_received_by": invoice.paper_invoice_received_by,
+            },
+        )
+    if invoice.paper_invoice_received:
+        return _validation_result(
+            rule_code=PAPER_INVOICE_RECEIPT_REQUIRED_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.PASSED,
+            message="纸质发票已由管理员确认收到",
+            evidence={
+                "is_paper_invoice": True,
+                "paper_invoice_received": True,
+                "paper_invoice_received_at": (
+                    invoice.paper_invoice_received_at.isoformat()
+                    if invoice.paper_invoice_received_at is not None
+                    else None
+                ),
+                "paper_invoice_received_by": invoice.paper_invoice_received_by,
+            },
+        )
+    return _validation_result(
+        rule_code=PAPER_INVOICE_RECEIPT_REQUIRED_RULE_CODE,
+        target_id=invoice.id,
+        status=ValidationStatus.FAILED,
+        message="纸质发票待管理员确认已收到纸票",
+        evidence={
+            "is_paper_invoice": True,
+            "paper_invoice_received": False,
+            "paper_invoice_received_at": None,
+            "paper_invoice_received_by": None,
         },
     )
 

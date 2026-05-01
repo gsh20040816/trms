@@ -220,6 +220,34 @@ function mockCommonFetch(summary = buildWorkbenchSummary()) {
     if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
       return Promise.resolve(jsonResponse(summary));
     }
+    if (url === "/api/tasks/TASK-OPEN/paper-invoices" && method === "POST") {
+      return Promise.resolve(jsonResponse({
+        invoice: {
+          ...invoice,
+          id: "INV-PAPER-001",
+          material_id: "MAT-PAPER-001",
+          invoice_number: "PAPER-001",
+          expense_type: "registration",
+          is_paper_invoice: true,
+          paper_invoice_received: false,
+          paper_invoice_received_at: null,
+          paper_invoice_received_by: null,
+        },
+        validations: [
+          {
+            id: "VAL-PAPER-001",
+            rule_code: "invoice_paper_receipt_required",
+            target_type: "invoice",
+            target_id: "INV-PAPER-001",
+            severity: "blocker",
+            status: "failed",
+            message: "纸质发票待管理员确认已收到纸票",
+            evidence: {},
+            created_at: "2026-04-28T11:00:00+08:00",
+          },
+        ],
+      }));
+    }
     if (url === "/api/tasks/TASK-OPEN/invoice-submissions" && method === "POST") {
       return Promise.resolve(jsonResponse({
         status: "success",
@@ -372,6 +400,30 @@ describe("MemberInvoiceWorkbenchPage", () => {
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/member/materials/MAT-PAY-001");
+    });
+  });
+
+  it("allows members to create a paper invoice from the workbench", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      items: [],
+      report: {
+        ...buildWorkbenchSummary().report,
+        materials: [],
+        counts: {
+          ...buildWorkbenchSummary().report.counts,
+          material_count: 0,
+        },
+      },
+    }));
+    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    expect(await screen.findByRole("heading", { name: "手动录入纸质发票" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("纸质发票号码"), { target: { value: "PAPER-001" } });
+    fireEvent.change(screen.getByLabelText("金额（元）"), { target: { value: "88.00" } });
+    fireEvent.click(screen.getByRole("button", { name: "新增纸质发票" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/member/invoices/INV-PAPER-001");
     });
   });
 
