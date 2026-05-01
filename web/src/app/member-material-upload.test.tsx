@@ -3,6 +3,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
 import { SnackbarProvider } from "../components/AppSnackbar";
+import { MAX_UPLOAD_FILE_BYTES, MAX_UPLOAD_FILE_SIZE_LABEL } from "../lib/upload-validation";
 import { MemberMaterialUploadPage } from "./member-material-upload";
 
 function resolveRequestUrl(input: string | URL | Request) {
@@ -306,14 +307,14 @@ describe("MemberMaterialUploadPage", () => {
     fireEvent.change(fileInput, {
       target: {
         files: [
-          new File([new Uint8Array(10 * 1024 * 1024 + 1)], "oversized.pdf", { type: "application/pdf" }),
+          new File([new Uint8Array(MAX_UPLOAD_FILE_BYTES + 1)], "oversized.pdf", { type: "application/pdf" }),
         ],
       },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
 
-    expect(await screen.findByText("文件 oversized.pdf 超过 10MB，请压缩或拆分后再上传。")).toBeInTheDocument();
+    expect(await screen.findByText(`文件 oversized.pdf 超过 ${MAX_UPLOAD_FILE_SIZE_LABEL}，请压缩或拆分后再上传。`)).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 

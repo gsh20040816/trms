@@ -173,7 +173,7 @@ uv run python -m trms_backend --reload
 
 - `TRMS_STORAGE_BACKEND` 支持 `local` 和 `s3`。
 - 开发和测试环境默认使用 `local`，并从 `MATERIAL_STORAGE_DIR` 读取本地根目录。
-- 单个上传材料默认大小上限为 64MiB；后端上传校验和 CLI 本地预检共用同一阈值。
+- 单个上传材料默认大小上限为 64MiB；后端上传校验、CLI 本地预检和前端上传预检共用同一阈值。
 - `TRMS_ENV=production` 时必须显式配置 `TRMS_STORAGE_BACKEND=s3`；生产环境拒绝继续使用本地目录存储，避免把原始材料和导出产物留在 API/worker 容器本地盘。
 - `TRMS_STORAGE_S3_ENDPOINT`、`TRMS_STORAGE_S3_BUCKET`、`TRMS_STORAGE_S3_ACCESS_KEY_ID`、`TRMS_STORAGE_S3_SECRET_ACCESS_KEY` 为 `s3` 后端必填项；`TRMS_STORAGE_S3_REGION` 和 `TRMS_STORAGE_S3_KEY_PREFIX` 为可选项。
 - 对象存储凭据只允许通过后端环境变量或密钥管理注入，不入库、不返回前端，也不应写入日志。

@@ -24,7 +24,7 @@ import { FileDropZone } from "../components/FileDropZone";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
 import { formatMaterialType } from "../lib/ui-text";
-import { findOversizedFile, MAX_UPLOAD_FILE_BYTES } from "../lib/upload-validation";
+import { findOversizedFile, MAX_UPLOAD_FILE_SIZE_LABEL } from "../lib/upload-validation";
 import type {
   MaterialBatchUploadResponse,
   MaterialRecord,
@@ -172,7 +172,7 @@ function validateUploadForm(
   } else {
     const oversizedFile = findOversizedFile(formState.files);
     if (oversizedFile) {
-      errors.files = `文件 ${oversizedFile.name} 超过 ${Math.floor(MAX_UPLOAD_FILE_BYTES / 1024 / 1024)}MB，请压缩或拆分后再上传。`;
+      errors.files = `文件 ${oversizedFile.name} 超过 ${MAX_UPLOAD_FILE_SIZE_LABEL}，请压缩或拆分后再上传。`;
     }
   }
 
@@ -446,7 +446,7 @@ export function MemberMaterialUploadPage() {
                   disabled={isSubmitting}
                   ariaLabel="上传文件"
                   fileListAriaLabel="待上传文件列表"
-                  hint="支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 10MB。上传后系统会自动识别材料类型，再提示还缺哪些辅助资料。"
+                  hint={`支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 ${MAX_UPLOAD_FILE_SIZE_LABEL}。上传后系统会自动识别材料类型，再提示还缺哪些辅助资料。`}
                 />
                 {validationErrors.files ? (
                   <Typography color="error" variant="body2" sx={{ mt: 1 }}>

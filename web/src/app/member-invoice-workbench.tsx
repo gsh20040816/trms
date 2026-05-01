@@ -52,7 +52,7 @@ import {
   formatTaskStatus,
   formatValidationRule,
 } from "../lib/ui-text";
-import { findOversizedFile, MAX_UPLOAD_FILE_BYTES } from "../lib/upload-validation";
+import { findOversizedFile, MAX_UPLOAD_FILE_SIZE_LABEL } from "../lib/upload-validation";
 import { useAuthSession } from "./auth-store";
 import { buildInvoiceDetailPath, buildMaterialInvoiceDetailPath } from "./member-invoice-paths";
 
@@ -630,7 +630,7 @@ function validateWorkbenchUploadForm(
   } else {
     const oversizedFile = findOversizedFile(formState.files);
     if (oversizedFile) {
-      errors.files = `文件 ${oversizedFile.name} 超过 ${Math.floor(MAX_UPLOAD_FILE_BYTES / 1024 / 1024)}MB，请压缩或拆分后再上传。`;
+      errors.files = `文件 ${oversizedFile.name} 超过 ${MAX_UPLOAD_FILE_SIZE_LABEL}，请压缩或拆分后再上传。`;
     }
   }
 
@@ -1881,7 +1881,7 @@ export function MemberInvoiceWorkbenchPage() {
                       disabled={isUploading}
                       ariaLabel="工作台上传文件"
                       fileListAriaLabel="工作台待上传文件列表"
-                      hint="将发票、车票、住宿凭证、支付截图拖到这里；支持一次选择多个文件，单文件最大 10MB。"
+                      hint={`将发票、车票、住宿凭证、支付截图拖到这里；支持一次选择多个文件，单文件最大 ${MAX_UPLOAD_FILE_SIZE_LABEL}。`}
                     />
                     {uploadValidationErrors.files ? (
                       <Typography color="error" variant="body2" sx={{ mt: 1 }}>

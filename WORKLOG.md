@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-05-01 22:15 - Sync frontend upload limit to 64MiB
+
+### 完成内容
+- 修复用户反馈的“前端还存在限制上传 10MB”问题。
+- 调整 [upload-validation.ts](/home/gsh/workspace/TRMS/web/src/lib/upload-validation.ts)：
+  - 前端单文件上传预检阈值从 `10 * 1024 * 1024` 调整为 `64 * 1024 * 1024`；
+  - 导出统一展示文案 `64MB`，避免页面和测试继续各自硬编码数字。
+- 调整成员上传入口：
+  - [member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx) 的错误提示和上传说明显示 64MB；
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 的工作台上传错误提示和上传说明显示 64MB。
+- 调整 [member-material-upload.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.test.tsx)：
+  - 超限夹具改为 `MAX_UPLOAD_FILE_BYTES + 1`；
+  - 断言引用同一展示常量，不再硬编码 10MB。
+- 更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md) 和 [README.md](/home/gsh/workspace/TRMS/README.md)，明确前端上传预检也同步到 64MiB。
+
+### 根因
+- 上一轮只把后端领域常量和 CLI 本地预检提高到 64MiB，遗漏了前端独立的 `web/src/lib/upload-validation.ts`。
+- 成员专项上传页和成员工作台虽然共用了该前端常量做校验，但文案和测试仍直接表达 10MB，导致浏览器层提前拦截了 10MB 以上文件。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-material-upload`
+  - 1 个测试文件、4 个用例通过；仍存在既有 `--localstorage-file` warning。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 504 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 当前前端阈值仍是源码常量，与后端常量通过人工同步保持一致；后续若上传限制变为运行时配置，应由后端向前端下发配置，避免再次漂移。
+
 ## 2026-05-01 22:05 - Fix recognition-time auto linking and local transport e-ticket handling
 
 ### 完成内容
@@ -29,7 +64,7 @@
   - 明确市内交通电子发票/电子票应分类为 `invoice`、费用类型为 `local_transport`，并作为需要匹配行程单的网约车证据；
   - 要求市内交通电子发票尽量抽取可见发票号。
 - 调整上传阈值 [materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/materials.py)：
-  - 默认上传大小从 10MiB 提升到 64MiB，后端上传和 CLI 本地预检共用该常量。
+  - 默认上传大小从 10MiB 提升到 64MiB，后端上传、CLI 本地预检和前端上传预检均按该阈值执行。
 - 更新测试：
   - [test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py) 覆盖默认材料类型不在识别前自动归票；
   - [test_recognition_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_recognition_async_jobs.py) 覆盖 `expense_type_candidate` 自动建票和识别后真实附件自动关联；
