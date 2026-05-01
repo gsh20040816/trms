@@ -150,6 +150,7 @@ class InvoiceRow(Base):
     buyer_name: Mapped[str] = mapped_column(String(255), nullable=False)
     tax_number: Mapped[str] = mapped_column(String(64), nullable=False)
     seller_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    corporate_transfer_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     expense_type: Mapped[str] = mapped_column(String(64), nullable=False)
     member_submission_status: Mapped[str] = mapped_column(

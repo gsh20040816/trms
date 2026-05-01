@@ -41,6 +41,7 @@ class InvoiceCreate(BaseModel):
     buyer_name: str = Field(min_length=1)
     tax_number: str = Field(min_length=1)
     seller_name: str | None = None
+    corporate_transfer_reference: str | None = None
     amount_cents: int = Field(gt=0)
     expense_type: ExpenseType
 
@@ -51,6 +52,8 @@ class InvoiceCreate(BaseModel):
         self.tax_number = self.tax_number.strip()
         if self.seller_name is not None:
             self.seller_name = self.seller_name.strip() or None
+        if self.corporate_transfer_reference is not None:
+            self.corporate_transfer_reference = self.corporate_transfer_reference.strip() or None
         return self
 
 
@@ -62,6 +65,7 @@ class ManualInvoiceEntry(BaseModel):
     buyer_name: str = Field(min_length=1)
     tax_number: str = Field(min_length=1)
     seller_name: str | None = None
+    corporate_transfer_reference: str | None = None
     amount_cents: int = Field(gt=0)
     expense_type: ExpenseType
 
@@ -73,6 +77,8 @@ class ManualInvoiceEntry(BaseModel):
         self.tax_number = self.tax_number.strip()
         if self.seller_name is not None:
             self.seller_name = self.seller_name.strip() or None
+        if self.corporate_transfer_reference is not None:
+            self.corporate_transfer_reference = self.corporate_transfer_reference.strip() or None
         return self
 
     def to_invoice_create(self) -> InvoiceCreate:
@@ -89,6 +95,7 @@ class InvoiceRecord(BaseModel):
     buyer_name: str
     tax_number: str
     seller_name: str | None
+    corporate_transfer_reference: str | None = None
     amount_cents: int
     expense_type: ExpenseType
     member_submission_status: InvoiceMemberSubmissionStatus = InvoiceMemberSubmissionStatus.UNSUBMITTED

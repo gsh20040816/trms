@@ -207,6 +207,7 @@ function buildReviewSummary(options?: {
             buyer_name: "同济大学",
             tax_number: "91310000TEST00001",
             seller_name: "中国铁路",
+            corporate_transfer_reference: null,
             amount_cents: 12345,
             expense_type: "railway",
             created_at: "2026-04-28T09:10:00+08:00",
@@ -362,6 +363,7 @@ describe("admin invoice editor page", () => {
         expect(body["invoice_number"]).toBe("AI-INV-001");
         expect(body["buyer_name"]).toBe("同济大学");
         expect(body["tax_number"]).toBe("91310000TEST00001");
+        expect(body["corporate_transfer_reference"]).toBe("CORP-REF-001");
         expect(body["amount_cents"]).toBe(12345);
         expect(body["expense_type"]).toBe("railway");
         const transactionTime = body["transaction_time"];
@@ -400,6 +402,11 @@ describe("admin invoice editor page", () => {
     fireEvent.change(screen.getByDisplayValue("WRONG-TAX"), {
       target: {
         value: "91310000TEST00001",
+      },
+    });
+    fireEvent.change(screen.getByLabelText("公对公转账编号"), {
+      target: {
+        value: "CORP-REF-001",
       },
     });
 

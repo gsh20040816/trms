@@ -81,6 +81,7 @@ def make_invoice(
         buyer_name=buyer_name,
         tax_number=tax_number,
         seller_name="供应商",
+        corporate_transfer_reference=None,
         amount_cents=amount_cents,
         expense_type=expense_type,
         created_at=NOW,
@@ -236,6 +237,19 @@ def test_payment_record_requirement_rule_covers_passed_and_failed_paths(
     assert result.status is expected_status
 
 
+def test_payment_record_requirement_rule_passes_with_corporate_transfer_reference():
+    invoice = make_invoice()
+    invoice.corporate_transfer_reference = "ABC123456789"
+
+    result = validate_payment_record_requirement(invoice, [])
+
+    assert result.rule_code == PAYMENT_RECORD_REQUIRED_RULE_CODE
+    assert result.status is ValidationStatus.PASSED
+    assert result.message == "发票金额达到阈值，已填写公对公转账编号"
+    assert result.evidence["corporate_transfer_reference"] == "ABC123456789"
+    assert result.evidence["payment_evidence_mode"] == "corporate_transfer_reference"
+
+
 @pytest.mark.parametrize(
     ("recognitions", "expected_status"),
     [
@@ -271,6 +285,22 @@ def test_payment_record_amount_match_rule_covers_passed_failed_pending_paths(
 
     assert result.rule_code == PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE
     assert result.status is expected_status
+
+
+def test_payment_record_amount_match_rule_is_not_applicable_with_corporate_transfer_reference():
+    invoice = make_invoice()
+    invoice.corporate_transfer_reference = "ABC123456789"
+
+    result = validate_payment_record_amount_match(
+        invoice,
+        [],
+        {},
+    )
+
+    assert result.rule_code == PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE
+    assert result.status is ValidationStatus.NOT_APPLICABLE
+    assert result.message == "已填写公对公转账编号，暂不执行支付记录金额匹配"
+    assert result.evidence["matching_mode"] == "corporate_transfer_reference_exempt"
 
 
 @pytest.mark.parametrize(

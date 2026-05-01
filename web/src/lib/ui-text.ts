@@ -116,6 +116,7 @@ export const FIELD_LABELS: Record<string, string> = {
   amount_cents: "金额",
   expense_type: "费用类型",
   seller_name: "销售方名称",
+  corporate_transfer_reference: "公对公转账编号",
   dispute_reason: "异议说明",
   note: "备注",
 };

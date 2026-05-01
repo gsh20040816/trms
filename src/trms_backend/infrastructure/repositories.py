@@ -682,6 +682,7 @@ class SqlAlchemyInvoiceRepository:
                 row.buyer_name = data.buyer_name
                 row.tax_number = data.tax_number
                 row.seller_name = data.seller_name
+                row.corporate_transfer_reference = data.corporate_transfer_reference
                 row.amount_cents = data.amount_cents
                 row.expense_type = data.expense_type.value
                 row.updated_at = now
@@ -1569,6 +1570,7 @@ def _invoice_from_row(row: InvoiceRow) -> InvoiceRecord:
         buyer_name=row.buyer_name,
         tax_number=row.tax_number,
         seller_name=row.seller_name,
+        corporate_transfer_reference=row.corporate_transfer_reference,
         amount_cents=row.amount_cents,
         expense_type=ExpenseType(row.expense_type),
         member_submission_status=InvoiceMemberSubmissionStatus(row.member_submission_status),

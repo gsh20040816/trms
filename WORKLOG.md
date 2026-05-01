@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-05-01 23:43 - Allow corporate transfer reference to replace payment records
+
+### 完成内容
+- 完成任务“支持用公对公转账编号代替支付记录”。
+- 后端新增发票字段：
+  - 在 [invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoices.py)、[models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)、[repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)、[api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py) 中新增 `corporate_transfer_reference`；
+  - 新增 Alembic 迁移 [20260501_01_add_invoice_corporate_transfer_reference.py](/home/gsh/workspace/TRMS/alembic/versions/20260501_01_add_invoice_corporate_transfer_reference.py)；
+  - 为保持现有领域测试夹具稳定，`InvoiceRecord.corporate_transfer_reference` 默认为 `None`。
+- 调整支付记录相关校验 [invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py)：
+  - `invoice_payment_record_required` 在发票金额达到阈值时，若已填写合法公对公转账编号，则直接通过，不再要求必须上传 `payment_record`；
+  - `invoice_payment_record_amount_match` 在“只有转账编号、没有支付记录附件”的替代路径下返回 `not_applicable`，避免伪造金额匹配；
+  - 若同时仍上传了支付记录，系统继续按既有支付记录金额匹配路径工作，不删除原规则。
+- 前端录入与展示调整：
+  - 成员单票页 [member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx) 新增“公对公转账编号”录入；
+  - 管理员发票编辑页 [admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 新增同字段，和其他发票业务字段同路径保存；
+  - 前端类型与文案 [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)、[ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts) 同步更新。
+- 更新测试：
+  - [test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py) 覆盖“转账编号替代支付记录”与“金额匹配规则不适用”；
+  - [test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py) 覆盖发票 API 保存转账编号，以及大额发票在填写转账编号后免支付记录；
+  - [test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py) 同步迁移 head 与本地自举边界；
+  - [member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)、[admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx) 覆盖成员/管理员录入该字段。
+
+### 根因
+- 原系统把“大额发票需要支付记录”完全绑定在 `payment_record` 辅助材料类型上，没有发票级的“替代支付凭据”表达能力。
+- 这会把“已具备公对公转账编号，但没有单独支付截图”的真实业务场景误判为缺材料。
+- 问题的关键不是新增一种材料，而是允许发票自身带上“支付凭据替代信息”，并让规则层识别这条替代路径。
+
+### 风险与影响面
+- 本轮只把“公对公转账编号”视为“支付记录必需规则”的替代，不把它伪装成支付记录附件，也不参与支付记录金额求和。
+- 因此，替代路径下 `invoice_payment_record_amount_match` 明确返回 `not_applicable`；系统不会假装已经校验过真实支付流水金额。
+- 当前合法性边界采用“非空、去首尾空白后保留”的最小约束，没有额外加格式正则；若后续学校财务口径要求固定编码格式，应单独补更严格校验，而不是在本轮猜测规则。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_invoice_validation_rules.py tests/test_invoices_api.py tests/test_database_migrations.py`
+  - 77 个用例通过。
+- 已通过前端全量测试：
+  - `cd web && npm test`
+  - 100 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 513 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-01 23:22 - Allow partial reimbursement splits with confirmation prompt
 
 ### 完成内容

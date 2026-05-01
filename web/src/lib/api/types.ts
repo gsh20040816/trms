@@ -320,6 +320,7 @@ export type InvoiceRecord = {
   buyer_name: string;
   tax_number: string;
   seller_name: string | null;
+  corporate_transfer_reference: string | null;
   amount_cents: number;
   expense_type: ExpenseType;
   member_submission_status: InvoiceMemberSubmissionStatus;
@@ -354,6 +355,7 @@ export type ManualInvoiceEntry = {
   buyer_name: string;
   tax_number: string;
   seller_name?: string | null;
+  corporate_transfer_reference?: string | null;
   amount_cents: number;
   expense_type: ExpenseType;
 };

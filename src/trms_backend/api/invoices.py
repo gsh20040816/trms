@@ -54,6 +54,7 @@ class ManualInvoiceEntryRequest(BaseModel):
     buyer_name: str = Field(min_length=1)
     tax_number: str = Field(min_length=1)
     seller_name: str | None = None
+    corporate_transfer_reference: str | None = None
     amount_cents: int = Field(gt=0)
     expense_type: ExpenseType
 
@@ -66,6 +67,8 @@ class ManualInvoiceEntryRequest(BaseModel):
         self.tax_number = self.tax_number.strip()
         if self.seller_name is not None:
             self.seller_name = self.seller_name.strip() or None
+        if self.corporate_transfer_reference is not None:
+            self.corporate_transfer_reference = self.corporate_transfer_reference.strip() or None
         return self
 
     def to_domain(self, *, actor_id: str) -> ManualInvoiceEntry:
@@ -78,6 +81,7 @@ class ManualInvoiceEntryRequest(BaseModel):
                 "buyer_name": self.buyer_name,
                 "tax_number": self.tax_number,
                 "seller_name": self.seller_name,
+                "corporate_transfer_reference": self.corporate_transfer_reference,
                 "amount_cents": self.amount_cents,
                 "expense_type": self.expense_type,
             }
@@ -256,6 +260,7 @@ def build_invoice_router(
                 "buyer_name",
                 "tax_number",
                 "seller_name",
+                "corporate_transfer_reference",
                 "amount_cents",
                 "expense_type",
             },

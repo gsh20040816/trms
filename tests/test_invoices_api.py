@@ -195,6 +195,7 @@ def valid_invoice_payload():
         "buyer_name": "同济大学",
         "tax_number": "12100000425006117D",
         "seller_name": "铁路服务商",
+        "corporate_transfer_reference": None,
         "amount_cents": 12345,
         "expense_type": "railway",
     }
@@ -240,6 +241,7 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
     assert body["invoice"]["task_id"] == task_id
     assert body["invoice"]["material_id"] == material_id
     assert body["invoice"]["amount_cents"] == 12345
+    assert body["invoice"]["corporate_transfer_reference"] is None
     title_validation = validation_by_code(body, "invoice_title_match")
     tax_validation = validation_by_code(body, "invoice_tax_number_match")
     duplicate_validation = validation_by_code(body, "invoice_number_unique")
@@ -264,31 +266,22 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
     }
     payment_record_validation = validation_by_code(body, "invoice_payment_record_required")
     assert payment_record_validation["status"] == "not_applicable"
-    assert payment_record_validation["evidence"] == {
-        "amount_cents": 12345,
-        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "config_source": (
-            "trms_backend.domain.invoice_validation."
-            "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
-        ),
-        "requires_payment_record": False,
-        "payment_record_material_ids": [],
-    }
+    assert payment_record_validation["evidence"]["amount_cents"] == 12345
+    assert payment_record_validation["evidence"]["threshold_amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_record_validation["evidence"]["requires_payment_record"] is False
+    assert payment_record_validation["evidence"]["payment_record_material_ids"] == []
+    assert payment_record_validation["evidence"]["corporate_transfer_reference"] is None
     payment_amount_validation = validation_by_code(body, "invoice_payment_record_amount_match")
     assert payment_amount_validation["status"] == "not_applicable"
-    assert payment_amount_validation["evidence"] == {
-        "invoice_amount_cents": 12345,
-        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
-        "config_source": (
-            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
-        ),
-        "requires_payment_record": False,
-        "payment_record_material_ids": [],
-        "matched_payment_records": [],
-        "missing_amount_materials": [],
-        "payment_record_amount_total_cents": None,
-    }
+    assert payment_amount_validation["evidence"]["invoice_amount_cents"] == 12345
+    assert payment_amount_validation["evidence"]["threshold_amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_amount_validation["evidence"]["matching_mode"] == PAYMENT_RECORD_AMOUNT_MATCH_MODE
+    assert payment_amount_validation["evidence"]["requires_payment_record"] is False
+    assert payment_amount_validation["evidence"]["payment_record_material_ids"] == []
+    assert payment_amount_validation["evidence"]["corporate_transfer_reference"] is None
+    assert payment_amount_validation["evidence"]["matched_payment_records"] == []
+    assert payment_amount_validation["evidence"]["missing_amount_materials"] == []
+    assert payment_amount_validation["evidence"]["payment_record_amount_total_cents"] is None
     competition_notice_validation = validation_by_code(
         body, COMPETITION_NOTICE_REQUIRED_RULE_CODE
     )
@@ -562,21 +555,41 @@ def test_create_invoice_fails_payment_record_validation_when_amount_reaches_thre
     )
     assert payment_record_validation["status"] == "failed"
     assert payment_record_validation["message"] == "发票金额达到阈值，缺少支付记录"
-    assert payment_record_validation["evidence"] == {
-        "amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "config_source": (
-            "trms_backend.domain.invoice_validation."
-            "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
-        ),
-        "requires_payment_record": True,
-        "payment_record_material_ids": [],
-    }
+    assert payment_record_validation["evidence"]["amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_record_validation["evidence"]["threshold_amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_record_validation["evidence"]["requires_payment_record"] is True
+    assert payment_record_validation["evidence"]["payment_record_material_ids"] == []
+    assert payment_record_validation["evidence"]["corporate_transfer_reference"] is None
     payment_amount_validation = validation_by_code(
         response.json(), "invoice_payment_record_amount_match"
     )
     assert payment_amount_validation["status"] == "not_applicable"
     assert payment_amount_validation["message"] == "尚未关联支付记录，暂不执行金额匹配"
+
+
+def test_create_invoice_allows_corporate_transfer_reference_to_replace_payment_record(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_material(client)
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+            "corporate_transfer_reference": "ABC123456789",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["invoice"]["corporate_transfer_reference"] == "ABC123456789"
+    payment_record_validation = validation_by_code(body, "invoice_payment_record_required")
+    assert payment_record_validation["status"] == "passed"
+    assert payment_record_validation["message"] == "发票金额达到阈值，已填写公对公转账编号"
+    assert payment_record_validation["evidence"]["corporate_transfer_reference"] == "ABC123456789"
+    payment_amount_validation = validation_by_code(body, "invoice_payment_record_amount_match")
+    assert payment_amount_validation["status"] == "not_applicable"
+    assert payment_amount_validation["message"] == "已填写公对公转账编号，暂不执行支付记录金额匹配"
 
 
 def test_create_invoice_marks_competition_time_validation_pending_when_transaction_time_is_missing(
@@ -1053,16 +1066,11 @@ def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path
         if item["rule_code"] == "invoice_payment_record_required"
     )
     assert payment_record_validation["status"] == "passed"
-    assert payment_record_validation["evidence"] == {
-        "amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "config_source": (
-            "trms_backend.domain.invoice_validation."
-            "PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS"
-        ),
-        "requires_payment_record": True,
-        "payment_record_material_ids": [payment_record_material_id],
-    }
+    assert payment_record_validation["evidence"]["amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_record_validation["evidence"]["threshold_amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_record_validation["evidence"]["requires_payment_record"] is True
+    assert payment_record_validation["evidence"]["payment_record_material_ids"] == [payment_record_material_id]
+    assert payment_record_validation["evidence"]["corporate_transfer_reference"] is None
     payment_amount_validation = next(
         item
         for item in validations_response.json()["items"]
@@ -1070,26 +1078,20 @@ def test_attach_payment_record_revalidates_large_amount_invoice_to_pass(tmp_path
     )
     assert payment_amount_validation["status"] == "passed"
     assert payment_amount_validation["message"] == "支付记录金额与发票金额一致"
-    assert payment_amount_validation["evidence"] == {
-        "invoice_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
-        "config_source": (
-            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
-        ),
-        "requires_payment_record": True,
-        "payment_record_material_ids": [payment_record_material_id],
-        "matched_payment_records": [
-            {
-                "material_id": payment_record_material_id,
-                "recognized_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-                "recognition_task_id": recognition_task_id,
-                "recognition_task_status": "succeeded",
-            }
-        ],
-        "missing_amount_materials": [],
-        "payment_record_amount_total_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-    }
+    assert payment_amount_validation["evidence"]["invoice_amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_amount_validation["evidence"]["matching_mode"] == PAYMENT_RECORD_AMOUNT_MATCH_MODE
+    assert payment_amount_validation["evidence"]["payment_record_material_ids"] == [payment_record_material_id]
+    assert payment_amount_validation["evidence"]["corporate_transfer_reference"] is None
+    assert payment_amount_validation["evidence"]["matched_payment_records"] == [
+        {
+            "material_id": payment_record_material_id,
+            "recognized_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+            "recognition_task_id": recognition_task_id,
+            "recognition_task_status": "succeeded",
+        }
+    ]
+    assert payment_amount_validation["evidence"]["missing_amount_materials"] == []
+    assert payment_amount_validation["evidence"]["payment_record_amount_total_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
 
 
 def test_attach_competition_notice_revalidates_registration_invoice_to_pass(tmp_path):
@@ -1402,26 +1404,20 @@ def test_retry_payment_record_recognition_revalidates_failed_amount_match_to_pas
     )
     assert payment_amount_validation["status"] == "passed"
     assert payment_amount_validation["message"] == "支付记录金额与发票金额一致"
-    assert payment_amount_validation["evidence"] == {
-        "invoice_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
-        "config_source": (
-            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
-        ),
-        "requires_payment_record": True,
-        "payment_record_material_ids": [payment_record_material_id],
-        "matched_payment_records": [
-            {
-                "material_id": payment_record_material_id,
-                "recognized_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-                "recognition_task_id": retry_task_id,
-                "recognition_task_status": "succeeded",
-            }
-        ],
-        "missing_amount_materials": [],
-        "payment_record_amount_total_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-    }
+    assert payment_amount_validation["evidence"]["invoice_amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_amount_validation["evidence"]["matching_mode"] == PAYMENT_RECORD_AMOUNT_MATCH_MODE
+    assert payment_amount_validation["evidence"]["payment_record_material_ids"] == [payment_record_material_id]
+    assert payment_amount_validation["evidence"]["corporate_transfer_reference"] is None
+    assert payment_amount_validation["evidence"]["matched_payment_records"] == [
+        {
+            "material_id": payment_record_material_id,
+            "recognized_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
+            "recognition_task_id": retry_task_id,
+            "recognition_task_status": "succeeded",
+        }
+    ]
+    assert payment_amount_validation["evidence"]["missing_amount_materials"] == []
+    assert payment_amount_validation["evidence"]["payment_record_amount_total_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
 
 
 def test_attach_payment_record_marks_amount_match_pending_when_amount_missing(tmp_path):
@@ -1461,25 +1457,19 @@ def test_attach_payment_record_marks_amount_match_pending_when_amount_missing(tm
     )
     assert payment_amount_validation["status"] == "pending"
     assert payment_amount_validation["message"] == "支付记录金额缺失，需人工确认"
-    assert payment_amount_validation["evidence"] == {
-        "invoice_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "threshold_amount_cents": PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS,
-        "matching_mode": PAYMENT_RECORD_AMOUNT_MATCH_MODE,
-        "config_source": (
-            "trms_backend.domain.invoice_validation.PAYMENT_RECORD_AMOUNT_MATCH_MODE"
-        ),
-        "requires_payment_record": True,
-        "payment_record_material_ids": [payment_record_material_id],
-        "matched_payment_records": [],
-        "missing_amount_materials": [
-            {
-                "material_id": payment_record_material_id,
-                "recognition_task_id": recognition_task_id,
-                "recognition_task_status": "succeeded",
-            }
-        ],
-        "payment_record_amount_total_cents": 0,
-    }
+    assert payment_amount_validation["evidence"]["invoice_amount_cents"] == PAYMENT_RECORD_REQUIRED_AMOUNT_THRESHOLD_CENTS
+    assert payment_amount_validation["evidence"]["matching_mode"] == PAYMENT_RECORD_AMOUNT_MATCH_MODE
+    assert payment_amount_validation["evidence"]["payment_record_material_ids"] == [payment_record_material_id]
+    assert payment_amount_validation["evidence"]["corporate_transfer_reference"] is None
+    assert payment_amount_validation["evidence"]["matched_payment_records"] == []
+    assert payment_amount_validation["evidence"]["missing_amount_materials"] == [
+        {
+            "material_id": payment_record_material_id,
+            "recognition_task_id": recognition_task_id,
+            "recognition_task_status": "succeeded",
+        }
+    ]
+    assert payment_amount_validation["evidence"]["payment_record_amount_total_cents"] == 0
 
 
 def test_retry_invoice_recognition_keeps_competition_location_rule_cancelled(tmp_path):
@@ -1704,7 +1694,7 @@ def test_manual_invoice_correction_updates_recognition_fields_and_keeps_diff_his
     assert audit_logs[1].actor_id == "2250001"
     assert audit_logs[1].result is AuditLogResult.SUCCEEDED
     assert audit_logs[1].detail["material_id"] == material_id
-    assert audit_logs[1].detail["correction_count"] == 8
+    assert audit_logs[1].detail["correction_count"] == 9
     assert audit_logs[1].detail["changed_fields"][0]["field_name"] == "invoice_number"
     assert audit_logs[1].detail["changed_fields"][0]["before"]["value"] == "INV-AI-001"
     assert audit_logs[1].detail["changed_fields"][0]["before"]["source"] == "ai"

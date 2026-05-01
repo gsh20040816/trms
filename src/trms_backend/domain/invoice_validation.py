@@ -247,6 +247,7 @@ def validate_payment_record_requirement(
         for material in supporting_materials
         if material.material_type is MaterialType.PAYMENT_RECORD
     ]
+    has_corporate_transfer_reference = bool(invoice.corporate_transfer_reference)
     requires_payment_record = invoice.amount_cents >= threshold_cents
     has_payment_record = len(payment_record_material_ids) > 0
 
@@ -265,15 +266,21 @@ def validate_payment_record_requirement(
                 ),
                 "requires_payment_record": False,
                 "payment_record_material_ids": payment_record_material_ids,
+                "corporate_transfer_reference": invoice.corporate_transfer_reference,
+                "payment_evidence_mode": "not_required",
             },
         )
 
-    if has_payment_record:
+    if has_payment_record or has_corporate_transfer_reference:
         return _validation_result(
             rule_code=PAYMENT_RECORD_REQUIRED_RULE_CODE,
             target_id=invoice.id,
             status=ValidationStatus.PASSED,
-            message="发票金额达到阈值，已关联支付记录",
+            message=(
+                "发票金额达到阈值，已填写公对公转账编号"
+                if has_corporate_transfer_reference and not has_payment_record
+                else "发票金额达到阈值，已关联支付记录"
+            ),
             evidence={
                 "amount_cents": invoice.amount_cents,
                 "threshold_amount_cents": threshold_cents,
@@ -283,6 +290,12 @@ def validate_payment_record_requirement(
                 ),
                 "requires_payment_record": True,
                 "payment_record_material_ids": payment_record_material_ids,
+                "corporate_transfer_reference": invoice.corporate_transfer_reference,
+                "payment_evidence_mode": (
+                    "corporate_transfer_reference"
+                    if has_corporate_transfer_reference and not has_payment_record
+                    else "payment_record"
+                ),
             },
         )
 
@@ -300,6 +313,8 @@ def validate_payment_record_requirement(
             ),
             "requires_payment_record": True,
             "payment_record_material_ids": payment_record_material_ids,
+            "corporate_transfer_reference": invoice.corporate_transfer_reference,
+            "payment_evidence_mode": "missing",
         },
     )
 
@@ -317,6 +332,7 @@ def validate_payment_record_amount_match(
     ]
     payment_record_material_ids = [material.id for material in payment_record_materials]
     requires_payment_record = invoice.amount_cents >= threshold_cents
+    has_corporate_transfer_reference = bool(invoice.corporate_transfer_reference)
     evidence = {
         "invoice_amount_cents": invoice.amount_cents,
         "threshold_amount_cents": threshold_cents,
@@ -326,6 +342,7 @@ def validate_payment_record_amount_match(
         ),
         "requires_payment_record": requires_payment_record,
         "payment_record_material_ids": payment_record_material_ids,
+        "corporate_transfer_reference": invoice.corporate_transfer_reference,
         "matched_payment_records": [],
         "missing_amount_materials": [],
         "payment_record_amount_total_cents": None,
@@ -338,6 +355,15 @@ def validate_payment_record_amount_match(
             status=ValidationStatus.NOT_APPLICABLE,
             message="发票金额未达到支付记录金额匹配阈值",
             evidence=evidence,
+        )
+
+    if has_corporate_transfer_reference and not payment_record_material_ids:
+        return _validation_result(
+            rule_code=PAYMENT_RECORD_AMOUNT_MATCH_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="已填写公对公转账编号，暂不执行支付记录金额匹配",
+            evidence=evidence | {"matching_mode": "corporate_transfer_reference_exempt"},
         )
 
     if not payment_record_material_ids:

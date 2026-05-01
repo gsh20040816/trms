@@ -52,6 +52,7 @@ type InvoiceEditorFormState = {
   buyerName: string;
   taxNumber: string;
   sellerName: string;
+  corporateTransferReference: string;
   amountYuan: string;
   expenseType: ExpenseType;
 };
@@ -161,6 +162,12 @@ const INVOICE_FIELD_CONFIGS: InvoiceFieldConfig[] = [
     key: "sellerName",
     label: "销售方名称",
     recognitionField: "seller_name",
+    required: false,
+  },
+  {
+    key: "corporateTransferReference",
+    label: "公对公转账编号",
+    recognitionField: "corporate_transfer_reference",
     required: false,
   },
   {
@@ -379,6 +386,7 @@ function buildInitialFormState(
     buyerName: invoice?.buyer_name ?? getRecognitionFieldTextValue(recognition, "buyer_name"),
     taxNumber: invoice?.tax_number ?? getRecognitionFieldTextValue(recognition, "tax_number"),
     sellerName: invoice?.seller_name ?? getRecognitionFieldTextValue(recognition, "seller_name"),
+    corporateTransferReference: invoice?.corporate_transfer_reference ?? getRecognitionFieldTextValue(recognition, "corporate_transfer_reference"),
     amountYuan: invoice
       ? formatAmountInputFromCents(invoice.amount_cents)
       : getRecognitionAmountInput(recognition),
@@ -693,6 +701,7 @@ export function AdminInvoiceEditorPage() {
         buyer_name: formState.buyerName.trim(),
         tax_number: formState.taxNumber.trim(),
         seller_name: formState.sellerName.trim() || null,
+        corporate_transfer_reference: formState.corporateTransferReference.trim() || null,
         amount_cents: amountCents,
         expense_type: formState.expenseType,
       });
@@ -1276,6 +1285,15 @@ export function AdminInvoiceEditorPage() {
                             value={formState.sellerName}
                             onChange={(event) => {
                               updateField("sellerName", event.target.value);
+                            }}
+                            fullWidth
+                          />
+                          <TextField
+                            label="公对公转账编号"
+                            name="corporate-transfer-reference"
+                            value={formState.corporateTransferReference}
+                            onChange={(event) => {
+                              updateField("corporateTransferReference", event.target.value);
                             }}
                             fullWidth
                           />

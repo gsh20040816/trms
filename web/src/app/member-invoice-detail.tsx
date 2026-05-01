@@ -63,6 +63,7 @@ type ManualInvoiceFormState = {
   buyerName: string;
   taxNumber: string;
   sellerName: string;
+  corporateTransferReference: string;
   amountYuan: string;
   expenseType: ExpenseType;
 };
@@ -90,6 +91,7 @@ const FIELD_ORDER = [
   "buyer_name",
   "tax_number",
   "seller_name",
+  "corporate_transfer_reference",
   "amount_cents",
   "expense_type",
 ] as const;
@@ -101,6 +103,7 @@ const FIELD_LABELS: Record<(typeof FIELD_ORDER)[number], string> = {
   buyer_name: "发票抬头",
   tax_number: "税号",
   seller_name: "销售方",
+  corporate_transfer_reference: "公对公转账编号",
   amount_cents: "金额",
   expense_type: "费用类型",
 };
@@ -256,6 +259,7 @@ function buildManualInvoiceFormState(
     buyerName: item.invoice?.buyer_name ?? getRecognitionText(item, "buyer_name"),
     taxNumber: item.invoice?.tax_number ?? getRecognitionText(item, "tax_number"),
     sellerName: item.invoice?.seller_name ?? getRecognitionText(item, "seller_name"),
+    corporateTransferReference: item.invoice?.corporate_transfer_reference ?? getRecognitionText(item, "corporate_transfer_reference"),
     amountYuan: item.invoice ? formatCurrencyInputFromCents(item.invoice.amount_cents) : getRecognitionAmountInput(item),
     expenseType: item.invoice?.expense_type ?? getRecognitionExpenseType(item, allowedExpenseTypes),
   };
@@ -364,6 +368,7 @@ function findPrimaryInvoice(item: TaskMemberWorkbenchItem | null, sharedInvoice:
     buyer_name: sharedInvoice.buyer_name,
     tax_number: "",
     seller_name: sharedInvoice.seller_name,
+    corporate_transfer_reference: null,
     amount_cents: sharedInvoice.amount_cents,
     expense_type: sharedInvoice.expense_type,
     member_submission_status: "unsubmitted",
@@ -495,6 +500,7 @@ export function MemberInvoiceDetailPage() {
       buyer_name: manualForm.buyerName.trim(),
       tax_number: manualForm.taxNumber.trim(),
       seller_name: manualForm.sellerName.trim() || null,
+      corporate_transfer_reference: manualForm.corporateTransferReference.trim() || null,
       amount_cents: amountCents,
       expense_type: manualForm.expenseType,
     };
@@ -766,6 +772,7 @@ export function MemberInvoiceDetailPage() {
                   <TextField label="发票抬头" value={manualForm.buyerName} disabled={!canEditInvoice} onChange={(event) => { updateManualField("buyerName", event.target.value); }} />
                   <TextField label="税号" value={manualForm.taxNumber} disabled={!canEditInvoice} onChange={(event) => { updateManualField("taxNumber", event.target.value); }} />
                   <TextField label="销售方名称" value={manualForm.sellerName} disabled={!canEditInvoice} onChange={(event) => { updateManualField("sellerName", event.target.value); }} />
+                  <TextField label="公对公转账编号" value={manualForm.corporateTransferReference} disabled={!canEditInvoice} onChange={(event) => { updateManualField("corporateTransferReference", event.target.value); }} />
                   <TextField select label="费用类型" value={manualForm.expenseType} disabled={!canEditInvoice} onChange={(event) => { updateManualField("expenseType", event.target.value as ExpenseType); }}>
                     {allowedExpenseTypes.map((expenseType) => (
                       <MenuItem key={expenseType} value={expenseType}>{formatExpenseType(expenseType)}</MenuItem>

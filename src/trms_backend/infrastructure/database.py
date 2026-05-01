@@ -72,6 +72,10 @@ def init_database(
     allow_schema_bootstrap: bool = True,
 ) -> None:
     if allow_schema_bootstrap:
+        # Ensure SQLAlchemy model metadata is registered before create_all runs in
+        # local bootstrap mode.
+        from trms_backend.infrastructure import models  # noqa: F401
+
         engine = session_factory.kw["bind"]
         assert engine is not None
         Base.metadata.create_all(bind=engine)

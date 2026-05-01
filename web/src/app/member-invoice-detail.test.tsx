@@ -49,6 +49,7 @@ const invoice: InvoiceRecord = {
   buyer_name: "同济大学",
   tax_number: "91310113666007253C",
   seller_name: "12306",
+  corporate_transfer_reference: null,
   amount_cents: 12345,
   expense_type: "railway",
   member_submission_status: "unsubmitted",
@@ -233,12 +234,14 @@ describe("MemberInvoiceDetailPage", () => {
 
     const invoiceNumberInput = await screen.findByLabelText("发票号码");
     fireEvent.change(invoiceNumberInput, { target: { value: "MANUAL-001" } });
+    fireEvent.change(screen.getByLabelText("公对公转账编号"), { target: { value: "ABC123456789" } });
     fireEvent.click(screen.getByRole("button", { name: "保存发票字段并校验" }));
     await waitFor(() => {
       expect(requests.some((request) => (
         request.method === "POST"
         && request.url === "/api/materials/MAT-READY-001/invoice"
-        && (request.body as { invoice_number?: string }).invoice_number === "MANUAL-001"
+        && (request.body as { invoice_number?: string; corporate_transfer_reference?: string }).invoice_number === "MANUAL-001"
+        && (request.body as { corporate_transfer_reference?: string }).corporate_transfer_reference === "ABC123456789"
       ))).toBe(true);
     });
 
@@ -247,17 +250,8 @@ describe("MemberInvoiceDetailPage", () => {
     if (!splitAmountInput) {
       throw new Error("Expected split amount input.");
     }
-    fireEvent.change(splitAmountInput, { target: { value: "100.00" } });
+    fireEvent.change(splitAmountInput, { target: { value: "123.45" } });
     fireEvent.click(await screen.findByRole("button", { name: "保存金额归属" }));
-    const confirmDialog = await screen.findByRole("dialog");
-    expect(within(confirmDialog).getByText("当前分摊合计 ￥100.00，比发票金额 ￥123.45 少了 ￥23.45。这表示仍有未报销金额；确认后仍会保存，但这张发票会继续停留在“分摊未完成”。")).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(within(confirmDialog).getByRole("button", { name: "仍然保存" }));
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
     await waitFor(() => {
       expect(requests.some((request) => request.method === "PUT" && request.url === "/api/invoices/INV-READY-001/splits")).toBe(true);
     });
@@ -292,7 +286,10 @@ describe("MemberInvoiceDetailPage", () => {
       throw new Error("Expected split amount input.");
     }
     fireEvent.change(splitAmountInput, { target: { value: "100.00" } });
-    fireEvent.click(await screen.findByRole("button", { name: "保存金额归属" }));
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "保存金额归属" }));
+      await Promise.resolve();
+    });
 
     const confirmDialog = await screen.findByRole("dialog");
     await act(async () => {
