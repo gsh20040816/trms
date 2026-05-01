@@ -157,6 +157,8 @@ type PendingSupportingMaterialLinkageAction = {
   invoiceId: string;
 };
 
+type PendingSupportingMaterialSelectionMap = Record<string, string>;
+
 type UploadProcessingStageKey =
   | "received"
   | "recognition_pending"
@@ -595,6 +597,12 @@ function formatPendingSupportingMaterialLinkageReason(
     return "当前没有可安全匹配的候选发票";
   }
   return "当前存在多张候选发票，系统不会自动绑定";
+}
+
+function formatPendingSupportingMaterialCandidateOption(
+  candidate: PendingSupportingMaterialLinkageItem["candidate_invoices"][number],
+) {
+  return `${candidate.invoice_number} / ${formatCurrencyFromCents(candidate.amount_cents)} / ${candidate.original_filename}`;
 }
 
 function formatTaskDateRange(task: ReimbursementTask) {
@@ -1171,6 +1179,7 @@ export function MemberInvoiceWorkbenchPage() {
   const [runningInvoiceBatchAction, setRunningInvoiceBatchAction] = useState<InvoiceBatchAction | null>(null);
   const [runningPendingSupportingMaterialLinkageActionKey, setRunningPendingSupportingMaterialLinkageActionKey] = useState<string | null>(null);
   const [pendingSupportingMaterialLinkageErrors, setPendingSupportingMaterialLinkageErrors] = useState<Record<string, string>>({});
+  const [pendingSupportingMaterialSelections, setPendingSupportingMaterialSelections] = useState<PendingSupportingMaterialSelectionMap>({});
   const [expandedProblemInvoiceGroupKeys, setExpandedProblemInvoiceGroupKeys] = useState<string[]>([]);
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
 
@@ -1547,6 +1556,16 @@ export function MemberInvoiceWorkbenchPage() {
     } finally {
       setRunningPendingSupportingMaterialLinkageActionKey(null);
     }
+  }
+
+  function handlePendingSupportingMaterialSelectionChange(
+    materialId: string,
+    candidateInvoiceId: string,
+  ) {
+    setPendingSupportingMaterialSelections((current) => ({
+      ...current,
+      [materialId]: candidateInvoiceId,
+    }));
   }
 
   function handleBatchInvoiceSelectionChange(
@@ -2639,6 +2658,18 @@ export function MemberInvoiceWorkbenchPage() {
                     <li key={item.material_id}>
                       {(() => {
                         const hasRunningAction = runningPendingSupportingMaterialLinkageActionKey?.startsWith(`${item.material_id}:`) ?? false;
+                        const selectedCandidateInvoiceId = pendingSupportingMaterialSelections[item.material_id]
+                          ?? item.candidate_invoices[0]?.invoice_id
+                          ?? "";
+                        const selectedCandidate = item.candidate_invoices.find(
+                          (candidate) => candidate.invoice_id === selectedCandidateInvoiceId,
+                        ) ?? item.candidate_invoices[0] ?? null;
+                        const selectedCandidateActionKey = selectedCandidate
+                          ? buildPendingSupportingMaterialLinkageActionKey({
+                            materialId: item.material_id,
+                            invoiceId: selectedCandidate.invoice_id,
+                          })
+                          : null;
                         return (
                           <>
                             <strong>{formatMaterialType(item.material_type)} / {item.original_filename}</strong>
@@ -2655,7 +2686,7 @@ export function MemberInvoiceWorkbenchPage() {
                               <span>
                                 仍可继续关联的候选发票：
                                 {item.candidate_invoices.map((candidate) => (
-                                  `${candidate.invoice_number}（${formatExpenseType(candidate.expense_type)} / ${formatCurrencyFromCents(candidate.amount_cents)}）`
+                                  `${candidate.invoice_number}（${formatExpenseType(candidate.expense_type)} / ${formatCurrencyFromCents(candidate.amount_cents)} / ${candidate.original_filename}）`
                                 )).join("；")}
                               </span>
                             ) : (
@@ -2673,45 +2704,67 @@ export function MemberInvoiceWorkbenchPage() {
                                   去上传区补录或补传发票
                                 </Button>
                               ) : null}
-                              {item.candidate_invoices.map((candidate) => {
-                                const actionKey = buildPendingSupportingMaterialLinkageActionKey({
-                                  materialId: item.material_id,
-                                  invoiceId: candidate.invoice_id,
-                                });
-                                const isRunning = runningPendingSupportingMaterialLinkageActionKey === actionKey;
-                                return (
+                              {item.candidate_invoices.length > 0 ? (
+                                <>
+                                  <TextField
+                                    select
+                                    size="small"
+                                    label="归属发票"
+                                    value={selectedCandidateInvoiceId}
+                                    onChange={(event) => {
+                                      handlePendingSupportingMaterialSelectionChange(
+                                        item.material_id,
+                                        event.target.value,
+                                      );
+                                    }}
+                                    disabled={hasRunningAction}
+                                    sx={{ minWidth: 320 }}
+                                  >
+                                    {item.candidate_invoices.map((candidate) => (
+                                      <MenuItem
+                                        key={`candidate:${item.material_id}:${candidate.invoice_id}`}
+                                        value={candidate.invoice_id}
+                                      >
+                                        {formatPendingSupportingMaterialCandidateOption(candidate)}
+                                      </MenuItem>
+                                    ))}
+                                  </TextField>
                                   <Button
-                                    key={`attach:${item.material_id}:${candidate.invoice_id}`}
                                     type="button"
                                     variant="contained"
                                     size="small"
-                                    disabled={hasRunningAction}
+                                    disabled={hasRunningAction || selectedCandidate === null}
                                     onClick={() => {
+                                      if (selectedCandidate === null) {
+                                        return;
+                                      }
                                       void handlePendingSupportingMaterialAttach(
                                         item,
-                                        candidate.invoice_id,
-                                        candidate.invoice_number,
+                                        selectedCandidate.invoice_id,
+                                        selectedCandidate.invoice_number,
                                       );
                                     }}
                                   >
-                                    {isRunning ? `关联中 ${candidate.invoice_number}...` : `关联到发票 ${candidate.invoice_number}`}
+                                    {selectedCandidate && runningPendingSupportingMaterialLinkageActionKey === selectedCandidateActionKey
+                                      ? `关联中 ${selectedCandidate.invoice_number}...`
+                                      : "保存归属"}
                                   </Button>
-                                );
-                              })}
-                              {item.candidate_invoices.map((candidate) => (
-                                <Button
-                                  key={`view:${item.material_id}:${candidate.invoice_id}`}
-                                  type="button"
-                                  variant="outlined"
-                                  size="small"
-                                  disabled={hasRunningAction}
-                                  onClick={() => {
-                                    handlePendingSupportingMaterialCandidateSelect(candidate.invoice_id);
-                                  }}
-                                >
-                                  查看候选发票 {candidate.invoice_number}
-                                </Button>
-                              ))}
+                                  <Button
+                                    type="button"
+                                    variant="outlined"
+                                    size="small"
+                                    disabled={hasRunningAction || selectedCandidate === null}
+                                    onClick={() => {
+                                      if (selectedCandidate === null) {
+                                        return;
+                                      }
+                                      handlePendingSupportingMaterialCandidateSelect(selectedCandidate.invoice_id);
+                                    }}
+                                  >
+                                    查看所选发票
+                                  </Button>
+                                </>
+                              ) : null}
                             </div>
                             {pendingSupportingMaterialLinkageErrors[item.material_id] ? (
                               <p className="field-error field-error-block">

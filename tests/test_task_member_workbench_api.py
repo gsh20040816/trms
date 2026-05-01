@@ -419,6 +419,7 @@ def test_member_workbench_pending_linkage_keeps_remaining_candidates_after_parti
             "invoice_number": "PARTIAL-001",
             "amount_cents": 12345,
             "expense_type": "railway",
+            "original_filename": "shared-first.pdf",
         }
     ]
     assert item["candidate_invoices"] == [
@@ -427,6 +428,7 @@ def test_member_workbench_pending_linkage_keeps_remaining_candidates_after_parti
             "invoice_number": "PARTIAL-002",
             "amount_cents": 23456,
             "expense_type": "railway",
+            "original_filename": "shared-second.pdf",
         }
     ]
 

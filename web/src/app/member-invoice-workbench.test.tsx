@@ -255,6 +255,13 @@ function mockCommonFetch(summary = buildWorkbenchSummary()) {
         failures: [],
       }));
     }
+    if (url.startsWith("/api/invoices/") && url.includes("/supporting-materials/") && method === "PUT") {
+      return Promise.resolve(jsonResponse({
+        item: {
+          id: "MAT-PAY-001",
+        },
+      }));
+    }
 
     throw new Error(`Unhandled fetch request: ${method} ${url}`);
   });
@@ -318,6 +325,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
               invoice_number: "INV-LINKED-001",
               amount_cents: 8000,
               expense_type: "hotel",
+              original_filename: "linked.pdf",
             },
           ],
           candidate_invoices: [
@@ -326,6 +334,14 @@ describe("MemberInvoiceWorkbenchPage", () => {
               invoice_number: "INV-READY-001",
               amount_cents: 12345,
               expense_type: "railway",
+              original_filename: "ready.pdf",
+            },
+            {
+              invoice_id: "INV-SECOND-001",
+              invoice_number: "INV-SECOND-001",
+              amount_cents: 54321,
+              expense_type: "hotel",
+              original_filename: "second.pdf",
             },
           ],
           created_at: "2026-04-28T11:00:00+08:00",
@@ -338,7 +354,73 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
     expect(screen.getByText(/当前已关联：INV-LINKED-001/)).toBeInTheDocument();
     expect(screen.getByText(/仍可继续关联的候选发票：INV-READY-001/)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "归属发票" })).toHaveTextContent("INV-READY-001 / ￥123.45 / ready.pdf");
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
+  });
+
+  it("uses a single select to choose the target invoice before saving linkage", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      pending_supporting_material_linkage_items: [
+        {
+          material_id: "MAT-PAY-001",
+          submitter_id: "2250001",
+          material_type: "payment_record",
+          original_filename: "pay.png",
+          pending_reason: "multiple_candidates",
+          linked_invoices: [],
+          candidate_invoices: [
+            {
+              invoice_id: "INV-READY-001",
+              invoice_number: "INV-READY-001",
+              amount_cents: 12345,
+              expense_type: "railway",
+              original_filename: "ready.pdf",
+            },
+            {
+              invoice_id: "INV-SECOND-001",
+              invoice_number: "INV-SECOND-001",
+              amount_cents: 54321,
+              expense_type: "hotel",
+              original_filename: "second.pdf",
+            },
+          ],
+          created_at: "2026-04-28T11:00:00+08:00",
+        },
+      ],
+    }));
+    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "归属发票" }));
+    fireEvent.click(await screen.findByRole("option", { name: "INV-SECOND-001 / ￥543.21 / second.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存归属" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/member/invoices/INV-SECOND-001");
+    });
+  });
+
+  it("shows the empty-candidate state without rendering a select", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      pending_supporting_material_linkage_items: [
+        {
+          material_id: "MAT-NO-CANDIDATE-001",
+          submitter_id: "2250001",
+          material_type: "competition_notice",
+          original_filename: "notice.pdf",
+          pending_reason: "no_candidate",
+          linked_invoices: [],
+          candidate_invoices: [],
+          created_at: "2026-04-28T11:00:00+08:00",
+        },
+      ],
+    }));
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
+    expect(screen.getByText("当前没有候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "归属发票" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "去上传区补录或补传发票" })).toBeInTheDocument();
   });
 
   it("routes non-invoice materials to the dedicated material detail page", async () => {

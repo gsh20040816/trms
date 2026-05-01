@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-05-02 00:36 - Collapse supporting material ownership choice into a single select
+
+### 完成内容
+- 完成任务“收口附件归属选择，改为统一下拉归属发票”。
+- 后端候选发票摘要补齐原始文件名：
+  - [task_supporting_material_linkage.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_supporting_material_linkage.py) 的 `PendingSupportingMaterialLinkageCandidateInvoiceSummary` 新增 `original_filename`；
+  - 待关联读模型现在会把候选发票对应的原始发票文件名一并返回给前端，避免前端只能靠多按钮重复渲染区分。
+- 成员工作台待关联辅助材料区改为单一下拉选择：
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 新增按材料维度维护的候选发票选择状态；
+  - 对每份待关联材料，候选区从“每张发票一组关联/查看按钮”改成“一个归属发票下拉 + 一个保存归属按钮 + 一个查看所选发票按钮”；
+  - 下拉候选项统一展示“发票编号 / 金额 / 原始文件名”，空候选时不渲染下拉，只保留“去上传区补录或补传发票”引导。
+- 同步更新前后端测试：
+  - [test_supporting_material_linkage_api.py](/home/gsh/workspace/TRMS/tests/test_supporting_material_linkage_api.py)、[test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py) 断言候选发票摘要含 `original_filename`；
+  - [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 覆盖候选展示、切换下拉选项后保存归属，以及空候选不渲染下拉；
+  - [member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx) 同步补齐候选摘要字段。
+
+### 根因
+- 上一轮虽然已经允许同一材料继续挂多张发票，但工作台待关联区仍然是“每个候选发票重复渲染一次按钮”的结构。
+- 当候选发票变多时，用户要在多组重复按钮里自己比对票号、金额和文件名，界面噪音高，也不利于后续继续扩展多对多场景。
+- 真正需要收口的是“候选展示方式”，不是再改一次附件写接口；也就是把“候选信息”压缩成一条稳定可比对的选项，再把写动作收敛成一次明确确认。
+
+### 风险与影响面
+- 本轮没有改 `PUT /api/invoices/{invoice_id}/supporting-materials/{material_id}` 的写语义，只是收口了成员工作台的选择交互和候选摘要内容。
+- 材料详情页仍保持只读候选参考，不承担正式写入动作；正式选择归属仍在工作台完成，这样能避免本轮把写路径扩散到第二个页面。
+- 当前下拉项使用“发票编号 / 金额 / 原始文件名”三元摘要；如果后续真实数据里仍出现高相似候选，应继续补更强的区分字段，而不是回退到重复按钮列表。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_supporting_material_linkage_api.py tests/test_task_member_workbench_api.py`
+  - 9 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx member-material-detail.test.tsx`
+  - 2 个测试文件、13 个用例通过。
+- 仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 520 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 00:34 - Support using one material as attachment for multiple invoices
 
 ### 完成内容

@@ -766,6 +766,7 @@ export type PendingSupportingMaterialLinkageCandidateInvoiceSummary = {
   invoice_number: string;
   amount_cents: number;
   expense_type: ExpenseType;
+  original_filename: string;
 };
 
 export type PendingSupportingMaterialLinkageItem = {

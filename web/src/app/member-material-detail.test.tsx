@@ -130,6 +130,7 @@ function buildMaterialSummary(
             invoice_number: "INV-LINKED-001",
             amount_cents: 8888,
             expense_type: "railway",
+            original_filename: "linked.pdf",
           },
         ],
         candidate_invoices: [
@@ -138,6 +139,7 @@ function buildMaterialSummary(
             invoice_number: "INV-CANDIDATE-001",
             amount_cents: 12345,
             expense_type: "local_transport",
+            original_filename: "candidate.pdf",
           },
         ],
         created_at: "2026-04-28T10:00:00+08:00",

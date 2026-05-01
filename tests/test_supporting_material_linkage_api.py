@@ -212,12 +212,14 @@ def test_admin_can_list_pending_supporting_material_linkage_items(tmp_path):
             "invoice_number": "M2-001",
             "amount_cents": 20000,
             "expense_type": "railway",
+            "original_filename": "member-two-first.pdf",
         },
         {
             "invoice_id": member_two_second_invoice_id,
             "invoice_number": "M2-002",
             "amount_cents": 30000,
             "expense_type": "hotel",
+            "original_filename": "member-two-second.pdf",
         },
     ]
 
@@ -342,6 +344,7 @@ def test_pending_supporting_material_linkage_keeps_remaining_candidates_after_on
             "invoice_number": "M2-001",
             "amount_cents": 20000,
             "expense_type": "railway",
+            "original_filename": "member-two-first.pdf",
         }
     ]
     assert item["candidate_invoices"] == [
@@ -350,6 +353,7 @@ def test_pending_supporting_material_linkage_keeps_remaining_candidates_after_on
             "invoice_number": "M2-002",
             "amount_cents": 30000,
             "expense_type": "hotel",
+            "original_filename": "member-two-second.pdf",
         }
     ]
 

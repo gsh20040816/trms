@@ -20,6 +20,7 @@ class PendingSupportingMaterialLinkageCandidateInvoiceSummary(BaseModel):
     invoice_number: str
     amount_cents: int = Field(ge=0)
     expense_type: ExpenseType
+    original_filename: str
 
 
 class PendingSupportingMaterialLinkageItem(BaseModel):
@@ -111,20 +112,16 @@ def build_task_supporting_material_linkage_report(
                 original_filename=material.original_filename,
                 pending_reason=pending_reason,
                 linked_invoices=[
-                    PendingSupportingMaterialLinkageCandidateInvoiceSummary(
-                        invoice_id=invoice.id,
-                        invoice_number=invoice.invoice_number,
-                        amount_cents=invoice.amount_cents,
-                        expense_type=invoice.expense_type,
+                    _build_candidate_invoice_summary(
+                        invoice,
+                        materials_by_id=materials_by_id,
                     )
                     for invoice in linked_invoices
                 ],
                 candidate_invoices=[
-                    PendingSupportingMaterialLinkageCandidateInvoiceSummary(
-                        invoice_id=invoice.id,
-                        invoice_number=invoice.invoice_number,
-                        amount_cents=invoice.amount_cents,
-                        expense_type=invoice.expense_type,
+                    _build_candidate_invoice_summary(
+                        invoice,
+                        materials_by_id=materials_by_id,
                     )
                     for invoice in remaining_candidate_invoices
                 ],
@@ -149,3 +146,20 @@ def _invoice_belongs_to_submitter(
     if invoice_material is None:
         return False
     return invoice_material.submitter_id == submitter_id
+
+
+def _build_candidate_invoice_summary(
+    invoice: InvoiceRecord,
+    *,
+    materials_by_id: dict[str, MaterialRecord],
+) -> PendingSupportingMaterialLinkageCandidateInvoiceSummary:
+    invoice_material = materials_by_id.get(invoice.material_id)
+    return PendingSupportingMaterialLinkageCandidateInvoiceSummary(
+        invoice_id=invoice.id,
+        invoice_number=invoice.invoice_number,
+        amount_cents=invoice.amount_cents,
+        expense_type=invoice.expense_type,
+        original_filename=(
+            invoice_material.original_filename if invoice_material is not None else invoice.invoice_number
+        ),
+    )
