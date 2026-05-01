@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-05-01 22:48 - Split member material detail pages by recognized material type
+
+### 完成内容
+- 已将你新增的 9 条产品需求写入 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，并按仓库规则把第 1 条拆成当前轮最小任务“让成员材料详情按识别类型进入独立前端页面”。
+- 新增非发票材料详情页 [member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx)：
+  - `payment_record`、`competition_notice`、`itinerary`、`order_screenshot`、`other_attachment` 进入独立材料详情页；
+  - 每种类型都有独立标题、说明、类型相关识别字段区和对应的下一步提示；
+  - 当前页不再展示发票金额分摊、发票字段补录等发票特有表单。
+- 调整成员端路由与入口：
+  - 新增 `/member/materials/:materialId` 路由，承载非发票材料详情页；
+  - 保留 `/member/materials/:materialId/invoice` 作为发票特有处理页；
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 现在按材料类型分流：已有发票或识别为发票的材料进入发票页，其他材料进入新的材料页。
+- 新材料详情页支持的主动作：
+  - 查看原文件；
+  - 重新识别；
+  - 修改材料类型；
+  - 展示当前候选归属发票并跳转查看；
+  - 当用户把材料类型改成 `invoice` 后，自动切到发票处理页。
+- 新增/更新前端测试：
+  - [member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx) 覆盖 5 种非发票材料各自详情页；
+  - [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 覆盖非发票材料从工作台进入独立材料页。
+
+### 根因
+- 之前成员工作台里“点击进入处理页”的逻辑，除了已有 `invoice.id` 的材料外，剩余材料统一落到发票处理页。
+- 这导致支付记录、比赛通知、行程单、订单截图和其他附件都被迫展示发票字段、分摊和提交语义，页面上下文与材料真实职责不一致。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-material-detail.test.tsx member-invoice-workbench.test.tsx member-invoice-detail.test.tsx`
+  - 3 个测试文件、13 个用例通过。
+- 已通过仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 504 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
+### 风险与后续
+- 本轮只解决“不同材料类型进入不同详情页”的前端信息架构问题，没有顺带实现材料直接在详情页内完成附件归属写操作；当前仍通过工作台待关联区完成最终归属。
+- 非发票材料详情页目前展示的是识别结果、候选归属和类型修正，不包含新的后端字段编辑 API；如果后续要允许直接编辑支付记录/行程单结构化字段，应作为独立任务扩展。
+
 ## 2026-05-01 22:15 - Sync frontend upload limit to 64MiB
 
 ### 完成内容

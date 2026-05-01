@@ -54,7 +54,11 @@ import {
 } from "../lib/ui-text";
 import { findOversizedFile, MAX_UPLOAD_FILE_SIZE_LABEL } from "../lib/upload-validation";
 import { useAuthSession } from "./auth-store";
-import { buildInvoiceDetailPath, buildMaterialInvoiceDetailPath } from "./member-invoice-paths";
+import {
+  buildInvoiceDetailPath,
+  buildMaterialDetailPath,
+  buildMaterialInvoiceDetailPath,
+} from "./member-invoice-paths";
 
 type VisibleTaskState =
   | { status: "loading" }
@@ -1625,7 +1629,9 @@ export function MemberInvoiceWorkbenchPage() {
     void navigate(
       invoiceId
         ? buildInvoiceDetailPath(taskId, invoiceId)
-        : buildMaterialInvoiceDetailPath(taskId, item.material.material_id),
+        : item.material.material_type === "invoice"
+          ? buildMaterialInvoiceDetailPath(taskId, item.material.material_id)
+          : buildMaterialDetailPath(taskId, item.material.material_id),
     );
   }
 

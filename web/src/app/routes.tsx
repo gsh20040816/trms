@@ -8,6 +8,7 @@ import { AdminInvoiceEditorPage } from "./admin-invoice-editor";
 import { AdminMissingMaterialsPage } from "./task-missing-materials";
 import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
+import { MemberMaterialDetailPage } from "./member-material-detail";
 import { AdminTaskListPage } from "./admin-task-list";
 import { MemberInvoiceWorkbenchPage } from "./member-invoice-workbench";
 import { MemberInvoiceDetailPage } from "./member-invoice-detail";
@@ -65,6 +66,10 @@ export const routes: RouteObject[] = [
           {
             path: "invoices/:invoiceId",
             element: <MemberInvoiceDetailPage />,
+          },
+          {
+            path: "materials/:materialId",
+            element: <MemberMaterialDetailPage />,
           },
           {
             path: "materials/:materialId/invoice",

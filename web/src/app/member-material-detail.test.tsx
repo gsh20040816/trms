@@ -1,0 +1,209 @@
+import { act, render, screen, within } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
+
+import { clearMockSession, setMockSession } from "./auth-store";
+import { routes } from "./routes";
+
+function jsonResponse(body: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(body), {
+    status: init.status ?? 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function resolveRequestUrl(input: string | URL | Request) {
+  return typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+}
+
+function resolveRequestMethod(input: string | URL | Request, init: RequestInit | undefined) {
+  return init?.method?.toUpperCase() ?? (input instanceof Request ? input.method.toUpperCase() : "GET");
+}
+
+const task = {
+  id: "TASK-OPEN",
+  status: "open",
+  competition_name: "ICPC 区域赛",
+  competition_location: "武汉",
+  competition_start_date: "2026-05-01",
+  competition_end_date: "2026-05-03",
+  deadline: "2026-05-10T12:00:00+08:00",
+  member_ids: ["2250001", "2250002"],
+  fee_categories: ["railway", "hotel", "registration", "local_transport"],
+  administrator_id: "admin-1",
+  project_info: "ACM 竞赛项目",
+  reimburser_info: "张管理员",
+  invoice_title: "同济大学",
+  tax_number: "91310113666007253C",
+  created_at: "2026-04-28T08:00:00+08:00",
+  updated_at: "2026-04-28T08:00:00+08:00",
+};
+
+function buildMaterialSummary(
+  materialType: "payment_record" | "competition_notice" | "itinerary" | "order_screenshot" | "other_attachment",
+  fieldName: string,
+  fieldValue: unknown,
+) {
+  return {
+    task_id: "TASK-OPEN",
+    actor_id: "2250001",
+    report: {
+      task_id: "TASK-OPEN",
+      actor_id: "2250001",
+      total_expense_amount_cents: 0,
+      counts: {
+        material_count: 1,
+        missing_material_count: 0,
+        expense_detail_count: 0,
+        recognition_pending_count: 0,
+        recognition_succeeded_count: 1,
+        recognition_failed_count: 0,
+        recognition_needs_confirmation_count: 0,
+        validation_passed_count: 1,
+        validation_failed_count: 0,
+        validation_pending_count: 0,
+        validation_not_applicable_count: 0,
+        confirmed_expense_count: 0,
+        pending_confirmation_count: 0,
+        disputed_confirmation_count: 0,
+        missing_confirmation_count: 0,
+      },
+      materials: [],
+      missing_materials: [],
+      expense_details: [],
+    },
+    items: [
+      {
+        material: {
+          material_id: "MAT-TYPE-001",
+          submitter_id: "2250001",
+          material_type: materialType,
+          original_filename: `${materialType}.pdf`,
+          material_status: "assigned",
+          recognition_status: "succeeded",
+          recognition_failure_stage: null,
+          recognition_failure_reason: null,
+          invoice_id: null,
+          invoice_number: null,
+          validation_status: "passed",
+          validation_messages: [],
+          created_at: "2026-04-28T10:00:00+08:00",
+        },
+        invoice: null,
+        recognition: {
+          id: "REC-TYPE-001",
+          material_id: "MAT-TYPE-001",
+          status: "succeeded",
+          failure: null,
+          recognized_fields: {
+            document_family: { value: materialType, source: "ai", confidence: 0.99, status: "recognized", updated_at: null },
+            material_type: { value: materialType, source: "ai", confidence: 0.99, status: "recognized", updated_at: null },
+            expense_type_candidate: { value: "local_transport", source: "ai", confidence: 0.85, status: "recognized", updated_at: null },
+            classification_confidence: { value: 0.91, source: "ai", confidence: 0.91, status: "recognized", updated_at: null },
+            is_reimbursement_voucher: { value: false, source: "ai", confidence: 0.95, status: "recognized", updated_at: null },
+            [fieldName]: { value: fieldValue, source: "ai", confidence: 0.95, status: "recognized", updated_at: null },
+          },
+          manual_corrections: [],
+          created_at: "2026-04-28T10:00:00+08:00",
+          updated_at: "2026-04-28T10:00:00+08:00",
+        },
+        validations: [],
+        supporting_materials: [],
+        splits: [],
+        confirmations: [],
+        related_expense_details: [],
+        missing_materials: [],
+        queue_group: "recognition_review",
+        blocking_reasons: ["recognition_review"],
+        ready_for_submission: false,
+      },
+    ],
+    pending_supporting_material_linkage_items: [
+      {
+        material_id: "MAT-TYPE-001",
+        submitter_id: "2250001",
+        material_type: materialType,
+        original_filename: `${materialType}.pdf`,
+        pending_reason: "multiple_candidates",
+        candidate_invoices: [
+          {
+            invoice_id: "INV-CANDIDATE-001",
+            invoice_number: "INV-CANDIDATE-001",
+            amount_cents: 12345,
+            expense_type: "local_transport",
+          },
+        ],
+        created_at: "2026-04-28T10:00:00+08:00",
+      },
+    ],
+    shared_invoices: [],
+  };
+}
+
+function renderMaterialRoute(summary: ReturnType<typeof buildMaterialSummary>) {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+    const url = resolveRequestUrl(input);
+    const method = resolveRequestMethod(input, init);
+
+    if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+      return Promise.resolve(jsonResponse(task));
+    }
+    if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+      return Promise.resolve(jsonResponse(summary));
+    }
+
+    throw new Error(`Unhandled request ${method} ${url}`);
+  });
+
+  const router = createMemoryRouter(routes, {
+    initialEntries: ["/member/materials/MAT-TYPE-001?taskId=TASK-OPEN"],
+  });
+
+  act(() => {
+    render(<RouterProvider router={router} />);
+  });
+}
+
+describe("MemberMaterialDetailPage", () => {
+  beforeEach(() => {
+    clearMockSession();
+    setMockSession("member");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearMockSession();
+  });
+
+  it.each([
+    ["payment_record", "支付记录详情", "金额", "￥123.45"],
+    ["competition_notice", "比赛通知详情", "地点", "武汉赛区通知"],
+    ["itinerary", "行程单详情", "去程出发机场", "SHA"],
+    ["order_screenshot", "订单截图详情", "交通方式", "网约车"],
+    ["other_attachment", "其他材料详情", "行程/路线", "同济大学-武汉站"],
+  ] as const)("renders dedicated page for %s materials", async (materialType, heading, fieldLabel, expectedValue) => {
+    const materialLabelMap = {
+      payment_record: "支付记录",
+      competition_notice: "比赛通知",
+      itinerary: "行程单",
+      order_screenshot: "订单截图",
+      other_attachment: "其他材料",
+    } as const;
+    const fieldMap = {
+      payment_record: ["amount_cents", 12345],
+      competition_notice: ["location", "武汉赛区通知"],
+      itinerary: ["departure_airport_code", "SHA"],
+      order_screenshot: ["transport_mode", "网约车"],
+      other_attachment: ["trip_route", "同济大学-武汉站"],
+    } as const;
+    const [fieldName, fieldValue] = fieldMap[materialType];
+    renderMaterialRoute(buildMaterialSummary(materialType, fieldName, fieldValue));
+
+    expect(await screen.findByRole("heading", { name: heading })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前材料识别判断")).toBeInTheDocument();
+    const recognizedFieldSection = screen.getByLabelText(`${materialLabelMap[materialType]}识别字段`);
+    expect(recognizedFieldSection).toBeInTheDocument();
+    expect(within(recognizedFieldSection).getByText(fieldLabel)).toBeInTheDocument();
+    expect(within(recognizedFieldSection).getByText(expectedValue)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "候选发票 INV-CANDIDATE-001" })).toBeInTheDocument();
+  });
+});

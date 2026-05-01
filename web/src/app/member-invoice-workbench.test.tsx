@@ -303,6 +303,78 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
   });
 
+  it("routes non-invoice materials to the dedicated material detail page", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      items: [
+        {
+          material: {
+            material_id: "MAT-PAY-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "pay.png",
+            material_status: "assigned",
+            recognition_status: "needs_confirmation",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "pending",
+            validation_messages: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+          },
+          invoice: null,
+          recognition: {
+            id: "REC-PAY-001",
+            material_id: "MAT-PAY-001",
+            status: "needs_confirmation",
+            failure: null,
+            recognized_fields: {},
+            manual_corrections: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+            updated_at: "2026-04-28T10:00:00+08:00",
+          },
+          validations: [],
+          supporting_materials: [],
+          splits: [],
+          confirmations: [],
+          related_expense_details: [],
+          missing_materials: [],
+          queue_group: "recognition_review",
+          blocking_reasons: ["recognition_review"],
+          ready_for_submission: false,
+        },
+      ],
+      report: {
+        ...buildWorkbenchSummary().report,
+        materials: [
+          {
+            material_id: "MAT-PAY-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "pay.png",
+            material_status: "assigned",
+            recognition_status: "needs_confirmation",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "pending",
+            validation_messages: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+          },
+        ],
+      },
+    }));
+    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    expect(await screen.findByRole("heading", { name: "需要处理的发票列表" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /识别失败或待确认 pay\.png/ }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/member/materials/MAT-PAY-001");
+    });
+  });
+
   it("marks problem invoices with emphasis while keeping the list collapsed to one-line summaries", async () => {
     mockCommonFetch(buildWorkbenchSummary({
       items: [
