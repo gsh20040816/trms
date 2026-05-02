@@ -316,6 +316,9 @@ describe("MemberMaterialDetailPage", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "支付记录详情" })).toBeInTheDocument();
+    const invoiceOptions = within(screen.getByLabelText("归属发票勾选列表")).getAllByRole("checkbox");
+    expect(invoiceOptions[0]).toHaveAccessibleName(/INV-CANDIDATE-001/);
+    expect(invoiceOptions[1]).toHaveAccessibleName(/INV-LINKED-001/);
     fireEvent.click(screen.getByRole("checkbox", { name: /INV-LINKED-001/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /INV-CANDIDATE-001/ }));
     fireEvent.click(screen.getByRole("button", { name: "更改关联" }));

@@ -176,18 +176,32 @@ class SupportingMaterialAutoLinkService:
         *,
         recognition_task: RecognitionTaskRecord | None = None,
     ) -> list[str]:
-        if material.material_type is not MaterialType.ITINERARY:
-            return [invoice.id for invoice in candidate_invoices]
-
-        itinerary_recognition = recognition_task
-        if itinerary_recognition is None:
-            itinerary_recognition = self._recognition_task_repository.get_latest_effective_by_material(
+        effective_recognition_task = recognition_task
+        if effective_recognition_task is None:
+            effective_recognition_task = self._recognition_task_repository.get_latest_effective_by_material(
                 material.id
             )
+
+        if material.material_type is not MaterialType.ITINERARY:
+            return _prioritize_by_exact_amount_match(
+                candidate_invoices,
+                recognized_amount_cents=_extract_first_int_field(
+                    effective_recognition_task,
+                    LOCAL_TRANSPORT_ITINERARY_AMOUNT_FIELD_NAMES,
+                ),
+            )
+
+        itinerary_recognition = effective_recognition_task
         if itinerary_recognition is None:
             return []
         if not _is_local_transport_itinerary(itinerary_recognition):
-            return [invoice.id for invoice in candidate_invoices]
+            return _prioritize_by_exact_amount_match(
+                candidate_invoices,
+                recognized_amount_cents=_extract_first_int_field(
+                    itinerary_recognition,
+                    LOCAL_TRANSPORT_ITINERARY_AMOUNT_FIELD_NAMES,
+                ),
+            )
 
         local_transport_candidates = [
             invoice
@@ -227,6 +241,27 @@ class SupportingMaterialAutoLinkService:
         if len(best_candidates) == 1:
             return best_candidates
         return best_candidates
+
+
+def _prioritize_by_exact_amount_match(
+    candidate_invoices: list[InvoiceRecord],
+    *,
+    recognized_amount_cents: int | None,
+) -> list[str]:
+    if recognized_amount_cents is None:
+        return [invoice.id for invoice in candidate_invoices]
+
+    exact_match_ids = [
+        invoice.id
+        for invoice in candidate_invoices
+        if invoice.amount_cents == recognized_amount_cents
+    ]
+    other_ids = [
+        invoice.id
+        for invoice in candidate_invoices
+        if invoice.amount_cents != recognized_amount_cents
+    ]
+    return [*exact_match_ids, *other_ids]
 
 
 def _is_assigned_supporting_link_context(material: MaterialRecord) -> bool:

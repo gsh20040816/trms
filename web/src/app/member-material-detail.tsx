@@ -244,7 +244,15 @@ function findPendingLinkageItem(
   return summary.pending_supporting_material_linkage_items.find((item) => item.material_id === materialId) ?? null;
 }
 
-function buildLinkageInvoiceOptions(item: PendingSupportingMaterialLinkageItem | null) {
+function extractRecognizedAmountCents(item: TaskMemberWorkbenchItem | null) {
+  const value = item?.recognition?.recognized_fields.amount_cents?.value;
+  return typeof value === "number" ? value : null;
+}
+
+function buildLinkageInvoiceOptions(
+  item: PendingSupportingMaterialLinkageItem | null,
+  recognizedAmountCents: number | null,
+) {
   if (!item) {
     return [];
   }
@@ -255,7 +263,20 @@ function buildLinkageInvoiceOptions(item: PendingSupportingMaterialLinkageItem |
   for (const invoice of item.candidate_invoices) {
     options.set(invoice.invoice_id, invoice);
   }
-  return [...options.values()];
+  const mergedOptions = [...options.values()];
+  return mergedOptions
+    .map((invoice, index) => ({
+      invoice,
+      index,
+      exactAmountMatch: recognizedAmountCents !== null && invoice.amount_cents === recognizedAmountCents,
+    }))
+    .sort((left, right) => {
+      if (left.exactAmountMatch !== right.exactAmountMatch) {
+        return left.exactAmountMatch ? -1 : 1;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.invoice);
 }
 
 function resolveMaterialPageConfig(item: TaskMemberWorkbenchItem) {
@@ -349,8 +370,8 @@ export function MemberMaterialDetailPage() {
     ? findPendingLinkageItem(detailState.summary, materialId)
     : null;
   const linkageInvoiceOptions = useMemo(
-    () => buildLinkageInvoiceOptions(pendingLinkageItem),
-    [pendingLinkageItem],
+    () => buildLinkageInvoiceOptions(pendingLinkageItem, extractRecognizedAmountCents(item)),
+    [item, pendingLinkageItem],
   );
   const currentLinkedInvoiceIds = useMemo(
     () => normalizeInvoiceIdSelection(pendingLinkageItem?.linked_invoices.map((invoice) => invoice.invoice_id) ?? []),

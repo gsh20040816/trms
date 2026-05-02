@@ -58,6 +58,7 @@ def build_task_supporting_material_linkage_report(
     supporting_material_auto_link_service: SupportingMaterialAutoLinkService,
 ) -> TaskSupportingMaterialLinkageReport:
     normalized_actor_id = actor_id.strip()
+    invoices_by_id = {invoice.id: invoice for invoice in invoices}
 
     items: list[PendingSupportingMaterialLinkageItem] = []
     for material in sorted(materials, key=lambda item: (item.created_at, item.id)):
@@ -75,9 +76,9 @@ def build_task_supporting_material_linkage_report(
             material
         )
         candidate_invoices = [
-            invoice
-            for invoice in invoices
-            if invoice.id in candidate_invoice_ids
+            invoices_by_id[invoice_id]
+            for invoice_id in candidate_invoice_ids
+            if invoice_id in invoices_by_id
         ]
         linked_invoice_ids = set(linked_invoice_ids_by_material_id.get(material.id, []))
 
@@ -137,6 +138,8 @@ def build_task_supporting_material_linkage_report(
         actor_id=normalized_actor_id,
         items=items,
     )
+
+
 def build_pending_supporting_material_candidate_invoice_summary(
     invoice: InvoiceRecord,
     *,

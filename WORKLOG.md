@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-05-02 21:40 - Reorder supporting-material invoice candidates by amount match
+
+### 完成内容
+- 完成任务“收口附件关联页，允许在已有关联基础上重选全部候选发票并按金额匹配排序”。
+- 后端候选排序逻辑已收口到“金额完全匹配优先”：
+  - [src/trms_backend/application/supporting_material_auto_link.py](/home/gsh/workspace/TRMS/src/trms_backend/application/supporting_material_auto_link.py)
+  - 对非行程单辅助材料，若识别结果存在 `amount_cents`，则把金额完全等于该识别金额的候选发票排在前面；
+  - 对非市内交通行程单，沿用原有候选范围，但同样在保留原顺序的前提下把完全匹配金额的候选前置；
+  - 市内交通行程单原有“金额 + 日期”优先的更严格局部规则保持不变，没有被本轮放宽。
+- 后端待关联报告不再丢失候选优先级顺序：
+  - [src/trms_backend/domain/task_supporting_material_linkage.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_supporting_material_linkage.py)
+  - 之前在把候选 `invoice_id` 再映射回发票对象时，实际按任务内发票原始遍历顺序重排，导致前面已经算好的优先级被覆盖；
+  - 现已改为严格按候选 `invoice_id` 顺序回填发票摘要。
+- 成员材料详情页候选展示已按“金额完全匹配优先”稳定排序：
+  - [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx)
+  - 页面会把当前已关联和未关联候选合并后统一排序，而不是简单把“已关联项”永远排在最前面；
+  - 因此在已有绑定基础上，成员仍可直接看到全部候选，并优先看到与材料识别金额完全一致的发票。
+- 已补回归测试：
+  - [tests/test_supporting_material_linkage_api.py](/home/gsh/workspace/TRMS/tests/test_supporting_material_linkage_api.py)
+  - [web/src/app/member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx)
+  - 覆盖后端候选排序，以及前端在“已有绑定 + 新候选”场景下的展示顺序与保存交互。
+
+### 根因
+- 候选优先级原本在后端服务层已经有一部分基础能力，但在真正返回到 API 时被两层逻辑冲淡了：
+  - 服务层对大多数辅助材料没有把识别金额用于候选排序；
+  - 即使服务层给出了排好序的 `candidate_invoice_ids`，报告构造层又按任务发票原始顺序重新取数，导致优先级失效。
+- 前端详情页则进一步把“已关联项”先塞进列表，再塞入剩余候选；这会让真正金额匹配的发票即使更相关，也可能排在后面。
+
+### 风险与影响面
+- 本轮只调整辅助材料归票候选的排序口径，不改变附件实际 attach/detach API、权限边界和自动关联判定条件。
+- “金额完全匹配优先”只改变候选展示顺序，不会自动替用户改关联结果；保存动作仍由成员显式勾选后提交。
+- 目前没有引入“金额接近度排序”“日期接近度排序”等更强启发式，避免在缺少稳定证据时把弱候选伪装成高置信候选。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_supporting_material_linkage_api.py -k 'prioritizes_exact_amount_match_candidates or pending_supporting_material_linkage_shows_single_manual_candidate_when_auto_link_is_not_safe'`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-material-detail.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 553 个用例全部通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `117/117` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 21:30 - Sync recognized supporting-material type back into material records
 
 ### 完成内容

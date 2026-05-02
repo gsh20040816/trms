@@ -11,6 +11,7 @@ from test_tasks_api import (
     register_and_get_token,
     valid_task_payload,
 )
+from test_task_member_workbench_api import mark_recognition_succeeded
 
 
 def make_client(tmp_path):
@@ -422,6 +423,90 @@ def test_pending_supporting_material_linkage_shows_single_manual_candidate_when_
             "expense_type": "railway",
             "original_filename": "member-one-invoice.pdf",
         }
+    ]
+
+
+def test_pending_supporting_material_linkage_prioritizes_exact_amount_match_candidates(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    first_invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="member-one-first.pdf",
+    )
+    second_invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="member-one-second.pdf",
+    )
+    first_invoice_id = create_invoice(
+        client,
+        first_invoice_material_id,
+        actor_id="2250001",
+        invoice_number="M1-001",
+        amount_cents=8800,
+        expense_type="railway",
+    )
+    second_invoice_id = create_invoice(
+        client,
+        second_invoice_material_id,
+        actor_id="2250001",
+        invoice_number="M1-002",
+        amount_cents=12345,
+        expense_type="hotel",
+    )
+    supporting_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="member-one-payment.png",
+        content_type="image/png",
+    )
+    mark_recognition_succeeded(
+        client,
+        supporting_material_id,
+        recognized_fields={
+            "amount_cents": {
+                "value": 12345,
+                "source": "manual",
+                "confidence": 1,
+                "status": "recognized",
+            },
+        },
+    )
+
+    response = client.get(
+        f"/api/tasks/{task_id}/supporting-material-linkage",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    item = next(
+        item
+        for item in response.json()["items"]
+        if item["material_id"] == supporting_material_id
+    )
+    assert item["candidate_invoices"] == [
+        {
+            "invoice_id": second_invoice_id,
+            "invoice_number": "M1-002",
+            "amount_cents": 12345,
+            "expense_type": "hotel",
+            "original_filename": "member-one-second.pdf",
+        },
+        {
+            "invoice_id": first_invoice_id,
+            "invoice_number": "M1-001",
+            "amount_cents": 8800,
+            "expense_type": "railway",
+            "original_filename": "member-one-first.pdf",
+        },
     ]
 
 
