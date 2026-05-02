@@ -241,6 +241,8 @@ describe("admin export tasks page", () => {
     expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
     const moduleNav = screen.getByLabelText("管理员模块导航");
     expect(within(moduleNav).getByText("导出打印").closest("a")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { name: "先生成完整材料包" })).toBeInTheDocument();
+    expect(screen.getByLabelText("材料包状态摘要")).toHaveTextContent("材料包就绪度");
     expect(await screen.findByText(/failed to read encrypted material PDF/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载导出文件" })).toBeInTheDocument();
 

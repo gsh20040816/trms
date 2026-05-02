@@ -222,6 +222,37 @@ function buildPackageJobSummary(job: TaskExportJobRecord | null) {
   };
 }
 
+function buildBoundaryStatusItems(boundary: TaskExportBoundary, latestPackageJob: TaskExportJobRecord | null) {
+  return [
+    {
+      label: "材料包就绪度",
+      value: boundary.export_allowed ? "已满足" : "未满足",
+      tone: boundary.export_allowed ? "success" as const : "danger" as const,
+    },
+    {
+      label: "最近完整包状态",
+      value: latestPackageJob ? formatExportJobStatus(latestPackageJob.status) : "尚未生成",
+      tone: latestPackageJob
+        ? buildJobStatusTone(latestPackageJob.status)
+        : "warning" as const,
+    },
+    {
+      label: "数据版本",
+      value: latestPackageJob
+        ? latestPackageJob.is_latest_for_task
+          ? "当前最新版本"
+          : "任务数据已更新"
+        : "暂无完整包",
+      tone: latestPackageJob?.is_latest_for_task ? "success" as const : "warning" as const,
+    },
+    {
+      label: "生成方式",
+      value: boundary.execution_mode === "worker" ? "后台生成" : "立即生成",
+      tone: "info" as const,
+    },
+  ];
+}
+
 function triggerBrowserDownload(blob: Blob, filename: string) {
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -308,6 +339,9 @@ export function AdminExportTasksPage() {
       ? latestJobsByKind.get("reimbursement_package") ?? null
       : null;
   const packageJobSummary = buildPackageJobSummary(latestPackageJob);
+  const boundaryStatusItems = pageState.status === "ready"
+    ? buildBoundaryStatusItems(pageState.boundary, latestPackageJob)
+    : [];
 
   if (!session || session.role !== "admin") {
     return null;
@@ -503,33 +537,51 @@ export function AdminExportTasksPage() {
               <StatusBadge tone={packageJobSummary.tone}>{packageJobSummary.badge}</StatusBadge>
             </div>
 
-            <dl className="admin-review-summary-grid export-summary-grid">
-              <div>
-                <dt>材料包就绪度</dt>
-                <dd>{pageState.boundary.export_allowed ? "已满足" : "未满足"}</dd>
+            <div className="export-primary-shell">
+              <div className="export-primary-main">
+                <p className="eyebrow">主操作</p>
+                <h3>先生成完整材料包</h3>
+                <p className="status-note">{packageJobSummary.note}</p>
+                <p className="status-note">{pageState.boundary.note}</p>
+                <div className="inline-actions export-action-row">
+                  <Button
+                    type="button"
+                    variant="contained"
+                    disabled={!pageState.boundary.export_allowed || activeCreateKind === "reimbursement_package"}
+                    onClick={() => {
+                      void handleCreateJob("reimbursement_package");
+                    }}
+                  >
+                    {activeCreateKind === "reimbursement_package" ? "正在生成..." : "生成完整材料包"}
+                  </Button>
+                  {latestPackageJob?.artifact ? (
+                    <Button
+                      type="button"
+                      variant="outlined"
+                      disabled={activeDownloadJobId === latestPackageJob.id}
+                      onClick={() => {
+                        void handleDownload(latestPackageJob);
+                      }}
+                    >
+                      {activeDownloadJobId === latestPackageJob.id ? "正在下载..." : "下载最近完整材料包"}
+                    </Button>
+                  ) : (
+                    <span className="field-hint">
+                      生成成功后，这里会提供完整材料包下载入口。
+                    </span>
+                  )}
+                </div>
               </div>
-              <div>
-                <dt>最近完整包状态</dt>
-                <dd>{latestPackageJob ? formatExportJobStatus(latestPackageJob.status) : "尚未生成"}</dd>
+              <div className="export-primary-status-grid" aria-label="材料包状态摘要">
+                {boundaryStatusItems.map((item) => (
+                  <section key={item.label} className="export-primary-status-card">
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <StatusBadge tone={item.tone}>{item.value}</StatusBadge>
+                  </section>
+                ))}
               </div>
-              <div>
-                <dt>数据版本</dt>
-                <dd>
-                  {latestPackageJob
-                    ? latestPackageJob.is_latest_for_task
-                      ? "当前最新版本"
-                      : "任务数据已更新"
-                    : "暂无完整包"}
-                </dd>
-              </div>
-              <div>
-                <dt>生成方式</dt>
-                <dd>{pageState.boundary.execution_mode === "worker" ? "后台生成" : "立即生成"}</dd>
-              </div>
-            </dl>
-
-            <p className="status-note">{packageJobSummary.note}</p>
-            <p className="status-note">{pageState.boundary.note}</p>
+            </div>
 
             {latestPackageJob ? (
               <section className="admin-review-subsection">
@@ -573,36 +625,6 @@ export function AdminExportTasksPage() {
                 )}
               </section>
             ) : null}
-
-            <div className="inline-actions export-action-row">
-              <Button
-                type="button"
-                variant="contained"
-                disabled={!pageState.boundary.export_allowed || activeCreateKind === "reimbursement_package"}
-                onClick={() => {
-                  void handleCreateJob("reimbursement_package");
-                }}
-              >
-                {activeCreateKind === "reimbursement_package" ? "正在生成..." : "生成完整材料包"}
-              </Button>
-              {latestPackageJob?.artifact ? (
-                <Button
-                  type="button"
-                  variant="outlined"
-                  disabled={activeDownloadJobId === latestPackageJob.id}
-                  onClick={() => {
-                    void handleDownload(latestPackageJob);
-                  }}
-                >
-                  {activeDownloadJobId === latestPackageJob.id ? "正在下载..." : "下载最近完整材料包"}
-                </Button>
-              ) : (
-                <span className="field-hint">
-                  生成成功后，这里会提供完整材料包下载入口。
-                </span>
-              )}
-            </div>
-
             {!pageState.boundary.export_allowed ? (
               <section className="admin-review-subsection">
                 <div className="task-card-header">

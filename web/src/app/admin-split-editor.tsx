@@ -541,7 +541,7 @@ export function AdminSplitEditorPage() {
           <article className="status-card admin-task-detail-panel split-editor-list-panel">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Invoices</p>
+                <p className="eyebrow">发票列表</p>
                 <h2>可编辑分摊的发票</h2>
               </div>
               <StatusBadge tone="info">{splitInvoiceItems.length} 张发票</StatusBadge>
@@ -599,14 +599,21 @@ export function AdminSplitEditorPage() {
                 </StatusBadge>
               </div>
 
+              <InvoiceSummaryRow
+                filename={selectedMaterial?.original_filename ?? selectedInvoice.invoice_number}
+                invoiceNumber={selectedInvoice.invoice_number}
+                amountLabel={formatCurrencyFromCents(selectedInvoice.amount_cents)}
+                validationLabel={buildInvoiceSummaryValidation(selectedInvoiceItem.invoiceItem).label}
+                validationTone={buildInvoiceSummaryValidation(selectedInvoiceItem.invoiceItem).tone}
+                supportingMaterialCount={selectedInvoiceItem.invoiceItem.supporting_material_ids.length}
+                statusHint={`提交人 ${selectedMaterial?.submitter_id ?? "未知提交人"}；分摊 ${selectedInvoiceItem.invoiceItem.splits.length} 条`}
+                trailingContent={<StatusBadge tone="info">{visibleTask.competition_name}</StatusBadge>}
+              />
+
               <dl className="task-meta-grid invoice-editor-summary-grid">
                 <div>
                   <dt>任务编号</dt>
                   <dd>{visibleTask.id}</dd>
-                </div>
-                <div>
-                  <dt>比赛名称</dt>
-                  <dd>{visibleTask.competition_name}</dd>
                 </div>
                 <div>
                   <dt>材料上传时间</dt>
@@ -668,7 +675,7 @@ export function AdminSplitEditorPage() {
                       <li
                         key={row.rowId}
                         role="group"
-                        className="split-row-card"
+                        className="split-row-card admin-review-record-card"
                         aria-label={`分摊行 ${index + 1}`}
                       >
                         <div className="split-row-header">
@@ -777,9 +784,9 @@ export function AdminSplitEditorPage() {
                       当前发票还没有持久化分摊记录；首次保存后，这里会显示每个成员的最新确认状态。
                     </p>
                   ) : (
-                    <ul className="validation-result-list" aria-label="当前分摊确认状态">
+                    <ul className="admin-review-record-list" aria-label="当前分摊确认状态">
                       {selectedInvoiceItem.invoiceItem.splits.map(({ split, confirmation }) => (
-                        <li key={split.id}>
+                        <li key={split.id} className="admin-review-record-card">
                           <div className="task-card-header">
                             <strong>
                               {formatTaskMemberLabel(split.member_id, memberSummaryMap)} · {formatCurrencyFromCents(split.amount_cents)}

@@ -371,7 +371,7 @@ describe("admin split editor page", () => {
 
     expect(await screen.findByRole("heading", { name: "费用分摊编辑" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /任务发票 invoice\.pdf INV-001/ })).toBeInTheDocument();
-    expect(screen.getByText("票号 INV-001")).toBeInTheDocument();
+    expect(screen.getAllByText("票号 INV-001").length).toBeGreaterThan(0);
     expect(screen.getByText("当前发票号 INV-001")).toBeInTheDocument();
     expect(screen.getByText("+￥0.00")).toBeInTheDocument();
 

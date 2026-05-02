@@ -1,5 +1,36 @@
 # WORKLOG
 
+## 2026-05-02 19:13 - Highlight split and export primary actions
+
+### 完成内容
+- 完成任务“优化分摊确认和导出页面”。
+- 分摊确认页已统一为摘要卡 + 统一记录卡样式：
+  - [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx) 左侧发票列表继续使用统一摘要行，右侧“当前发票”顶部也补成同样的摘要行；
+  - 分摊编辑行和“当前分摊确认状态”列表统一切到 `admin-review-record-card` 风格，避免同一页面混用多套列表视觉。
+- 导出页主操作已被突出，并统一状态展示：
+  - [web/src/app/admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx) 顶部改成“先生成完整材料包”的主操作区，把生成和下载主按钮收口到同一块；
+  - 材料包就绪度、最近完整包状态、数据版本、生成方式统一为同一组状态卡片，避免状态信息散落在摘要表格和说明段落里。
+- 样式已同步补齐：
+  - [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 新增导出主操作区、状态卡和分摊列表统一样式所需规则。
+- 前端测试已更新：
+  - [web/src/app/admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx) 现在锁定“先生成完整材料包”主标题和材料包状态摘要；
+  - [web/src/app/admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx) 同步适配当前发票与左侧列表都展示票号摘要的事实。
+
+### 根因
+- 分摊确认页之前虽然已有统一的左侧发票摘要，但右侧编辑区和确认状态列表仍然各用各的展示方式，页面内部视觉语义不统一。
+- 导出页则把“主流程应该先生成完整材料包”藏在说明文案里，状态信息也分散在表格、段落和按钮附近，主动作不够突出。
+
+### 风险与影响面
+- 本轮只重排前端展示层，没有修改分摊保存 API、导出任务创建/下载逻辑、任务边界判断或导出产物格式。
+- 当前导出页仍保留高级单项导出作为排障入口；只是把它明确降级为次级区域，不影响已有测试和使用路径。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-split-editor.test.tsx src/app/admin-export-tasks.test.tsx`
+- 已通过定向 lint：
+  - `cd web && npm run lint -- src/app/admin-split-editor.tsx src/app/admin-export-tasks.tsx src/app/admin-export-tasks.test.tsx src/app/admin-split-editor.test.tsx`
+- `./scripts/verify.sh` 待本轮提交前执行。
+
 ## 2026-05-02 19:06 - Unify review and reminder pages around compact summary cards
 
 ### 完成内容

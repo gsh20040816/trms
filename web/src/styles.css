@@ -776,6 +776,50 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.export-primary-shell {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.export-primary-main {
+  padding: 20px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #ecfeff 0%, #dbeafe 48%, #ffffff 100%);
+  border: 1px solid #93c5fd;
+}
+
+.export-primary-main h3 {
+  margin: 4px 0 8px;
+  color: #0f172a;
+}
+
+.export-primary-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.export-primary-status-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.export-primary-status-card span {
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.export-primary-status-card strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
 .export-capability-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -2170,6 +2214,7 @@ select:focus {
   .card-grid,
   .admin-dashboard-metric-grid,
   .admin-task-readiness-groups,
+  .export-primary-status-grid,
   .admin-workspace-shell,
   .filter-grid,
   .admin-task-toolbar,
