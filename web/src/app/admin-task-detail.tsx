@@ -578,7 +578,7 @@ export function AdminTaskDetailPage() {
     >
       {state.status === "loading" ? (
         <section className="status-card admin-task-detail-panel">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">加载中</p>
           <h2>正在加载任务详情</h2>
           <p>正在读取任务基础配置和当前状态，请稍候。</p>
         </section>
@@ -657,7 +657,7 @@ export function AdminTaskDetailPage() {
               <article className="status-card admin-task-detail-panel">
                 <div className="admin-form-header">
                   <div>
-                    <p className="eyebrow">Task Readiness</p>
+                    <p className="eyebrow">就绪度</p>
                     <h2>任务就绪度总览</h2>
                   </div>
                   <StatusBadge tone={buildReadinessTone(visibleReadiness.ready_for_export)}>
@@ -726,7 +726,7 @@ export function AdminTaskDetailPage() {
               <article className="status-card admin-task-detail-panel" aria-label="异常优先队列">
                 <div className="admin-form-header">
                   <div>
-                    <p className="eyebrow">Priority Queue</p>
+                    <p className="eyebrow">优先处理</p>
                     <h2>异常优先队列</h2>
                   </div>
                   <StatusBadge tone={visibleReadiness.issues.length > 0 ? "warning" : "success"}>
@@ -781,7 +781,7 @@ export function AdminTaskDetailPage() {
           <article className="status-card admin-form-card">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Task Config</p>
+                <p className="eyebrow">任务配置</p>
                 <h2>任务基础配置</h2>
               </div>
               <StatusBadge tone={isDraftEditable ? "warning" : "info"}>
@@ -809,7 +809,7 @@ export function AdminTaskDetailPage() {
               <section className="admin-form-card">
                 <div className="admin-form-header">
                   <div>
-                    <p className="eyebrow">Competition</p>
+                    <p className="eyebrow">比赛信息</p>
                     <h3>比赛与时间信息</h3>
                   </div>
                 </div>
@@ -881,7 +881,7 @@ export function AdminTaskDetailPage() {
               <section className="admin-form-card">
                 <div className="admin-form-header">
                   <div>
-                    <p className="eyebrow">Members</p>
+                    <p className="eyebrow">成员与费用</p>
                     <h3>成员名单、管理员与费用类别</h3>
                   </div>
                 </div>
@@ -1055,7 +1055,7 @@ export function AdminTaskDetailPage() {
               <section className="admin-form-card">
                 <div className="admin-form-header">
                   <div>
-                    <p className="eyebrow">Invoice Config</p>
+                    <p className="eyebrow">发票信息</p>
                     <h3>发票抬头与税号</h3>
                   </div>
                 </div>
@@ -1106,7 +1106,7 @@ export function AdminTaskDetailPage() {
           <article className="status-card admin-task-detail-panel">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Status Actions</p>
+                <p className="eyebrow">状态操作</p>
                 <h2>状态流转操作</h2>
               </div>
               <StatusBadge tone="info">

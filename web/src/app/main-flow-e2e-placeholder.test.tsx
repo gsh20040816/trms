@@ -955,7 +955,7 @@ describe("frontend main flow e2e placeholder", () => {
     await fillRequiredTaskForm();
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
-    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "任务管理" })).toBeInTheDocument();
     expect((await screen.findAllByText("E2E 主流程任务")).length).toBeGreaterThan(0);
 
     cleanup();

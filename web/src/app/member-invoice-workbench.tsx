@@ -939,7 +939,10 @@ function buildLinkedMaterialStatusHint(
     return "当前材料还没有稳定归属到发票；需要先完成归票后才能随发票进入提交。";
   }
   if (linkedInvoices.length === 1) {
-    return `已关联到发票 ${linkedInvoices[0].invoice_number}；选择该发票时会一并提交此附件。`;
+    const [linkedInvoice] = linkedInvoices;
+    if (linkedInvoice) {
+      return `已关联到发票 ${linkedInvoice.invoice_number}；选择该发票时会一并提交此附件。`;
+    }
   }
   return `已关联到 ${linkedInvoices.length} 张发票；任一关联发票被选择时都会一并带上此附件。`;
 }
@@ -2315,7 +2318,7 @@ export function MemberInvoiceWorkbenchPage() {
                 >
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Material Queue</p>
+                <p className="eyebrow">材料队列</p>
                 <h2>可提交与问题材料分组</h2>
               </div>
               <StatusBadge tone="info">

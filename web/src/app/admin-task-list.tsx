@@ -214,8 +214,8 @@ export function AdminTaskListPage() {
       header={(
         <PageHeader
           eyebrow="管理员工作台"
-          title="按任务推进处理当前工作"
-          description="首页先展示当前任务处于哪个阶段、有多少异常，以及你下一步最该进入哪个处理入口。"
+          title="任务管理"
+          description="查看当前所有报销任务的状态，优先处理需要关注的事项。"
           meta={`当前身份：${session.displayName}`}
           actions={(
             <div className="page-actions">

@@ -804,7 +804,7 @@ export function AdminInvoiceEditorPage() {
             <article className="status-card admin-task-detail-panel invoice-editor-list-panel">
               <div className="admin-form-header">
                 <div>
-                  <p className="eyebrow">Invoice Materials</p>
+                  <p className="eyebrow">发票材料</p>
                   <h2>待录入或可更正的发票材料</h2>
                 </div>
                 <StatusBadge tone="info">{invoiceMaterialItems.length} 份发票材料</StatusBadge>
@@ -859,7 +859,7 @@ export function AdminInvoiceEditorPage() {
               <article className="status-card admin-form-card invoice-editor-form-panel">
                 <div className="admin-form-header">
                   <div>
-                    <p className="eyebrow">Selected Material</p>
+                    <p className="eyebrow">当前材料</p>
                     <h2>录入或更正发票字段</h2>
                   </div>
                   <StatusBadge tone="info">

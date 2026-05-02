@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-05-02 18:47 - Simplify admin workspace shell and unify business copy
+
+### 完成内容
+- 完成任务“精简管理员导航壳层并统一文案”。
+- 管理员导航壳层已收口为更紧凑的固定模块导航：
+  - [web/src/app/admin-workspace-shell.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-workspace-shell.tsx) 删除“导航骨架”标记、模块描述文案和任务快捷入口按钮，只保留图标 + 标题的紧凑导航；
+  - 同文件把任务上下文卡片改成轻量摘要条，仅保留任务名、状态、阶段和截止时间，避免重复解释性文案。
+- 管理员主路径文案已统一为中文业务语义：
+  - [web/src/app/admin-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.tsx) 首页标题改为“任务管理”，避免“按任务推进处理当前工作”这类偏设计说明式标题继续外露；
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)
+  - [web/src/app/admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx)
+  - [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)
+  - [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)
+  - [web/src/app/admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx)
+  - [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  上述页面中残留的 `Loading`、`Task Missing`、`Review Risks`、`Selected Material` 等英文技术标签已改为中文业务文案。
+- 前端测试断言已同步更新：
+  - [web/src/app/admin-task-list.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.test.tsx)
+  - [web/src/app/admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx)
+  - [web/src/app/App.test.tsx](/home/gsh/workspace/TRMS/web/src/app/App.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+- 为了让仓库级构建重新通过，顺手修复了一个已存在的 TypeScript 收窄问题：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 在“仅关联 1 张发票”的提示文案中改为显式解构并判空，不改变业务逻辑，只消除 `Object is possibly 'undefined'` 编译错误。
+
+### 根因
+- 管理员端最近虽然已经具备稳定左侧壳层，但仍保留了一层“给开发者解释界面结构”的过渡文案，例如“导航骨架”“当前任务上下文说明”“Selected Material”等。
+- 这些文案并不服务真实报销业务，反而在首页、任务详情和审核页持续暴露实现视角，削弱了“稳定导航 + 当前任务上下文”的信息密度。
+
+### 风险与影响面
+- 本轮只收口导航壳层和通用文案，不改变管理员首页列表结构、任务详情信息编排、审核页列表详情联动或分摊/导出交互。
+- 首页标题改为“任务管理”后，依赖旧标题“按任务推进处理当前工作”的前端断言已一并更新；如果后续首页继续升级为更强任务驱动仪表板，需要再单独调整标题与说明。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-list.test.tsx src/app/admin-task-create.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-review-overview.test.tsx src/app/App.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+- `./scripts/verify.sh` 待本轮提交前执行。
+
 ## 2026-05-02 17:10 - Merge supporting materials back into member workbench material lists and narrow paper-invoice submission gate
 
 ### 完成内容

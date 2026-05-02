@@ -371,7 +371,7 @@ export function AdminTaskCreatePage() {
         <section className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
-              <p className="eyebrow">Competition</p>
+              <p className="eyebrow">比赛信息</p>
               <h2>比赛与时间信息</h2>
             </div>
             <span className="status-chip">创建后默认状态为草稿</span>
@@ -444,7 +444,7 @@ export function AdminTaskCreatePage() {
         <section className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
-              <p className="eyebrow">Members</p>
+              <p className="eyebrow">成员名单</p>
               <h2>成员名单与费用类别</h2>
             </div>
           </div>
@@ -551,7 +551,7 @@ export function AdminTaskCreatePage() {
         <section className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
-              <p className="eyebrow">Administrator</p>
+              <p className="eyebrow">管理员</p>
               <h2>管理员信息</h2>
             </div>
           </div>
@@ -638,7 +638,7 @@ export function AdminTaskCreatePage() {
         <section className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
-              <p className="eyebrow">Invoice Config</p>
+              <p className="eyebrow">发票信息</p>
               <h2>发票抬头与税号</h2>
             </div>
           </div>

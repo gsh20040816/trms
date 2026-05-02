@@ -199,7 +199,7 @@ describe("admin task create page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
-    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "任务管理" })).toBeInTheDocument();
     expect((await screen.findAllByText("ICPC 区域赛")).length).toBeGreaterThan(0);
 
     const postCall = fetchSpy.mock.calls.find(([, init]) => init?.method === "POST");

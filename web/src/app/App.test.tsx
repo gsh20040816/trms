@@ -103,7 +103,7 @@ describe("web app account auth", () => {
     expect(screen.queryByLabelText("学号")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "注册并登录" }));
 
-    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "任务管理" })).toBeInTheDocument();
     expect(
       await screen.findByText("当前管理员名下还没有任务"),
     ).toBeInTheDocument();
@@ -218,7 +218,7 @@ describe("web app account auth", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "以管理员进入" }));
 
-    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "任务管理" })).toBeInTheDocument();
     expect(await screen.findByText("当前管理员名下还没有任务")).toBeInTheDocument();
   });
 

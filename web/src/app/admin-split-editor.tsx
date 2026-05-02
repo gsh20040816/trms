@@ -328,7 +328,7 @@ export function AdminSplitEditorPage() {
         )}
       >
         <section className="status-card">
-          <p className="eyebrow">Task Missing</p>
+          <p className="eyebrow">任务缺失</p>
           <h2>任务标识缺失</h2>
           <p>当前路由未提供任务编号，无法进入费用分摊编辑页。</p>
         </section>
@@ -591,7 +591,7 @@ export function AdminSplitEditorPage() {
             <article className="status-card admin-form-card split-editor-form-panel">
               <div className="admin-form-header">
                 <div>
-                  <p className="eyebrow">Selected Invoice</p>
+                  <p className="eyebrow">当前发票</p>
                   <h2>编辑当前发票的费用分摊</h2>
                 </div>
                 <StatusBadge tone="info">

@@ -504,7 +504,7 @@ export function AdminReviewOverviewPage() {
     >
       {state.status === "loading" ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">加载中</p>
           <h2>正在加载复核总览</h2>
           <p>正在读取任务详情、复核摘要和逾期确认信息，请稍候。</p>
         </section>
@@ -567,7 +567,7 @@ export function AdminReviewOverviewPage() {
           <section className="status-card admin-review-panel">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Review Risks</p>
+                <p className="eyebrow">审核风险</p>
                 <h2>本任务待处理风险</h2>
               </div>
               <StatusBadge tone="info">{anomalyItems.length} 类重点项</StatusBadge>
@@ -631,7 +631,7 @@ export function AdminReviewOverviewPage() {
           <section className="status-card admin-review-panel">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Pending Assignment</p>
+                <p className="eyebrow">待归属</p>
                 <h2>待归属材料</h2>
               </div>
               <StatusBadge tone={visibleSummary.pending_assignment_materials.length > 0 ? "danger" : "success"}>
@@ -675,7 +675,7 @@ export function AdminReviewOverviewPage() {
             <article className="status-card admin-task-detail-panel admin-review-list-panel">
               <div className="admin-form-header">
                 <div>
-                  <p className="eyebrow">Materials</p>
+                  <p className="eyebrow">材料列表</p>
                   <h2>材料审核列表</h2>
                 </div>
                 <StatusBadge tone="info">{detailItems.length} 份材料</StatusBadge>
@@ -752,7 +752,7 @@ export function AdminReviewOverviewPage() {
                 <>
                   <div className="admin-form-header">
                     <div>
-                      <p className="eyebrow">Selected Material</p>
+                      <p className="eyebrow">当前材料</p>
                       <h2>当前材料详情</h2>
                     </div>
                     <StatusBadge tone={buildRecognitionBadgeTone(selectedRecognition)}>
@@ -1121,7 +1121,7 @@ export function AdminReviewOverviewPage() {
                 </>
               ) : (
                 <>
-                  <p className="eyebrow">Selected Material</p>
+                  <p className="eyebrow">当前材料</p>
                   <h2>当前没有可查看的材料</h2>
                   <p className="field-hint">当前任务还没有已归档材料，暂时无法进入列表-详情联动复核。</p>
                 </>

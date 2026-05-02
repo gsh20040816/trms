@@ -298,7 +298,7 @@ export function AdminMissingMaterialsPage() {
 
       {state.status === "loading" ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">Loading</p>
+          <p className="eyebrow">加载中</p>
           <h2>正在加载缺失材料清单</h2>
           <p>正在读取任务详情和缺失材料聚合结果，请稍候。</p>
         </section>
@@ -357,7 +357,7 @@ export function AdminMissingMaterialsPage() {
           <section className="status-card admin-review-panel">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">View Mode</p>
+                <p className="eyebrow">查看方式</p>
                 <h2>切换查看维度</h2>
               </div>
               <span className="status-chip">{GROUP_MODE_LABELS[groupMode]}</span>

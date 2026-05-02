@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
 import AssignmentIcon from "@mui/icons-material/Assignment";
-import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -11,7 +10,6 @@ import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import PaymentsIcon from "@mui/icons-material/Payments";
 
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
@@ -24,7 +22,6 @@ import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-import { StatusBadge } from "../components/dashboard";
 import type { ReimbursementTask } from "../lib/api/types";
 import { formatTaskStatus } from "../lib/ui-text";
 import { describeAdminTaskStage } from "./admin-task-stage";
@@ -49,7 +46,6 @@ type AdminWorkspaceShellProps = {
 type AdminModuleDefinition = {
   key: AdminModuleKey;
   title: string;
-  description: string;
   Icon: typeof DashboardIcon;
 };
 
@@ -57,13 +53,11 @@ const ADMIN_CONTEXT_FREE_MODULES: AdminModuleDefinition[] = [
   {
     key: "overview",
     title: "首页总览",
-    description: "按任务推进查看当前最紧急的处理事项。",
     Icon: DashboardIcon,
   },
   {
     key: "create",
     title: "创建任务",
-    description: "先补齐比赛、成员和费用类别，再进入具体任务处理。",
     Icon: AssignmentIcon,
   },
 ];
@@ -72,37 +66,31 @@ const ADMIN_TASK_CONTEXT_MODULES: AdminModuleDefinition[] = [
   {
     key: "overview",
     title: "首页总览",
-    description: "按任务推进查看当前最紧急的处理事项。",
     Icon: DashboardIcon,
   },
   {
     key: "tasks",
     title: "任务管理",
-    description: "查看任务配置、成员范围和状态流转。",
     Icon: AssignmentIcon,
   },
   {
     key: "review",
     title: "材料审核",
-    description: "集中处理识别异常、缺失材料和复核问题。",
     Icon: FactCheckIcon,
   },
   {
     key: "corrections",
     title: "成员提醒",
-    description: "统一跟进成员补材料、更正和异议处理。",
     Icon: NotificationsActiveIcon,
   },
   {
     key: "splits",
     title: "分摊确认",
-    description: "调整费用归属并跟踪成员确认状态。",
     Icon: PaymentsIcon,
   },
   {
     key: "exports",
     title: "导出打印",
-    description: "查看导出准备度并生成最终材料包。",
     Icon: DownloadIcon,
   },
 ];
@@ -150,7 +138,7 @@ export function AdminWorkspaceShell({
       sx={{
         display: "grid",
         gap: 2.5,
-        gridTemplateColumns: { xs: "1fr", md: "minmax(260px, 320px) minmax(0, 1fr)" },
+        gridTemplateColumns: { xs: "1fr", md: "220px minmax(0, 1fr)" },
         alignItems: "start",
       }}
     >
@@ -158,36 +146,20 @@ export function AdminWorkspaceShell({
         component="aside"
         sx={{
           display: "grid",
-          gap: 2,
+          gap: 1.5,
           position: { md: "sticky" },
           top: { md: 88 },
         }}
       >
+        {/* 导航模块列表 */}
         <Card variant="outlined" component="section">
-          <CardContent>
-            <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
-              <Box>
-                <Typography variant="overline" color="text.secondary">
-                  管理员工作台
-                </Typography>
-                <Typography component="h2" variant="h6">
-                  任务推进导航
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  固定模块和当前任务上下文保持在同一位置。
-                </Typography>
-              </Box>
-              <StatusBadge tone="info">导航骨架</StatusBadge>
-            </Stack>
-
-            <Divider sx={{ my: 1.5 }} />
-
+          <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
             <List
               component="nav"
               aria-label="管理员模块导航"
               dense
               disablePadding
-              sx={{ display: "grid", gap: 0.5 }}
+              sx={{ display: "grid", gap: 0.25 }}
             >
               {navigationModules.map((adminModule) => {
                 const path = buildModulePath(adminModule.key, taskId);
@@ -198,24 +170,22 @@ export function AdminWorkspaceShell({
                       key={adminModule.key}
                       disablePadding
                       aria-disabled="true"
-                      sx={{ opacity: 0.55 }}
+                      sx={{ opacity: 0.45 }}
                     >
                       <ListItemButton
                         disabled
                         sx={{
-                          borderRadius: 2,
-                          alignItems: "flex-start",
-                          py: 1,
+                          borderRadius: 1.5,
+                          py: 0.75,
+                          minHeight: 40,
                         }}
                       >
-                        <ListItemIcon sx={{ minWidth: 36, mt: 0.5 }}>
+                        <ListItemIcon sx={{ minWidth: 32 }}>
                           <adminModule.Icon fontSize="small" />
                         </ListItemIcon>
                         <ListItemText
                           primary={adminModule.title}
-                          secondary={adminModule.description}
-                          primaryTypographyProps={{ fontWeight: 600 }}
-                          secondaryTypographyProps={{ variant: "caption" }}
+                          primaryTypographyProps={{ variant: "body2", fontWeight: 600 }}
                         />
                       </ListItemButton>
                     </ListItem>
@@ -229,36 +199,40 @@ export function AdminWorkspaceShell({
                       selected={isActive}
                       aria-current={isActive ? "page" : undefined}
                       sx={{
-                        borderRadius: 2,
-                        alignItems: "flex-start",
-                        py: 1,
+                        borderRadius: 1.5,
+                        py: 0.75,
+                        minHeight: 40,
                         "&.Mui-selected": {
-                          bgcolor: "action.selected",
+                          bgcolor: "primary.main",
+                          color: "primary.contrastText",
+                          "&:hover": {
+                            bgcolor: "primary.dark",
+                          },
+                          "& .MuiListItemIcon-root": {
+                            color: "primary.contrastText",
+                          },
                         },
                       }}
                     >
                       <ListItemIcon
                         sx={{
-                          minWidth: 36,
-                          mt: 0.5,
-                          color: isActive ? "primary.main" : "text.secondary",
+                          minWidth: 32,
+                          color: isActive ? "primary.contrastText" : "text.secondary",
                         }}
                       >
                         <adminModule.Icon fontSize="small" />
                       </ListItemIcon>
                       <ListItemText
                         primary={adminModule.title}
-                        secondary={adminModule.description}
                         primaryTypographyProps={{
+                          variant: "body2",
                           fontWeight: 600,
-                          color: isActive ? "primary.main" : "text.primary",
                         }}
-                        secondaryTypographyProps={{ variant: "caption" }}
                       />
                       {isActive ? (
                         <ChevronRightIcon
                           fontSize="small"
-                          sx={{ color: "primary.main", mt: 0.5 }}
+                          sx={{ color: "inherit", opacity: 0.7 }}
                         />
                       ) : null}
                     </ListItemButton>
@@ -269,137 +243,125 @@ export function AdminWorkspaceShell({
           </CardContent>
         </Card>
 
+        {/* 当前任务摘要 */}
         <Card variant="outlined" component="section" aria-label="当前任务上下文">
-          <CardContent>
-            <Box>
-              <Typography component="h2" variant="h6">
-                当前任务上下文
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                把当前任务阶段、状态和快捷入口固定下来，避免处理过程中丢失上下文。
-              </Typography>
-            </Box>
-
-            <Divider sx={{ my: 1.5 }} />
-
+          <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
             {task ? (
-              <Stack spacing={1.5}>
-                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      当前任务
-                    </Typography>
-                    <Typography component="h3" variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      {task.competition_name}
-                    </Typography>
-                  </Box>
+              <Stack spacing={1}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                  <Typography
+                    component="h3"
+                    variant="subtitle2"
+                    sx={{
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {task.competition_name}
+                  </Typography>
                   <Chip
                     color={
                       task.status === "ready_to_export" || task.status === "completed"
                         ? "success"
-                        : "warning"
+                        : task.status === "draft"
+                          ? "default"
+                          : "warning"
                     }
                     size="small"
                     label={formatTaskStatus(task.status)}
+                    sx={{ flexShrink: 0 }}
                   />
                 </Stack>
+                <Divider />
                 <Box
                   sx={{
                     display: "grid",
-                    gap: 1,
+                    gap: 0.75,
                     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                   }}
                   component="dl"
                 >
-                  <Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "action.hover" }}>
-                    <Typography component="dt" variant="caption" color="text.secondary">
-                      当前阶段
+                  <Box sx={{ p: 1, borderRadius: 1, bgcolor: "action.hover" }}>
+                    <Typography component="dt" variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
+                      阶段
                     </Typography>
-                    <Typography component="dd" variant="body2" sx={{ fontWeight: 600, m: 0 }}>
+                    <Typography component="dd" variant="body2" sx={{ fontWeight: 600, m: 0, fontSize: "0.8rem" }}>
                       {taskStage?.label}
                     </Typography>
                   </Box>
-                  <Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "action.hover" }}>
-                    <Typography component="dt" variant="caption" color="text.secondary">
-                      截止时间
+                  <Box sx={{ p: 1, borderRadius: 1, bgcolor: "action.hover" }}>
+                    <Typography component="dt" variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
+                      截止
                     </Typography>
-                    <Typography component="dd" variant="body2" sx={{ fontWeight: 600, m: 0 }}>
+                    <Typography component="dd" variant="body2" sx={{ fontWeight: 600, m: 0, fontSize: "0.8rem" }}>
                       {formatDateTime(task.deadline)}
                     </Typography>
                   </Box>
                 </Box>
-                <Typography variant="body2" color="text.secondary">
-                  {taskStage?.summary}
-                </Typography>
+                {taskId ? (
+                  <>
+                    <Divider />
+                    <Stack
+                      component="nav"
+                      aria-label="当前任务快捷入口"
+                      direction="row"
+                      spacing={0.75}
+                      useFlexGap
+                      flexWrap="wrap"
+                    >
+                      {([
+                        ["tasks", "任务详情"],
+                        ["review", "材料审核"],
+                        ["splits", "分摊确认"],
+                        ["exports", "导出打印"],
+                      ] as const).map(([moduleKey, label]) => {
+                        const path = buildModulePath(moduleKey, taskId);
+                        if (!path || moduleKey === activeModule) {
+                          return null;
+                        }
+                        return (
+                          <Typography
+                            key={moduleKey}
+                            component={RouterLink}
+                            to={path}
+                            variant="caption"
+                            sx={{
+                              px: 1,
+                              py: 0.5,
+                              borderRadius: 999,
+                              bgcolor: "action.hover",
+                              color: "text.primary",
+                              textDecoration: "none",
+                              fontWeight: 600,
+                              "&:hover": {
+                                bgcolor: "action.selected",
+                              },
+                            }}
+                          >
+                            {label}
+                          </Typography>
+                        );
+                      })}
+                    </Stack>
+                  </>
+                ) : null}
               </Stack>
             ) : (
               <Box
                 sx={{
-                  p: 1.5,
-                  borderRadius: 1.5,
-                  border: 1,
-                  borderColor: "divider",
-                  borderStyle: "dashed",
+                  py: 1,
+                  textAlign: "center",
                 }}
               >
-                <Typography component="h3" variant="subtitle2">
-                  {taskId ? `任务 ${taskId}` : "尚未选中任务"}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                <Typography variant="body2" color="text.secondary">
                   {taskId
-                    ? "正在读取当前任务上下文或当前账号无权访问该任务。"
-                    : "先从首页选择任务，右侧模块就会自动带入当前任务上下文。"}
+                    ? "正在读取任务信息…"
+                    : "从首页选择任务后显示"}
                 </Typography>
               </Box>
             )}
-
-            {taskId ? (
-              <Stack
-                direction="row"
-                spacing={1}
-                useFlexGap
-                flexWrap="wrap"
-                aria-label="当前任务快捷入口"
-                sx={{ mt: 2 }}
-              >
-                <Button
-                  component={RouterLink}
-                  to={`/admin/tasks/${taskId}`}
-                  variant="outlined"
-                  size="small"
-                  startIcon={<AssignmentTurnedInIcon />}
-                >
-                  任务详情
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to={`/admin/tasks/${taskId}/review`}
-                  variant="outlined"
-                  size="small"
-                  startIcon={<FactCheckIcon />}
-                >
-                  材料审核
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to={`/admin/tasks/${taskId}/splits`}
-                  variant="outlined"
-                  size="small"
-                  startIcon={<PaymentsIcon />}
-                >
-                  分摊确认
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to={`/admin/tasks/${taskId}/exports`}
-                  variant="outlined"
-                  size="small"
-                  startIcon={<DownloadIcon />}
-                >
-                  导出打印
-                </Button>
-              </Stack>
-            ) : null}
           </CardContent>
         </Card>
       </Box>

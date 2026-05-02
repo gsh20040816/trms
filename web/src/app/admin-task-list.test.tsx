@@ -164,7 +164,7 @@ describe("admin task list page", () => {
 
     renderAdminRoute();
 
-    expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "任务管理" })).toBeInTheDocument();
     expect(screen.getByLabelText("管理员任务概览")).toBeInTheDocument();
     const moduleNav = screen.getByLabelText("管理员模块导航");
     expect(within(moduleNav).getByText("首页总览").closest("a")).toHaveAttribute("aria-current", "page");
