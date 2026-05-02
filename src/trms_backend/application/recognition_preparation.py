@@ -378,7 +378,7 @@ def _build_pdf_document_input(
     try:
         extracted_segments: list[str] = []
         for page in document:
-            extracted_text = page.get_text("text") or ""
+            extracted_text = page.get_text("text", sort=True) or ""
             normalized_text = _normalize_extracted_text(extracted_text)
             if normalized_text:
                 extracted_segments.append(normalized_text)

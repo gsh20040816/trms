@@ -6,6 +6,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_llm import (
+    RecognitionInputSource,
     RecognitionLlmClient,
     RecognitionLlmExtractionResult,
 )
@@ -44,6 +45,58 @@ class FakeRecognitionLlmClient(RecognitionLlmClient):
         return self._result
 
 
+class InlineInvoiceNumberRecognitionLlmClient(RecognitionLlmClient):
+    def __init__(self) -> None:
+        self.last_document_text: str | None = None
+
+    def recognize(self, *, material, document_input) -> RecognitionLlmExtractionResult:
+        assert document_input.source is RecognitionInputSource.PDF_TEXT
+        self.last_document_text = document_input.text
+        recognized_fields = {
+            "material_type": RecognitionFieldResult(
+                value="invoice",
+                source="ai",
+                confidence=0.99,
+            ),
+            "buyer_name": RecognitionFieldResult(
+                value="Tongji University",
+                source="ai",
+                confidence=0.98,
+            ),
+            "tax_number": RecognitionFieldResult(
+                value="12100000425006117D",
+                source="ai",
+                confidence=0.98,
+            ),
+            "amount_cents": RecognitionFieldResult(
+                value=7286,
+                source="ai",
+                confidence=0.97,
+            ),
+            "expense_type": RecognitionFieldResult(
+                value="registration",
+                source="ai",
+                confidence=0.96,
+            ),
+        }
+        if (
+            document_input.text is not None
+            and "Invoice Number" in document_input.text
+            and "25312000000355846530" in document_input.text
+            and document_input.text.index("Invoice Number")
+            < document_input.text.index("25312000000355846530")
+        ):
+            recognized_fields["invoice_number"] = RecognitionFieldResult(
+                value="25312000000355846530",
+                source="ai",
+                confidence=0.99,
+            )
+        return RecognitionLlmExtractionResult(
+            raw_response={"provider": "inline-invoice-number"},
+            recognized_fields=recognized_fields,
+        )
+
+
 def build_text_pdf_bytes() -> bytes:
     writer = PdfWriter()
     page = writer.add_blank_page(width=300, height=144)
@@ -63,6 +116,34 @@ def build_text_pdf_bytes() -> bytes:
     stream = DecodedStreamObject()
     stream.set_data(
         b"BT\n/F1 12 Tf\n72 100 Td\n(Invoice INV-ASYNC-001 Tongji University) Tj\nET\n"
+    )
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    buffer = BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
+def build_positioned_text_pdf_bytes() -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=400, height=200)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    font_ref = writer._add_object(font)
+    page[NameObject("/Resources")] = DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref}),
+        }
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(
+        b"BT\n/F1 12 Tf\n250 120 Td\n(25312000000355846530) Tj\nET\n"
+        b"BT\n/F1 12 Tf\n180 120 Td\n(: ) Tj\nET\n"
+        b"BT\n/F1 12 Tf\n120 120 Td\n(Invoice Number) Tj\nET\n"
     )
     page[NameObject("/Contents")] = writer._add_object(stream)
     buffer = BytesIO()
@@ -107,6 +188,8 @@ def upload_material(
     task_id: str,
     *,
     material_type: str | None = "invoice",
+    content_bytes: bytes | None = None,
+    filename: str = "async-ticket.pdf",
 ) -> str:
     form_data = {
         "submitter_id": "2250001",
@@ -117,7 +200,13 @@ def upload_material(
     response = client.post(
         f"/api/tasks/{task_id}/materials",
         data=form_data,
-        files={"files": ("async-ticket.pdf", build_text_pdf_bytes(), "application/pdf")},
+        files={
+            "files": (
+                filename,
+                build_text_pdf_bytes() if content_bytes is None else content_bytes,
+                "application/pdf",
+            )
+        },
     )
     assert response.status_code == 201
     return response.json()["items"][0]["id"]
@@ -397,6 +486,43 @@ def test_recognition_async_processor_auto_creates_invoice_from_expense_type_cand
     assert invoices[0]["material_id"] == material_id
     assert invoices[0]["invoice_number"] == "ASYNC-CANDIDATE-001"
     assert invoices[0]["expense_type"] == "railway"
+
+
+def test_recognition_async_processor_keeps_inline_invoice_number_text_order_for_pdf(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        content_bytes=build_positioned_text_pdf_bytes(),
+        filename="positioned-invoice.pdf",
+    )
+    recognition_client = InlineInvoiceNumberRecognitionLlmClient()
+    processor = build_processor(
+        tmp_path,
+        runtime_config,
+        recognition_llm_client=recognition_client,
+    )
+
+    assert processor.run_once() == 1
+    assert recognition_client.last_document_text is not None
+    assert "Invoice Number" in recognition_client.last_document_text
+    assert "25312000000355846530" in recognition_client.last_document_text
+    assert recognition_client.last_document_text.index("Invoice Number") < recognition_client.last_document_text.index(
+        "25312000000355846530"
+    )
+
+    invoices_response = client.get(
+        f"/api/tasks/{task_id}/invoices",
+        headers=admin_auth_headers(client),
+    )
+    assert invoices_response.status_code == 200
+    invoices = invoices_response.json()["items"]
+    assert len(invoices) == 1
+    assert invoices[0]["material_id"] == material_id
+    assert invoices[0]["invoice_number"] == "25312000000355846530"
+    assert invoices[0]["expense_type"] == "registration"
 
 
 def test_recognition_async_processor_auto_links_default_upload_after_support_type_is_recognized(tmp_path):

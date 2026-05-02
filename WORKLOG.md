@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-05-02 15:27 - Fix incomplete recognition for invoice 333e167e-63fb-4797-a9b8-78943b110995 by preserving PDF text reading order
+
+### 完成内容
+- 完成任务“排查发票 `333e167e-63fb-4797-a9b8-78943b110995` 识别不完整根因并修复”。
+- 确认该材料在当前数据库中的实际卡点：
+  - 材料 [333e167e-63fb-4797-a9b8-78943b110995](/home/gsh/workspace/TRMS/trms.db) 已成功识别两次，`amount_cents`、`buyer_name`、`tax_number`、`expense_type` 都已抽取；
+  - 但 `invoice_number` 缺失，因此 [src/trms_backend/application/recognition_invoice_auto_create.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_invoice_auto_create.py) 的自动建票前置条件不满足，最终没有生成发票记录。
+- 根因修复落在 PDF 文本提取，而不是继续堆 LLM 特判：
+  - [src/trms_backend/application/recognition_preparation.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_preparation.py) 将文本 PDF 提取从 `page.get_text("text")` 调整为 `page.get_text("text", sort=True)`，按页面坐标排序后再归一化文本；
+  - 这样可保留视觉阅读顺序，避免把同一行上的“发票号码/开票日期”标签和值拆散。
+- 补充回归测试锁定该类问题：
+  - [tests/test_recognition_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_recognition_async_jobs.py) 新增一个“同一视觉行内标签和值分离定位”的合成 PDF 样本；
+  - 新测试验证：识别前拿到的 `PDF_TEXT` 输入中，`Invoice Number` 会先于其号码值出现；随后异步识别链可拿到 `invoice_number` 并成功自动建票。
+
+### 根因
+- 该真实样本并不是“LLM 完全没识别出来发票”，而是更早的 PDF 文本提取顺序出了问题。
+- 对同一份文件，本地按版式提取可稳定得到：
+  - `发票号码：25312000000355846530`
+  - `开票日期：2025年11月04日`
+- 但现有识别准备阶段使用 `PyMuPDF page.get_text("text")` 的默认顺序，会把版面中的文本块打散重排，导致送给 LLM 的文本里出现“`发票号码：` 后换行、实际号码漂到后文”的现象。
+- LLM 因此把该字段判断为不可见或缺失，最终造成“识别成功但不成票”的假失败。
+
+### 风险与影响面
+- 本轮只修 PDF 文本提取顺序，没有改动发票建票规则、任务费用类别门禁、识别 prompt 主体或数据库数据。
+- 当前保守假设是：对文本 PDF 使用 `sort=True` 更接近用户肉眼阅读顺序，能修复这类同一行标签和值被拆散的问题；若后续发现某些复杂多栏版式因此引入新噪声，需要再以独立任务评估更细的版面重排策略。
+- 本轮没有直接修改现有数据库里的那条材料记录；修复针对的是代码根因。该材料要真正补成票，需要在运行实例中触发一次重新识别或重试，让修复后的提取链生效。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_recognition_async_jobs.py -k 'inline_invoice_number_text_order_for_pdf or auto_creates_invoice_from_expense_type_candidate or auto_creates_invoice_after_successful_recognition or auto_creates_invoice_after_default_material_type_is_recognized'`
+  - 4 个用例通过。
+- 已通过补充相关识别测试：
+  - `uv run pytest tests/test_recognition_llm.py -k 'local_transport or prompt_requests_local_transport_amount_and_time'`
+  - 2 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 540 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 15:20 - Fix non-invoice pending/failure presentation in member and admin views
 
 ### 完成内容
