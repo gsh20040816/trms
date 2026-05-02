@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-05-02 13:18 - Add multi-administrator task storage with compatibility fields
+
+### 完成内容
+- 完成任务“为任务补齐多管理员数据模型与兼容返回字段”。
+- 后端任务模型、持久化和迁移现在支持多管理员集合，同时保留旧的单管理员兼容字段：
+  - [src/trms_backend/domain/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py) 为 `TaskCreateInput`、`TaskCreate`、`TaskUpdateInput`、`ReimbursementTask` 增加 `administrator_ids`，并统一做去空、去重和主负责人归一化；
+  - 兼容策略收口为：`administrator_id` 始终表示主管理员，`administrator_ids` 表示完整管理员集合；若请求同时携带两者，则以 `administrator_id` 作为兼容主字段并排到列表首位；
+  - [src/trms_backend/infrastructure/models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)、[src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py) 补齐 `reimbursement_tasks.administrator_ids` 持久化与读取逻辑；
+  - 新增 Alembic 迁移 [20260502_01_task_multi_administrator_fields.py](/home/gsh/workspace/TRMS/alembic/versions/20260502_01_task_multi_administrator_fields.py)，为历史任务回填 `administrator_ids=[administrator_id]`；
+  - [tests/test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py) 增加多管理员创建、更新和旧数据回退断言；
+  - [tests/test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py) 同步 Alembic head revision；
+  - [tests/test_material_submission_service.py](/home/gsh/workspace/TRMS/tests/test_material_submission_service.py)、[tests/test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py) 补齐新字段构造，避免领域对象实例化失配。
+
+### 根因
+- 当前任务模型和数据库只保存单个 `administrator_id`，导致“多管理员”即使在后续前端或权限层实现，也没有真实持久化载体。
+- 如果直接进入下一步权限改造，而底层任务实体仍只有单管理员字段，就会出现“接口表面能传多个管理员，但读回/更新/迁移仍只保留一个”的假支持状态。
+- 因此本轮先把任务实体、仓储和迁移补齐，再把访问控制和前端检索留给后续独立任务处理。
+
+### 风险与影响面
+- 本轮没有扩大管理员权限边界；现有访问控制、管理员任务列表和前端是否把某人当作任务管理员，仍主要依赖兼容字段 `administrator_id`，这是刻意保守收口。
+- 当前保守假设是：多管理员集合中的首项即主管理员，也是迁移窗口内对旧接口、旧前端和旧权限判断的兼容真值。后续任务需要把权限判断和管理员任务列表切到 `administrator_ids`，否则次管理员只能被存储，暂时还不能完整行权。
+- 对历史数据的兼容策略是：如果旧任务行还没有 `administrator_ids`，读取时自动回退为 `[administrator_id]`，避免旧任务在迁移窗口内读崩。
+- 本轮没有改动前端管理员选择交互，也没有新增管理员候选检索接口；这些仍由后续拆分任务继续推进。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_database_migrations.py`
+  - `uv run pytest tests/test_tasks_api.py tests/test_material_submission_service.py tests/test_invoice_validation_rules.py`
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 524 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+- 说明：
+  - 第一次 `verify` 过程中，`web/src/app/admin-invoice-editor.test.tsx` 曾复现既有的偶发时序失败；该单测单独执行通过，随后第二次整仓 `./scripts/verify.sh` 全量通过。当前将其记录为已知不稳定测试现象，但本轮最终验证结论以第二次整仓通过为准。
+
 ## 2026-05-02 13:02 - Split multi-administrator task into smaller verified tasks
 
 ### 完成内容

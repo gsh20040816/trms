@@ -79,6 +79,7 @@ class TaskRow(Base):
     deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     member_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     fee_categories: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    administrator_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     administrator_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     project_info: Mapped[str] = mapped_column(String(1024), nullable=False)
     reimburser_info: Mapped[str] = mapped_column(String(1024), nullable=False)

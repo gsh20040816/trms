@@ -495,6 +495,10 @@ class SqlAlchemyTaskRepository:
             row.deadline = payload.deadline
             row.member_ids = payload.member_ids
             row.fee_categories = payload.fee_categories
+            if payload.administrator_ids is not None:
+                row.administrator_ids = payload.administrator_ids
+            if payload.administrator_id is not None:
+                row.administrator_id = payload.administrator_id
             if payload.project_info is not None:
                 row.project_info = payload.project_info
             if payload.reimburser_info is not None:
@@ -1479,6 +1483,7 @@ class SqlAlchemyExportJobRepository(TaskExportJobRepository):
 
 
 def _task_from_row(row: TaskRow) -> ReimbursementTask:
+    administrator_ids = list(row.administrator_ids) if row.administrator_ids else [row.administrator_id]
     return ReimbursementTask(
         id=row.id,
         status=TaskStatus(row.status),
@@ -1489,6 +1494,7 @@ def _task_from_row(row: TaskRow) -> ReimbursementTask:
         deadline=row.deadline,
         member_ids=list(row.member_ids),
         fee_categories=list(row.fee_categories),
+        administrator_ids=administrator_ids,
         administrator_id=row.administrator_id,
         project_info=row.project_info,
         reimburser_info=row.reimburser_info,

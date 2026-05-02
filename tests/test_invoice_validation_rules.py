@@ -53,6 +53,7 @@ def make_task() -> ReimbursementTask:
             ExpenseType.LOCAL_TRANSPORT.value,
             ExpenseType.HOTEL.value,
         ],
+        administrator_ids=["admin-1"],
         administrator_id="admin-1",
         project_info="ACM",
         reimburser_info="Lab",

@@ -37,7 +37,8 @@ class _TaskCreateBase(BaseModel):
     deadline: datetime
     member_ids: list[str] = Field(min_length=1)
     fee_categories: list[str] = Field(min_length=1)
-    administrator_id: str = Field(min_length=1)
+    administrator_id: str | None = None
+    administrator_ids: list[str] | None = None
 
     @field_validator("member_ids", "fee_categories")
     @classmethod
@@ -57,7 +58,7 @@ class _TaskCreateBase(BaseModel):
         return values
 
     @model_validator(mode="after")
-    def validate_dates(self) -> TaskCreate:
+    def validate_dates(self) -> "_TaskCreateBase":
         if self.competition_end_date < self.competition_start_date:
             raise ValueError("competition_end_date must not be earlier than competition_start_date")
 
@@ -67,6 +68,12 @@ class _TaskCreateBase(BaseModel):
         if deadline <= datetime.now(timezone.utc):
             raise ValueError("deadline must be in the future")
 
+        administrator_id, administrator_ids = _resolve_task_administrator_assignment(
+            self.administrator_id,
+            self.administrator_ids,
+        )
+        self.administrator_id = administrator_id
+        self.administrator_ids = administrator_ids
         return self
 
 
@@ -95,6 +102,8 @@ class TaskCreateInput(_TaskCreateBase):
 
 
 class TaskCreate(_TaskCreateBase):
+    administrator_id: str = Field(min_length=1)
+    administrator_ids: list[str] = Field(min_length=1)
     project_info: str = ""
     reimburser_info: str = ""
     invoice_title: str = Field(min_length=1)
@@ -109,6 +118,8 @@ class TaskUpdateInput(BaseModel):
     deadline: datetime
     member_ids: list[str] = Field(min_length=1)
     fee_categories: list[str] = Field(min_length=1)
+    administrator_id: str | None = None
+    administrator_ids: list[str] | None = None
     project_info: str | None = None
     reimburser_info: str | None = None
     invoice_title: str = Field(min_length=1)
@@ -155,6 +166,13 @@ class TaskUpdateInput(BaseModel):
     def validate_dates(self) -> "TaskUpdateInput":
         if self.competition_end_date < self.competition_start_date:
             raise ValueError("competition_end_date must not be earlier than competition_start_date")
+        administrator_id, administrator_ids = _resolve_task_administrator_assignment(
+            self.administrator_id,
+            self.administrator_ids,
+            allow_missing=True,
+        )
+        self.administrator_id = administrator_id
+        self.administrator_ids = administrator_ids
         return self
 
 
@@ -234,6 +252,7 @@ class ReimbursementTask(BaseModel):
     member_ids: list[str]
     member_summaries: list["TaskMemberSummary"] = Field(default_factory=list)
     fee_categories: list[str]
+    administrator_ids: list[str]
     administrator_id: str
     project_info: str
     reimburser_info: str
@@ -490,6 +509,62 @@ def close_expired_open_tasks(
 
 
 _SUPPORTED_FEE_CATEGORIES = frozenset(expense_type.value for expense_type in ExpenseType)
+
+
+def _normalize_task_identifier_list(values: list[str], *, field_name: str) -> list[str]:
+    normalized: list[str] = []
+    for raw_value in values:
+        value = raw_value.strip()
+        if not value:
+            raise ValueError(f"{field_name} items must not be blank")
+        if value not in normalized:
+            normalized.append(value)
+    if not normalized:
+        raise ValueError(f"{field_name} must not be empty")
+    return normalized
+
+
+def _resolve_task_administrator_assignment(
+    administrator_id: str | None,
+    administrator_ids: list[str] | None,
+    *,
+    allow_missing: bool = False,
+) -> tuple[str | None, list[str] | None]:
+    normalized_administrator_id: str | None = None
+    if administrator_id is not None:
+        normalized_administrator_id = administrator_id.strip()
+        if not normalized_administrator_id:
+            raise ValueError("administrator_id must not be blank")
+
+    normalized_administrator_ids: list[str] | None = None
+    if administrator_ids is not None:
+        normalized_administrator_ids = _normalize_task_identifier_list(
+            administrator_ids,
+            field_name="administrator_ids",
+        )
+
+    if normalized_administrator_id is None and normalized_administrator_ids is None:
+        if allow_missing:
+            return None, None
+        raise ValueError("administrator_id or administrator_ids is required")
+
+    if normalized_administrator_ids is None:
+        assert normalized_administrator_id is not None
+        normalized_administrator_ids = [normalized_administrator_id]
+        return normalized_administrator_id, normalized_administrator_ids
+
+    if normalized_administrator_id is None:
+        normalized_administrator_id = normalized_administrator_ids[0]
+        return normalized_administrator_id, normalized_administrator_ids
+
+    return normalized_administrator_id, [
+        normalized_administrator_id,
+        *[
+            value
+            for value in normalized_administrator_ids
+            if value != normalized_administrator_id
+        ],
+    ]
 
 
 class InMemoryTaskRepository:

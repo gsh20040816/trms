@@ -37,6 +37,7 @@ def create_open_task(task_repository: InMemoryTaskRepository) -> str:
             member_ids=["2250001", "2250002"],
             fee_categories=["registration", "railway"],
             administrator_id="admin-1",
+            administrator_ids=["admin-1"],
             project_info="ACM Project",
             reimburser_info="Lab Manager",
             invoice_title="同济大学",

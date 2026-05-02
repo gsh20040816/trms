@@ -232,6 +232,8 @@ def test_create_and_get_task(tmp_path):
     assert body["id"]
     assert body["status"] == "draft"
     assert body["competition_name"] == "ICPC Asia Regional"
+    assert body["administrator_id"] == "admin-1"
+    assert body["administrator_ids"] == ["admin-1"]
     assert body["project_info"] == ""
     assert body["reimburser_info"] == ""
     assert body["invoice_title"] == "同济大学"
@@ -243,6 +245,27 @@ def test_create_and_get_task(tmp_path):
 
     assert fetched.status_code == 200
     assert fetched.json()["id"] == body["id"]
+    assert fetched.json()["administrator_id"] == "admin-1"
+    assert fetched.json()["administrator_ids"] == ["admin-1"]
+
+
+def test_create_task_accepts_multiple_administrators_with_primary_compat_field(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/tasks",
+        json=valid_task_payload()
+        | {
+            "administrator_id": "admin-1",
+            "administrator_ids": ["admin-2", "admin-1", "admin-2"],
+        },
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["administrator_id"] == "admin-1"
+    assert body["administrator_ids"] == ["admin-1", "admin-2"]
 
 
 def test_create_task_requires_authenticated_admin(tmp_path):
@@ -810,6 +833,49 @@ def test_update_task_allows_replace_in_draft(tmp_path):
     )
     assert fetched.status_code == 200
     assert fetched.json()["competition_name"] == "Updated ICPC Asia Regional"
+
+
+def test_update_task_allows_replacing_multiple_administrators_in_draft(tmp_path):
+    client = make_client(tmp_path)
+    created = create_task(client)
+
+    response = client.put(
+        f"/api/tasks/{created['id']}",
+        json=valid_task_update_payload(
+            administrator_id="admin-1",
+            administrator_ids=["admin-2", "admin-1", "admin-3"],
+        ),
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["administrator_id"] == "admin-1"
+    assert body["administrator_ids"] == ["admin-1", "admin-2", "admin-3"]
+
+    fetched = client.get(
+        f"/api/tasks/{created['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["administrator_id"] == "admin-1"
+    assert fetched.json()["administrator_ids"] == ["admin-1", "admin-2", "admin-3"]
+
+
+def test_get_task_falls_back_to_legacy_single_administrator_field(tmp_path):
+    client = make_client(tmp_path)
+    created = create_task(client)
+    update_task_row(tmp_path, created["id"], administrator_ids=None)
+
+    response = client.get(
+        f"/api/tasks/{created['id']}",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["administrator_id"] == "admin-1"
+    assert body["administrator_ids"] == ["admin-1"]
 
 
 def test_update_task_rejects_non_draft_task(tmp_path):
