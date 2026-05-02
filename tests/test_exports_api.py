@@ -884,6 +884,71 @@ def test_merged_pdf_preview_accepts_supported_image_material(tmp_path):
     ]
 
 
+def test_merged_pdf_preview_marks_paper_invoice_placeholder_without_blocking(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task_with_overrides(client, fee_categories=["registration", "railway"])
+    update_task_row(tmp_path, task_id, status="open")
+    member_headers = member_auth_headers(
+        client,
+        username="paper-member-export-preview",
+        actor_id="2250001",
+    )
+
+    create_response = client.post(
+        f"/api/tasks/{task_id}/paper-invoices",
+        json=valid_invoice_payload() | {
+            "invoice_number": "PAPER-IGNORED-001",
+            "expense_type": "registration",
+            "amount_cents": 8800,
+        },
+        headers=member_headers,
+    )
+    assert create_response.status_code == 201
+    paper_invoice = create_response.json()["invoice"]
+
+    invoice_material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice.pdf",
+        content=build_pdf_bytes(),
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/merged-pdf",
+        params={"actor_id": "admin-1", "format": "pdf"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ordered_items"] == [
+        {
+            "sequence": 1,
+            "kind": "invoice_material",
+            "status": "placeholder",
+            "label": f"paper-invoice-{paper_invoice['invoice_number']}.txt",
+            "note": (
+                f"纸质发票 {paper_invoice['invoice_number']} 仅记录线下收票，不会出现在 "
+                "merged-printing.pdf 中。"
+            ),
+            "material_id": paper_invoice["material_id"],
+            "material_type": "invoice",
+            "original_filename": f"paper-invoice-{paper_invoice['invoice_number']}.txt",
+        },
+        {
+            "sequence": 2,
+            "kind": "invoice_material",
+            "status": "ready",
+            "label": "invoice.pdf",
+            "note": None,
+            "material_id": invoice_material_id,
+            "material_type": "invoice",
+            "original_filename": "invoice.pdf",
+        },
+    ]
+
+
 def test_merged_pdf_preview_reports_encrypted_material_id(tmp_path):
     client = make_client(tmp_path)
     task_id = create_task(client)

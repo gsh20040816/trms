@@ -539,6 +539,73 @@ def test_export_async_processor_persists_reimbursement_package_zip_with_manifest
         assert len(PdfReader(BytesIO(archive.read("merged-printing.pdf"))).pages) == 2
 
 
+def test_reimbursement_package_export_skips_paper_invoice_placeholder_in_merged_pdf(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    create_response = client.post(
+        f"/api/tasks/{task_id}/paper-invoices",
+        json={
+            "invoice_number": "PAPER-EXPORT-001",
+            "issue_date": "2026-11-04",
+            "transaction_time": "2026-11-01T08:00:00+00:00",
+            "buyer_name": "同济大学",
+            "tax_number": "12100000425006117D",
+            "seller_name": "线下收票",
+            "corporate_transfer_reference": None,
+            "amount_cents": 8800,
+            "expense_type": "registration",
+        },
+        headers=member_auth_headers(client),
+    )
+    assert create_response.status_code == 201
+    paper_invoice = create_response.json()["invoice"]
+
+    confirm_response = client.put(
+        f"/api/invoices/{paper_invoice['id']}/paper-receipt",
+        json={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+    assert confirm_response.status_code == 200
+
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-a.pdf",
+        material_content=build_pdf_bytes(),
+        split_items=[{"member_id": "2250001", "amount_cents": 12345}],
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(
+        client,
+        task_id,
+        kind="reimbursement_package",
+        format="zip",
+    )
+    processor = build_processor(tmp_path, runtime_config)
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+
+    artifact_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=admin_auth_headers(client),
+    )
+    assert artifact_download.status_code == 200
+
+    with ZipFile(BytesIO(artifact_download.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        assert manifest["warnings"] == [
+            f"纸质发票 {paper_invoice['invoice_number']} 仅记录线下收票，不会出现在 merged-printing.pdf 中。"
+        ]
+        assert len(manifest["materials"]) == 2
+        assert len(PdfReader(BytesIO(archive.read("merged-printing.pdf"))).pages) == 1
+
+
 def test_export_async_processor_rejects_stale_reimbursement_package_job(tmp_path):
     runtime_config = make_runtime_config(tmp_path)
     client = make_client(tmp_path, runtime_config=runtime_config)

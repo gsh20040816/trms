@@ -463,6 +463,7 @@ def build_export_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        invoices = invoice_repository.list_by_task(task_id)
         materials = material_repository.list_by_task(task_id)
         material_bytes_by_id: dict[str, bytes] = {}
         for material in materials:
@@ -488,6 +489,7 @@ def build_export_router(
                 format=format,
                 materials=materials,
                 material_bytes_by_id=material_bytes_by_id,
+                invoices_by_material_id={invoice.material_id: invoice for invoice in invoices},
             )
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(

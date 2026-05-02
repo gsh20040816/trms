@@ -5,7 +5,11 @@ from io import BytesIO
 from PIL import Image, ImageSequence
 from pypdf import PdfReader, PdfWriter
 
-from trms_backend.domain.exports import MergedPdfExportPlan, MergedPdfSourceMaterialError
+from trms_backend.domain.exports import (
+    MergedPdfExportPlan,
+    MergedPdfPlanItemStatus,
+    MergedPdfSourceMaterialError,
+)
 from trms_backend.domain.materials import MaterialRecord
 
 
@@ -18,6 +22,8 @@ def render_merged_pdf_bytes(
     writer = PdfWriter()
 
     for item in export_plan.ordered_items:
+        if item.status is MergedPdfPlanItemStatus.PLACEHOLDER:
+            continue
         if item.material_id is None:
             continue
 

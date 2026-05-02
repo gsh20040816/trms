@@ -61,6 +61,14 @@ class TaskExportBoundary(BaseModel):
 
 
 EXPORT_NOT_READY_STAGE_REASON = "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
+MERGED_PDF_RENDERABLE_CONTENT_TYPES = frozenset(
+    {
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+)
 
 
 class TaskExportJobStatus(StrEnum):
@@ -971,6 +979,7 @@ def build_merged_pdf_export_plan(
     format: ExportArtifactFormat,
     materials: list[MaterialRecord],
     material_bytes_by_id: dict[str, bytes],
+    invoices_by_material_id: dict[str, InvoiceRecord] | None = None,
     generated_at: datetime | None = None,
 ) -> MergedPdfExportPlan:
     boundary = build_task_export_boundary(task, actor_id=actor_id)
@@ -994,6 +1003,29 @@ def build_merged_pdf_export_plan(
 
     ordered_items: list[MergedPdfPlanItem] = []
     for index, material in enumerate(ordered_materials, start=1):
+        invoice = invoices_by_material_id.get(material.id) if invoices_by_material_id is not None else None
+        if (
+            invoice is not None
+            and invoice.is_paper_invoice
+            and material.material_type is MaterialType.INVOICE
+            and material.content_type not in MERGED_PDF_RENDERABLE_CONTENT_TYPES
+        ):
+            ordered_items.append(
+                MergedPdfPlanItem(
+                    sequence=index,
+                    kind=MergedPdfPlanItemKind.INVOICE_MATERIAL,
+                    status=MergedPdfPlanItemStatus.PLACEHOLDER,
+                    label=material.original_filename,
+                    note=(
+                        f"纸质发票 {invoice.invoice_number} 仅记录线下收票，不会出现在 "
+                        "merged-printing.pdf 中。"
+                    ),
+                    material_id=material.id,
+                    material_type=material.material_type,
+                    original_filename=material.original_filename,
+                )
+            )
+            continue
         _validate_merged_pdf_material(
             material,
             raw_content=material_bytes_by_id.get(material.id),
@@ -1306,7 +1338,7 @@ def _validate_merged_pdf_material(
     if material.content_type == "application/pdf":
         _validate_pdf_merged_material(material.id, raw_content)
         return
-    if material.content_type in {"image/jpeg", "image/png", "image/webp"}:
+    if material.content_type in MERGED_PDF_RENDERABLE_CONTENT_TYPES - {"application/pdf"}:
         _validate_image_merged_material(material.id, raw_content)
         return
     raise MergedPdfSourceMaterialError(

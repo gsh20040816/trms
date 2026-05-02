@@ -19,6 +19,7 @@ from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.exports import (
     ExportArtifactFormat,
     ExportArtifactKind,
+    MergedPdfPlanItemStatus,
     ReimbursementPackageManifestArtifact,
     StoredExportArtifactRecord,
     MergedPdfSourceMaterialError,
@@ -330,6 +331,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                 format=export_job.format,
                 materials=materials,
                 material_bytes_by_id=material_bytes_by_id,
+                invoices_by_material_id={invoice.material_id: invoice for invoice in invoices},
             )
             return self._save_artifact(
                 task_id=task.id,
@@ -406,6 +408,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                 format=ExportArtifactFormat.PDF,
                 materials=materials,
                 material_bytes_by_id=material_bytes_by_id,
+                invoices_by_material_id={invoice.material_id: invoice for invoice in invoices},
                 generated_at=generated_at,
             )
             merged_pdf_bytes = render_merged_pdf_bytes(
@@ -465,7 +468,11 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                     for filename, content_type, content in artifact_entries
                 ],
                 materials=materials,
-                warnings=[],
+                warnings=[
+                    item.note
+                    for item in merged_pdf_plan.ordered_items
+                    if item.status is MergedPdfPlanItemStatus.PLACEHOLDER and item.note is not None
+                ],
             )
             manifest_bytes = json.dumps(
                 manifest.model_dump(mode="json"),

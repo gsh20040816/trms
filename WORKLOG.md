@@ -1,5 +1,43 @@
 # WORKLOG
 
+## 2026-05-03 00:35 - Fix reimbursement package export failure caused by paper-invoice placeholder materials
+
+### 完成内容
+- 完成任务“修复纸质发票占位材料导致完整材料包生成失败”。
+- 已修改 [src/trms_backend/domain/exports.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/exports.py)：
+  - `build_merged_pdf_export_plan(...)` 新增 `invoices_by_material_id` 上下文；
+  - 当材料对应的是手动创建的纸质发票，且文件本体只是不可打印的占位内容时，不再抛出 `unsupported content type`；
+  - 改为生成 `placeholder` 计划项，并附带“该纸票仅记录线下收票，不会进入 merged-printing.pdf”的说明。
+- 已修改 [src/trms_backend/application/merged_pdf_export.py](/home/gsh/workspace/TRMS/src/trms_backend/application/merged_pdf_export.py)：
+  - 真正渲染 merged PDF 时会跳过上述 `placeholder` 项，只合并可打印的 PDF/图片材料。
+- 已修改 [src/trms_backend/application/export_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/export_async_jobs.py) 与 [src/trms_backend/api/exports.py](/home/gsh/workspace/TRMS/src/trms_backend/api/exports.py)：
+  - 异步导出和 merged PDF 预览都改为携带发票上下文，正确识别纸质发票占位材料；
+  - 完整材料包 `manifest.json` 的 `warnings` 现在会保留被跳过的纸质发票占位说明，便于管理员追踪线下纸票。
+- 已补回归测试：
+  - [tests/test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)
+  - [tests/test_export_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_export_async_jobs.py)
+  - 覆盖纸质发票占位 + 正常电子材料并存时，merged PDF 预览返回 `placeholder` 项、完整材料包导出成功且 `manifest` 写入 warning。
+
+### 根因
+- 纸质发票的“手动新增”实现会创建一个 `text/plain` 的占位材料，用来承载纸票记录和后续管理员收票确认；
+- 但 merged PDF / 完整材料包的实现此前把“任务下所有材料都必须能直接渲染成 PDF 或图片”作为硬条件；
+- 因此只要任务里存在任何纸质发票占位材料，导出链路就会把它当成异常源材料，并在当前实例中稳定报出：
+  - `merged pdf source material <material_id> has unsupported content type text/plain`
+
+### 风险与影响面
+- 本轮只对“纸质发票占位材料”放宽 merged PDF 约束，普通异常材料仍会继续硬失败，避免把真实坏数据静默吞掉。
+- 当前 `merged-printing.pdf` 会跳过纸票占位本身，依赖 `manifest.json` warning 和管理员线下收票流程追踪；不会伪造一页假的“纸票扫描件”。
+- 未额外覆盖“任务只包含纸质发票占位、完全没有任何可打印电子材料”的极端场景；当前修复已覆盖用户当前实例和“纸票 + 电子材料并存”的主路径。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_exports_api.py tests/test_export_async_jobs.py`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+  - `pytest` `574/574` 通过
+  - `git diff --check` 通过
+
 ## 2026-05-03 00:20 - Collapse reimbursement task statuses into a five-stage flow
 
 ### 完成内容
