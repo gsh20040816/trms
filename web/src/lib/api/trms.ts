@@ -22,6 +22,7 @@ import type {
   MaterialBatchUploadResponse,
   MaterialReminderCreate,
   MaterialReminderRecord,
+  MaterialRecognitionCorrectionPayload,
   MaterialRecord,
   MaterialTypeUpdatePayload,
   MergedPdfExportPlan,
@@ -402,6 +403,16 @@ export const trmsApi = {
   updateMaterialType(materialId: string, payload: MaterialTypeUpdatePayload) {
     return apiClient.request<ApiItemResponse<MaterialRecord>>(
       `/materials/${encodeSegment(materialId)}/material-type`,
+      {
+        method: "PATCH",
+        body: buildActorScopedBody(payload, ["actor_id"]),
+      },
+    );
+  },
+
+  updateMaterialRecognitionFields(materialId: string, payload: MaterialRecognitionCorrectionPayload) {
+    return apiClient.request<ApiItemResponse<RecognitionTaskList["items"][number]>>(
+      `/materials/${encodeSegment(materialId)}/recognition-fields`,
       {
         method: "PATCH",
         body: buildActorScopedBody(payload, ["actor_id"]),

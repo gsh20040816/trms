@@ -47,7 +47,10 @@ from trms_backend.application.recognition_preparation import (
 from trms_backend.application.recognition_invoice_auto_create import (
     RecognitionInvoiceAutoCreateService,
 )
-from trms_backend.application.recognition_audit import record_recognition_result_audit
+from trms_backend.application.recognition_audit import (
+    record_manual_recognition_corrections_audit,
+    record_recognition_result_audit,
+)
 from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
 )
@@ -86,6 +89,11 @@ class MaterialDeletionMarkRequest(BaseModel):
 class MaterialTypeUpdateRequest(BaseModel):
     actor_id: str | None = None
     material_type: MaterialType
+
+
+class MaterialRecognitionCorrectionRequest(BaseModel):
+    actor_id: str | None = None
+    corrected_fields: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
 def _resolve_uploaded_material_type(material_type: MaterialType | None) -> MaterialType:
@@ -747,6 +755,77 @@ def build_material_router(
             request_id=request_id,
         )
         return {"item": updated_material}
+
+    @router.patch("/api/materials/{material_id}/recognition-fields")
+    def update_material_recognition_fields(
+        material_id: str,
+        request: Request,
+        payload: MaterialRecognitionCorrectionRequest,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        request_id = ensure_request_id(request)
+        actor_id = resolve_required_actor_request_field(
+            identity,
+            payload.actor_id,
+            field_name="actor_id",
+        )
+        material = material_repository.get(material_id)
+        if material is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        if material.task_id is None or material.status is not MaterialStatus.ASSIGNED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="only assigned task materials support manual recognition corrections",
+            )
+        task = task_repository.get(material.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+
+        if not (
+            actor_id == material.submitter_id
+            or is_task_administrator(task, actor_id=actor_id)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to update recognition fields for this material",
+            )
+
+        existing_recognition_tasks = recognition_task_repository.list_by_material(material_id)
+        latest_target_task = existing_recognition_tasks[-1] if existing_recognition_tasks else None
+        previous_correction_ids = (
+            {item.id for item in latest_target_task.manual_corrections}
+            if latest_target_task is not None
+            else set()
+        )
+        updated_recognition_task = recognition_task_repository.apply_manual_corrections(
+            material_id=material_id,
+            actor_id=actor_id,
+            corrected_fields=payload.corrected_fields,
+            revalidation_field_names=set(payload.corrected_fields.keys()),
+        )
+        refresh_validations_for_material(
+            material_id,
+            task_repository=task_repository,
+            material_repository=material_repository,
+            invoice_repository=invoice_repository,
+            validation_repository=validation_repository,
+            recognition_task_repository=recognition_task_repository,
+            metrics_collector=metrics,
+        )
+        new_corrections = [
+            item
+            for item in updated_recognition_task.manual_corrections
+            if item.id not in previous_correction_ids
+        ]
+        record_manual_recognition_corrections_audit(
+            audit_log_repository,
+            actor_id=actor_id,
+            recognition_task=updated_recognition_task,
+            task_id=material.task_id,
+            request_id=request_id,
+            corrections=new_corrections,
+        )
+        return {"item": updated_recognition_task}
 
     @router.get("/api/tasks/{task_id}/materials")
     def list_materials(

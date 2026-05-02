@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import Box from "@mui/material/Box";
@@ -19,6 +19,7 @@ import { useSnackbar } from "../components/use-snackbar";
 import { ApiError } from "../lib/api/client";
 import { trmsApi } from "../lib/api/trms";
 import type {
+  ExpenseType,
   MaterialType,
   PendingSupportingMaterialLinkageItem,
   ReimbursementTask,
@@ -36,6 +37,7 @@ import {
 import { useAuthSession } from "./auth-store";
 import {
   buildInvoiceDetailPath,
+  buildMaterialDetailPath,
   buildMaterialInvoiceDetailPath,
 } from "./member-invoice-paths";
 
@@ -158,6 +160,46 @@ const AIRFARE_ITINERARY_FIELDS = [
   "return_arrival_airport_code",
 ] as const;
 
+type EditableMaterialFieldName =
+  | "amount_cents"
+  | "transaction_time"
+  | "location"
+  | "expense_type"
+  | "trip_route"
+  | "transport_mode"
+  | "cabin_class"
+  | "departure_airport_code"
+  | "arrival_airport_code"
+  | "return_departure_airport_code"
+  | "return_arrival_airport_code";
+
+type MaterialRecognitionFormState = Partial<Record<EditableMaterialFieldName, string>>;
+
+const EDITABLE_MATERIAL_FIELDS = new Set<EditableMaterialFieldName>([
+  "amount_cents",
+  "transaction_time",
+  "location",
+  "expense_type",
+  "trip_route",
+  "transport_mode",
+  "cabin_class",
+  "departure_airport_code",
+  "arrival_airport_code",
+  "return_departure_airport_code",
+  "return_arrival_airport_code",
+]);
+
+function isExpenseType(value: string): value is ExpenseType {
+  return (
+    value === "registration"
+    || value === "railway"
+    || value === "airfare"
+    || value === "local_transport"
+    || value === "hotel"
+    || value === "other"
+  );
+}
+
 function formatCurrencyFromCents(cents: number) {
   return `￥${(cents / 100).toFixed(2)}`;
 }
@@ -167,6 +209,38 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatDateTimeLocalInput(value: string | null) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toApiDateTime(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const localDate = new Date(trimmed);
+  const year = localDate.getFullYear();
+  const month = String(localDate.getMonth() + 1).padStart(2, "0");
+  const day = String(localDate.getDate()).padStart(2, "0");
+  const hours = String(localDate.getHours()).padStart(2, "0");
+  const minutes = String(localDate.getMinutes()).padStart(2, "0");
+  const offsetMinutes = -localDate.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absoluteOffsetMinutes = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, "0");
+  const offsetRemainderMinutes = String(absoluteOffsetMinutes % 60).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:00${sign}${offsetHours}:${offsetRemainderMinutes}`;
 }
 
 function pickItemByMaterialId(summary: TaskMemberWorkbenchSummary, materialId: string | undefined) {
@@ -232,6 +306,35 @@ function formatRecognizedFieldValue(fieldName: string, value: unknown) {
     return String(value);
   }
   return JSON.stringify(value);
+}
+
+function isEditableMaterialField(fieldName: string): fieldName is EditableMaterialFieldName {
+  return EDITABLE_MATERIAL_FIELDS.has(fieldName as EditableMaterialFieldName);
+}
+
+function buildMaterialRecognitionFormState(item: TaskMemberWorkbenchItem): MaterialRecognitionFormState {
+  const formState: MaterialRecognitionFormState = {};
+  const pageConfig = resolveMaterialPageConfig(item);
+  for (const fieldName of pageConfig.fields) {
+    if (!isEditableMaterialField(fieldName)) {
+      continue;
+    }
+    const rawValue = item.recognition?.recognized_fields[fieldName]?.value;
+    if (fieldName === "amount_cents") {
+      formState[fieldName] = typeof rawValue === "number" ? formatCurrencyFromCents(rawValue).replace("￥", "") : "";
+      continue;
+    }
+    if (fieldName === "transaction_time") {
+      formState[fieldName] = typeof rawValue === "string" ? formatDateTimeLocalInput(rawValue) : "";
+      continue;
+    }
+    if (fieldName === "expense_type") {
+      formState[fieldName] = typeof rawValue === "string" ? rawValue : "";
+      continue;
+    }
+    formState[fieldName] = typeof rawValue === "string" ? rawValue : "";
+  }
+  return formState;
 }
 
 function findPendingLinkageItem(
@@ -319,6 +422,9 @@ export function MemberMaterialDetailPage() {
   const [savingMaterialType, setSavingMaterialType] = useState(false);
   const [retryingRecognition, setRetryingRecognition] = useState(false);
   const [openingOriginal, setOpeningOriginal] = useState(false);
+  const [recognitionForm, setRecognitionForm] = useState<MaterialRecognitionFormState>({});
+  const [recognitionFormError, setRecognitionFormError] = useState<string | null>(null);
+  const [savingRecognitionFields, setSavingRecognitionFields] = useState(false);
   const [linkageSelectionDraft, setLinkageSelectionDraft] = useState<{
     baseKey: string;
     selectedIds: string[];
@@ -348,6 +454,8 @@ export function MemberMaterialDetailPage() {
         setDetailState({ status: "ready", task, summary, item });
         if (item) {
           setMaterialTypeDraft(item.material.material_type);
+          setRecognitionForm(buildMaterialRecognitionFormState(item));
+          setRecognitionFormError(null);
         }
       } catch (error) {
         if (!cancelled) {
@@ -436,6 +544,63 @@ export function MemberMaterialDetailPage() {
     }
   }
 
+  function updateRecognitionField(fieldName: EditableMaterialFieldName, value: string) {
+    setRecognitionForm((current) => ({
+      ...current,
+      [fieldName]: value,
+    }));
+    setRecognitionFormError(null);
+  }
+
+  async function handleRecognitionFieldSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!item || !session || !pageConfig) {
+      return;
+    }
+
+    const correctedFields: Record<string, string | number | boolean | null> = {};
+    for (const fieldName of editableRecognitionFields) {
+      const rawValue = recognitionForm[fieldName] ?? "";
+      const trimmedValue = rawValue.trim();
+      if (fieldName === "amount_cents") {
+        if (!trimmedValue) {
+          correctedFields[fieldName] = null;
+          continue;
+        }
+        if (!/^\d+(?:\.\d{1,2})?$/.test(trimmedValue)) {
+          setRecognitionFormError("金额需要是大于 0 的数字，最多两位小数。");
+          return;
+        }
+        const amount = Number(trimmedValue);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          setRecognitionFormError("金额需要是大于 0 的数字，最多两位小数。");
+          return;
+        }
+        correctedFields[fieldName] = Math.round(amount * 100);
+        continue;
+      }
+      if (fieldName === "transaction_time") {
+        correctedFields[fieldName] = trimmedValue ? toApiDateTime(trimmedValue) : null;
+        continue;
+      }
+      correctedFields[fieldName] = trimmedValue || null;
+    }
+
+    setSavingRecognitionFields(true);
+    try {
+      await trmsApi.updateMaterialRecognitionFields(item.material.material_id, {
+        actor_id: session.actorId,
+        corrected_fields: correctedFields,
+      });
+      showSuccess("识别字段已保存，相关校验已刷新。");
+      setReloadVersion((current) => current + 1);
+    } catch (error) {
+      setRecognitionFormError(error instanceof ApiError ? error.summary.message : "识别字段保存失败。");
+    } finally {
+      setSavingRecognitionFields(false);
+    }
+  }
+
   async function handleViewOriginal() {
     if (!item) {
       return;
@@ -516,6 +681,7 @@ export function MemberMaterialDetailPage() {
   const pageConfig = item && materialType && materialType !== "invoice"
     ? resolveMaterialPageConfig(item)
     : null;
+  const editableRecognitionFields = pageConfig?.fields.filter(isEditableMaterialField) ?? [];
 
   return (
     <RoleWorkspace
@@ -629,6 +795,45 @@ export function MemberMaterialDetailPage() {
                 </li>
               ))}
             </ul>
+            {editableRecognitionFields.length > 0 ? (
+              <form className="page-stack" onSubmit={(event) => { void handleRecognitionFieldSave(event); }}>
+                <div className="admin-form-grid">
+                  {editableRecognitionFields.map((fieldName) => (
+                    fieldName === "expense_type" ? (
+                      <TextField
+                        key={fieldName}
+                        select
+                        label={MATERIAL_FIELD_LABELS[fieldName]}
+                        value={recognitionForm[fieldName] ?? ""}
+                        disabled={savingRecognitionFields}
+                        onChange={(event) => { updateRecognitionField(fieldName, event.target.value); }}
+                      >
+                        <MenuItem value="">未填写</MenuItem>
+                        {(task?.fee_categories.filter(isExpenseType) ?? []).map((expenseType: ExpenseType) => (
+                          <MenuItem key={expenseType} value={expenseType}>{formatExpenseType(expenseType)}</MenuItem>
+                        ))}
+                      </TextField>
+                    ) : (
+                      <TextField
+                        key={fieldName}
+                        label={MATERIAL_FIELD_LABELS[fieldName]}
+                        type={fieldName === "transaction_time" ? "datetime-local" : "text"}
+                        value={recognitionForm[fieldName] ?? ""}
+                        disabled={savingRecognitionFields}
+                        onChange={(event) => { updateRecognitionField(fieldName, event.target.value); }}
+                        slotProps={fieldName === "transaction_time" ? { inputLabel: { shrink: true } } : undefined}
+                      />
+                    )
+                  ))}
+                </div>
+                {recognitionFormError ? <p className="field-error field-error-block">{recognitionFormError}</p> : null}
+                <div className="inline-actions">
+                  <Button type="submit" variant="contained" disabled={savingRecognitionFields}>
+                    {savingRecognitionFields ? "保存中..." : "保存识别字段"}
+                  </Button>
+                </div>
+              </form>
+            ) : null}
           </SectionCard>
 
           <SectionCard title="关联归属发票" description="在这里勾选当前材料应关联的发票，再统一提交“更改关联”；不再回工作台做二次编辑。">
@@ -691,6 +896,16 @@ export function MemberMaterialDetailPage() {
                                   onClick={() => { void navigate(buildInvoiceDetailPath(currentTaskId, invoiceOption.invoice_id)); }}
                                 >
                                   查看发票 {invoiceOption.invoice_number}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outlined"
+                                  size="small"
+                                  onClick={() => {
+                                    void navigate(buildMaterialDetailPath(currentTaskId, item.material.material_id));
+                                  }}
+                                >
+                                  查看当前材料
                                 </Button>
                               </div>
                             </div>

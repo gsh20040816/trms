@@ -160,6 +160,20 @@ function renderMaterialRoute(summary: ReturnType<typeof buildMaterialSummary>) {
     if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
       return Promise.resolve(jsonResponse(summary));
     }
+    if (url === "/api/materials/MAT-TYPE-001/recognition-fields" && method === "PATCH") {
+      return Promise.resolve(jsonResponse({
+        item: {
+          id: "REC-TYPE-001",
+          material_id: "MAT-TYPE-001",
+          status: "needs_confirmation",
+          failure: null,
+          recognized_fields: {},
+          manual_corrections: [],
+          created_at: "2026-04-28T10:00:00+08:00",
+          updated_at: "2026-04-28T10:05:00+08:00",
+        },
+      }));
+    }
 
     throw new Error(`Unhandled request ${method} ${url}`);
   });
@@ -332,6 +346,61 @@ describe("MemberMaterialDetailPage", () => {
         method: "PUT",
         url: "/api/invoices/INV-CANDIDATE-001/supporting-materials/MAT-TYPE-001",
       });
+    });
+  });
+
+  it("saves editable recognition fields from the material detail page", async () => {
+    const requests: Array<{ method: string; url: string; body: unknown }> = [];
+    const summary = buildMaterialSummary("payment_record", "amount_cents", 12345);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      requests.push({ method, url, body: init?.body ? JSON.parse(init.body as string) : null });
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(summary));
+      }
+      if (url === "/api/materials/MAT-TYPE-001/recognition-fields" && method === "PATCH") {
+        return Promise.resolve(jsonResponse({
+          item: {
+            id: "REC-TYPE-001",
+            material_id: "MAT-TYPE-001",
+            status: "needs_confirmation",
+            failure: null,
+            recognized_fields: {},
+            manual_corrections: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+            updated_at: "2026-04-28T10:05:00+08:00",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/member/materials/MAT-TYPE-001?taskId=TASK-OPEN"],
+    });
+    act(() => {
+      render(<RouterProvider router={router} />);
+    });
+
+    expect(await screen.findByRole("heading", { name: "支付记录详情" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("金额"), { target: { value: "234.56" } });
+    fireEvent.change(screen.getByLabelText("地点"), { target: { value: "四平路校区" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存识别字段" }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => (
+        request.method === "PATCH"
+        && request.url === "/api/materials/MAT-TYPE-001/recognition-fields"
+        && (request.body as { corrected_fields?: Record<string, unknown> }).corrected_fields?.amount_cents === 23456
+        && (request.body as { corrected_fields?: Record<string, unknown> }).corrected_fields?.location === "四平路校区"
+      ))).toBe(true);
     });
   });
 });

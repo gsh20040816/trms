@@ -45,7 +45,7 @@ import {
   formatValidationStatus,
 } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
-import { buildInvoiceDetailPath } from "./member-invoice-paths";
+import { buildInvoiceDetailPath, buildMaterialDetailPath } from "./member-invoice-paths";
 
 type DetailState =
   | { status: "loading" }
@@ -465,6 +465,7 @@ export function MemberInvoiceDetailPage() {
   const sharedInvoice = detailState.status === "ready" ? detailState.sharedInvoice : null;
   const invoice = findPrimaryInvoice(item, sharedInvoice);
   const task = detailState.status === "ready" ? detailState.task : null;
+  const currentTaskId = task?.id ?? taskId;
   const memberSummaryMap = task ? buildTaskMemberSummaryMap(task.member_summaries) : new Map();
   const abnormalReasons = useMemo(() => (item ? collectAbnormalReasons(item) : []), [item]);
   const allowedExpenseTypes = task ? buildAllowedExpenseTypes(task) : [];
@@ -908,11 +909,27 @@ export function MemberInvoiceDetailPage() {
 
           <SectionCard title="附件与缺失材料" description="确认这张票已经关联必要附件，缺失项可回工作台上传入口补齐。">
             {item.supporting_materials.length > 0 ? (
-              <ul className="member-status-message-list">
+              <ul className="invoice-material-list" aria-label="当前已关联附件列表">
                 {item.supporting_materials.map((material) => (
                   <li key={material.id}>
-                    <strong>{formatMaterialType(material.material_type)} / {material.original_filename}</strong>
-                    <span>上传时间：{formatDateTime(material.created_at)}</span>
+                    <button
+                      type="button"
+                      className="invoice-material-button"
+                      onClick={() => { void navigate(buildMaterialDetailPath(currentTaskId, material.id)); }}
+                    >
+                      <p className="task-card-id">附件材料 {material.id}</p>
+                      <h3>{formatMaterialType(material.material_type)} / {material.original_filename}</h3>
+                      <dl className="task-detail-grid invoice-editor-summary-grid">
+                        <div>
+                          <dt>材料类型</dt>
+                          <dd>{formatMaterialType(material.material_type)}</dd>
+                        </div>
+                        <div>
+                          <dt>上传时间</dt>
+                          <dd>{formatDateTime(material.created_at)}</dd>
+                        </div>
+                      </dl>
+                    </button>
                   </li>
                 ))}
               </ul>

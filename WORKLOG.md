@@ -1,5 +1,55 @@
 # WORKLOG
 
+## 2026-05-02 23:40 - Make invoice attachments clickable and editable from material detail
+
+### 完成内容
+- 完成任务“让发票附件可点击进入附件详情页，并允许成员编辑附件识别字段”。
+- 已修改 [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)：
+  - 发票详情页“附件与缺失材料”中的已关联附件不再是纯文本列表，改为可点击卡片；
+  - 每张附件卡片展示材料类型、原始文件名和上传时间；
+  - 点击后直接进入对应成员附件详情页，保持当前 `taskId` 上下文。
+- 已修改 [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx)：
+  - 非发票附件详情页在“已识别字段”区下方新增可编辑表单；
+  - 当前支持成员对附件识别出的金额、时间、地点、费用类型、路线、交通方式、舱位和机场代码等字段进行手工更正；
+  - 保存后会调用真实后端接口持久化到识别任务的 `manual_corrections`，并刷新该材料相关发票校验；
+  - 仍保留原有材料类型修正、重新识别和归属发票编辑主路径。
+- 已修改 [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)：
+  - 新增 `PATCH /api/materials/{material_id}/recognition-fields`；
+  - 仅允许材料提交人或任务管理员更正附件识别字段；
+  - 复用现有 `recognition_task_repository.apply_manual_corrections(...)`，保留识别来源、人工更正历史和审计记录；
+  - 保存后调用 `refresh_validations_for_material(...)`，确保已关联发票的支付记录/附件校验同步刷新。
+- 已修改前端 API 类型与调用：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+- 已补回归测试：
+  - 后端：[tests/test_member_material_recognition_update_api.py](/home/gsh/workspace/TRMS/tests/test_member_material_recognition_update_api.py)
+  - 前端：[web/src/app/member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx)
+  - 前端：[web/src/app/member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+
+### 根因
+- 发票详情页中的附件区此前只是静态摘要，没有进入附件详情页的稳定入口；
+- 附件详情页虽然已有识别字段展示，但只有只读视图和材料类型修正，没有像发票页那样的手工更正识别字段能力；
+- 结果是成员只能看到附件识别结果，无法在附件页面直接修正识别值，也无法让相关发票校验随修正同步闭环。
+
+### 风险与影响面
+- 本轮只为成员附件详情页补齐识别字段手工更正，不改管理员审核页的识别字段编辑模式；
+- 后端接口虽然允许任务管理员调用，但当前前端只在成员附件详情页接入该能力；
+- 附件字段更正会影响相关发票校验结果，这是本轮有意行为；当前已通过测试覆盖支付记录金额匹配刷新主路径。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_member_material_recognition_update_api.py tests/test_member_material_type_update_api.py`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-material-detail.test.tsx src/app/member-invoice-detail.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `570/570` 通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `123/123` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 23:15 - Stop blocking member workbench on partial recognition gaps for non-invoice materials
 
 ### 完成内容

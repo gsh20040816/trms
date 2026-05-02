@@ -123,7 +123,27 @@ function buildSummary(): TaskMemberWorkbenchSummary {
           updated_at: "2026-04-28T10:00:00+08:00",
         },
         validations: [],
-        supporting_materials: [],
+        supporting_materials: [
+          {
+            id: "MAT-SUPPORT-001",
+            status: "assigned",
+            task_id: "TASK-OPEN",
+            submitter_id: "2250001",
+            task_id_hint: null,
+            submitter_id_hint: null,
+            channel: "web",
+            material_type: "payment_record",
+            storage_key: "TASK-OPEN/MAT-SUPPORT-001-payment.png",
+            original_filename: "payment-proof.png",
+            content_type: "image/png",
+            size_bytes: 1024,
+            sha256: "a".repeat(64),
+            duplicate_of: null,
+            claimed_by: null,
+            claimed_at: null,
+            created_at: "2026-04-28T10:30:00+08:00",
+          },
+        ],
         splits: [
           {
             id: "SPLIT-001",
@@ -427,6 +447,38 @@ describe("MemberInvoiceDetailPage", () => {
 
     await waitFor(() => {
       expect(requests.some((request) => request.method === "DELETE" && request.url === "/api/invoices/INV-READY-001")).toBe(true);
+    });
+  });
+
+  it("renders supporting materials as clickable cards linking to the material page", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(buildSummary()));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/member/invoices/INV-READY-001?taskId=TASK-OPEN"],
+    });
+    act(() => {
+      render(<RouterProvider router={router} />);
+    });
+
+    expect(await screen.findByRole("heading", { name: "附件与缺失材料" })).toBeInTheDocument();
+    const attachmentCard = screen.getByRole("button", { name: /支付记录 \/ payment-proof\.png/i });
+    fireEvent.click(attachmentCard);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/member/materials/MAT-SUPPORT-001");
+      expect(router.state.location.search).toBe("?taskId=TASK-OPEN");
     });
   });
 });

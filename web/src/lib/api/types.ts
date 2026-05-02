@@ -274,6 +274,11 @@ export type MaterialTypeUpdatePayload = {
   material_type: MaterialType;
 };
 
+export type MaterialRecognitionCorrectionPayload = {
+  actor_id?: string | null;
+  corrected_fields: Record<string, string | number | boolean | null>;
+};
+
 export type MaterialUploadFailure = {
   original_filename: string | null;
   error_code: string;
