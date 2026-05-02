@@ -283,12 +283,26 @@
   align-items: center;
   gap: 10px;
   min-height: 52px;
-  border: 1px solid rgba(17, 37, 61, 0.14);
+  border: 1px solid transparent;
   border-radius: 16px;
   padding: 0 14px;
-  background: rgba(244, 239, 228, 0.72);
   color: #11253d;
   font-weight: 700;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.checkbox-card-surface {
+  border-color: #dbe3ef;
+  background: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.checkbox-card-surface:hover {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
 }
 
 .checkbox-card input {
@@ -551,9 +565,15 @@
 
 .member-status-section {
   margin-top: 18px;
+  border: 1px solid #e2e8f0;
   border-radius: 18px;
   padding: 18px;
-  background: rgba(244, 239, 228, 0.7);
+  background: #f8fafc;
+}
+
+.member-status-section-warning {
+  border-color: #f3d2a9;
+  background: linear-gradient(180deg, #fffaf3 0%, #fffdf9 100%);
 }
 
 .member-status-section h4 {

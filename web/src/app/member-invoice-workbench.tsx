@@ -2567,7 +2567,7 @@ export function MemberInvoiceWorkbenchPage() {
               )}
             </section>
 
-            <section className="member-status-section" aria-label="问题发票分组">
+            <section className="member-status-section member-status-section-warning" aria-label="问题发票分组">
               <div className="member-status-section-header">
                 <div>
                   <h4>问题发票</h4>
@@ -2584,7 +2584,7 @@ export function MemberInvoiceWorkbenchPage() {
                   {problemInvoiceSections.map((section) => (
                     <section
                       key={section.key}
-                      className="member-status-section member-workbench-subsection"
+                      className="member-status-section member-status-section-warning member-workbench-subsection"
                       aria-label={`${section.title} 分组`}
                     >
                       <div className="member-status-section-header">
@@ -2649,7 +2649,7 @@ export function MemberInvoiceWorkbenchPage() {
             {pendingSupportingMaterialLinkageItems.length > 0 ? (
               <section
                 id="member-workbench-pending-linkage"
-                className="member-status-section"
+                className="member-status-section member-status-section-warning"
                 aria-label="待关联辅助材料列表"
               >
                 <div className="member-status-section-header">

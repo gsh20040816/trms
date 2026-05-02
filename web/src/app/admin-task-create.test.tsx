@@ -158,6 +158,7 @@ describe("admin task create page", () => {
     expect(screen.getByRole("heading", { name: "创建报销任务" })).toBeInTheDocument();
     expect(screen.getByText("输入后会实时向后端检索候选成员。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("输入成员姓名、用户名或学号检索")).toBeInTheDocument();
+    expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");
 
     await fillRequiredTaskForm();
     fireEvent.change(screen.getByLabelText("发票抬头"), {

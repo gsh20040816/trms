@@ -290,6 +290,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByRole("heading", { name: "需要处理的发票列表" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "发票字段" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "可提交发票列表" })).not.toHaveClass("member-status-section-warning");
+    expect(screen.getByRole("region", { name: "问题发票分组" })).toHaveClass("member-status-section-warning");
 
     const readySection = screen.getByRole("region", { name: "未提交发票列表" });
     fireEvent.click(within(readySection).getByRole("button", { name: /未提交发票 ready\.pdf INV-READY-001/ }));
@@ -351,6 +353,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
     renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "待关联辅助材料列表" })).toHaveClass("member-status-section-warning");
     expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
     expect(screen.getByText(/当前已关联：INV-LINKED-001/)).toBeInTheDocument();
     expect(screen.getByText(/仍可继续关联的候选发票：INV-READY-001/)).toBeInTheDocument();

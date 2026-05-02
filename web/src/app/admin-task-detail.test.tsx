@@ -204,6 +204,7 @@ describe("admin task detail page", () => {
     const categories = within(screen.getByLabelText("任务费用类别"));
     expect(categories.getByText("参赛费")).toBeInTheDocument();
     expect(categories.getByText("住宿费")).toBeInTheDocument();
+    expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");
 
     expect(screen.getByRole("button", { name: "切换为收集中" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为待复核" })).toBeInTheDocument();

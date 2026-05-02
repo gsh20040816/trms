@@ -862,7 +862,7 @@ export function AdminTaskDetailPage() {
                       {FEE_CATEGORY_OPTIONS.map((option) => (
                         <FormControlLabel
                           key={option.value}
-                          className="checkbox-card"
+                          className="checkbox-card checkbox-card-surface"
                           control={(
                             <Checkbox
                               checked={formState.feeCategories.includes(option.value)}

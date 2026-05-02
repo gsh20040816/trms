@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-05-02 12:30 - Replace legacy yellow backgrounds with real surface semantics
+
+### 完成内容
+- 完成任务“统一前端遗留黄色背景为真实页面背景语义”。
+- 收口管理员创建任务与任务详情中的费用类别容器语义：
+  - [admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx) 与 [admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx) 的费用类别卡片改为显式使用 `checkbox-card-surface`，不再沿用泛黄色底板；
+  - [styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 为该类卡片补齐中性 surface 边框、背景和 hover 语义。
+- 收口成员工作台主路径的区块背景语义：
+  - [member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 仅把“问题发票分组”和“待关联辅助材料列表”标记为 `member-status-section-warning`；
+  - 其余工作台区块继续使用中性 surface，不再默认整片发黄；
+  - [styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 新增 `member-status-section-warning`，并把默认 `member-status-section` 收口为中性背景。
+- 补充前端回归断言：
+  - [admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx)、[admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx) 断言费用类别卡片使用 surface 语义类；
+  - [member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 断言可提交区块保持中性，问题区块与待关联区块才使用 warning 语义类。
+
+### 根因
+- 这三条主路径仍复用早期自造 CSS，其中多个通用容器类直接把 `rgba(244, 239, 228, ...)` 当作默认背景。
+- 真正的问题不是“页面需要更多高亮”，而是“普通容器”和“待关注状态”没有分清语义，导致管理员创建页、任务详情页和成员工作台都把黄色当成基础底色在滥用。
+
+### 风险与影响面
+- 本轮只收口目标任务要求的三条前端主路径，没有顺带重写其他管理员复核页、导出页或更深层旧样式类。
+- 当前保守假设是：默认业务容器应回到中性 surface；只有明确待处理/风险区块才保留 warning 色。该假设已写入本轮实现；若后续设计系统进一步细分 info/success surface，可在独立任务中继续拆分，而不是重新回退到“整片黄色”。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-task-create.test.tsx`
+  - `cd web && npm test -- admin-task-detail.test.tsx`
+  - `cd web && npm test -- member-invoice-workbench.test.tsx`
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 522 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 12:12 - Fix real-time backend member search in admin task creation
 
 ### 完成内容
