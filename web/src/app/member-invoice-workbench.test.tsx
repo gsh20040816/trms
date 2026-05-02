@@ -632,7 +632,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
   });
 
   it("allows members to create a paper invoice from the workbench", async () => {
-    mockCommonFetch(buildWorkbenchSummary({
+    const fetchSpy = mockCommonFetch(buildWorkbenchSummary({
       items: [],
       report: {
         ...buildWorkbenchSummary().report,
@@ -646,12 +646,23 @@ describe("MemberInvoiceWorkbenchPage", () => {
     const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     expect(await screen.findByRole("heading", { name: "手动录入纸质发票" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("纸质发票号码"), { target: { value: "PAPER-001" } });
     fireEvent.change(screen.getByLabelText("金额（元）"), { target: { value: "88.00" } });
     fireEvent.click(screen.getByRole("button", { name: "新增纸质发票" }));
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/member/invoices/INV-PAPER-001");
+    });
+    const paperInvoiceRequest = fetchSpy.mock.calls.find(([input, init]) => (
+      resolveRequestUrl(input) === "/api/tasks/TASK-OPEN/paper-invoices"
+      && resolveRequestMethod(input, init) === "POST"
+    ));
+    expect(paperInvoiceRequest).toBeDefined();
+    const requestInit = paperInvoiceRequest?.[1];
+    const requestBody = typeof requestInit?.body === "string" ? requestInit.body : "";
+    expect(JSON.parse(requestBody)).toEqual({
+      actor_id: "2250001",
+      amount_cents: 8800,
+      expense_type: "railway",
     });
   });
 

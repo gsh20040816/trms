@@ -100,6 +100,27 @@ class ManualInvoiceEntryRequest(BaseModel):
 
 
 class PaperInvoiceCreateRequest(ManualInvoiceEntryRequest):
+    invoice_number: str = "paper-invoice"
+    buyer_name: str = "paper-invoice"
+    tax_number: str = "paper-invoice"
+    issue_date: date | None = None
+    transaction_time: datetime | None = None
+    seller_name: str | None = None
+    corporate_transfer_reference: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_paper_invoice_defaults(self) -> "PaperInvoiceCreateRequest":
+        if self.actor_id is not None:
+            self.actor_id = self.actor_id.strip() or None
+        self.invoice_number = "paper-invoice"
+        self.buyer_name = "paper-invoice"
+        self.tax_number = "paper-invoice"
+        self.issue_date = None
+        self.transaction_time = None
+        self.seller_name = None
+        self.corporate_transfer_reference = None
+        return self
+
     def to_domain(self, *, actor_id: str) -> ManualInvoiceEntry:
         return ManualInvoiceEntry.model_validate(
             super().to_domain(actor_id=actor_id).model_dump()
@@ -221,6 +242,9 @@ def build_invoice_router(
         if not normalized_invoice_number:
             normalized_invoice_number = "unnumbered"
         return f"paper-invoice-{normalized_invoice_number}.txt"
+
+    def build_generated_paper_invoice_number(*, task_id: str, actor_id: str, expense_type: ExpenseType) -> str:
+        return f"PAPER-{task_id[:8].upper()}-{actor_id[:6].upper()}-{expense_type.value.upper()}"
 
     def build_paper_invoice_placeholder_content(
         *,
@@ -415,15 +439,26 @@ def build_invoice_router(
                 detail=str(error),
             ) from error
 
-        invoice_data = manual_entry.to_invoice_create()
+        generated_invoice_number = build_generated_paper_invoice_number(
+            task_id=task_id,
+            actor_id=resolved_actor_id,
+            expense_type=manual_entry.expense_type,
+        )
+        invoice_data = manual_entry.to_invoice_create().model_copy(
+            update={
+                "invoice_number": generated_invoice_number,
+                "buyer_name": task.invoice_title,
+                "tax_number": task.tax_number,
+            }
+        )
         stored_placeholder = material_file_storage.save(
             task_id=task_id,
-            original_filename=build_paper_invoice_placeholder_filename(invoice_data.invoice_number),
+            original_filename=build_paper_invoice_placeholder_filename(generated_invoice_number),
             content_type="text/plain",
             content=build_paper_invoice_placeholder_content(
                 task_id=task_id,
                 actor_id=resolved_actor_id,
-                invoice_number=invoice_data.invoice_number,
+                invoice_number=generated_invoice_number,
                 amount_cents=invoice_data.amount_cents,
                 expense_type=invoice_data.expense_type,
             ),

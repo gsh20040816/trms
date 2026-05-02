@@ -379,7 +379,11 @@ export type ManualInvoiceEntry = {
   expense_type: ExpenseType;
 };
 
-export type PaperInvoiceCreateRequest = ManualInvoiceEntry;
+export type PaperInvoiceCreateRequest = {
+  actor_id: string;
+  amount_cents: number;
+  expense_type: ExpenseType;
+};
 
 export type PaperInvoiceReceiptConfirmRequest = {
   actor_id: string;

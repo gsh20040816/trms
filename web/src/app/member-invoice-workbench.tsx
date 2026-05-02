@@ -137,13 +137,6 @@ type WorkbenchUploadFormState = {
 type WorkbenchUploadValidationErrors = Partial<Record<keyof WorkbenchUploadFormState, string>>;
 
 type PaperInvoiceFormState = {
-  invoiceNumber: string;
-  issueDate: string;
-  transactionTime: string;
-  buyerName: string;
-  taxNumber: string;
-  sellerName: string;
-  corporateTransferReference: string;
   amountYuan: string;
   expenseType: InvoiceRecord["expense_type"];
 };
@@ -260,25 +253,6 @@ function parseCurrencyInputToCents(value: string) {
   return Number(integerPart) * 100 + Number(`${decimalPart}00`.slice(0, 2));
 }
 
-function toApiDateTime(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const localDate = new Date(trimmed);
-  const year = localDate.getFullYear();
-  const month = String(localDate.getMonth() + 1).padStart(2, "0");
-  const day = String(localDate.getDate()).padStart(2, "0");
-  const hours = String(localDate.getHours()).padStart(2, "0");
-  const minutes = String(localDate.getMinutes()).padStart(2, "0");
-  const offsetMinutes = -localDate.getTimezoneOffset();
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const absoluteOffsetMinutes = Math.abs(offsetMinutes);
-  const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, "0");
-  const offsetRemainderMinutes = String(absoluteOffsetMinutes % 60).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}:00${sign}${offsetHours}:${offsetRemainderMinutes}`;
-}
-
 function buildInitialPaperInvoiceFormState(task: ReimbursementTask | null): PaperInvoiceFormState {
   const defaultExpenseType = task?.fee_categories.find(
     (value): value is InvoiceRecord["expense_type"] => (
@@ -291,13 +265,6 @@ function buildInitialPaperInvoiceFormState(task: ReimbursementTask | null): Pape
     ),
   ) ?? "other";
   return {
-    invoiceNumber: "",
-    issueDate: "",
-    transactionTime: "",
-    buyerName: task?.invoice_title ?? "",
-    taxNumber: task?.tax_number ?? "",
-    sellerName: "",
-    corporateTransferReference: "",
     amountYuan: "",
     expenseType: defaultExpenseType,
   };
@@ -309,12 +276,6 @@ function validatePaperInvoiceForm(
 ) {
   if (!task || task.status !== "open") {
     return "当前任务不在开放提交阶段，不能手动新增纸质发票。";
-  }
-  if (!formState.invoiceNumber.trim()) {
-    return "请填写纸质发票号码。";
-  }
-  if (!formState.buyerName.trim() || !formState.taxNumber.trim()) {
-    return "请填写发票抬头和税号。";
   }
   const amountCents = parseCurrencyInputToCents(formState.amountYuan);
   if (amountCents === null || amountCents <= 0) {
@@ -1738,20 +1699,13 @@ export function MemberInvoiceWorkbenchPage() {
     try {
       const response = await trmsApi.createPaperInvoice(selectedTask.id, {
         actor_id: session.actorId,
-        invoice_number: activePaperInvoiceFormState.invoiceNumber.trim(),
-        issue_date: activePaperInvoiceFormState.issueDate.trim() || null,
-        transaction_time: toApiDateTime(activePaperInvoiceFormState.transactionTime),
-        buyer_name: activePaperInvoiceFormState.buyerName.trim(),
-        tax_number: activePaperInvoiceFormState.taxNumber.trim(),
-        seller_name: activePaperInvoiceFormState.sellerName.trim() || null,
-        corporate_transfer_reference: activePaperInvoiceFormState.corporateTransferReference.trim() || null,
         amount_cents: amountCents,
         expense_type: activePaperInvoiceFormState.expenseType,
       });
       setPaperInvoiceFormTaskId(selectedTask.id);
       setPaperInvoiceFormState(buildInitialPaperInvoiceFormState(selectedTask));
       setWorkbenchReloadVersion((current) => current + 1);
-      showSuccess(`已新增纸质发票 ${response.invoice.invoice_number}，等待管理员确认收票。`);
+      showSuccess("已新增纸质发票记录，等待管理员确认收票。");
       void navigate(buildInvoiceDetailPath(selectedTask.id, response.invoice.id));
     } catch (error) {
       const message = error instanceof ApiError ? error.summary.message : "纸质发票创建失败，请稍后重试。";
@@ -2184,7 +2138,7 @@ export function MemberInvoiceWorkbenchPage() {
               <section id="member-workbench-invoices" className="page-stack">
                 <SectionCard
                   title="手动录入纸质发票"
-                  description="纸质票没有电子文件时，先在这里录入票号、金额和费用类型。创建后系统会生成占位发票，并在管理员确认收到纸票前保持阻塞。"
+                  description="纸质票没有电子文件时，只需要录入金额和费用类型。创建后系统会生成占位发票，并在管理员确认收到纸票前保持阻塞。"
                   action={(
                     <StatusBadge tone="warning">
                       管理员确认前不可视为已齐备
@@ -2198,14 +2152,6 @@ export function MemberInvoiceWorkbenchPage() {
                     }}
                   >
                     <div className="admin-form-grid">
-                      <TextField
-                        label="纸质发票号码"
-                        value={activePaperInvoiceFormState.invoiceNumber}
-                        onChange={(event) => {
-                          updatePaperInvoiceField("invoiceNumber", event.target.value);
-                        }}
-                        fullWidth
-                      />
                       <TextField
                         label="金额（元）"
                         value={activePaperInvoiceFormState.amountYuan}
@@ -2229,63 +2175,11 @@ export function MemberInvoiceWorkbenchPage() {
                           </MenuItem>
                         ))}
                       </TextField>
-                      <TextField
-                        label="开票日期"
-                        type="date"
-                        value={activePaperInvoiceFormState.issueDate}
-                        onChange={(event) => {
-                          updatePaperInvoiceField("issueDate", event.target.value);
-                        }}
-                        slotProps={{ inputLabel: { shrink: true } }}
-                        fullWidth
-                      />
-                      <TextField
-                        label="交易时间"
-                        type="datetime-local"
-                        value={activePaperInvoiceFormState.transactionTime}
-                        onChange={(event) => {
-                          updatePaperInvoiceField("transactionTime", event.target.value);
-                        }}
-                        slotProps={{ inputLabel: { shrink: true } }}
-                        fullWidth
-                      />
-                      <TextField
-                        label="销售方名称"
-                        value={activePaperInvoiceFormState.sellerName}
-                        onChange={(event) => {
-                          updatePaperInvoiceField("sellerName", event.target.value);
-                        }}
-                        fullWidth
-                      />
-                      <TextField
-                        label="发票抬头"
-                        value={activePaperInvoiceFormState.buyerName}
-                        onChange={(event) => {
-                          updatePaperInvoiceField("buyerName", event.target.value);
-                        }}
-                        fullWidth
-                      />
-                      <TextField
-                        label="税号"
-                        value={activePaperInvoiceFormState.taxNumber}
-                        onChange={(event) => {
-                          updatePaperInvoiceField("taxNumber", event.target.value);
-                        }}
-                        fullWidth
-                      />
-                      <TextField
-                        label="公对公转账编号"
-                        value={activePaperInvoiceFormState.corporateTransferReference}
-                        onChange={(event) => {
-                          updatePaperInvoiceField("corporateTransferReference", event.target.value);
-                        }}
-                        fullWidth
-                      />
                     </div>
                     {paperInvoiceError ? <p className="field-error field-error-block">{paperInvoiceError}</p> : null}
                     <div className="admin-form-footer">
                       <p className="field-hint">
-                        录入后会自动生成“全额归属本人”的默认分摊；后续仍可进入单票页调整金额归属和其他字段。
+                        录入后会自动生成“全额归属本人”的默认分摊；纸质票号占位和任务抬头税号由系统生成，后续仍可进入单票页调整。
                       </p>
                       <Button type="submit" variant="contained" disabled={isCreatingPaperInvoice || selectedTask.status !== "open"}>
                         {isCreatingPaperInvoice ? "正在创建纸质发票..." : "新增纸质发票"}

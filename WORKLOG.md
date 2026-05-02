@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-02 16:35 - Simplify member paper-invoice entry to amount and expense type only
+
+### 完成内容
+- 完成任务“简化纸质发票成员录入口径”。
+- 后端纸质发票创建接口已从普通发票手工录入模型中拆开：
+  - [src/trms_backend/api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py) 中 `PaperInvoiceCreateRequest` 不再要求成员提交票号、开票日期、交易时间、销售方、抬头、税号、公对公转账编号；
+  - 同文件在创建纸质发票时由后端自动生成稳定占位票号 `PAPER-<task>-<actor>-<expense_type>`，并自动回填当前任务的抬头、税号，避免前端继续伪装成完整电子发票录入；
+  - 纸质发票占位原始材料文件名和内容也同步改用系统生成的票号，不再依赖用户输入。
+- 成员工作台纸质发票表单已收口到最小必需字段：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 删除“纸质发票号码 / 开票日期 / 交易时间 / 销售方名称 / 发票抬头 / 税号 / 公对公转账编号”输入；
+  - 表单和前端校验现在只保留“金额（元）”和“费用类型”；
+  - 提交成功提示改为“已新增纸质发票记录”，不再假设成员手动填写票号。
+- 前端 API 类型与回归测试同步收口：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 将 `PaperInvoiceCreateRequest` 改为仅包含 `actor_id`、`amount_cents`、`expense_type`；
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 新增请求体断言，锁定前端不会继续向 `/paper-invoices` 发送旧字段。
+
+### 根因
+- 当前“纸质发票录入”接口直接复用了普通发票手工补录模型，导致成员端表单背上了原本属于电子/已识别发票的整套字段。
+- 这和纸质票场景的真实目标不一致：成员此时只是先报一条金额与费用类型记录，等待管理员线下收票确认，而不是在前端伪造一张完整可识别电子发票。
+
+### 风险与影响面
+- 本轮只收口成员新增纸质发票的入口，不影响管理员后续确认收票、分摊默认生成和纸质发票门禁规则。
+- 当前保守策略是：票号、抬头、税号由后端生成占位值，后续若产品需要在管理员端补真实纸票号，应作为独立任务处理，而不是继续要求成员在创建阶段补全。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_invoices_api.py -k 'paper_invoice'`
+  - 1 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx`
+  - 1 个测试文件 10 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 542 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 16:27 - Close false empty linkage state for local transport itineraries and remove airfare-only fields from rideshare itinerary detail
 
 ### 完成内容
