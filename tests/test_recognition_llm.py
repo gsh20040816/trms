@@ -825,6 +825,103 @@ def test_openai_compatible_recognition_client_corrects_gaode_itinerary_misclassi
     assert result.raw_response["selected_schema"]["name"] == "itinerary"
 
 
+def test_openai_compatible_recognition_client_corrects_payment_record_misclassified_as_order_screenshot():
+    payment_record_text = (
+        "高德打车\n"
+        "支付成功\n"
+        "支付方式：支付宝\n"
+        "支付时间：2025-11-03 19:41\n"
+        "交易单号：2025110319410001\n"
+        "商户单号：AMAP-ORDER-001\n"
+        "订单金额：72.86元\n"
+        "优惠金额：0.00元\n"
+        "实付款：72.86元\n"
+    )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                build_two_stage_handler(
+                    classification_content={
+                        "output": {
+                            "document_family": {
+                                "value": "order_screenshot",
+                                "confidence": 0.92,
+                            },
+                            "material_type": {
+                                "value": "order_screenshot",
+                                "confidence": 0.92,
+                            },
+                            "expense_type_candidate": {
+                                "value": "local_transport",
+                                "confidence": 0.92,
+                            },
+                            "is_reimbursement_voucher": {
+                                "value": False,
+                                "confidence": 0.9,
+                            },
+                            "classification_confidence": {
+                                "value": 0.92,
+                                "confidence": 1.0,
+                            },
+                        }
+                    },
+                    extraction_content={
+                        "output": {
+                            "amount_cents": {
+                                "value": 7286,
+                                "confidence": 0.96,
+                            },
+                            "transaction_time": {
+                                "value": "2025-11-03T19:41:00",
+                                "confidence": 0.95,
+                            },
+                            "expense_type": {
+                                "value": "local_transport",
+                                "confidence": 0.95,
+                            },
+                            "seller_name": {
+                                "value": "高德打车",
+                                "confidence": 0.9,
+                            },
+                        }
+                    },
+                )
+            ),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    payment_record_input = RecognitionDocumentInput(
+        source="pdf_text",
+        text=payment_record_text,
+        page_count=1,
+        text_character_count=len(payment_record_text),
+    )
+
+    result = client.recognize(material=build_material(), document_input=payment_record_input)
+
+    assert result.recognized_fields["document_family"].value == "payment_record"
+    assert result.recognized_fields["material_type"].value == "payment_record"
+    assert result.raw_response["classification_guardrail"] == {
+        "reason": "payment_record_text_signals",
+        "matched_signals": [
+            "支付成功",
+            "支付方式",
+            "实付款",
+            "交易单号",
+            "商户单号",
+            "订单金额",
+            "优惠金额",
+            "支付时间",
+            "支付宝",
+        ],
+        "overridden_document_family": "payment_record",
+        "overridden_material_type": "payment_record",
+    }
+    assert result.raw_response["selected_schema"]["name"] == "payment_record"
+
+
 def test_openai_compatible_recognition_client_runs_airfare_route_stage_for_airfare_invoice():
     captured_requests = []
 

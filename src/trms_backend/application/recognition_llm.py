@@ -138,6 +138,26 @@ _LOCAL_TRANSPORT_ITINERARY_SECONDARY_SIGNALS = (
     "终点",
     "单行程",
 )
+_PAYMENT_RECORD_PRIMARY_SIGNALS = (
+    "支付记录",
+    "付款记录",
+    "支付成功",
+    "付款成功",
+    "支付方式",
+    "付款方式",
+    "实付款",
+    "实付金额",
+)
+_PAYMENT_RECORD_SECONDARY_SIGNALS = (
+    "交易单号",
+    "商户单号",
+    "订单金额",
+    "优惠金额",
+    "支付时间",
+    "付款时间",
+    "微信支付",
+    "支付宝",
+)
 
 class RecognitionInputSource(StrEnum):
     PDF_TEXT = "pdf_text"
@@ -1331,6 +1351,34 @@ def _apply_classification_guardrails(
     *,
     document_input: RecognitionDocumentInput,
 ) -> tuple[RecognitionClassificationOutput, dict[str, Any] | None]:
+    if classification_output.material_type.value in {
+        MaterialType.ORDER_SCREENSHOT,
+        MaterialType.OTHER_ATTACHMENT,
+    } and classification_output.document_family.value in {
+        RecognitionDocumentFamily.ORDER_SCREENSHOT,
+        RecognitionDocumentFamily.OTHER_ATTACHMENT,
+    }:
+        matched_payment_record_signals = _detect_payment_record_signals(document_input)
+        if matched_payment_record_signals:
+            corrected_output = classification_output.model_copy(
+                update={
+                    "document_family": RecognitionDocumentFamilyField(
+                        value=RecognitionDocumentFamily.PAYMENT_RECORD,
+                        confidence=classification_output.document_family.confidence,
+                    ),
+                    "material_type": RecognitionMaterialTypeField(
+                        value=MaterialType.PAYMENT_RECORD,
+                        confidence=classification_output.material_type.confidence,
+                    ),
+                }
+            )
+            return corrected_output, {
+                "reason": "payment_record_text_signals",
+                "matched_signals": matched_payment_record_signals,
+                "overridden_document_family": RecognitionDocumentFamily.PAYMENT_RECORD.value,
+                "overridden_material_type": MaterialType.PAYMENT_RECORD.value,
+            }
+
     if classification_output.material_type.value not in {
         MaterialType.ORDER_SCREENSHOT,
         MaterialType.OTHER_ATTACHMENT,
@@ -1386,6 +1434,28 @@ def _detect_local_transport_itinerary_signals(
         if signal in document_input.text
     ]
     if not primary_matches or not secondary_matches:
+        return []
+    return [*primary_matches, *secondary_matches]
+
+
+def _detect_payment_record_signals(
+    document_input: RecognitionDocumentInput,
+) -> list[str]:
+    if document_input.source is not RecognitionInputSource.PDF_TEXT or document_input.text is None:
+        return []
+
+    normalized_text = document_input.text.lower()
+    primary_matches = [
+        signal
+        for signal in _PAYMENT_RECORD_PRIMARY_SIGNALS
+        if signal.lower() in normalized_text
+    ]
+    secondary_matches = [
+        signal
+        for signal in _PAYMENT_RECORD_SECONDARY_SIGNALS
+        if signal.lower() in normalized_text
+    ]
+    if not primary_matches or len(secondary_matches) < 2:
         return []
     return [*primary_matches, *secondary_matches]
 

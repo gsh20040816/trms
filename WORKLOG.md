@@ -1,5 +1,35 @@
 # WORKLOG
 
+## 2026-05-02 21:12 - Correct payment-record / order-screenshot misclassification for ride-hailing payment proofs
+
+### 完成内容
+- 完成任务“修复高德打车等支付凭证被误识别为订单截图”。
+- 在 [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py) 的分类 guardrail 中新增“支付记录文本信号”纠偏：
+  - 当模型初判为 `order_screenshot` 或 `other_attachment` 时，如果文本里同时出现“支付成功 / 支付方式 / 实付款”等主信号，且伴随“交易单号 / 商户单号 / 订单金额 / 优惠金额 / 支付时间 / 支付宝 / 微信支付”等至少两类支付凭证特征，就强制把 `document_family` 和 `material_type` 改判为 `payment_record`。
+  - 这条 guardrail 只针对文本证据足够强的支付凭证，不改已经正确识别为 `invoice`、`payment_record`、`itinerary` 的结果。
+- 已补充回归测试：
+  - [tests/test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)
+  - 新增“高德打车支付成功凭证被模型误判为订单截图时，后处理纠偏为 `payment_record`”样本；
+  - 保留并继续通过现有“高德打车电子行程单误判为订单截图时，后处理纠偏为 `itinerary`”样本，避免两条 guardrail 互相覆盖。
+
+### 根因
+- 现有分类 prompt 对“行程单不是订单截图”写得比较硬，但对“支付凭证不是订单截图”只有标签词，没有同等级别的后处理约束。
+- 因此在网约车链路里，模型更容易把“支付成功页 / 支付详情页”与“平台订单页”一起归进 `order_screenshot`，导致成员侧材料详情和后续缺失材料校验口径都偏掉。
+
+### 风险与影响面
+- 本轮只改识别分类 guardrail，不改发票抽取 schema、前端展示逻辑或支付记录校验规则本身。
+- 这条纠偏当前依赖 PDF 文本输入里的显式支付凭证词；如果后续真实样本主要来自纯图片、且 OCR/VLM 输出没有这些关键词，还需要继续补图像侧样本和策略。
+- 本轮没有直接访问你提供的本地数据库样本 `73b1a662-9b6d-414f-b3e9-a127857797cf` 原件；当前修复是基于同类高德打车支付凭证文本特征建立的回归样本，而不是声称已人工核对该单条数据库记录。
+
+### 验证结果
+- 已通过定向识别回归测试：
+  - `uv run pytest tests/test_recognition_llm.py -k 'gaode_itinerary or payment_record_misclassified'`
+- 已通过补充的识别执行路径测试：
+  - `uv run pytest tests/test_recognition_execution_api.py -k 'payment_record or material_type'`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 550 个用例全部通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 21:06 - Split oversized member-invoice/role request set and implement deletion of unsubmitted member invoices
 
 ### 完成内容
