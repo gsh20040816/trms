@@ -200,13 +200,12 @@ def open_task(client: TestClient, task_id: str) -> None:
 
 
 def move_open_task_to_reviewing(client: TestClient, task_id: str) -> None:
-    for target_status in ("closed", "reviewing"):
-        response = client.patch(
-            f"/api/tasks/{task_id}/status",
-            json={"target_status": target_status},
-            headers=admin_auth_headers(client),
-        )
-        assert response.status_code == 200
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "reviewing"},
+        headers=admin_auth_headers(client),
+    )
+    assert response.status_code == 200
 
 
 def test_health_check(tmp_path):
@@ -1104,18 +1103,10 @@ def test_update_task_status_allows_valid_transition(tmp_path):
     assert response.json()["status"] == "open"
 
 
-def test_update_task_status_allows_transition_from_closed_to_reviewing(tmp_path):
+def test_update_task_status_allows_direct_transition_from_open_to_reviewing(tmp_path):
     client = make_client(tmp_path)
     task = create_task(client)
     open_task(client, task["id"])
-
-    closed = client.patch(
-        f"/api/tasks/{task['id']}/status",
-        json={"target_status": "closed"},
-        headers=admin_auth_headers(client),
-    )
-    assert closed.status_code == 200
-    assert closed.json()["status"] == "closed"
 
     reviewing = client.patch(
         f"/api/tasks/{task['id']}/status",
@@ -1558,7 +1549,7 @@ def test_run_task_deadline_check_closes_expired_open_task(tmp_path):
         headers=admin_auth_headers(client),
     )
     assert fetched.status_code == 200
-    assert fetched.json()["status"] == "closed"
+    assert fetched.json()["status"] == "reviewing"
 
 
 def test_run_task_deadline_check_ignores_non_open_tasks(tmp_path):

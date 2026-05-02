@@ -58,8 +58,8 @@ type ValidationErrorState = Partial<Record<keyof TaskEditFormState, string>>;
 
 const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   draft: ["open"],
-  open: ["draft", "closed"],
-  closed: ["open", "reviewing"],
+  open: ["draft", "reviewing"],
+  closed: ["open", "ready_to_export"],
   reviewing: ["open", "ready_to_export"],
   ready_to_export: ["completed"],
   completed: [],

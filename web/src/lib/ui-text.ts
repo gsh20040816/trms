@@ -33,8 +33,8 @@ export const WORKSPACE_LABELS: Record<UserRole, string> = {
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   draft: "草稿",
   open: "收集中",
-  closed: "已截止",
-  reviewing: "待复核",
+  closed: "复核中",
+  reviewing: "复核中",
   ready_to_export: "可导出",
   completed: "已完成",
 };

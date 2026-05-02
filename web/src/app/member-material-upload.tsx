@@ -51,11 +51,11 @@ const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   draft: "草稿",
-  open: "开放提交",
-  closed: "已关闭",
+  open: "收集中",
+  closed: "复核中",
   reviewing: "复核中",
   ready_to_export: "可导出",
-  completed: "已归档",
+  completed: "已完成",
 };
 
 function buildInitialFormState(): UploadFormState {

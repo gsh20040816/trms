@@ -659,16 +659,6 @@ test.describe.serial("TRMS 真实主流程 UX 验收", () => {
         ],
       },
     );
-    await patchTaskStatusViaApi(
-      await registerUserViaApi({
-        username: readyFixture.admin.username,
-        role: "admin",
-        displayName: "UX Fixture Admin",
-        actorId: "admin-ux-fixture",
-      }),
-      readyFixture.taskId,
-      "closed",
-    );
     const adminSession = await registerUserViaApi({
       username: readyFixture.admin.username,
       role: "admin",

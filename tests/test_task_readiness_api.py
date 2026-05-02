@@ -168,7 +168,7 @@ def confirm_split(
 
 
 def move_task_to_ready_to_export(client: TestClient, task_id: str) -> None:
-    for target_status in ("closed", "reviewing", "ready_to_export"):
+    for target_status in ("reviewing", "ready_to_export"):
         response = client.patch(
             f"/api/tasks/{task_id}/status",
             json={"target_status": target_status},

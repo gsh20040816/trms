@@ -41,8 +41,7 @@ const TASK_STATUS_OPTIONS: Array<{ value: TaskStatusFilter; label: string }> = [
   { value: "all", label: "全部状态" },
   { value: "draft", label: "草稿" },
   { value: "open", label: "收集中" },
-  { value: "closed", label: "已截止" },
-  { value: "reviewing", label: "待复核" },
+  { value: "reviewing", label: "复核中" },
   { value: "ready_to_export", label: "可导出" },
   { value: "completed", label: "已完成" },
 ];
@@ -167,7 +166,7 @@ function buildMetricCards(allItems: AdminTaskDigest[]) {
     },
     {
       key: "reviewing",
-      label: "待复核",
+      label: "复核中",
       value: allItems.filter(({ task }) => task.status === "closed" || task.status === "reviewing").length,
       hint: "优先清异常",
       tone: "warning" as const,
@@ -257,7 +256,9 @@ export function AdminTaskListPage() {
 
   const allItems = state.status === "ready" ? state.items : [];
   const filteredItems = allItems.filter(({ task }) => {
-    const matchesStatus = statusFilter === "all" || task.status === statusFilter;
+    const matchesStatus = statusFilter === "all"
+      || task.status === statusFilter
+      || (statusFilter === "reviewing" && task.status === "closed");
     const matchesSearch =
       deferredSearchQuery.length === 0
       || task.competition_name.toLowerCase().includes(deferredSearchQuery);

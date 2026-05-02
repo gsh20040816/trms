@@ -403,7 +403,6 @@ def test_main_flow_e2e_scaffold_covers_submission_to_export_gate(tmp_path):
         "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
     ]
 
-    move_task_status(client, task_id, "closed", headers=admin_headers)
     reviewing = move_task_status(client, task_id, "reviewing", headers=admin_headers)
     assert reviewing["status"] == "reviewing"
 

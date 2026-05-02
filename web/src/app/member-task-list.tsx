@@ -36,7 +36,7 @@ type MemberTaskListState =
 const NEXT_ACTIONS: Record<TaskStatus, string> = {
   draft: "等待开放",
   open: "提交材料",
-  closed: "查看待补项",
+  closed: "确认费用",
   reviewing: "确认费用",
   ready_to_export: "查看结果",
   completed: "查看归档",
@@ -53,17 +53,16 @@ function getTaskSortPriority(status: TaskStatus) {
   switch (status) {
     case "open":
       return 0;
+    case "closed":
     case "reviewing":
       return 1;
-    case "closed":
-      return 2;
     case "ready_to_export":
-      return 3;
+      return 2;
     case "completed":
-      return 4;
+      return 3;
     case "draft":
     default:
-      return 5;
+      return 4;
   }
 }
 
@@ -88,10 +87,7 @@ function buildDirectActionLink(task: ReimbursementTask) {
   if (task.status === "open") {
     return `/member/materials/upload?taskId=${encodeURIComponent(task.id)}`;
   }
-  if (task.status === "closed") {
-    return `/member/materials/missing?taskId=${encodeURIComponent(task.id)}`;
-  }
-  if (task.status === "reviewing") {
+  if (task.status === "closed" || task.status === "reviewing") {
     return `/member/expenses/confirm?taskId=${encodeURIComponent(task.id)}`;
   }
   return `/member/materials/status?taskId=${encodeURIComponent(task.id)}`;

@@ -118,13 +118,12 @@ def create_disputed_split_fixture(client: TestClient) -> tuple[str, str, str]:
 
 
 def move_task_to_reviewing(client: TestClient, task_id: str) -> None:
-    for target_status in ("closed", "reviewing"):
-        response = client.patch(
-            f"/api/tasks/{task_id}/status",
-            json={"target_status": target_status},
-            headers=admin_auth_headers(client),
-        )
-        assert response.status_code == 200
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "reviewing"},
+        headers=admin_auth_headers(client),
+    )
+    assert response.status_code == 200
 
 
 def test_task_administrator_can_list_expense_disputes(tmp_path):

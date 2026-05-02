@@ -15,12 +15,12 @@ const TASK_STAGE_DESCRIPTORS: Record<TaskStatus, AdminTaskStageDescriptor> = {
     summary: "成员正在上传发票和附件，优先盯缺失项。",
   },
   closed: {
-    label: "收集收口",
-    summary: "普通成员已停止提交，准备进入集中复核。",
+    label: "集中复核",
+    summary: "当前任务已转入复核阶段，优先处理异常、争议和待确认事项。",
   },
   reviewing: {
-    label: "审核异常",
-    summary: "集中处理识别异常、分摊争议和待确认事项。",
+    label: "集中复核",
+    summary: "当前任务已转入复核阶段，优先处理异常、争议和待确认事项。",
   },
   ready_to_export: {
     label: "导出提交",

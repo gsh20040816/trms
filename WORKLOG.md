@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-05-03 00:20 - Collapse reimbursement task statuses into a five-stage flow
+
+### 完成内容
+- 完成任务“收口报销任务状态为五阶段主流程”。
+- 已修改 [src/trms_backend/domain/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py)：
+  - 正常主路径现在支持任务从 `open` 直接进入 `reviewing`；
+  - 截止时间自动检查不再把超时任务推进到独立的 `closed` 阶段，而是直接推进到 `reviewing`；
+  - 兼容保留旧 `closed` 状态，并允许历史 `closed` 任务继续回到 `open` 或直接推进到 `ready_to_export`。
+- 已修改前端状态文案与阶段映射：
+  - [web/src/lib/ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts)
+  - [web/src/app/admin-task-stage.ts](/home/gsh/workspace/TRMS/web/src/app/admin-task-stage.ts)
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)
+  - [web/src/app/admin-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.tsx)
+  - [web/src/app/member-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/member-task-list.tsx)
+  - [web/src/app/member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx)
+  - [web/src/app/member-expense-confirmation.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.tsx)
+  - 对外状态统一收口为“草稿 / 收集中 / 复核中 / 可导出 / 已完成”，不再把 `closed` 单独显示成“已截止/已关闭”。
+- 已同步更新需求文档中的任务状态枚举说明：
+  - [docs/同济大学ACM竞赛报销收集系统需求分析文档_V0.2.md](/home/gsh/workspace/TRMS/docs/%E5%90%8C%E6%B5%8E%E5%A4%A7%E5%AD%A6ACM%E7%AB%9E%E8%B5%9B%E6%8A%A5%E9%94%80%E6%94%B6%E9%9B%86%E7%B3%BB%E7%BB%9F%E9%9C%80%E6%B1%82%E5%88%86%E6%9E%90%E6%96%87%E6%A1%A3_V0.2.md)。
+
+### 根因
+- 当前实现把“截止成员提交”和“管理员复核阶段”拆成了 `closed` 与 `reviewing` 两个串联状态；
+- 这会导致用户侧看到多余的中间阶段，产品语义也不够清晰，因为这两个状态在大多数页面上的下一步动作都已经非常接近。
+
+### 风险与影响面
+- 本轮保留 `closed` 作为兼容残留状态，避免已有数据库记录、旧测试夹具或历史接口调用立即失效；
+- 但新的正常推进路径和展示口径已经统一收口为五阶段主流程；
+- CLI 文本输出仍直接显示后端原始状态值，本轮未额外调整 CLI 展示。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py tests/test_expense_disputes_api.py tests/test_task_readiness_api.py tests/test_main_flow_e2e.py`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-detail.test.tsx src/app/admin-task-list.test.tsx src/app/member-task-list.test.tsx src/app/member-material-upload.test.tsx src/app/member-expense-confirmation.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `572/572` 通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `123/123` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 00:05 - Stop admin task detail from overstating linkage/export blockers and cool down warm background panels
 
 ### 完成内容

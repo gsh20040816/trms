@@ -369,8 +369,8 @@ def resolve_task_create(
 
 ALLOWED_STATUS_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.DRAFT: {TaskStatus.OPEN},
-    TaskStatus.OPEN: {TaskStatus.DRAFT, TaskStatus.CLOSED},
-    TaskStatus.CLOSED: {TaskStatus.OPEN, TaskStatus.REVIEWING},
+    TaskStatus.OPEN: {TaskStatus.DRAFT, TaskStatus.CLOSED, TaskStatus.REVIEWING},
+    TaskStatus.CLOSED: {TaskStatus.OPEN, TaskStatus.REVIEWING, TaskStatus.READY_TO_EXPORT},
     TaskStatus.REVIEWING: {TaskStatus.OPEN, TaskStatus.READY_TO_EXPORT},
     TaskStatus.READY_TO_EXPORT: {TaskStatus.COMPLETED},
     TaskStatus.COMPLETED: set(),
@@ -585,17 +585,17 @@ def close_expired_open_tasks(
     *,
     now: datetime | None = None,
 ) -> list[ReimbursementTask]:
-    closed_tasks: list[ReimbursementTask] = []
+    transitioned_tasks: list[ReimbursementTask] = []
     reference_time = now or datetime.now(timezone.utc)
     for task in repository.list():
         if task.status != TaskStatus.OPEN:
             continue
         if not has_task_submission_deadline_passed(task, now=reference_time):
             continue
-        updated = repository.update_status(task.id, TaskStatus.CLOSED)
+        updated = repository.update_status(task.id, TaskStatus.REVIEWING)
         if updated is not None:
-            closed_tasks.append(updated)
-    return closed_tasks
+            transitioned_tasks.append(updated)
+    return transitioned_tasks
 
 
 _SUPPORTED_FEE_CATEGORIES = frozenset(expense_type.value for expense_type in ExpenseType)

@@ -222,7 +222,7 @@ describe("admin task detail page", () => {
     expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");
 
     expect(screen.getByRole("button", { name: "切换为收集中" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "切换为待复核" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为可导出" })).toBeInTheDocument();
   });
 
   it("updates task status when the backend accepts the transition", async () => {
@@ -341,7 +341,7 @@ describe("admin task detail page", () => {
     expect((await screen.findAllByText("当前状态：收集中")).length).toBeGreaterThan(0);
     expect(statusUpdateRequestCount).toBe(1);
     expect(screen.getByRole("button", { name: "切换为草稿" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "切换为已截止" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为复核中" })).toBeInTheDocument();
     expect(screen.getByLabelText("异常优先队列")).toHaveTextContent(
       "当前没有待处理异常；导出会在任务进入“可导出”或“已完成”阶段后开放。",
     );
