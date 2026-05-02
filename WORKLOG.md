@@ -1,5 +1,39 @@
 # WORKLOG
 
+## 2026-05-02 13:02 - Split multi-administrator task into smaller verified tasks
+
+### 完成内容
+- 完成任务“拆分‘支持任务配置多个管理员并复用成员检索交互’为可验证子任务”。
+- 仅更新任务规划，没有改动业务代码：
+  - [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md) 将原单条“大任务”拆成 4 个后续子任务，分别覆盖：
+    - 多管理员数据模型与兼容返回字段；
+    - 权限判断与管理员任务列表；
+    - 管理员候选远程检索与创建页复用交互；
+    - 任务详情与管理员主路径展示收口。
+
+### 根因
+- 当前仓库把 `administrator_id` 当作任务唯一管理员真值，单管理员假设已进入多个关键边界：
+  - 领域模型与仓储持久化只存单个 `administrator_id`；
+  - `resolve_task_access_scope(...)`、管理员列表筛选、导出/复核/提醒等逻辑大量直接比较 `task.administrator_id`；
+  - 创建任务页只有单个“管理员标识”输入，没有管理员候选远程检索交互。
+- 若在本轮直接实现原始任务，会同时跨越数据模型、权限、前端交互和大量既有测试，超出“单个最小可验证任务”的边界。
+
+### 风险与影响面
+- 本轮没有修改数据库 schema、后端 API 或前端行为，因此不会引入运行时行为变化。
+- 当前保守假设是：多管理员能力应先明确兼容策略，再分别落地数据模型、权限和界面；否则很容易出现“创建能写多个管理员，但权限链路仍只认首管理员”的半完成状态。
+- 后续实现时应优先保证旧任务和旧接口在迁移窗口内可读，避免一次性移除 `administrator_id` 导致现有页面和测试整体失效。
+
+### 验证结果
+- 本轮未单独运行定向业务测试，因为没有代码行为改动，只有任务拆分与工作日志更新。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 521 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 12:58 - Remove project and reimburser info from task forms
 
 ### 完成内容
