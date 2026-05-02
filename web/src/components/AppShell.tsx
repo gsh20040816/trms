@@ -192,6 +192,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           })
         : null}
       {session && session.availableRoles.length > 1 ? <Divider /> : null}
+      {session ? (
+        <MenuItem
+          component={RouterLink}
+          to="/profile"
+          onClick={handleAccountClose}
+        >
+          <ListItemIcon>
+            <PersonIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="个人信息" />
+        </MenuItem>
+      ) : null}
+      {session ? <Divider /> : null}
       <MenuItem
         onClick={() => {
           setPreference("light");

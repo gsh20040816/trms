@@ -1,5 +1,80 @@
 # WORKLOG
 
+## 2026-05-02 22:48 - Add self-service profile update API and account page
+
+### 完成内容
+- 完成任务“新增个人信息查询/更新接口并落地前端个人信息页”。
+- 后端认证域已补齐个人资料更新模型与约束：
+  - [src/trms_backend/domain/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py)
+  - 新增 `UserProfileUpdateInput`；
+  - 新增 `update_user_profile(...)` 领域函数；
+  - 新增 `MemberCodeUpdateNotAllowedError`；
+  - 当前约束为：
+    - 所有已登录账号都可更新 `display_name`
+    - 只有具备 `member` 角色的账号允许更新 `member_code`
+    - `display_name` 与显式提交的 `member_code` 都不允许空白字符串
+- 认证仓储已补齐资料更新持久化：
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - `AuthRepository` / `SqlAlchemyAuthRepository` 新增 `update_user_profile(...)`
+  - 直接复用现有 `user_accounts` 字段更新，不引入 schema 迁移。
+- 后端认证 API 已新增真实资料更新入口：
+  - [src/trms_backend/api/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/api/auth.py)
+  - 新增 `PUT /api/auth/me`
+  - 返回最新 `AuthenticatedUser`，便于前端直接刷新当前会话显示。
+- 前端已新增个人信息页与会话同步：
+  - [web/src/app/account-profile.tsx](/home/gsh/workspace/TRMS/web/src/app/account-profile.tsx)
+  - [web/src/app/routes.tsx](/home/gsh/workspace/TRMS/web/src/app/routes.tsx)
+  - [web/src/components/AppShell.tsx](/home/gsh/workspace/TRMS/web/src/components/AppShell.tsx)
+  - [web/src/app/auth-store.ts](/home/gsh/workspace/TRMS/web/src/app/auth-store.ts)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - 账号菜单现在提供稳定的“个人信息”入口；
+  - 页面会展示当前账号摘要，并允许保存显示名称；
+  - 当当前账号具备 `member` 角色时，页面会额外展示“学号”字段；
+  - 保存成功后，前端会同步刷新当前本地会话中的显示名称和学号，不必重新登录。
+- 已补后端回归测试：
+  - [tests/test_auth_api.py](/home/gsh/workspace/TRMS/tests/test_auth_api.py)
+  - 覆盖：
+    - 成员更新显示名称与学号成功
+    - 管理员尝试修改 `member_code` 被拒绝
+    - 空白显示名称触发字段校验失败
+- 已补前端页面测试：
+  - [web/src/app/account-profile.test.tsx](/home/gsh/workspace/TRMS/web/src/app/account-profile.test.tsx)
+  - 覆盖：
+    - 成员页可编辑显示名称与学号并保存
+    - 非成员账号隐藏学号编辑输入
+- 顺手稳定了一个被本轮渲染时序放大的既有前端测试：
+  - [web/src/app/admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)
+  - 改为等待“发票校验结果列表”出现后再断言，避免全量测试时序抖动。
+
+### 根因
+- 当前仓库长期把“修改个人基础资料”默认交给重新注册、测试夹具或手工造数据处理，缺少一个真正面向已登录用户的资料维护闭环。
+- 多角色与系统管理相关任务已经逐步收口后，这个缺口变得更明显：账号能登录、能切角色，但连显示名称和学号都没有正式维护入口，前端会话也无法在保存后同步更新。
+
+### 风险与影响面
+- 本轮只覆盖基础资料：
+  - `display_name`
+  - `member_code`（仅成员角色）
+- 未实现：
+  - 密码修改
+  - 用户名修改
+  - 头像、联系方式等更广泛资料
+  - 资料更新审计日志
+- `member_code` 现在允许成员直接修改；如果后续成员身份要对接学校统一身份源，可能需要再把该字段改为受控同步而不是完全自助维护。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_auth_api.py -k 'update_own_profile or profile_update'`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/account-profile.test.tsx`
+  - `cd web && npm test -- --run src/app/admin-invoice-editor.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 561 个用例全部通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `119/119` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:36 - Remove product reliance on multi-role self-service registration
 
 ### 完成内容

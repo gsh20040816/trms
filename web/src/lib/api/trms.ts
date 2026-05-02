@@ -50,6 +50,7 @@ import type {
   TaskStatusUpdate,
   TaskUpdateInput,
   UserSearchSummary,
+  UserProfileUpdatePayload,
   ValidationResult,
 } from "./types";
 
@@ -138,6 +139,13 @@ export const trmsApi = {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+    });
+  },
+
+  updateCurrentUser(payload: UserProfileUpdatePayload) {
+    return apiClient.request<AuthenticatedUser>("/auth/me", {
+      method: "PUT",
+      body: payload,
     });
   },
 

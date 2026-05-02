@@ -448,7 +448,7 @@ describe("admin invoice editor page", () => {
     act(() => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "校验异常" }));
     });
-    const validationList = within(screen.getByLabelText("发票校验结果列表"));
+    const validationList = within(await screen.findByLabelText("发票校验结果列表"));
     expect(validationList.getByText("税号需要核对")).toBeInTheDocument();
     expect(validationList.getByText("税号不匹配")).toBeInTheDocument();
   });

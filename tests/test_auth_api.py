@@ -110,6 +110,73 @@ def test_login_returns_new_session_and_me_resolves_token(tmp_path):
     assert me_response.json()["actor_id"] == "2250001"
 
 
+def test_member_can_update_own_profile(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post("/api/auth/register", json=register_payload())
+    token = register_response.json()["access_token"]
+
+    response = client.put(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "display_name": "新名字",
+            "member_code": "2250999",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "新名字"
+    assert response.json()["member_code"] == "2250999"
+
+
+def test_admin_profile_update_rejects_member_code_change(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            username="admin1",
+            role="admin",
+            display_name="张管理员",
+            actor_id="admin-1",
+            member_code=None,
+        ),
+    )
+    token = register_response.json()["access_token"]
+
+    response = client.put(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "display_name": "新管理员",
+            "member_code": "ADMIN-001",
+        },
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="member_code can only be updated by member accounts",
+    )
+
+
+def test_profile_update_rejects_blank_display_name(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post("/api/auth/register", json=register_payload())
+    token = register_response.json()["access_token"]
+
+    response = client.put(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "display_name": "   ",
+            "member_code": "2250001",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_request_context_returns_anonymous_identity_without_bearer_token(tmp_path):
     client = make_client(tmp_path)
 

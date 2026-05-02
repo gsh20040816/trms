@@ -17,13 +17,16 @@ from trms_backend.domain.auth import (
     PrivilegedBootstrapAlreadyCompletedError,
     PrivilegedBootstrapDisabledError,
     PrivilegedSelfRegistrationDisabledError,
+    MemberCodeUpdateNotAllowedError,
     RoleNotAssignedError,
     RoleSwitchInput,
     SelfServiceMultipleRolesNotAllowedError,
+    UserProfileUpdateInput,
     UserLoginInput,
     UserRegisterInput,
     UsernameAlreadyExistsError,
     bootstrap_privileged_user,
+    update_user_profile,
     login_user,
     register_user,
     revoke_access_token,
@@ -127,6 +130,30 @@ def build_auth_router(
     def me(identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)]):
         assert identity.user is not None
         return identity.user
+
+    @router.put("/me")
+    def update_me(
+        payload: UserProfileUpdateInput,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        assert identity.user is not None
+        try:
+            return update_user_profile(
+                repository,
+                actor=identity.user,
+                payload=payload,
+            )
+        except MemberCodeUpdateNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except InvalidCredentialsError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(error),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from error
 
     @router.post("/switch-role")
     def switch_role(

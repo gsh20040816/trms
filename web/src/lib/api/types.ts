@@ -159,6 +159,11 @@ export type RoleSwitchPayload = {
   role: UserRole;
 };
 
+export type UserProfileUpdatePayload = {
+  display_name: string;
+  member_code?: string;
+};
+
 export type ReimbursementTask = {
   id: string;
   status: TaskStatus;

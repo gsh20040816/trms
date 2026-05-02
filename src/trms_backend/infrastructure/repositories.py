@@ -392,6 +392,23 @@ class SqlAlchemyAuthRepository(AuthRepository):
                 session.add(row)
             return _authenticated_user_from_row(row), already_assigned
 
+    def update_user_profile(
+        self,
+        *,
+        user_id: str,
+        display_name: str,
+        member_code: str | None,
+    ) -> AuthenticatedUser | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(UserAccountRow, user_id)
+            if row is None:
+                return None
+            row.display_name = display_name
+            row.member_code = member_code
+            row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+            return _authenticated_user_from_row(row)
+
     def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
         if not roles:
             return 0

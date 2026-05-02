@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 import { setApiAccessTokenProvider } from "../lib/api/client";
 import { trmsApi } from "../lib/api/trms";
-import type { AuthSessionResponse } from "../lib/api/types";
+import type { AuthSessionResponse, AuthenticatedUser } from "../lib/api/types";
 import { findRoleRouteByRole, type UserRole } from "./role-routes";
 
 const STORAGE_KEY = "trms.mock-role";
@@ -289,6 +289,24 @@ export async function logoutCurrentSession() {
   if (accessToken) {
     await trmsApi.logout(accessToken);
   }
+}
+
+export function updateCurrentSessionUser(user: AuthenticatedUser) {
+  if (!currentSession) {
+    return null;
+  }
+  currentSession = {
+    ...currentSession,
+    role: user.role,
+    availableRoles: normalizeAvailableRoles(user.roles, user.role),
+    actorId: user.actor_id,
+    displayName: user.display_name,
+    memberCode: user.member_code,
+    username: user.username,
+  };
+  persistSession(currentSession);
+  emitChange();
+  return currentSession;
 }
 
 export function useAuthSession() {

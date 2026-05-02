@@ -7,6 +7,7 @@ import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminInvoiceEditorPage } from "./admin-invoice-editor";
 import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
+import { AccountProfilePage } from "./account-profile";
 import { MemberMaterialDetailPage } from "./member-material-detail";
 import { MemberMaterialStatusPage } from "./member-material-status";
 import { AdminTaskListPage } from "./admin-task-list";
@@ -42,6 +43,10 @@ export const routes: RouteObject[] = [
       {
         path: "login",
         element: <MockLoginPage />,
+      },
+      {
+        path: "profile",
+        element: <AccountProfilePage />,
       },
       {
         path: memberRoleRoute.path.slice(1),

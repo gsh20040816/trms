@@ -57,6 +57,20 @@ class UserLoginInput(BaseModel):
         return self
 
 
+class UserProfileUpdateInput(BaseModel):
+    display_name: str = Field(min_length=1, max_length=128)
+    member_code: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "UserProfileUpdateInput":
+        self.display_name = _normalize_required(self.display_name)
+        if "member_code" in self.model_fields_set:
+            self.member_code = _normalize_required(self.member_code or "")
+        else:
+            self.member_code = _normalize_optional(self.member_code)
+        return self
+
+
 class UserCreate(BaseModel):
     username: str
     password_hash: str
@@ -144,6 +158,11 @@ class RoleNotAssignedError(ValueError):
         super().__init__(f"role '{role.value}' is not assigned to this account")
 
 
+class MemberCodeUpdateNotAllowedError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("member_code can only be updated by member accounts")
+
+
 class AuthRepository(Protocol):
     def get_user_by_id(self, user_id: str) -> AuthenticatedUser | None:
         raise NotImplementedError
@@ -189,6 +208,15 @@ class AuthRepository(Protocol):
         user_id: str,
         role: UserRole,
     ) -> tuple[AuthenticatedUser, bool] | None:
+        raise NotImplementedError
+
+    def update_user_profile(
+        self,
+        *,
+        user_id: str,
+        display_name: str,
+        member_code: str | None,
+    ) -> AuthenticatedUser | None:
         raise NotImplementedError
 
     def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
@@ -293,6 +321,29 @@ def switch_active_role(
     if switched_user is None:
         raise InvalidCredentialsError()
     return AuthSession(access_token=normalized_token, user=switched_user)
+
+
+def update_user_profile(
+    repository: AuthRepository,
+    *,
+    actor: AuthenticatedUser,
+    payload: UserProfileUpdateInput,
+) -> AuthenticatedUser:
+    if "member_code" in payload.model_fields_set and UserRole.MEMBER not in actor.roles:
+        raise MemberCodeUpdateNotAllowedError()
+
+    updated_user = repository.update_user_profile(
+        user_id=actor.id,
+        display_name=payload.display_name,
+        member_code=(
+            payload.member_code
+            if "member_code" in payload.model_fields_set
+            else actor.member_code
+        ),
+    )
+    if updated_user is None:
+        raise InvalidCredentialsError()
+    return updated_user
 
 
 def hash_password(password: str) -> str:
