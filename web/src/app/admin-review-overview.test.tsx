@@ -425,14 +425,9 @@ describe("AdminReviewOverviewPage", () => {
       await Promise.resolve();
     });
     expect(detailPanel.getByText("异议原因：报名费分摊比例需要调整")).toBeInTheDocument();
-    expect(detailPanel.getByRole("link", { name: "更正金额与字段" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
-    );
-    expect(detailPanel.getByRole("link", { name: "调整分摊" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
-    );
+    expect(detailPanel.getByRole("textbox", { name: "发票号码" })).toHaveValue("INV-001");
+    expect(detailPanel.getByRole("button", { name: "保存发票字段" })).toBeInTheDocument();
+    expect(detailPanel.getByRole("button", { name: "保存费用分摊" })).toBeInTheDocument();
     await act(async () => {
       fireEvent.mouseDown(screen.getByRole("combobox", { name: "目标材料" }));
       await Promise.resolve();
@@ -464,11 +459,9 @@ describe("AdminReviewOverviewPage", () => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "处理动作" }));
       await Promise.resolve();
     });
-    expect(detailPanel.getByText("当前材料没有直接可编辑的分摊记录；若它属于某张发票，请从对应发票的详情动作进入分摊调整。")).toBeInTheDocument();
-    expect(detailPanel.getByRole("link", { name: "查看关联发票" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
-    );
+    expect(detailPanel.getByText("当前分摊确认状态")).toBeInTheDocument();
+    expect(detailPanel.getByRole("button", { name: "保存费用分摊" })).toBeInTheDocument();
+    expect(detailPanel.queryByRole("link", { name: "查看关联发票" })).not.toBeInTheDocument();
   });
 
   it("allows a secondary administrator to view review overview", async () => {

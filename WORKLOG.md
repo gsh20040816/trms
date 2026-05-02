@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-02 20:45 - Inline invoice correction, split editing, and paper-receipt confirmation into admin review overview
+
+### 完成内容
+- 完成任务“将材料审核页聚合发票更正、分摊确认与纸票收票动作”。
+- [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx) 的“处理动作”标签页已从跳转式入口改成页内主路径操作：
+  - 当前材料为发票时，管理员可直接在材料审核页内编辑发票号码、金额、抬头、税号、费用类型、销售方名称和公对公转账编号；
+  - 保存后直接调用现有发票保存接口，并刷新当前材料摘要、校验结果和发票上下文；
+  - 不再依赖跳转到独立发票录入页才能完成主路径更正。
+- 材料审核页已内联聚合分摊调整：
+  - 对当前发票或当前辅助材料关联到的发票，管理员可直接在材料审核页内新增/删除分摊行、修改归属成员、金额和备注；
+  - 保存前仍保留差额确认提示，保存后刷新当前分摊确认状态；
+  - 不再依赖跳转到独立分摊确认页才能完成主路径分摊修改。
+- 纸质发票收票确认已并入材料审核页：
+  - 当前处理目标为纸质发票时，页面直接展示收票状态、确认人和确认时间；
+  - 若尚未确认收票，管理员可在材料审核页内点击“确认已收到纸票”，并刷新相关校验。
+- 辅助材料若关联多张发票，材料审核页已新增“处理目标发票”选择器，允许管理员在同页切换当前要编辑的关联发票，再继续做分摊或收票动作。
+- 前端测试已同步更新：
+  - [web/src/app/admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)
+  - 断言已改为锁定材料审核页内联字段更正和分摊编辑控件，而不是旧的跳转链接。
+
+### 根因
+- 材料审核页此前虽然已能集中查看预览、识别字段和校验异常，但“处理动作”仍只是两个跳转按钮；管理员必须在“审核页 -> 发票录入页 -> 分摊页”之间来回切换，主路径没有在当前上下文内闭合。
+- 对纸质发票而言，收票确认又落在独立发票更正页，导致审核页明明已经识别到当前问题，却不能在问题出现处完成处理。
+
+### 风险与影响面
+- 本轮只复用现有前端 API 调用，把发票更正、分摊保存和纸票收票确认搬回材料审核页；没有改动后端协议、校验规则或独立发票/分摊页的存在性。
+- 独立的 [web/src/app/admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 和 [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx) 仍保留，当前更多作为补充入口，不再是材料审核主路径的必要跳转页。
+- `eslint` 仍保留 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error 或 warning。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-review-overview.test.tsx`
+- 已通过定向 lint：
+  - `cd web && npm run lint -- src/app/admin-review-overview.tsx src/app/admin-review-overview.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `web` 全量测试 `116/116` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过；
+  - `eslint` 仍只剩 `task-missing-materials.tsx` 两条既有 warning。
+
 ## 2026-05-02 20:33 - Simplify admin reminders to messaging only, remove missing-materials entry, and hide paper-receipt blocker before member submission
 
 ### 完成内容

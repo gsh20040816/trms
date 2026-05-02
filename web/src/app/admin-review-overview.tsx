@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -8,13 +8,17 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { TaskMemberAutocomplete } from "../components/task-member-autocomplete";
+import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationRecord,
+  ExpenseType,
   ExpenseSplitRecord,
   RecognitionTaskRecord,
   ReimbursementTask,
@@ -81,11 +85,319 @@ type ReviewMaterialDetailItem = {
   relatedInvoices: TaskReviewSummaryInvoiceItem[];
 };
 
+type ReviewInvoiceEditorFormState = {
+  invoiceNumber: string;
+  issueDate: string;
+  transactionTime: string;
+  buyerName: string;
+  taxNumber: string;
+  sellerName: string;
+  corporateTransferReference: string;
+  amountYuan: string;
+  expenseType: ExpenseType;
+};
+
+type ReviewInvoiceEditorFormErrors = Partial<Record<keyof ReviewInvoiceEditorFormState, string>>;
+
+type ReviewSplitFormRow = {
+  rowId: string;
+  memberId: string;
+  amountYuan: string;
+  note: string;
+};
+
+type ReviewSplitFormRowError = {
+  memberId?: string;
+  amountYuan?: string;
+};
+
+type ReviewSplitFormErrors = Record<string, ReviewSplitFormRowError>;
+
+type ReviewActionFeedback = {
+  invoiceId: string | null;
+  kind: "invoice" | "split" | "paper_receipt";
+  message: string;
+};
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function isExpenseType(value: string): value is ExpenseType {
+  return (
+    value === "registration"
+    || value === "railway"
+    || value === "airfare"
+    || value === "local_transport"
+    || value === "hotel"
+    || value === "other"
+  );
+}
+
+function formatAmountInputFromCents(cents: number | null) {
+  if (cents === null) {
+    return "";
+  }
+  return (cents / 100).toFixed(2);
+}
+
+function parseAmountYuanToCents(value: string) {
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return null;
+  }
+  const amount = Number(normalizedValue);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  return Math.round(amount * 100);
+}
+
+function formatDateTimeLocalInput(value: string | null) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toApiDateTime(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const localDate = new Date(trimmed);
+  const year = localDate.getFullYear();
+  const month = String(localDate.getMonth() + 1).padStart(2, "0");
+  const day = String(localDate.getDate()).padStart(2, "0");
+  const hours = String(localDate.getHours()).padStart(2, "0");
+  const minutes = String(localDate.getMinutes()).padStart(2, "0");
+  const offsetMinutes = -localDate.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absoluteOffsetMinutes = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, "0");
+  const offsetRemainderMinutes = String(absoluteOffsetMinutes % 60).padStart(2, "0");
+  return (
+    `${year}-${month}-${day}T${hours}:${minutes}:00`
+    + `${sign}${offsetHours}:${offsetRemainderMinutes}`
+  );
+}
+
+function getRecognitionFieldValue(
+  recognition: RecognitionTaskRecord | null,
+  fieldName: string,
+) {
+  return recognition?.recognized_fields[fieldName] ?? null;
+}
+
+function getRecognitionFieldTextValue(
+  recognition: RecognitionTaskRecord | null,
+  fieldName: string,
+) {
+  const field = getRecognitionFieldValue(recognition, fieldName);
+  if (!field) {
+    return "";
+  }
+  if (typeof field.value === "string") {
+    return field.value;
+  }
+  if (typeof field.value === "number" || typeof field.value === "boolean") {
+    return String(field.value);
+  }
+  return "";
+}
+
+function getRecognitionAmountInput(recognition: RecognitionTaskRecord | null) {
+  const field = getRecognitionFieldValue(recognition, "amount_cents");
+  if (!field || typeof field.value !== "number") {
+    return "";
+  }
+  return formatAmountInputFromCents(field.value);
+}
+
+function getRecognitionExpenseType(
+  recognition: RecognitionTaskRecord | null,
+  allowedExpenseTypes: ExpenseType[],
+) {
+  const rawValue = getRecognitionFieldTextValue(recognition, "expense_type");
+  if (isExpenseType(rawValue) && allowedExpenseTypes.includes(rawValue)) {
+    return rawValue;
+  }
+  return allowedExpenseTypes[0] ?? "other";
+}
+
+function buildInitialInvoiceFormState(
+  materialItem: TaskReviewSummaryMaterialItem,
+  invoiceItem: TaskReviewSummaryInvoiceItem | null,
+  task: ReimbursementTask,
+): ReviewInvoiceEditorFormState {
+  const allowedExpenseTypes = task.fee_categories.filter(isExpenseType);
+  const recognition = materialItem.latest_recognition;
+  const invoice = invoiceItem?.invoice ?? null;
+  const defaultExpenseType = invoice?.expense_type
+    ?? getRecognitionExpenseType(recognition, allowedExpenseTypes)
+    ?? "other";
+
+  return {
+    invoiceNumber: invoice?.invoice_number ?? getRecognitionFieldTextValue(recognition, "invoice_number"),
+    issueDate: invoice?.issue_date ?? getRecognitionFieldTextValue(recognition, "issue_date"),
+    transactionTime: invoice?.transaction_time
+      ? formatDateTimeLocalInput(invoice.transaction_time)
+      : formatDateTimeLocalInput(getRecognitionFieldTextValue(recognition, "transaction_time")),
+    buyerName: invoice?.buyer_name ?? getRecognitionFieldTextValue(recognition, "buyer_name"),
+    taxNumber: invoice?.tax_number ?? getRecognitionFieldTextValue(recognition, "tax_number"),
+    sellerName: invoice?.seller_name ?? getRecognitionFieldTextValue(recognition, "seller_name"),
+    corporateTransferReference: invoice?.corporate_transfer_reference ?? getRecognitionFieldTextValue(recognition, "corporate_transfer_reference"),
+    amountYuan: invoice ? formatAmountInputFromCents(invoice.amount_cents) : getRecognitionAmountInput(recognition),
+    expenseType: defaultExpenseType,
+  };
+}
+
+function validateInvoiceForm(
+  formState: ReviewInvoiceEditorFormState,
+  allowedExpenseTypes: ExpenseType[],
+): ReviewInvoiceEditorFormErrors {
+  const errors: ReviewInvoiceEditorFormErrors = {};
+  if (!formState.invoiceNumber.trim()) {
+    errors.invoiceNumber = "发票号码不能为空。";
+  }
+  if (!formState.buyerName.trim()) {
+    errors.buyerName = "发票抬头不能为空。";
+  }
+  if (!formState.taxNumber.trim()) {
+    errors.taxNumber = "税号不能为空。";
+  }
+  if (!allowedExpenseTypes.includes(formState.expenseType)) {
+    errors.expenseType = "请选择当前任务允许的费用类型。";
+  }
+  if (parseAmountYuanToCents(formState.amountYuan) === null) {
+    errors.amountYuan = "请输入大于 0 的金额，单位为元。";
+  }
+  return errors;
+}
+
+function pickDefaultSplitMemberId(
+  invoiceItem: TaskReviewSummaryInvoiceItem,
+  materialItem: TaskReviewSummaryMaterialItem,
+  task: ReimbursementTask,
+) {
+  const submitterId = materialItem.material.submitter_id;
+  if (submitterId && task.member_ids.includes(submitterId)) {
+    return submitterId;
+  }
+
+  const existingMemberId = invoiceItem.splits[0]?.split.member_id;
+  if (existingMemberId && task.member_ids.includes(existingMemberId)) {
+    return existingMemberId;
+  }
+
+  return task.member_ids[0] ?? "";
+}
+
+function buildInitialSplitRows(
+  invoiceItem: TaskReviewSummaryInvoiceItem,
+  materialItem: TaskReviewSummaryMaterialItem,
+  task: ReimbursementTask,
+  createRowId: () => string,
+): ReviewSplitFormRow[] {
+  if (invoiceItem.splits.length > 0) {
+    return invoiceItem.splits.map(({ split }) => ({
+      rowId: createRowId(),
+      memberId: split.member_id,
+      amountYuan: formatAmountInputFromCents(split.amount_cents),
+      note: split.note ?? "",
+    }));
+  }
+
+  return [
+    {
+      rowId: createRowId(),
+      memberId: pickDefaultSplitMemberId(invoiceItem, materialItem, task),
+      amountYuan: formatAmountInputFromCents(invoiceItem.invoice.amount_cents),
+      note: "",
+    },
+  ];
+}
+
+function buildSplitSummaryRows(rows: ReviewSplitFormRow[]) {
+  let totalAmountCents = 0;
+  let invalidRowCount = 0;
+
+  for (const row of rows) {
+    const amountCents = parseAmountYuanToCents(row.amountYuan);
+    if (amountCents === null) {
+      invalidRowCount += 1;
+      continue;
+    }
+    totalAmountCents += amountCents;
+  }
+
+  return {
+    totalAmountCents,
+    invalidRowCount,
+  };
+}
+
+function validateSplitRows(rows: ReviewSplitFormRow[]) {
+  const errors: ReviewSplitFormErrors = {};
+
+  for (const row of rows) {
+    const rowErrors: ReviewSplitFormRowError = {};
+    if (!row.memberId.trim()) {
+      rowErrors.memberId = "请选择归属成员。";
+    }
+    if (parseAmountYuanToCents(row.amountYuan) === null) {
+      rowErrors.amountYuan = "请输入大于 0 的金额，单位为元。";
+    }
+    if (rowErrors.memberId || rowErrors.amountYuan) {
+      errors[row.rowId] = rowErrors;
+    }
+  }
+
+  return errors;
+}
+
+function countCurrentConfirmationStatus(
+  item: TaskReviewSummaryInvoiceItem,
+  targetStatus: ConfirmationRecord["status"],
+) {
+  return item.splits.filter(({ confirmation }) => confirmation?.is_current && confirmation.status === targetStatus)
+    .length;
+}
+
+function pickActionInvoiceId(
+  items: TaskReviewSummaryInvoiceItem[],
+  currentInvoiceId: string,
+) {
+  const visibleInvoiceIds = new Set(items.map((item) => item.invoice.id));
+  if (currentInvoiceId && visibleInvoiceIds.has(currentInvoiceId)) {
+    return currentInvoiceId;
+  }
+  return items[0]?.invoice.id ?? "";
+}
+
+function formatActorDisplay(value: string | null | undefined) {
+  return value && value.trim().length > 0 ? value : "尚未确认";
+}
+
+function buildEditableInvoiceCandidates(
+  detailItem: ReviewMaterialDetailItem | null,
+): TaskReviewSummaryInvoiceItem[] {
+  if (!detailItem) {
+    return [];
+  }
+  if (detailItem.materialItem.material.material_type === "invoice") {
+    return detailItem.primaryInvoice ? [detailItem.primaryInvoice] : [];
+  }
+  return detailItem.relatedInvoices;
 }
 
 function buildReviewAnomalies(
@@ -370,13 +682,70 @@ function getReviewDetailItemSelectorHint(
   return `提交人 ${formatTaskMemberLabel(item.materialItem.material.submitter_id, memberSummaryMap)}；${recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}`;
 }
 
+function syncActionEditorState(params: {
+  task: ReimbursementTask | null;
+  detailItem: ReviewMaterialDetailItem | null;
+  actionInvoiceId: string;
+  createSplitRowId: () => string;
+}) {
+  const { task, detailItem, actionInvoiceId, createSplitRowId } = params;
+  const editableInvoiceCandidates = buildEditableInvoiceCandidates(detailItem);
+  const nextActionInvoiceId = pickActionInvoiceId(editableInvoiceCandidates, actionInvoiceId);
+  const selectedActionInvoice = editableInvoiceCandidates.find(
+    (invoiceItem) => invoiceItem.invoice.id === nextActionInvoiceId,
+  ) ?? null;
+
+  return {
+    invoiceFormState: task && detailItem
+      ? buildInitialInvoiceFormState(detailItem.materialItem, detailItem.primaryInvoice, task)
+      : null,
+    invoiceFormErrors: {} as ReviewInvoiceEditorFormErrors,
+    selectedActionInvoiceId: nextActionInvoiceId,
+    splitRows: task && detailItem && selectedActionInvoice
+      ? buildInitialSplitRows(selectedActionInvoice, detailItem.materialItem, task, createSplitRowId)
+      : [],
+    splitErrors: {} as ReviewSplitFormErrors,
+    actionError: null as unknown,
+    actionFeedback: null as ReviewActionFeedback | null,
+  };
+}
+
 export function AdminReviewOverviewPage() {
   const session = useAuthSession();
+  const { confirm } = useConfirmDialog();
   const { taskId } = useParams<{ taskId: string }>();
   const [state, setState] = useState<ReviewPageState>({ status: "loading" });
   const [selectedMaterialId, setSelectedMaterialId] = useState("");
   const [previewState, setPreviewState] = useState<ReviewPreviewState>({ status: "idle" });
   const [detailTab, setDetailTab] = useState<ReviewDetailTab>("preview");
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [invoiceFormState, setInvoiceFormState] = useState<ReviewInvoiceEditorFormState | null>(null);
+  const [invoiceFormErrors, setInvoiceFormErrors] = useState<ReviewInvoiceEditorFormErrors>({});
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+  const [isConfirmingPaperReceipt, setIsConfirmingPaperReceipt] = useState(false);
+  const [selectedActionInvoiceId, setSelectedActionInvoiceId] = useState("");
+  const [splitRows, setSplitRows] = useState<ReviewSplitFormRow[]>([]);
+  const [splitErrors, setSplitErrors] = useState<ReviewSplitFormErrors>({});
+  const [isSavingSplits, setIsSavingSplits] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<ReviewActionFeedback | null>(null);
+  const selectedMaterialIdRef = useRef(selectedMaterialId);
+  const selectedActionInvoiceIdRef = useRef(selectedActionInvoiceId);
+  const nextSplitRowSequenceRef = useRef(0);
+
+  function createSplitRowId() {
+    const rowId = `review-split-row-${nextSplitRowSequenceRef.current}`;
+    nextSplitRowSequenceRef.current += 1;
+    return rowId;
+  }
+
+  useEffect(() => {
+    selectedMaterialIdRef.current = selectedMaterialId;
+  }, [selectedMaterialId]);
+
+  useEffect(() => {
+    selectedActionInvoiceIdRef.current = selectedActionInvoiceId;
+  }, [selectedActionInvoiceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -400,7 +769,25 @@ export function AdminReviewOverviewPage() {
         }
 
         const detailItems = buildReviewDetailItems(reviewSummary);
-        setSelectedMaterialId((current) => pickSelectedMaterialId(detailItems, current));
+        const nextSelectedMaterialId = pickSelectedMaterialId(detailItems, selectedMaterialIdRef.current);
+        const nextSelectedDetailItem = detailItems.find(
+          (item) => item.materialItem.material.id === nextSelectedMaterialId,
+        ) ?? null;
+        const nextEditorState = syncActionEditorState({
+          task,
+          detailItem: nextSelectedDetailItem,
+          actionInvoiceId: selectedActionInvoiceIdRef.current,
+          createSplitRowId,
+        });
+
+        setSelectedMaterialId(nextSelectedMaterialId);
+        setInvoiceFormState(nextEditorState.invoiceFormState);
+        setInvoiceFormErrors(nextEditorState.invoiceFormErrors);
+        setSelectedActionInvoiceId(nextEditorState.selectedActionInvoiceId);
+        setSplitRows(nextEditorState.splitRows);
+        setSplitErrors(nextEditorState.splitErrors);
+        setActionError(nextEditorState.actionError);
+        setActionFeedback(nextEditorState.actionFeedback);
         setState({
           status: "ready",
           task,
@@ -423,7 +810,7 @@ export function AdminReviewOverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [session, taskId]);
+  }, [refreshNonce, session, taskId]);
 
   const detailItems = useMemo(
     () => (state.status === "ready" ? buildReviewDetailItems(state.reviewSummary) : []),
@@ -539,6 +926,233 @@ export function AdminReviewOverviewPage() {
   const recognitionEntries = selectedRecognition
     ? Object.entries(selectedRecognition.recognized_fields)
     : [];
+  const editableInvoiceCandidates = buildEditableInvoiceCandidates(selectedDetailItem);
+  const selectedActionInvoice = editableInvoiceCandidates.find(
+    (invoiceItem) => invoiceItem.invoice.id === selectedActionInvoiceId,
+  ) ?? editableInvoiceCandidates[0] ?? null;
+  const splitSummary = buildSplitSummaryRows(splitRows);
+  const splitAmountDifferenceCents = selectedActionInvoice
+    ? splitSummary.totalAmountCents - selectedActionInvoice.invoice.amount_cents
+    : 0;
+
+  function updateInvoiceField<Key extends keyof ReviewInvoiceEditorFormState>(
+    key: Key,
+    value: ReviewInvoiceEditorFormState[Key],
+  ) {
+    setInvoiceFormState((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: value,
+      };
+    });
+    setInvoiceFormErrors((current) => {
+      if (!(key in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function updateSplitRow(
+    rowId: string,
+    field: keyof Omit<ReviewSplitFormRow, "rowId">,
+    value: string,
+  ) {
+    setSplitRows((current) => current.map((row) => (row.rowId === rowId ? { ...row, [field]: value } : row)));
+    setSplitErrors((current) => {
+      const rowErrors = current[rowId];
+      if (!rowErrors) {
+        return current;
+      }
+
+      const nextRowErrors = { ...rowErrors };
+      if (field === "memberId") {
+        delete nextRowErrors.memberId;
+      }
+      if (field === "amountYuan") {
+        delete nextRowErrors.amountYuan;
+      }
+
+      const nextErrors = { ...current };
+      if (!nextRowErrors.memberId && !nextRowErrors.amountYuan) {
+        delete nextErrors[rowId];
+      } else {
+        nextErrors[rowId] = nextRowErrors;
+      }
+      return nextErrors;
+    });
+  }
+
+  function handleAddSplitRow() {
+    if (!visibleTask || !selectedDetailItem || !selectedActionInvoice) {
+      return;
+    }
+
+    setSplitRows((current) => [
+      ...current,
+      {
+        rowId: createSplitRowId(),
+        memberId: pickDefaultSplitMemberId(selectedActionInvoice, selectedDetailItem.materialItem, visibleTask),
+        amountYuan: "",
+        note: "",
+      },
+    ]);
+  }
+
+  async function handleRemoveSplitRow(rowId: string, rowIndex: number) {
+    if (splitRows.length <= 1 || !visibleTask || !selectedActionInvoice) {
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: `确认删除分摊行 ${rowIndex}？`,
+      description: `当前正在编辑任务 ${visibleTask.competition_name} 下发票 ${selectedActionInvoice.invoice.invoice_number} 的分摊方案。删除后，这一行尚未保存的成员、金额和备注会直接丢失。`,
+      confirmLabel: "删除分摊行",
+      cancelLabel: "继续编辑",
+      destructive: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setSplitRows((current) => current.filter((row) => row.rowId !== rowId));
+    setSplitErrors((current) => {
+      if (!(rowId in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[rowId];
+      return next;
+    });
+  }
+
+  async function handleSaveInvoice(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session || !visibleTask || !selectedDetailItem || !invoiceFormState) {
+      return;
+    }
+
+    const allowedExpenseTypes = visibleTask.fee_categories.filter(isExpenseType);
+    const nextErrors = validateInvoiceForm(invoiceFormState, allowedExpenseTypes);
+    setInvoiceFormErrors(nextErrors);
+    setActionError(null);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    const amountCents = parseAmountYuanToCents(invoiceFormState.amountYuan);
+    if (amountCents === null) {
+      return;
+    }
+
+    setIsSavingInvoice(true);
+    try {
+      const response = await trmsApi.createOrUpdateInvoice(selectedDetailItem.materialItem.material.id, {
+        actor_id: session.actorId,
+        invoice_number: invoiceFormState.invoiceNumber.trim(),
+        issue_date: invoiceFormState.issueDate.trim() || null,
+        transaction_time: toApiDateTime(invoiceFormState.transactionTime),
+        buyer_name: invoiceFormState.buyerName.trim(),
+        tax_number: invoiceFormState.taxNumber.trim(),
+        seller_name: invoiceFormState.sellerName.trim() || null,
+        corporate_transfer_reference: invoiceFormState.corporateTransferReference.trim() || null,
+        amount_cents: amountCents,
+        expense_type: invoiceFormState.expenseType,
+      });
+
+      setActionFeedback({
+        invoiceId: response.invoice.id,
+        kind: "invoice",
+        message: `已保存发票 ${response.invoice.invoice_number} 的字段更正，并刷新当前材料摘要。`,
+      });
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setIsSavingInvoice(false);
+    }
+  }
+
+  async function handleConfirmPaperReceipt() {
+    if (!session || !selectedActionInvoice) {
+      return;
+    }
+
+    setActionError(null);
+    setIsConfirmingPaperReceipt(true);
+    try {
+      const response = await trmsApi.confirmPaperInvoiceReceipt(selectedActionInvoice.invoice.id, {
+        actor_id: session.actorId,
+      });
+      setActionFeedback({
+        invoiceId: response.invoice.id,
+        kind: "paper_receipt",
+        message: `已确认收到纸质发票 ${response.invoice.invoice_number}，相关校验已刷新。`,
+      });
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setIsConfirmingPaperReceipt(false);
+    }
+  }
+
+  async function handleSaveSplits(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session || !visibleTask || !selectedActionInvoice || splitRows.length === 0) {
+      return;
+    }
+
+    const nextErrors = validateSplitRows(splitRows);
+    setSplitErrors(nextErrors);
+    setActionError(null);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: splitAmountDifferenceCents === 0 ? "确认覆盖保存当前分摊方案？" : "确认保存未闭合的分摊方案？",
+      description: splitAmountDifferenceCents === 0
+        ? `发票 ${selectedActionInvoice.invoice.invoice_number} 将按当前表单覆盖保存 ${splitRows.length} 条分摊。服务端可能把受影响成员的确认状态重置为待确认，请确认金额和归属成员已核对无误。`
+        : splitAmountDifferenceCents > 0
+          ? `发票 ${selectedActionInvoice.invoice.invoice_number} 当前分摊合计比票面金额多出 ${formatCurrencyFromCents(splitAmountDifferenceCents)}。确认后仍会保存，但该发票会继续保留“分摊未完成”门禁。`
+          : `发票 ${selectedActionInvoice.invoice.invoice_number} 当前分摊合计比票面金额少了 ${formatCurrencyFromCents(Math.abs(splitAmountDifferenceCents))}。确认后仍会保存，但该发票会继续保留“分摊未完成”门禁。`,
+      confirmLabel: "确认保存分摊",
+      cancelLabel: "继续编辑",
+      destructive: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSavingSplits(true);
+    try {
+      await trmsApi.replaceInvoiceSplits(selectedActionInvoice.invoice.id, {
+        actor_id: session.actorId,
+        items: splitRows.map((row) => ({
+          member_id: row.memberId.trim(),
+          amount_cents: parseAmountYuanToCents(row.amountYuan) ?? 0,
+          note: row.note.trim() || null,
+        })),
+      });
+
+      setActionFeedback({
+        invoiceId: selectedActionInvoice.invoice.id,
+        kind: "split",
+        message: `已保存发票 ${selectedActionInvoice.invoice.invoice_number} 的分摊方案，并刷新确认状态。`,
+      });
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setIsSavingSplits(false);
+    }
+  }
 
   return (
     <AdminWorkspaceShell
@@ -754,7 +1368,25 @@ export function AdminReviewOverviewPage() {
                       aria-label="目标材料"
                       value={selectedMaterialId}
                       onChange={(event) => {
-                        setSelectedMaterialId(String(event.target.value));
+                        const nextMaterialId = String(event.target.value);
+                        const nextSelectedDetailItem = detailItems.find(
+                          (item) => item.materialItem.material.id === nextMaterialId,
+                        ) ?? null;
+                        const nextEditorState = syncActionEditorState({
+                          task: visibleTask,
+                          detailItem: nextSelectedDetailItem,
+                          actionInvoiceId: "",
+                          createSplitRowId,
+                        });
+
+                        setSelectedMaterialId(nextMaterialId);
+                        setInvoiceFormState(nextEditorState.invoiceFormState);
+                        setInvoiceFormErrors(nextEditorState.invoiceFormErrors);
+                        setSelectedActionInvoiceId(nextEditorState.selectedActionInvoiceId);
+                        setSplitRows(nextEditorState.splitRows);
+                        setSplitErrors(nextEditorState.splitErrors);
+                        setActionError(nextEditorState.actionError);
+                        setActionFeedback(nextEditorState.actionFeedback);
                       }}
                       renderValue={(value) => {
                         const currentItem = detailItems.find(
@@ -1113,82 +1745,448 @@ export function AdminReviewOverviewPage() {
 
                   {detailTab === "actions" ? (
                     <>
-                      <section className="admin-review-subsection">
-                        <h4>分摊去向与成员确认</h4>
-                        {selectedInvoice ? (
-                          selectedInvoice.splits.length > 0 ? (
-                            <ul className="admin-review-list" aria-label="当前材料分摊列表">
-                              {selectedInvoice.splits.map(({ split, confirmation }) => (
-                                <li key={split.id}>
-                                  <strong>
-                                    {formatTaskMemberLabel(split.member_id, memberSummaryMap)} / {formatCurrencyFromCents(split.amount_cents)}
-                                  </strong>
-                                  <StatusBadge tone={buildConfirmationBadgeTone(confirmation)}>
-                                    {confirmation ? formatConfirmationStatus(confirmation.status) : "未提交确认"}
-                                  </StatusBadge>
-                                  <span>版本 {split.version}</span>
-                                  {split.note ? <span>备注：{split.note}</span> : null}
-                                  {confirmation?.dispute_reason ? <span>异议原因：{confirmation.dispute_reason}</span> : null}
-                                </li>
+                      {actionError ? <ApiErrorNotice error={actionError} /> : null}
+
+                      {actionFeedback ? (
+                        <section className="member-status-section">
+                          <div className="member-status-section-header">
+                            <div>
+                              <h4>处理动作已保存</h4>
+                              <p className="field-hint">{actionFeedback.message}</p>
+                            </div>
+                            <StatusBadge tone="success">已刷新摘要</StatusBadge>
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {editableInvoiceCandidates.length > 1 ? (
+                        <section className="member-status-section">
+                          <div className="member-status-section-header">
+                            <div>
+                              <h4>选择当前要处理的关联发票</h4>
+                              <p className="field-hint">
+                                当前材料关联了多张发票；先选中目标发票，再在下方继续字段更正、分摊调整或纸票收票确认。
+                              </p>
+                            </div>
+                          </div>
+                          <FormControl fullWidth>
+                            <InputLabel id="admin-review-action-invoice-select-label">处理目标发票</InputLabel>
+                            <Select
+                              labelId="admin-review-action-invoice-select-label"
+                              label="处理目标发票"
+                              aria-label="处理目标发票"
+                              value={selectedActionInvoice?.invoice.id ?? ""}
+                              onChange={(event) => {
+                                const nextActionInvoiceId = String(event.target.value);
+                                const nextSelectedActionInvoice = editableInvoiceCandidates.find(
+                                  (invoiceItem) => invoiceItem.invoice.id === nextActionInvoiceId,
+                                ) ?? null;
+                                setSelectedActionInvoiceId(nextActionInvoiceId);
+                                setSplitRows(
+                                  visibleTask && selectedDetailItem && nextSelectedActionInvoice
+                                    ? buildInitialSplitRows(
+                                      nextSelectedActionInvoice,
+                                      selectedDetailItem.materialItem,
+                                      visibleTask,
+                                      createSplitRowId,
+                                    )
+                                    : [],
+                                );
+                                setSplitErrors({});
+                                setActionError(null);
+                                setActionFeedback(null);
+                              }}
+                            >
+                              {editableInvoiceCandidates.map((invoiceItem) => (
+                                <MenuItem key={invoiceItem.invoice.id} value={invoiceItem.invoice.id}>
+                                  {invoiceItem.invoice.invoice_number} / {formatExpenseType(invoiceItem.invoice.expense_type)} / {formatCurrencyFromCents(invoiceItem.invoice.amount_cents)}
+                                </MenuItem>
                               ))}
-                            </ul>
-                          ) : (
-                            <p className="field-hint">当前发票还没有分摊记录。</p>
-                          )
-                        ) : (
-                          <p className="field-hint">当前材料没有直接可编辑的分摊记录；若它属于某张发票，请从对应发票的详情动作进入分摊调整。</p>
-                        )}
-                      </section>
+                            </Select>
+                          </FormControl>
+                        </section>
+                      ) : null}
+
+                      {selectedMaterial.material_type === "invoice" && invoiceFormState ? (
+                        <form
+                          className="page-stack"
+                          onSubmit={(event) => {
+                            void handleSaveInvoice(event);
+                          }}
+                        >
+                          <section className="member-status-section">
+                            <div className="member-status-section-header">
+                              <div>
+                                <h4>发票字段更正</h4>
+                                <p className="field-hint">
+                                  直接在材料审核页核对并保存票号、金额、抬头、税号和费用类型，不再依赖跳转到独立发票录入页。
+                                </p>
+                              </div>
+                              <StatusBadge tone="info">
+                                {selectedInvoice ? `当前发票号 ${selectedInvoice.invoice.invoice_number}` : "尚无发票记录"}
+                              </StatusBadge>
+                            </div>
+                            <div className="admin-form-grid">
+                              <TextField
+                                label="发票号码"
+                                name="review-invoice-number"
+                                value={invoiceFormState.invoiceNumber}
+                                onChange={(event) => {
+                                  updateInvoiceField("invoiceNumber", event.target.value);
+                                }}
+                                error={Boolean(invoiceFormErrors.invoiceNumber)}
+                                helperText={invoiceFormErrors.invoiceNumber}
+                                fullWidth
+                              />
+                              <TextField
+                                label="金额（元）"
+                                name="review-amount-yuan"
+                                value={invoiceFormState.amountYuan}
+                                onChange={(event) => {
+                                  updateInvoiceField("amountYuan", event.target.value);
+                                }}
+                                error={Boolean(invoiceFormErrors.amountYuan)}
+                                helperText={invoiceFormErrors.amountYuan}
+                                fullWidth
+                                slotProps={{
+                                  htmlInput: {
+                                    inputMode: "decimal",
+                                    placeholder: "例如 123.45",
+                                  },
+                                }}
+                              />
+                              <TextField
+                                label="开票日期"
+                                type="date"
+                                name="review-issue-date"
+                                value={invoiceFormState.issueDate}
+                                onChange={(event) => {
+                                  updateInvoiceField("issueDate", event.target.value);
+                                }}
+                                fullWidth
+                                slotProps={{ inputLabel: { shrink: true } }}
+                              />
+                              <TextField
+                                label="交易时间"
+                                type="datetime-local"
+                                name="review-transaction-time"
+                                value={invoiceFormState.transactionTime}
+                                onChange={(event) => {
+                                  updateInvoiceField("transactionTime", event.target.value);
+                                }}
+                                fullWidth
+                                slotProps={{ inputLabel: { shrink: true } }}
+                              />
+                              <TextField
+                                label="发票抬头"
+                                name="review-buyer-name"
+                                value={invoiceFormState.buyerName}
+                                onChange={(event) => {
+                                  updateInvoiceField("buyerName", event.target.value);
+                                }}
+                                error={Boolean(invoiceFormErrors.buyerName)}
+                                helperText={invoiceFormErrors.buyerName}
+                                fullWidth
+                              />
+                              <TextField
+                                label="税号"
+                                name="review-tax-number"
+                                value={invoiceFormState.taxNumber}
+                                onChange={(event) => {
+                                  updateInvoiceField("taxNumber", event.target.value);
+                                }}
+                                error={Boolean(invoiceFormErrors.taxNumber)}
+                                helperText={invoiceFormErrors.taxNumber}
+                                fullWidth
+                              />
+                              <TextField
+                                select
+                                label="费用类型"
+                                name="review-expense-type"
+                                value={invoiceFormState.expenseType}
+                                onChange={(event) => {
+                                  updateInvoiceField("expenseType", event.target.value as ExpenseType);
+                                }}
+                                error={Boolean(invoiceFormErrors.expenseType)}
+                                helperText={invoiceFormErrors.expenseType}
+                                fullWidth
+                              >
+                                {visibleTask.fee_categories.filter(isExpenseType).map((expenseType) => (
+                                  <MenuItem key={expenseType} value={expenseType}>
+                                    {formatExpenseType(expenseType)}
+                                  </MenuItem>
+                                ))}
+                              </TextField>
+                              <TextField
+                                label="销售方名称"
+                                name="review-seller-name"
+                                value={invoiceFormState.sellerName}
+                                onChange={(event) => {
+                                  updateInvoiceField("sellerName", event.target.value);
+                                }}
+                                fullWidth
+                              />
+                              <TextField
+                                label="公对公转账编号"
+                                name="review-corporate-transfer-reference"
+                                value={invoiceFormState.corporateTransferReference}
+                                onChange={(event) => {
+                                  updateInvoiceField("corporateTransferReference", event.target.value);
+                                }}
+                                fullWidth
+                              />
+                            </div>
+                            <div className="admin-form-footer">
+                              <Button variant="contained" type="submit" disabled={isSavingInvoice}>
+                                {isSavingInvoice ? "正在保存并刷新摘要" : "保存发票字段"}
+                              </Button>
+                            </div>
+                          </section>
+                        </form>
+                      ) : selectedMaterial.material_type === "invoice" ? (
+                        <section className="member-status-section">
+                          <div className="member-status-section-header">
+                            <div>
+                              <h4>发票字段更正</h4>
+                              <p className="field-hint">当前任务上下文还没有准备好可编辑的发票字段表单。</p>
+                            </div>
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {selectedActionInvoice ? (
+                        <>
+                          {selectedActionInvoice.invoice.is_paper_invoice ? (
+                            <section className="member-status-section">
+                              <div className="member-status-section-header">
+                                <div>
+                                  <h4>纸票接收确认</h4>
+                                  <p className="field-hint">
+                                    纸质发票的收票确认已并入材料审核页；管理员可直接在这里确认已收到纸票，不再跳转独立页处理。
+                                  </p>
+                                </div>
+                                <StatusBadge tone={selectedActionInvoice.invoice.paper_invoice_received ? "success" : "warning"}>
+                                  {selectedActionInvoice.invoice.paper_invoice_received ? "已确认收票" : "待确认收票"}
+                                </StatusBadge>
+                              </div>
+                              <dl className="task-meta-grid admin-review-detail-grid">
+                                <div>
+                                  <dt>收票状态</dt>
+                                  <dd>{selectedActionInvoice.invoice.paper_invoice_received ? "已收到纸票" : "尚未确认"}</dd>
+                                </div>
+                                <div>
+                                  <dt>确认人</dt>
+                                  <dd>{formatActorDisplay(selectedActionInvoice.invoice.paper_invoice_received_by)}</dd>
+                                </div>
+                                <div>
+                                  <dt>确认时间</dt>
+                                  <dd>
+                                    {selectedActionInvoice.invoice.paper_invoice_received_at
+                                      ? formatDateTime(selectedActionInvoice.invoice.paper_invoice_received_at)
+                                      : "尚未确认"}
+                                  </dd>
+                                </div>
+                              </dl>
+                              {!selectedActionInvoice.invoice.paper_invoice_received ? (
+                                <div className="admin-form-footer">
+                                  <Button
+                                    type="button"
+                                    variant="contained"
+                                    disabled={isConfirmingPaperReceipt}
+                                    onClick={() => {
+                                      void handleConfirmPaperReceipt();
+                                    }}
+                                  >
+                                    {isConfirmingPaperReceipt ? "正在确认收票..." : "确认已收到纸票"}
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </section>
+                          ) : null}
+
+                          <form
+                            className="page-stack"
+                            onSubmit={(event) => {
+                              void handleSaveSplits(event);
+                            }}
+                          >
+                            <section className="member-status-section">
+                              <div className="member-status-section-header">
+                                <div>
+                                  <h4>分摊调整</h4>
+                                  <p className="field-hint">
+                                    当前发票的分摊编辑已并入材料审核页；管理员可直接在这里调整成员归属、金额和备注。
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outlined"
+                                  onClick={handleAddSplitRow}
+                                >
+                                  新增分摊行
+                                </Button>
+                              </div>
+
+                              <ul className="split-row-list" aria-label="当前材料分摊编辑列表">
+                                {splitRows.map((row, index) => (
+                                  <li
+                                    key={row.rowId}
+                                    role="group"
+                                    className="split-row-card admin-review-record-card"
+                                    aria-label={`分摊行 ${index + 1}`}
+                                  >
+                                    <div className="split-row-header">
+                                      <strong>分摊行 {index + 1}</strong>
+                                      <Button
+                                        type="button"
+                                        variant="outlined"
+                                        onClick={() => {
+                                          void handleRemoveSplitRow(row.rowId, index + 1);
+                                        }}
+                                        disabled={splitRows.length <= 1}
+                                      >
+                                        删除
+                                      </Button>
+                                    </div>
+
+                                    <div className="admin-form-grid split-editor-form-grid">
+                                      <TaskMemberAutocomplete
+                                        label="归属成员"
+                                        value={row.memberId}
+                                        name={`review-member-${row.rowId}`}
+                                        options={visibleTask.member_ids}
+                                        memberSummaries={visibleTask.member_summaries}
+                                        includeEmptyOption
+                                        emptyOptionLabel="请选择成员"
+                                        placeholder="输入成员姓名、用户名或学号筛选"
+                                        onChange={(nextValue) => {
+                                          updateSplitRow(row.rowId, "memberId", nextValue);
+                                        }}
+                                        error={Boolean(splitErrors[row.rowId]?.memberId)}
+                                        helperText={splitErrors[row.rowId]?.memberId}
+                                      />
+
+                                      <TextField
+                                        label="分摊金额（元）"
+                                        name={`review-amount-${row.rowId}`}
+                                        value={row.amountYuan}
+                                        onChange={(event) => {
+                                          updateSplitRow(row.rowId, "amountYuan", event.target.value);
+                                        }}
+                                        error={Boolean(splitErrors[row.rowId]?.amountYuan)}
+                                        helperText={splitErrors[row.rowId]?.amountYuan}
+                                        inputProps={{ inputMode: "decimal" }}
+                                        fullWidth
+                                      />
+
+                                      <TextField
+                                        className="split-editor-note-field"
+                                        label="备注"
+                                        name={`review-note-${row.rowId}`}
+                                        value={row.note}
+                                        onChange={(event) => {
+                                          updateSplitRow(row.rowId, "note", event.target.value);
+                                        }}
+                                        fullWidth
+                                      />
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+
+                              <div className="split-summary-card" aria-label="分摊金额摘要">
+                                <div>
+                                  <dt>发票金额</dt>
+                                  <dd>{formatCurrencyFromCents(selectedActionInvoice.invoice.amount_cents)}</dd>
+                                </div>
+                                <div>
+                                  <dt>分摊合计</dt>
+                                  <dd>{formatCurrencyFromCents(splitSummary.totalAmountCents)}</dd>
+                                </div>
+                                <div>
+                                  <dt>差额</dt>
+                                  <dd
+                                    className={
+                                      splitAmountDifferenceCents === 0
+                                        ? "split-difference-balanced"
+                                        : "split-difference-unbalanced"
+                                    }
+                                  >
+                                    {splitAmountDifferenceCents >= 0 ? "+" : "-"}
+                                    {formatCurrencyFromCents(Math.abs(splitAmountDifferenceCents))}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>未完成金额行</dt>
+                                  <dd>{splitSummary.invalidRowCount} 行</dd>
+                                </div>
+                              </div>
+                            </section>
+
+                            <section className="member-status-section">
+                              <div className="member-status-section-header">
+                                <div>
+                                  <h4>当前分摊确认状态</h4>
+                                  <p className="field-hint">
+                                    保存分摊后，服务端会按最新版本刷新成员确认状态；管理员无需再跳转到独立分摊页查看结果。
+                                  </p>
+                                </div>
+                                <StatusBadge tone="info">
+                                  已确认 {countCurrentConfirmationStatus(selectedActionInvoice, "confirmed")} / {selectedActionInvoice.splits.length}
+                                </StatusBadge>
+                              </div>
+
+                              {selectedActionInvoice.splits.length === 0 ? (
+                                <p className="field-hint">当前发票还没有持久化分摊记录；首次保存后，这里会显示每个成员的最新确认状态。</p>
+                              ) : (
+                                <ul className="admin-review-record-list" aria-label="当前材料分摊列表">
+                                  {selectedActionInvoice.splits.map(({ split, confirmation }) => (
+                                    <li key={split.id} className="admin-review-record-card">
+                                      <div className="task-card-header">
+                                        <strong>
+                                          {formatTaskMemberLabel(split.member_id, memberSummaryMap)} / {formatCurrencyFromCents(split.amount_cents)}
+                                        </strong>
+                                        <StatusBadge tone={buildConfirmationBadgeTone(confirmation)}>
+                                          {confirmation?.is_current
+                                            ? formatConfirmationStatus(confirmation.status)
+                                            : "未提交确认"}
+                                        </StatusBadge>
+                                      </div>
+                                      <span>版本 {split.version}</span>
+                                      {split.note ? <span>备注：{split.note}</span> : null}
+                                      {confirmation?.dispute_reason ? <span>异议原因：{confirmation.dispute_reason}</span> : null}
+                                      <span>
+                                        {confirmation?.is_current
+                                          ? `最新确认时间：${formatDateTime(confirmation.updated_at)}`
+                                          : "当前成员尚未确认最新分摊版本"}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </section>
+
+                            <div className="admin-form-footer">
+                              <Button variant="contained" type="submit" disabled={isSavingSplits}>
+                                {isSavingSplits ? "正在保存并刷新摘要" : "保存费用分摊"}
+                              </Button>
+                            </div>
+                          </form>
+                        </>
+                      ) : selectedMaterial.material_type !== "invoice" ? (
+                        <section className="member-status-section">
+                          <div className="member-status-section-header">
+                            <div>
+                              <h4>当前材料可操作范围</h4>
+                              <p className="field-hint">
+                                当前辅助材料还没有关联到可编辑发票；请先确认归属关系，或去“处理更正与提醒”页继续催办。
+                              </p>
+                            </div>
+                          </div>
+                        </section>
+                      ) : null}
 
                       <div className="inline-actions admin-review-action-row">
-                        {selectedInvoice ? (
-                          <>
-                            <Button
-                              component={RouterLink}
-                              variant="contained"
-                              size="small"
-                              to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedInvoice.invoice.material_id)}`}
-                            >
-                              更正金额与字段
-                            </Button>
-                            <Button
-                              component={RouterLink}
-                              variant="outlined"
-                              size="small"
-                              to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(selectedInvoice.invoice.id)}`}
-                            >
-                              调整分摊
-                            </Button>
-                          </>
-                        ) : selectedMaterial.material_type === "invoice" ? (
-                          <Button
-                            component={RouterLink}
-                            variant="contained"
-                            size="small"
-                            to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedMaterial.id)}`}
-                          >
-                            补录当前发票
-                          </Button>
-                        ) : relatedInvoices[0] ? (
-                          <>
-                            <Button
-                              component={RouterLink}
-                              variant="contained"
-                              size="small"
-                              to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(relatedInvoices[0].invoice.material_id)}`}
-                            >
-                              查看关联发票
-                            </Button>
-                            <Button
-                              component={RouterLink}
-                              variant="outlined"
-                              size="small"
-                              to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(relatedInvoices[0].invoice.id)}`}
-                            >
-                              调整关联分摊
-                            </Button>
-                          </>
-                        ) : null}
                         <Button
                           component={RouterLink}
                           variant="outlined"
