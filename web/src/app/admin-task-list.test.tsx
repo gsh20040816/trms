@@ -174,12 +174,15 @@ describe("admin task list page", () => {
     expect(screen.getByRole("heading", { name: "建议优先处理的任务" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "进入当前优先任务" })).toHaveAttribute(
       "href",
-      "/admin/tasks/TASK-ALPHA/missing-materials",
+      "/admin/tasks/TASK-ALPHA/review",
     );
     expect(screen.getByLabelText("当前优先任务提醒")).toHaveTextContent("项材料或校验待补齐");
     expect(screen.getAllByText("全国邀请赛").length).toBeGreaterThan(0);
     expect(screen.getAllByText("区域赛报销").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "补材料" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "补材料" })).toHaveAttribute(
+      "href",
+      "/admin/tasks/TASK-ALPHA/review",
+    );
     expect(screen.getAllByText("上海 · 2 名管理员").length).toBeGreaterThan(0);
 
     await act(async () => {

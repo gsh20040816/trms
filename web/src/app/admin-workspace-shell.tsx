@@ -7,7 +7,6 @@ import DashboardIcon from "@mui/icons-material/Dashboard";
 import DownloadIcon from "@mui/icons-material/Download";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
-import PaymentsIcon from "@mui/icons-material/Payments";
 
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
@@ -82,11 +81,6 @@ const ADMIN_TASK_CONTEXT_MODULES: AdminModuleDefinition[] = [
     key: "corrections",
     title: "成员提醒",
     Icon: NotificationsActiveIcon,
-  },
-  {
-    key: "splits",
-    title: "分摊确认",
-    Icon: PaymentsIcon,
   },
   {
     key: "exports",
@@ -314,7 +308,7 @@ export function AdminWorkspaceShell({
                       {([
                         ["tasks", "任务详情"],
                         ["review", "材料审核"],
-                        ["splits", "分摊确认"],
+                        ["corrections", "成员提醒"],
                         ["exports", "导出打印"],
                       ] as const).map(([moduleKey, label]) => {
                         const path = buildModulePath(moduleKey, taskId);

@@ -5,7 +5,6 @@ import { AdminExportTasksPage } from "./admin-export-tasks";
 import { AdminTaskDetailPage } from "./admin-task-detail";
 import { AdminTaskCreatePage } from "./admin-task-create";
 import { AdminInvoiceEditorPage } from "./admin-invoice-editor";
-import { AdminMissingMaterialsPage } from "./task-missing-materials";
 import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
 import { MemberMaterialDetailPage } from "./member-material-detail";
@@ -121,10 +120,6 @@ export const routes: RouteObject[] = [
           {
             path: "tasks/:taskId/exports",
             element: <AdminExportTasksPage />,
-          },
-          {
-            path: "tasks/:taskId/missing-materials",
-            element: <AdminMissingMaterialsPage />,
           },
         ],
       },

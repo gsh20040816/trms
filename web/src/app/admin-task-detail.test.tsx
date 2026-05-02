@@ -166,7 +166,7 @@ describe("admin task detail page", () => {
     expect(within(moduleNav).getByText("任务管理").closest("a")).toHaveAttribute("aria-current", "page");
     expect(within(moduleNav).getByText("材料审核").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/review");
     expect(within(moduleNav).getByText("成员提醒").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/corrections");
-    expect(within(moduleNav).getByText("分摊确认").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/splits");
+    expect(within(moduleNav).queryByText("分摊确认")).not.toBeInTheDocument();
     expect(within(moduleNav).getByText("导出打印").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/exports");
     expect(within(moduleNav).queryByText("创建任务")).not.toBeInTheDocument();
     expect(screen.getByLabelText("当前任务上下文")).toHaveTextContent("全国邀请赛");
@@ -174,9 +174,9 @@ describe("admin task detail page", () => {
       "href",
       "/admin/tasks/TASK-ALPHA/invoices",
     );
-    expect(screen.getAllByRole("link", { name: "查看缺失材料" })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "进入材料审核" })[0]).toHaveAttribute(
       "href",
-      "/admin/tasks/TASK-ALPHA/missing-materials",
+      "/admin/tasks/TASK-ALPHA/review",
     );
     expect(screen.getByRole("heading", { name: "任务就绪度总览" })).toBeInTheDocument();
     expect(screen.getByLabelText("任务摘要费用类别")).toHaveTextContent("参赛费");
@@ -187,9 +187,9 @@ describe("admin task detail page", () => {
       "task must be ready_to_export or completed before real exports can be generated",
     );
     const readinessQueue = screen.getByLabelText("异常优先队列");
-    expect(within(readinessQueue).getByRole("link", { name: "查看缺失材料" })).toHaveAttribute(
+    expect(within(readinessQueue).getByRole("link", { name: "进入材料审核" })).toHaveAttribute(
       "href",
-      "/admin/tasks/TASK-ALPHA/missing-materials",
+      "/admin/tasks/TASK-ALPHA/review",
     );
     expect(within(readinessQueue).getByRole("link", { name: "进入分摊确认" })).toHaveAttribute(
       "href",
@@ -204,9 +204,9 @@ describe("admin task detail page", () => {
       "href",
       "/admin/tasks/TASK-ALPHA/exports",
     );
-    expect(within(quickActions).getByText("分摊确认").closest("a")).toHaveAttribute(
+    expect(within(quickActions).getByText("成员提醒").closest("a")).toHaveAttribute(
       "href",
-      "/admin/tasks/TASK-ALPHA/splits",
+      "/admin/tasks/TASK-ALPHA/corrections",
     );
 
     const members = within(screen.getByLabelText("任务成员名单"));

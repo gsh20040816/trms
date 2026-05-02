@@ -1047,10 +1047,7 @@ describe("frontend main flow e2e placeholder", () => {
 
       cleanup();
       setMockSession("admin");
-      renderRoute("/admin/tasks/TASK-E2E");
-
-      expect(await screen.findByRole("heading", { name: "任务详情与状态操作" })).toBeInTheDocument();
-      fireEvent.click(within(screen.getByLabelText("当前任务快捷入口")).getByRole("link", { name: "导出打印" }));
+      renderRoute("/admin/tasks/TASK-E2E/exports");
 
       expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
       expect(screen.getByText("材料包就绪度")).toBeInTheDocument();

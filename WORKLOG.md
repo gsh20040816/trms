@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-05-02 20:33 - Simplify admin reminders to messaging only, remove missing-materials entry, and hide paper-receipt blocker before member submission
+
+### 完成内容
+- 完成任务“收口成员提醒为纯提醒页，并删除 missing-materials 独立入口”。
+- 管理员任务上下文导航已收口：
+  - [web/src/app/admin-workspace-shell.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-workspace-shell.tsx)
+  - 任务上下文导航不再展示“分摊确认”；
+  - 保留“材料审核”“成员提醒”和独立“导出打印”。
+- 成员提醒页已改成纯提醒页：
+  - [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)
+  - 页面不再读取或展示待更正发票列表、待确认发票材料和任何更正入口；
+  - 当前只保留成员选择、提醒内容填写、保存内部提醒记录和已记录提醒列表。
+- 管理员 `missing-materials` 独立入口已删除：
+  - [web/src/app/routes.tsx](/home/gsh/workspace/TRMS/web/src/app/routes.tsx) 不再注册 `/admin/tasks/:taskId/missing-materials`；
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx) 原“查看缺失材料”入口已统一改到材料审核页；
+  - [web/src/app/admin-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.tsx) 任务卡片与优先任务入口在“补材料”场景下也统一进入材料审核页。
+- 成员端纸质发票提交前的“管理员收票确认”阻塞展示已隐藏：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  - [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - 前端会继续尊重真实可提交状态，但不再把 `invoice_paper_receipt_required` 这条管理员后置动作展示成成员待处理阻塞；
+  - 纸票若除此之外没有别的问题，在成员视角会按已可提交口径展示。
+- 相关前端测试已同步更新：
+  - [web/src/app/admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - [web/src/app/admin-task-list.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.test.tsx)
+  - [web/src/app/admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx)
+  - [web/src/app/task-missing-materials.test.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.test.tsx)
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+
+### 根因
+- “成员提醒”页面此前混杂了两类职责：一类是管理员给成员发提醒，另一类是挑发票并跳去别的页面做更正或分摊。这导致页面名叫“成员提醒”，但实际仍在展示发票处理入口，职责边界不清。
+- `missing-materials` 原本单独成页，但现在管理员主路径已经有材料审核页和导出页，这个独立页只是在重复暴露“缺什么”，没有形成独立闭环。
+- 纸质发票“待管理员确认收票”属于管理员后置动作；后端虽然已经允许成员提交时忽略这条 blocker，但前端仍把它显示成成员自己的待处理问题，口径不一致。
+
+### 风险与影响面
+- 本轮没有实现“材料审核页内联吞并发票更正、分摊确认和纸票收票”；相关动作目前仍有部分通过独立页面完成。
+- 为避免半做半留，本轮已把这部分重构显式拆进 `TASKS.md`，后续应作为单独可验证任务处理，而不是继续在成员提醒页或分摊页零散补丁。
+- `task-missing-materials.tsx` 文件和成员侧缺失材料查看仍保留在仓库中；本轮删除的是管理员独立路由与入口，不是整份聚合逻辑。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-corrections-reminders.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-task-list.test.tsx src/app/admin-export-tasks.test.tsx src/app/task-missing-materials.test.tsx src/app/member-invoice-workbench.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `web` 全量测试 `116/116` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过；
+  - `eslint` 仍只剩 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error。
+
 ## 2026-05-02 19:54 - Turn admin invoice picker into a real dropdown with internal scrolling
 
 ### 完成内容

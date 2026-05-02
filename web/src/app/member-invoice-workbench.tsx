@@ -170,6 +170,7 @@ type UploadProcessingSnapshot = {
 const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
 const RECENT_UPLOAD_AUTO_REFRESH_INTERVAL_MS = 2000;
 const RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS = 10;
+const MEMBER_HIDDEN_VALIDATION_RULE_CODES = new Set(["invoice_paper_receipt_required"]);
 
 const WORKBENCH_TAB_HASHES: Record<WorkbenchTab, string> = {
   status: "#member-workbench-status",
@@ -443,6 +444,9 @@ function collectAbnormalReasons(item: WorkbenchInvoiceItem, task: ReimbursementT
     reasons.push("识别结果里仍有待确认字段，请优先核对关键发票信息。");
   }
   for (const validation of item.validations) {
+    if (MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code)) {
+      continue;
+    }
     if (validation.status === "failed" || validation.status === "pending") {
       reasons.push(`${formatValidationRule(validation.rule_code)}：${validation.message}`);
     }
@@ -623,6 +627,9 @@ function buildInvoiceBatchFailureMessage(
 }
 
 function buildInvoiceValidationSummary(item: WorkbenchInvoiceItem) {
+  const visibleValidations = item.validations.filter(
+    (validation) => !MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code),
+  );
   if (!item.invoice) {
     if (item.material.material_type !== "invoice") {
       return {
@@ -635,28 +642,37 @@ function buildInvoiceValidationSummary(item: WorkbenchInvoiceItem) {
       tone: "warning" as const,
     };
   }
-  if (item.validations.some((validation) => validation.status === "failed")) {
+  if (visibleValidations.some((validation) => validation.status === "failed")) {
     return {
       label: "校验失败",
       tone: "warning" as const,
     };
   }
   if (
-    item.validations.some((validation) => validation.status === "pending")
-    || item.material.validation_status === "pending"
+    visibleValidations.some((validation) => validation.status === "pending")
+    || (item.material.validation_status === "pending" && visibleValidations.length > 0)
   ) {
     return {
       label: "校验待确认",
       tone: "warning" as const,
     };
   }
-  if (item.material.validation_status === "failed" || item.missingMaterials.length > 0) {
+  if (
+    item.missingMaterials.length > 0
+    || (item.material.validation_status === "failed" && visibleValidations.length > 0)
+  ) {
     return {
       label: "校验未通过",
       tone: "warning" as const,
     };
   }
   if (item.material.validation_status === "passed") {
+    return {
+      label: "校验通过",
+      tone: "success" as const,
+    };
+  }
+  if (item.invoice && visibleValidations.length === 0 && item.missingMaterials.length === 0) {
     return {
       label: "校验通过",
       tone: "success" as const,
@@ -840,6 +856,9 @@ function buildInvoiceQueueStatusSummary(item: WorkbenchInvoiceItem) {
     messages.push("系统还没有形成可提交发票，请先补录或更正发票字段。");
   }
   for (const validation of item.validations) {
+    if (MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code)) {
+      continue;
+    }
     if (validation.status === "failed" || validation.status === "pending") {
       messages.push(`${formatValidationRule(validation.rule_code)}：${validation.message}`);
     }

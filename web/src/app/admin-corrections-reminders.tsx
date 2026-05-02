@@ -2,25 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 
 import Button from "@mui/material/Button";
-import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { TaskMemberAutocomplete } from "../components/task-member-autocomplete";
 import { PageHeader, StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
-import { formatCurrencyFromCents } from "../lib/currency";
 import type {
-  ExpenseType,
   MaterialReminderRecord,
-  RecognitionTaskStatus,
   ReimbursementTask,
-  TaskReviewSummary,
-  ValidationResult,
 } from "../lib/api/types";
 import { buildTaskMemberSummaryMap, formatTaskMemberLabel } from "../lib/ui-text";
 import { isTaskVisibleToAdministrator } from "../lib/task-administrators";
@@ -33,54 +23,12 @@ type CorrectionReminderPageState =
   | {
       status: "ready";
       task: ReimbursementTask;
-      summary: TaskReviewSummary;
       reminders: MaterialReminderRecord[];
     };
 
 type ReminderFormErrors = {
   memberId?: string;
   content?: string;
-};
-
-type RecognitionCorrectionAction = {
-  materialId: string;
-  invoiceId: string | null;
-  invoiceNumber: string | null;
-  filename: string;
-  submitterId: string | null;
-  recognitionStatus: RecognitionTaskStatus | null;
-  lowConfidenceFieldNames: string[];
-  failureReason: string | null;
-  createdAt: string;
-};
-
-type InvoiceCorrectionAction = {
-  invoiceId: string;
-  materialId: string;
-  filename: string;
-  invoiceNumber: string;
-  amountCents: number;
-  expenseType: ExpenseType;
-  abnormalValidations: ValidationResult[];
-  disputedSplitCount: number;
-  pendingSplitCount: number;
-  updatedAt: string;
-};
-
-const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
-  registration: "参赛费",
-  railway: "火车票",
-  airfare: "航空费",
-  local_transport: "市内交通",
-  hotel: "住宿费",
-  other: "其他",
-};
-
-const RECOGNITION_STATUS_LABELS: Record<RecognitionTaskStatus, string> = {
-  pending: "识别中",
-  succeeded: "识别成功",
-  failed: "识别失败",
-  needs_confirmation: "待人工确认",
 };
 
 function formatDateTime(value: string) {
@@ -90,140 +38,14 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatExpenseType(expenseType: ExpenseType) {
-  return EXPENSE_TYPE_LABELS[expenseType] ?? expenseType;
-}
-
-function formatRecognitionStatus(status: RecognitionTaskStatus | null) {
-  if (status === null) {
-    return "未触发识别";
-  }
-  return RECOGNITION_STATUS_LABELS[status];
-}
-
 function sortRemindersByCreatedAtDesc(items: MaterialReminderRecord[]) {
   return items.slice().sort((left, right) => right.created_at.localeCompare(left.created_at));
-}
-
-function buildRecognitionCorrectionActions(summary: TaskReviewSummary): RecognitionCorrectionAction[] {
-  const invoiceItemsById = new Map(summary.invoices.map((item) => [item.invoice.id, item] as const));
-  return summary.materials
-    .filter((item) => item.material.material_type === "invoice")
-    .map((item) => {
-      const recognition = item.latest_recognition;
-      const invoiceItem = item.invoice_id ? (invoiceItemsById.get(item.invoice_id) ?? null) : null;
-      const lowConfidenceFieldNames = recognition
-        ? Object.entries(recognition.recognized_fields)
-          .filter(([, field]) => field.status === "needs_confirmation")
-          .map(([fieldName]) => fieldName)
-        : [];
-
-      return {
-        materialId: item.material.id,
-        invoiceId: item.invoice_id,
-        invoiceNumber: invoiceItem?.invoice.invoice_number ?? null,
-        filename: item.material.original_filename,
-        submitterId: item.material.submitter_id,
-        recognitionStatus: recognition?.status ?? null,
-        lowConfidenceFieldNames,
-        failureReason: recognition?.failure
-          ? `${recognition.failure.stage} / ${recognition.failure.reason}`
-          : null,
-        createdAt: item.material.created_at,
-      };
-    })
-    .filter((item) => {
-      return (
-        item.invoiceId === null
-        || item.recognitionStatus === "failed"
-        || item.recognitionStatus === "needs_confirmation"
-        || item.lowConfidenceFieldNames.length > 0
-      );
-    })
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-}
-
-function buildInvoiceCorrectionActions(summary: TaskReviewSummary): InvoiceCorrectionAction[] {
-  return summary.invoices
-    .map((invoiceItem) => {
-      const abnormalValidations = invoiceItem.validations.filter(
-        (validation) => validation.status !== "passed" && validation.status !== "not_applicable",
-      );
-      const disputedSplitCount = invoiceItem.splits.filter(
-        ({ confirmation }) => confirmation?.status === "disputed",
-      ).length;
-      const pendingSplitCount = invoiceItem.splits.filter(
-        ({ confirmation }) => confirmation === null || confirmation.status === "pending",
-      ).length;
-
-      return {
-        invoiceId: invoiceItem.invoice.id,
-        materialId: invoiceItem.invoice.material_id,
-        filename: summary.materials.find((item) => item.material.id === invoiceItem.invoice.material_id)?.material.original_filename
-          ?? invoiceItem.invoice.invoice_number,
-        invoiceNumber: invoiceItem.invoice.invoice_number,
-        amountCents: invoiceItem.invoice.amount_cents,
-        expenseType: invoiceItem.invoice.expense_type,
-        abnormalValidations,
-        disputedSplitCount,
-        pendingSplitCount,
-        updatedAt: invoiceItem.invoice.updated_at,
-      };
-    })
-    .filter((item) => {
-      return item.abnormalValidations.length > 0 || item.disputedSplitCount > 0;
-    })
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-}
-
-function pickSelectedInvoiceCorrectionId(
-  actions: InvoiceCorrectionAction[],
-  currentInvoiceId: string,
-) {
-  const visibleIds = new Set(actions.map((item) => item.invoiceId));
-  if (currentInvoiceId && visibleIds.has(currentInvoiceId)) {
-    return currentInvoiceId;
-  }
-  return actions[0]?.invoiceId ?? "";
-}
-
-function buildInvoiceCorrectionSelectorStatus(item: InvoiceCorrectionAction) {
-  if (item.abnormalValidations.some((validation) => validation.status === "failed")) {
-    return { label: "否", tone: "warning" as const };
-  }
-  if (item.abnormalValidations.some((validation) => validation.status === "pending")) {
-    return { label: "待确认", tone: "warning" as const };
-  }
-  return { label: "是", tone: "success" as const };
-}
-
-function pickSelectedRecognitionCorrectionId(
-  actions: RecognitionCorrectionAction[],
-  currentMaterialId: string,
-) {
-  const visibleIds = new Set(actions.map((item) => item.materialId));
-  if (currentMaterialId && visibleIds.has(currentMaterialId)) {
-    return currentMaterialId;
-  }
-  return actions[0]?.materialId ?? "";
-}
-
-function buildRecognitionCorrectionSelectorStatus(item: RecognitionCorrectionAction) {
-  if (item.recognitionStatus === "failed") {
-    return { label: "否", tone: "warning" as const };
-  }
-  if (item.recognitionStatus === "needs_confirmation" || item.invoiceId === null) {
-    return { label: "待确认", tone: "warning" as const };
-  }
-  return { label: "是", tone: "success" as const };
 }
 
 export function AdminCorrectionsRemindersPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
   const [pageState, setPageState] = useState<CorrectionReminderPageState>({ status: "loading" });
-  const [preferredRecognitionActionId, setPreferredRecognitionActionId] = useState("");
-  const [preferredInvoiceActionId, setPreferredInvoiceActionId] = useState("");
   const [memberId, setMemberId] = useState("");
   const [content, setContent] = useState("");
   const [formErrors, setFormErrors] = useState<ReminderFormErrors>({});
@@ -243,9 +65,8 @@ export function AdminCorrectionsRemindersPage() {
       setSubmitError(null);
 
       try {
-        const [task, summary, reminderResponse] = await Promise.all([
+        const [task, reminderResponse] = await Promise.all([
           trmsApi.getTask(taskId),
-          trmsApi.getTaskReviewSummary(taskId, session.actorId),
           trmsApi.listTaskMaterialReminders(taskId, session.actorId),
         ]);
 
@@ -256,7 +77,6 @@ export function AdminCorrectionsRemindersPage() {
         setPageState({
           status: "ready",
           task,
-          summary,
           reminders: sortRemindersByCreatedAtDesc(reminderResponse.items),
         });
         setMemberId((current) => {
@@ -283,14 +103,6 @@ export function AdminCorrectionsRemindersPage() {
     };
   }, [session, taskId]);
 
-  const recognitionActions = useMemo(
-    () => (pageState.status === "ready" ? buildRecognitionCorrectionActions(pageState.summary) : []),
-    [pageState],
-  );
-  const invoiceActions = useMemo(
-    () => (pageState.status === "ready" ? buildInvoiceCorrectionActions(pageState.summary) : []),
-    [pageState],
-  );
   const memberSummaryMap = useMemo(
     () => (
       pageState.status === "ready"
@@ -299,15 +111,6 @@ export function AdminCorrectionsRemindersPage() {
     ),
     [pageState],
   );
-  const selectedRecognitionActionId = pickSelectedRecognitionCorrectionId(
-    recognitionActions,
-    preferredRecognitionActionId,
-  );
-  const selectedRecognitionAction = recognitionActions.find(
-    (item) => item.materialId === selectedRecognitionActionId,
-  ) ?? null;
-  const selectedInvoiceActionId = pickSelectedInvoiceCorrectionId(invoiceActions, preferredInvoiceActionId);
-  const selectedInvoiceAction = invoiceActions.find((item) => item.invoiceId === selectedInvoiceActionId) ?? null;
 
   if (!session || session.role !== "admin") {
     return null;
@@ -388,9 +191,9 @@ export function AdminCorrectionsRemindersPage() {
       task={visibleTask}
       header={(
         <PageHeader
-          eyebrow="更正与提醒"
-          title="管理员人工更正与补材料提醒"
-          description="这里集中处理两件事：跳转到需要补录或更正的发票，以及记录对成员的补材料提醒。"
+          eyebrow="成员提醒"
+          title="管理员补材料提醒"
+          description="这里只处理提醒成员补材料与确认信息，不再在这个页面展示发票列表或更正入口。"
           actions={(
             <div className="page-actions">
               <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
@@ -406,9 +209,9 @@ export function AdminCorrectionsRemindersPage() {
     >
       {pageState.status === "loading" ? (
         <section className="status-card admin-review-panel">
-          <p className="eyebrow">更正与提醒</p>
-          <h2>正在加载更正与提醒上下文</h2>
-          <p>正在读取任务详情、复核摘要和补材料提醒记录，请稍候。</p>
+          <p className="eyebrow">成员提醒</p>
+          <h2>正在加载成员提醒上下文</h2>
+          <p>正在读取任务详情和补材料提醒记录，请稍候。</p>
         </section>
       ) : null}
 
@@ -424,307 +227,18 @@ export function AdminCorrectionsRemindersPage() {
       ) : null}
 
       {visibleTask ? (
-        <section className="task-detail-layout">
-          <article className="status-card admin-review-panel">
-            <div className="admin-form-header">
-              <div>
-                <p className="eyebrow">更正入口</p>
-                <h2>待人工更正项</h2>
-              </div>
-              <StatusBadge tone="info">
-                {recognitionActions.length + invoiceActions.length} 个处理入口
-              </StatusBadge>
-            </div>
-
-            <div className="admin-review-subsection">
-              <h4>识别字段待确认或待补录材料</h4>
-              {recognitionActions.length > 0 ? (
-                <div className="invoice-editor-select-panel">
-                  <FormControl fullWidth>
-                    <InputLabel id="admin-recognition-correction-select-label">待确认发票材料</InputLabel>
-                    <Select
-                      labelId="admin-recognition-correction-select-label"
-                      label="待确认发票材料"
-                      aria-label="待确认发票材料"
-                      value={selectedRecognitionActionId}
-                      onChange={(event) => {
-                        setPreferredRecognitionActionId(String(event.target.value));
-                      }}
-                      renderValue={(value) => {
-                        const currentItem = recognitionActions.find(
-                          (item) => item.materialId === String(value),
-                        );
-                        if (!currentItem) {
-                          return "请选择待确认材料";
-                        }
-                        const selectorStatus = buildRecognitionCorrectionSelectorStatus(currentItem);
-                        return (
-                          <span className="invoice-editor-select-value">
-                            <span className="invoice-editor-select-value-title">
-                              <strong title={currentItem.invoiceNumber ?? "未形成发票"}>
-                                发票号：{currentItem.invoiceNumber ?? "未形成发票"}
-                              </strong>
-                              <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
-                                校验通过：{selectorStatus.label}
-                              </span>
-                            </span>
-                            <span title={currentItem.filename}>文件：{currentItem.filename}</span>
-                            <span>
-                              类型：发票；金额：待识别
-                            </span>
-                          </span>
-                        );
-                      }}
-                      MenuProps={{
-                        PaperProps: {
-                          sx: {
-                            maxHeight: 420,
-                            width: "min(560px, calc(100vw - 32px))",
-                          },
-                        },
-                        MenuListProps: {
-                          "aria-label": "待确认发票材料下拉选项",
-                        },
-                      }}
-                    >
-                      {recognitionActions.map((item) => {
-                        const selectorStatus = buildRecognitionCorrectionSelectorStatus(item);
-                        return (
-                          <MenuItem key={item.materialId} value={item.materialId} className="invoice-editor-select-option">
-                            <span className="invoice-editor-select-option-content">
-                              <span className="invoice-editor-select-option-title">
-                                <strong title={item.invoiceNumber ?? "未形成发票"}>
-                                  发票号：{item.invoiceNumber ?? "未形成发票"}
-                                </strong>
-                                <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
-                                  校验通过：{selectorStatus.label}
-                                </span>
-                              </span>
-                              <span className="invoice-editor-select-option-grid">
-                                <span title={item.filename}>原始文件名：{item.filename}</span>
-                                <span>类型：发票</span>
-                                <span>金额：待识别</span>
-                                <span title={item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析提交人"}>
-                                  提交人 {item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析"}
-                                </span>
-                              </span>
-                            </span>
-                          </MenuItem>
-                        );
-                      })}
-                    </Select>
-                  </FormControl>
-                  <p className="field-hint">
-                    点击下拉框后再展开待确认发票材料；展开层内部滚动查看候选项，不再把左侧整列拉成长列表。
-                  </p>
-                  {selectedRecognitionAction ? (
-                    <div className="admin-review-record-card" aria-label="当前待确认发票材料">
-                      <InvoiceSummaryRow
-                        filename={selectedRecognitionAction.filename}
-                        invoiceNumber={selectedRecognitionAction.invoiceNumber}
-                        primaryLabel="待确认发票材料"
-                        amountLabel={selectedRecognitionAction.invoiceNumber ? `票号 ${selectedRecognitionAction.invoiceNumber}` : "尚未形成发票"}
-                        validationLabel={selectedRecognitionAction.recognitionStatus === "failed" ? "识别失败" : "待人工确认"}
-                        validationTone="warning"
-                        supportingMaterialCount={0}
-                        statusHint={selectedRecognitionAction.submitterId ? formatTaskMemberLabel(selectedRecognitionAction.submitterId, memberSummaryMap) : "未解析提交人"}
-                        trailingContent={(
-                          <StatusBadge tone={selectedRecognitionAction.recognitionStatus === "failed" ? "danger" : "warning"}>
-                            {formatRecognitionStatus(selectedRecognitionAction.recognitionStatus)}
-                          </StatusBadge>
-                        )}
-                      />
-                      <div className="admin-review-inline-metadata">
-                        <span className="token-chip">提交人 {selectedRecognitionAction.submitterId ? formatTaskMemberLabel(selectedRecognitionAction.submitterId, memberSummaryMap) : "未解析"}</span>
-                        <span className="token-chip">
-                          低置信度字段 {selectedRecognitionAction.lowConfidenceFieldNames.length} 个
-                        </span>
-                      </div>
-                      <div className="task-meta-grid admin-review-meta-grid">
-                        <div>
-                          <dt>已录入发票</dt>
-                          <dd>{selectedRecognitionAction.invoiceNumber ?? "未录入"}</dd>
-                        </div>
-                        <div>
-                          <dt>上传时间</dt>
-                          <dd>{formatDateTime(selectedRecognitionAction.createdAt)}</dd>
-                        </div>
-                      </div>
-                      {selectedRecognitionAction.lowConfidenceFieldNames.length > 0 ? (
-                        <p className="field-hint">
-                          待确认字段：{selectedRecognitionAction.lowConfidenceFieldNames.join("、")}
-                        </p>
-                      ) : null}
-                      {selectedRecognitionAction.failureReason ? (
-                        <p className="field-hint">识别失败原因：{selectedRecognitionAction.failureReason}</p>
-                      ) : null}
-                      <div className="inline-actions">
-                        <Button
-                          component={RouterLink}
-                          variant="contained"
-                          size="small"
-                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedRecognitionAction.materialId)}`}
-                        >
-                          更正识别字段与金额
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="field-hint">当前复核摘要下没有需要人工确认识别字段的发票材料。</p>
-              )}
-            </div>
-
-            <div className="admin-review-subsection">
-              <h4>存在异常校验或异议的发票</h4>
-              {invoiceActions.length > 0 ? (
-                <div className="invoice-editor-select-panel">
-                  <FormControl fullWidth>
-                    <InputLabel id="admin-correction-invoice-select-label">待更正发票</InputLabel>
-                    <Select
-                      labelId="admin-correction-invoice-select-label"
-                      label="待更正发票"
-                      aria-label="待更正发票"
-                      value={selectedInvoiceActionId}
-                      onChange={(event) => {
-                        setPreferredInvoiceActionId(String(event.target.value));
-                      }}
-                      renderValue={(value) => {
-                        const currentItem = invoiceActions.find((item) => item.invoiceId === String(value));
-                        if (!currentItem) {
-                          return "请选择待更正发票";
-                        }
-                        const selectorStatus = buildInvoiceCorrectionSelectorStatus(currentItem);
-                        return (
-                          <span className="invoice-editor-select-value">
-                            <span className="invoice-editor-select-value-title">
-                              <strong title={currentItem.invoiceNumber}>发票号：{currentItem.invoiceNumber}</strong>
-                              <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
-                                校验通过：{selectorStatus.label}
-                              </span>
-                            </span>
-                            <span title={currentItem.filename}>文件：{currentItem.filename}</span>
-                            <span>
-                              类型：{formatExpenseType(currentItem.expenseType)}；金额：{formatCurrencyFromCents(currentItem.amountCents)}
-                            </span>
-                          </span>
-                        );
-                      }}
-                      MenuProps={{
-                        PaperProps: {
-                          sx: {
-                            maxHeight: 420,
-                            width: "min(560px, calc(100vw - 32px))",
-                          },
-                        },
-                        MenuListProps: {
-                          "aria-label": "待更正发票下拉选项",
-                        },
-                      }}
-                    >
-                      {invoiceActions.map((item) => {
-                        const selectorStatus = buildInvoiceCorrectionSelectorStatus(item);
-                        return (
-                          <MenuItem key={item.invoiceId} value={item.invoiceId} className="invoice-editor-select-option">
-                            <span className="invoice-editor-select-option-content">
-                              <span className="invoice-editor-select-option-title">
-                                <strong title={item.invoiceNumber}>发票号：{item.invoiceNumber}</strong>
-                                <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
-                                  校验通过：{selectorStatus.label}
-                                </span>
-                              </span>
-                              <span className="invoice-editor-select-option-grid">
-                                <span title={item.filename}>原始文件名：{item.filename}</span>
-                                <span>类型：{formatExpenseType(item.expenseType)}</span>
-                                <span>金额：{formatCurrencyFromCents(item.amountCents)}</span>
-                                <span>待确认分摊 {item.pendingSplitCount} 条；异议分摊 {item.disputedSplitCount} 条</span>
-                              </span>
-                            </span>
-                          </MenuItem>
-                        );
-                      })}
-                    </Select>
-                  </FormControl>
-                  <p className="field-hint">
-                    点击下拉框后再展开待更正发票；展开层内部滚动查看候选发票，不再让左侧整列继续拉长。
-                  </p>
-                  {selectedInvoiceAction ? (
-                    <div className="admin-review-record-card" aria-label="当前待更正发票">
-                      <InvoiceSummaryRow
-                        filename={selectedInvoiceAction.filename}
-                        invoiceNumber={selectedInvoiceAction.invoiceNumber}
-                        amountLabel={formatCurrencyFromCents(selectedInvoiceAction.amountCents)}
-                        validationLabel={selectedInvoiceAction.abnormalValidations.some((validation) => validation.status === "failed") ? "校验失败" : "校验待确认"}
-                        validationTone="warning"
-                        supportingMaterialCount={0}
-                        statusHint={`待确认分摊 ${selectedInvoiceAction.pendingSplitCount} 条；异议分摊 ${selectedInvoiceAction.disputedSplitCount} 条`}
-                        trailingContent={<StatusBadge tone="info">{formatExpenseType(selectedInvoiceAction.expenseType)}</StatusBadge>}
-                      />
-                      <div className="admin-review-inline-metadata">
-                        <span className="token-chip">{formatExpenseType(selectedInvoiceAction.expenseType)}</span>
-                        <span className="token-chip">异常校验 {selectedInvoiceAction.abnormalValidations.length} 条</span>
-                        <span className="token-chip">异议分摊 {selectedInvoiceAction.disputedSplitCount} 条</span>
-                      </div>
-                      <div className="task-meta-grid admin-review-meta-grid">
-                        <div>
-                          <dt>待确认分摊</dt>
-                          <dd>{selectedInvoiceAction.pendingSplitCount}</dd>
-                        </div>
-                        <div>
-                          <dt>最近更新时间</dt>
-                          <dd>{formatDateTime(selectedInvoiceAction.updatedAt)}</dd>
-                        </div>
-                      </div>
-                      <ul className="admin-review-list" aria-label={`发票 ${selectedInvoiceAction.invoiceNumber} 异常摘要`}>
-                        {selectedInvoiceAction.abnormalValidations.slice(0, 3).map((validation) => (
-                          <li key={validation.id}>
-                            <strong>{validation.rule_code}</strong>
-                            <span>{validation.message}</span>
-                          </li>
-                        ))}
-                        {selectedInvoiceAction.abnormalValidations.length > 3 ? (
-                          <li>
-                            <strong>其他异常</strong>
-                            <span>还有 {selectedInvoiceAction.abnormalValidations.length - 3} 条异常校验未在此处展开。</span>
-                          </li>
-                        ) : null}
-                      </ul>
-                      <div className="inline-actions">
-                        <Button
-                          component={RouterLink}
-                          variant="contained"
-                          size="small"
-                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedInvoiceAction.materialId)}`}
-                        >
-                          更正发票金额与字段
-                        </Button>
-                        <Button
-                          component={RouterLink}
-                          variant="outlined"
-                          size="small"
-                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(selectedInvoiceAction.invoiceId)}`}
-                        >
-                          调整当前发票分摊
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="field-hint">当前没有因异常校验或成员异议而需要优先更正的发票。</p>
-              )}
-            </div>
-          </article>
-
-          <article className="status-card admin-form-card">
+        <section className="status-card admin-form-card">
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">成员提醒</p>
-                <h2>记录补材料提醒</h2>
+                <h2>选择成员并记录提醒</h2>
               </div>
               <StatusBadge tone="info">{visibleReminders.length} 条已记录提醒</StatusBadge>
             </div>
+
+            <p className="field-hint">
+              当前页面只负责选择成员并保存内部提醒记录，不再展示发票列表或更正入口；材料审核、字段更正和分摊调整统一回到材料审核页处理。
+            </p>
 
             <form onSubmit={handleReminderSubmit}>
               <div className="admin-form-grid">
@@ -793,7 +307,6 @@ export function AdminCorrectionsRemindersPage() {
                 <p className="field-hint">当前任务还没有已记录的补材料提醒。</p>
               )}
             </div>
-          </article>
         </section>
       ) : null}
     </AdminWorkspaceShell>

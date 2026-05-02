@@ -80,10 +80,10 @@ const READINESS_KIND_TO_ROUTE: Partial<Record<TaskReadinessIssueKind, string>> =
   recognition_needs_confirmation: "review",
   supporting_material_linkage: "review",
   validation_blocker: "review",
+  missing_materials: "review",
   split_incomplete: "splits",
   member_confirmation_pending: "splits",
   member_confirmation_disputed: "corrections",
-  missing_materials: "missing-materials",
   export_blocker: "exports",
 };
 
@@ -200,7 +200,7 @@ function buildIssueDescription(issue: TaskReadinessIssue) {
 function buildIssueActionLabel(issue: TaskReadinessIssue) {
   switch (issue.kind) {
     case "missing_materials":
-      return "查看缺失材料";
+      return "进入材料审核";
     case "split_incomplete":
     case "member_confirmation_pending":
       return "进入分摊确认";
@@ -620,8 +620,8 @@ export function AdminTaskDetailPage() {
                 <Button component={RouterLink} variant="contained" to={`/admin/tasks/${taskId}/invoices`}>
                 录入或更正发票
               </Button>
-              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/missing-materials`}>
-                查看缺失材料
+              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
+                进入材料审核
               </Button>
             </div>
           )}

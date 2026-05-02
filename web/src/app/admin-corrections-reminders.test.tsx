@@ -223,7 +223,7 @@ describe("AdminCorrectionsRemindersPage", () => {
     clearMockSession();
   });
 
-  it("renders correction entry links and records manual material reminders", async () => {
+  it("shows only member reminder controls and records manual material reminders", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
 
@@ -271,56 +271,14 @@ describe("AdminCorrectionsRemindersPage", () => {
 
     renderCorrectionsRoute();
 
-    expect(await screen.findByRole("heading", { name: "管理员人工更正与补材料提醒" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "管理员补材料提醒" })).toBeInTheDocument();
     expect(screen.getByText("这里只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "更正识别字段与金额" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
-    );
-    expect(screen.getByRole("link", { name: "更正发票金额与字段" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
-    );
-    expect(screen.getByRole("link", { name: "调整当前发票分摊" })).toHaveAttribute(
-      "href",
-      "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
-    );
-    const recognitionSelector = screen.getByRole("combobox", { name: "待确认发票材料" });
-    expect(recognitionSelector).toHaveTextContent("发票号：INV-001");
-    expect(recognitionSelector).toHaveTextContent("文件：invoice.pdf");
-    expect(recognitionSelector).toHaveTextContent("类型：发票；金额：待识别");
-    await act(async () => {
-      fireEvent.mouseDown(recognitionSelector);
-      await Promise.resolve();
-    });
-    expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: /invoice\.pdf/i }));
-      await Promise.resolve();
-    });
-    const recognitionCard = within(screen.getByLabelText("当前待确认发票材料"));
-    expect(recognitionCard.getByText("invoice.pdf")).toBeInTheDocument();
-    expect(recognitionCard.getByText("更正识别字段与金额")).toBeInTheDocument();
-
-    const invoiceSelector = screen.getByRole("combobox", { name: "待更正发票" });
-    expect(invoiceSelector).toHaveTextContent("发票号：INV-001");
-    expect(invoiceSelector).toHaveTextContent("文件：invoice.pdf");
-    expect(invoiceSelector).toHaveTextContent("类型：参赛费；金额：￥123.45");
-    expect(invoiceSelector).toHaveTextContent("校验通过：否");
-    await act(async () => {
-      fireEvent.mouseDown(invoiceSelector);
-      await Promise.resolve();
-    });
-    expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
-    expect(screen.getByText("类型：参赛费")).toBeInTheDocument();
-    expect(screen.getByText("金额：￥123.45")).toBeInTheDocument();
-    await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: /invoice\.pdf/i }));
-      await Promise.resolve();
-    });
-    const invoiceCorrectionCard = within(screen.getByLabelText("当前待更正发票"));
-    expect(invoiceCorrectionCard.getByText("invoice.pdf")).toBeInTheDocument();
-    expect(invoiceCorrectionCard.getByText("票号 INV-001")).toBeInTheDocument();
+    expect(screen.queryByText("待人工更正项")).not.toBeInTheDocument();
+    expect(screen.queryByText("识别字段待确认或待补录材料")).not.toBeInTheDocument();
+    expect(screen.queryByText("存在异常校验或异议的发票")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "更正识别字段与金额" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "更正发票金额与字段" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "调整当前发票分摊" })).not.toBeInTheDocument();
     expect(screen.queryByText(/材料编号/)).not.toBeInTheDocument();
 
     const reminderList = within(await screen.findByLabelText("补材料提醒列表"));
@@ -373,7 +331,7 @@ describe("AdminCorrectionsRemindersPage", () => {
 
     renderCorrectionsRoute();
 
-    await screen.findByRole("heading", { name: "管理员人工更正与补材料提醒" });
+    await screen.findByRole("heading", { name: "管理员补材料提醒" });
 
     await act(async () => {
       fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
@@ -413,7 +371,7 @@ describe("AdminCorrectionsRemindersPage", () => {
 
     renderCorrectionsRoute();
 
-    await screen.findByRole("heading", { name: "管理员人工更正与补材料提醒" });
+    await screen.findByRole("heading", { name: "管理员补材料提醒" });
 
     const memberInput = screen.getByLabelText("提醒对象成员搜索");
     await act(async () => {

@@ -109,6 +109,7 @@ const FIELD_LABELS: Record<(typeof FIELD_ORDER)[number], string> = {
   amount_cents: "金额",
   expense_type: "费用类型",
 };
+const MEMBER_HIDDEN_VALIDATION_RULE_CODES = new Set(["invoice_paper_receipt_required"]);
 
 function formatCurrencyFromCents(cents: number) {
   return `￥${(cents / 100).toFixed(2)}`;
@@ -322,6 +323,9 @@ function collectAbnormalReasons(item: TaskMemberWorkbenchItem) {
     reasons.push("识别结果里仍有待确认字段，请优先核对关键发票信息。");
   }
   for (const validation of item.validations) {
+    if (MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code)) {
+      continue;
+    }
     if (validation.status === "failed" || validation.status === "pending") {
       reasons.push(`${formatValidationRule(validation.rule_code)}：${validation.message}`);
     }
@@ -330,6 +334,22 @@ function collectAbnormalReasons(item: TaskMemberWorkbenchItem) {
     reasons.push(`${formatMaterialType(missingMaterial.required_material_type)}：${missingMaterial.message}`);
   }
   return reasons;
+}
+
+function buildMemberVisibleValidationStatus(item: TaskMemberWorkbenchItem) {
+  const visibleValidations = item.validations.filter(
+    (validation) => !MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code),
+  );
+  if (visibleValidations.some((validation) => validation.status === "failed") || item.missing_materials.length > 0) {
+    return "failed" as const;
+  }
+  if (visibleValidations.some((validation) => validation.status === "pending")) {
+    return "pending" as const;
+  }
+  if (item.invoice && visibleValidations.length === 0) {
+    return "passed" as const;
+  }
+  return item.material.validation_status;
 }
 
 function pickItemByRoute(
@@ -708,7 +728,7 @@ export function MemberInvoiceDetailPage() {
               <div><dt>原始文件</dt><dd>{item.material.original_filename}</dd></div>
               <div><dt>材料类型</dt><dd>{formatMaterialType(item.material.material_type)}</dd></div>
               <div><dt>识别状态</dt><dd>{item.recognition ? formatRecognitionStatus(item.recognition.status) : "暂无识别"}</dd></div>
-              <div><dt>校验状态</dt><dd>{formatValidationStatus(item.material.validation_status)}</dd></div>
+              <div><dt>校验状态</dt><dd>{formatValidationStatus(buildMemberVisibleValidationStatus(item))}</dd></div>
               <div><dt>发票金额</dt><dd>{item.invoice ? formatCurrencyFromCents(item.invoice.amount_cents) : "未形成发票"}</dd></div>
               <div><dt>上传时间</dt><dd>{formatDateTime(item.material.created_at)}</dd></div>
             </dl>

@@ -810,6 +810,76 @@ describe("MemberInvoiceWorkbenchPage", () => {
     });
   });
 
+  it("hides paper receipt confirmation blockers before member submission", async () => {
+    const baseSummary = buildWorkbenchSummary();
+    const [baseItem] = baseSummary.items;
+    const [baseMaterial] = baseSummary.report.materials;
+    if (!baseItem || !baseMaterial || !baseItem.invoice) {
+      throw new Error("Expected default workbench summary to include one invoice item.");
+    }
+
+    mockCommonFetch(buildWorkbenchSummary({
+      items: [
+        {
+          ...baseItem,
+          material: {
+            ...baseItem.material,
+            original_filename: "paper.pdf",
+            validation_status: "failed",
+          },
+          invoice: {
+            ...baseItem.invoice,
+            id: "INV-PAPER-READY-001",
+            material_id: "MAT-PAPER-READY-001",
+            invoice_number: "PAPER-READY-001",
+            expense_type: "registration",
+            is_paper_invoice: true,
+            paper_invoice_received: false,
+            paper_invoice_received_at: null,
+            paper_invoice_received_by: null,
+          },
+          validations: [
+            {
+              id: "VAL-PAPER-ONLY-001",
+              rule_code: "invoice_paper_receipt_required",
+              target_type: "invoice",
+              target_id: "INV-PAPER-READY-001",
+              severity: "blocker",
+              status: "failed",
+              message: "纸质发票待管理员确认已收到纸票",
+              evidence: {},
+              created_at: "2026-04-28T11:00:00+08:00",
+            },
+          ],
+          queue_group: "ready",
+          blocking_reasons: [],
+          ready_for_submission: true,
+        },
+      ],
+      report: {
+        ...baseSummary.report,
+        materials: [
+          {
+            ...baseMaterial,
+            material_id: "MAT-PAPER-READY-001",
+            original_filename: "paper.pdf",
+            invoice_id: "INV-PAPER-READY-001",
+            invoice_number: "PAPER-READY-001",
+            validation_status: "failed",
+          },
+        ],
+      },
+    }));
+
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
+    expect(within(readySection).getByText("paper.pdf")).toBeInTheDocument();
+    expect(within(readySection).queryByText("纸质发票待管理员确认已收到纸票")).not.toBeInTheDocument();
+    expect(within(readySection).queryByText("校验失败")).not.toBeInTheDocument();
+    expect(within(readySection).getByText("校验通过")).toBeInTheDocument();
+  });
+
   it("marks problem invoices with emphasis while keeping the list collapsed to one-line summaries", async () => {
     mockCommonFetch(buildWorkbenchSummary({
       items: [

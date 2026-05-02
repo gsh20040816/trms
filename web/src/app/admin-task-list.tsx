@@ -103,7 +103,7 @@ function buildTaskAction(task: ReimbursementTask, reviewSummary: TaskReviewSumma
 
 function buildTaskActionPath(task: ReimbursementTask, reviewSummary: TaskReviewSummary, overdueSummary: OverdueConfirmationList) {
   if (buildMaterialGapCount(reviewSummary) > 0) {
-    return `/admin/tasks/${task.id}/missing-materials`;
+    return `/admin/tasks/${task.id}/review`;
   }
   if (buildOutstandingConfirmationCount(reviewSummary) > 0 || overdueSummary.total_overdue_members > 0) {
     return `/admin/tasks/${task.id}/review`;
