@@ -31,6 +31,7 @@ from trms_backend.domain.task_shared_invoices import (
 )
 from trms_backend.domain.task_supporting_material_linkage import (
     PendingSupportingMaterialLinkageItem,
+    build_pending_supporting_material_candidate_invoice_summary,
     build_task_supporting_material_linkage_report,
 )
 from trms_backend.domain.tasks import ReimbursementTask
@@ -156,6 +157,11 @@ def build_task_member_workbench_summary(
         linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
         supporting_material_auto_link_service=supporting_material_auto_link_service,
     )
+    pending_linkage_items_by_material_id = {
+        item.material_id: item
+        for item in pending_supporting_material_linkage_report.items
+    }
+    supplemental_linkage_items: list[PendingSupportingMaterialLinkageItem] = []
     shared_invoice_report = build_task_shared_invoice_report(
         task,
         actor_id=actor_id,
@@ -180,6 +186,32 @@ def build_task_member_workbench_summary(
         )
         splits = splits_by_invoice_id.get(invoice.id, []) if invoice is not None else []
         confirmations = confirmations_by_invoice_id.get(invoice.id, []) if invoice is not None else []
+        pending_linkage_item = pending_linkage_items_by_material_id.get(material.material_id)
+        if pending_linkage_item is None and material.material_type is not MaterialType.INVOICE:
+            linked_invoice_ids = linked_invoice_ids_by_material_id.get(material.material_id, [])
+            if linked_invoice_ids:
+                linked_invoices = [
+                    invoice_candidate
+                    for invoice_candidate in invoices
+                    if invoice_candidate.id in linked_invoice_ids
+                ]
+                pending_linkage_item = PendingSupportingMaterialLinkageItem(
+                    material_id=material.material_id,
+                    submitter_id=material.submitter_id,
+                    material_type=material.material_type,
+                    original_filename=material.original_filename,
+                    pending_reason="manual_confirmation_required",
+                    linked_invoices=[
+                        build_pending_supporting_material_candidate_invoice_summary(
+                            invoice_candidate,
+                            materials_by_id=materials_by_id,
+                        )
+                        for invoice_candidate in linked_invoices
+                    ],
+                    candidate_invoices=[],
+                    created_at=material.created_at,
+                )
+                supplemental_linkage_items.append(pending_linkage_item)
         blocking_reasons = _collect_blocking_reasons(
             material=material,
             invoice=invoice,
@@ -224,7 +256,10 @@ def build_task_member_workbench_summary(
         actor_id=actor_id.strip(),
         report=report,
         items=items,
-        pending_supporting_material_linkage_items=pending_supporting_material_linkage_report.items,
+        pending_supporting_material_linkage_items=[
+            *pending_supporting_material_linkage_report.items,
+            *supplemental_linkage_items,
+        ],
         shared_invoices=shared_invoice_report.items,
     )
 

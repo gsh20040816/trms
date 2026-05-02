@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-05-02 16:27 - Close false empty linkage state for local transport itineraries and remove airfare-only fields from rideshare itinerary detail
+
+### 完成内容
+- 完成任务“修复市内交通行程单归票与行程单详情字段收口”。
+- 成员材料详情页已收口“已归票但无剩余候选”的假空态：
+  - [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx) 在“关联归属发票”区新增当前已关联发票列表；
+  - 当材料已经关联到发票、但当前没有新的候选发票时，页面不再只显示“当前材料没有待处理的归属候选”，而会明确展示已关联发票并说明“暂时没有新的候选发票需要处理”；
+  - 对这类场景，不再误导用户去上传区补录发票。
+- 行程单详情页字段已按费用类型分流：
+  - 同文件新增 `resolveMaterialPageConfig`；
+  - 当行程单识别结果显示 `expense_type` 或 `expense_type_candidate` 为 `local_transport` 时，只展示时间、地点、费用类型、路线、交通方式；
+  - 航空机场代码和舱位字段只在非市内交通行程单场景继续展示，不再把“市内交通网约车行程单”渲染成航空行程单表单。
+- 为了让详情页在“已关联但已闭合”场景仍能拿到归属摘要，成员工作台 summary 已补充只读关联上下文：
+  - [src/trms_backend/domain/task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py) 会为非发票材料补充“仅详情页可见、但不算待处理阻塞”的已关联发票摘要；
+  - [src/trms_backend/domain/task_supporting_material_linkage.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_supporting_material_linkage.py) 抽出共享的发票摘要构造函数，避免前后两处手工拼装不一致。
+- 补齐前端回归测试：
+  - [web/src/app/member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx) 新增“市内交通行程单隐藏航空字段”和“已归票但无剩余候选时仍显示当前归属发票”用例，并同步更新 itinerary 基础样例口径。
+
+### 根因
+- 真实库里 `【桔子出行-72.86元-1个行程】高德打车电子行程单.pdf` 与 `【62580约车-42.50元-1个行程】高德打车电子行程单.pdf` 实际都已经关联到正确的市内交通发票。
+- 问题 3 的主因不是“自动归票彻底失败”，而是详情页只依赖“待处理候选”来渲染归属区：一旦关联已闭合、候选列表为空，页面就会退化成空提示，用户看起来像“无法关联归属发票”。
+- 问题 6 的根因是行程单详情页此前按材料类型固定展示完整 itinerary 字段集，没有根据识别出的费用类型区分“航空行程单”和“市内交通网约车行程单”。
+
+### 风险与影响面
+- 本轮没有放宽自动归票规则，也没有改动 attach / detach API，只收口详情页展示和成员 summary 中的只读归属上下文。
+- 当前保守口径是：已归票但无候选的材料仍不回到工作台“待关联辅助材料”区，不重新引入提交阻塞；只在材料详情页补足当前归属信息。
+- 航空行程单路径仍保留机场代码与舱位字段；本轮没有改动航空费用校验规则。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-material-detail.test.tsx`
+  - 1 个测试文件 8 个用例通过。
+- 已通过关联相关后端回归：
+  - `uv run pytest tests/test_task_member_workbench_api.py -k 'pending_linkage'`
+  - 2 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 542 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 16:14 - Close false recognition blockers for recognized supporting materials and remove pending-linkage submission gate
 
 ### 完成内容

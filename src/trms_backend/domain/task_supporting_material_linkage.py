@@ -115,14 +115,14 @@ def build_task_supporting_material_linkage_report(
                 original_filename=material.original_filename,
                 pending_reason=pending_reason,
                 linked_invoices=[
-                    _build_candidate_invoice_summary(
+                    build_pending_supporting_material_candidate_invoice_summary(
                         invoice,
                         materials_by_id=materials_by_id,
                     )
                     for invoice in linked_invoices
                 ],
                 candidate_invoices=[
-                    _build_candidate_invoice_summary(
+                    build_pending_supporting_material_candidate_invoice_summary(
                         invoice,
                         materials_by_id=materials_by_id,
                     )
@@ -137,7 +137,7 @@ def build_task_supporting_material_linkage_report(
         actor_id=normalized_actor_id,
         items=items,
     )
-def _build_candidate_invoice_summary(
+def build_pending_supporting_material_candidate_invoice_summary(
     invoice: InvoiceRecord,
     *,
     materials_by_id: dict[str, MaterialRecord],

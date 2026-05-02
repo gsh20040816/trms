@@ -187,7 +187,7 @@ describe("MemberMaterialDetailPage", () => {
   it.each([
     ["payment_record", "支付记录详情", "金额", "￥123.45"],
     ["competition_notice", "比赛通知详情", "地点", "武汉赛区通知"],
-    ["itinerary", "行程单详情", "去程出发机场", "SHA"],
+    ["itinerary", "行程单详情", "交通方式", "SHA"],
     ["order_screenshot", "订单截图详情", "交通方式", "网约车"],
     ["other_attachment", "其他材料详情", "行程/路线", "同济大学-武汉站"],
   ] as const)("renders dedicated page for %s materials", async (materialType, heading, fieldLabel, expectedValue) => {
@@ -201,7 +201,7 @@ describe("MemberMaterialDetailPage", () => {
     const fieldMap = {
       payment_record: ["amount_cents", 12345],
       competition_notice: ["location", "武汉赛区通知"],
-      itinerary: ["departure_airport_code", "SHA"],
+      itinerary: ["transport_mode", "SHA"],
       order_screenshot: ["transport_mode", "网约车"],
       other_attachment: ["trip_route", "同济大学-武汉站"],
     } as const;
@@ -220,6 +220,66 @@ describe("MemberMaterialDetailPage", () => {
     expect(screen.getByRole("checkbox", { name: /INV-CANDIDATE-001/ })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "查看发票 INV-LINKED-001" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看发票 INV-CANDIDATE-001" })).toBeInTheDocument();
+  });
+
+  it("hides airfare-only fields for local transport itineraries", async () => {
+    const summary = buildMaterialSummary("itinerary", "transport_mode", "网约车");
+    const firstItem = summary.items[0];
+    if (!firstItem?.recognition) {
+      throw new Error("expected itinerary recognition fixture");
+    }
+    firstItem.recognition.recognized_fields.expense_type = {
+      value: "local_transport",
+      source: "ai",
+      confidence: 0.98,
+      status: "recognized",
+      updated_at: null,
+    };
+    firstItem.recognition.recognized_fields.trip_route = {
+      value: "同济大学嘉定校区(北门) -> 上海虹桥站(北进站口)",
+      source: "ai",
+      confidence: 0.95,
+      status: "recognized",
+      updated_at: null,
+    };
+    renderMaterialRoute(summary);
+
+    expect(await screen.findByRole("heading", { name: "行程单详情" })).toBeInTheDocument();
+    const recognizedFieldSection = screen.getByLabelText("行程单识别字段");
+    expect(within(recognizedFieldSection).getByText("交通方式")).toBeInTheDocument();
+    expect(within(recognizedFieldSection).queryByText("去程出发机场")).not.toBeInTheDocument();
+    expect(screen.getByText("这里处理市内交通网约车行程单的时间、路线和出行方式，不再展示航空机场代码或舱位字段。")).toBeInTheDocument();
+  });
+
+  it("shows current linked invoices even when no remaining candidate invoices exist", async () => {
+    const summary = buildMaterialSummary("itinerary", "transport_mode", "网约车");
+    summary.pending_supporting_material_linkage_items = [
+      {
+        material_id: "MAT-TYPE-001",
+        submitter_id: "2250001",
+        material_type: "itinerary",
+        original_filename: "itinerary.pdf",
+        pending_reason: "manual_confirmation_required",
+        linked_invoices: [
+          {
+            invoice_id: "INV-LINKED-001",
+            invoice_number: "INV-LINKED-001",
+            amount_cents: 8888,
+            expense_type: "local_transport",
+            original_filename: "linked.pdf",
+          },
+        ],
+        candidate_invoices: [],
+        created_at: "2026-04-28T10:00:00+08:00",
+      },
+    ];
+    renderMaterialRoute(summary);
+
+    expect(await screen.findByRole("heading", { name: "关联归属发票" })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前已关联发票列表")).toBeInTheDocument();
+    expect(screen.getByText("INV-LINKED-001")).toBeInTheDocument();
+    expect(screen.getByText("当前材料已经关联到发票，暂时没有新的候选发票需要处理。")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "去上传区补录或补传发票" })).not.toBeInTheDocument();
   });
 
   it("updates linked invoices from the material detail page", async () => {

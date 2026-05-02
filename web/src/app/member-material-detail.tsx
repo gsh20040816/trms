@@ -137,6 +137,27 @@ const MATERIAL_PAGE_CONFIG: Record<
   },
 };
 
+const LOCAL_TRANSPORT_ITINERARY_FIELDS = [
+  "transaction_time",
+  "location",
+  "expense_type",
+  "trip_route",
+  "transport_mode",
+] as const;
+
+const AIRFARE_ITINERARY_FIELDS = [
+  "transaction_time",
+  "location",
+  "expense_type",
+  "trip_route",
+  "transport_mode",
+  "cabin_class",
+  "departure_airport_code",
+  "arrival_airport_code",
+  "return_departure_airport_code",
+  "return_arrival_airport_code",
+] as const;
+
 function formatCurrencyFromCents(cents: number) {
   return `￥${(cents / 100).toFixed(2)}`;
 }
@@ -235,6 +256,29 @@ function buildLinkageInvoiceOptions(item: PendingSupportingMaterialLinkageItem |
     options.set(invoice.invoice_id, invoice);
   }
   return [...options.values()];
+}
+
+function resolveMaterialPageConfig(item: TaskMemberWorkbenchItem) {
+  if (item.material.material_type !== "itinerary") {
+    return MATERIAL_PAGE_CONFIG[item.material.material_type as Exclude<MaterialType, "invoice">];
+  }
+
+  const expenseType = item.recognition?.recognized_fields.expense_type?.value
+    ?? item.recognition?.recognized_fields.expense_type_candidate?.value
+    ?? null;
+  if (expenseType === "local_transport") {
+    return {
+      ...MATERIAL_PAGE_CONFIG.itinerary,
+      description: "这里处理市内交通网约车行程单的时间、路线和出行方式，不再展示航空机场代码或舱位字段。",
+      fields: [...LOCAL_TRANSPORT_ITINERARY_FIELDS],
+      nextStep: "确认上车时间、路线和出行方式是否完整；若需要归票，直接在本页下方查看或调整归属发票。",
+    };
+  }
+
+  return {
+    ...MATERIAL_PAGE_CONFIG.itinerary,
+    fields: [...AIRFARE_ITINERARY_FIELDS],
+  };
 }
 
 function normalizeInvoiceIdSelection(invoiceIds: string[]) {
@@ -448,7 +492,9 @@ export function MemberMaterialDetailPage() {
   }
 
   const materialType = item?.material.material_type;
-  const pageConfig = materialType && materialType !== "invoice" ? MATERIAL_PAGE_CONFIG[materialType] : null;
+  const pageConfig = item && materialType && materialType !== "invoice"
+    ? resolveMaterialPageConfig(item)
+    : null;
 
   return (
     <RoleWorkspace
@@ -567,11 +613,27 @@ export function MemberMaterialDetailPage() {
           <SectionCard title="关联归属发票" description="在这里勾选当前材料应关联的发票，再统一提交“更改关联”；不再回工作台做二次编辑。">
             {pendingLinkageItem ? (
               <>
+                {pendingLinkageItem.linked_invoices.length > 0 ? (
+                  <div className="page-stack">
+                    <p className="field-hint">当前已关联发票：</p>
+                    <ul className="member-status-message-list" aria-label="当前已关联发票列表">
+                      {pendingLinkageItem.linked_invoices.map((invoiceOption) => (
+                        <li key={invoiceOption.invoice_id}>
+                          <strong>{invoiceOption.invoice_number}</strong>
+                          <span>{invoiceOption.original_filename}</span>
+                          <span>{formatExpenseType(invoiceOption.expense_type)} / {formatCurrencyFromCents(invoiceOption.amount_cents)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <p className="field-hint">
                   {pendingLinkageItem.pending_reason === "multiple_candidates"
                     ? "系统识别到多张候选发票，请逐行勾选这份材料真正应归属的发票。"
                     : pendingLinkageItem.pending_reason === "manual_confirmation_required"
-                      ? "系统只找到一张候选发票，但自动关联条件不足；请你手动勾选确认后再提交。"
+                      ? pendingLinkageItem.candidate_invoices.length > 0
+                        ? "系统只找到一张候选发票，但自动关联条件不足；请你手动勾选确认后再提交。"
+                        : "当前材料已经关联到发票，暂时没有新的候选发票需要处理。"
                       : "系统暂时没有安全候选发票；若下方没有可勾选发票，请先补录或补传对应发票。"}
                 </p>
                 {linkageInvoiceOptions.length > 0 ? (
@@ -628,16 +690,22 @@ export function MemberMaterialDetailPage() {
                   </>
                 ) : (
                   <div className="page-stack">
-                    <p className="field-hint">当前没有可勾选的候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。</p>
-                    <div className="inline-actions">
-                      <Button
-                        component={Link}
-                        variant="outlined"
-                        to={taskId ? `/member/invoices/workbench?taskId=${encodeURIComponent(taskId)}#member-workbench-upload` : "/member/invoices/workbench"}
-                      >
-                        去上传区补录或补传发票
-                      </Button>
-                    </div>
+                    <p className="field-hint">
+                      {pendingLinkageItem.linked_invoices.length > 0
+                        ? "当前没有新的候选发票需要勾选；若要调整已关联结果，可先取消勾选后再提交更改。"
+                        : "当前没有可勾选的候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。"}
+                    </p>
+                    {pendingLinkageItem.linked_invoices.length === 0 ? (
+                      <div className="inline-actions">
+                        <Button
+                          component={Link}
+                          variant="outlined"
+                          to={taskId ? `/member/invoices/workbench?taskId=${encodeURIComponent(taskId)}#member-workbench-upload` : "/member/invoices/workbench"}
+                        >
+                          去上传区补录或补传发票
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </>
