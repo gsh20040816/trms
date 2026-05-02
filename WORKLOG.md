@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-02 22:10 - Restrict privileged bootstrap to the first system admin
+
+### 完成内容
+- 完成任务“将生产环境首个受控初始化账号固定为系统管理员”。
+- 已把 bootstrap 入口从“允许首个 `admin` / `system_admin`”收紧为“只允许首个 `system_admin`”：
+  - [src/trms_backend/domain/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py)
+  - `bootstrap_privileged_user(...)` 现在会直接拒绝任何非 `system_admin` 的初始化请求；
+  - 错误文案同步改为明确指出只支持 `system_admin`，避免继续使用“privileged roles”这种会误导部署者的笼统说法。
+- 已同步补齐认证测试：
+  - [tests/test_auth_api.py](/home/gsh/workspace/TRMS/tests/test_auth_api.py)
+  - 首个 bootstrap 成功用例改为创建 `system_admin`；
+  - 原有“第二次 bootstrap 拒绝”用例保留，但首个账号也改为 `system_admin`；
+  - 新增“bootstrap-admin 拒绝普通 `admin` 角色”的回归测试。
+- 已同步更新标准错误响应测试：
+  - [tests/test_api_error_responses.py](/home/gsh/workspace/TRMS/tests/test_api_error_responses.py)
+  - 确认 bootstrap 角色错误仍走统一 `400 bad_request` 结构化响应。
+- 已统一 README 与生产部署文档的初始化口径：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md)
+  - 两处都已明确：`/api/auth/bootstrap-admin` 现在只用于创建首个系统管理员，而不是任意高权限账号。
+
+### 根因
+- 当前产品要求已经从“首个高权限账号”进一步收紧为“首个生产用户为系统管理员”，但旧实现和文档仍保留“首个 `admin` 或 `system_admin` 都可”的口径。
+- 这会导致初始化后仍缺少系统级配置权限，需要再额外补创建或切换账号，和生产引导目标相冲突。
+
+### 风险与影响面
+- 本轮只收紧生产 bootstrap 入口，不改变：
+  - 成员自注册路径；
+  - 已有 bearer 登录与 `/auth/switch-role` 行为；
+  - 当前数据库里已经存在的 `admin` / `system_admin` 账号数据。
+- 仍保留 `/api/auth/bootstrap-admin` 这个路径名，避免无必要的 API 破坏；收紧的是允许的角色，不是接口地址。
+
+### 验证结果
+- 已通过定向认证测试：
+  - `uv run pytest tests/test_auth_api.py -k 'bootstrap_admin_creates_privileged_account_and_records_audit_source or bootstrap_admin_rejects_second_privileged_bootstrap or bootstrap_admin_rejects_plain_admin_role'`
+  - `uv run pytest tests/test_api_error_responses.py -k 'bootstrap_admin_rejects_member_role_with_standard_400_error'`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 554 个用例全部通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:00 - Split multi-role account, profile, and first-system-admin work
 
 ### 完成内容

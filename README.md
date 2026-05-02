@@ -347,7 +347,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8100/api
 - 默认只有 `member` 允许通过 `POST /api/auth/register` 自注册。
 - `TRMS_ENV=production` 时，`admin` 和 `system_admin` 角色的自注册默认关闭；只有显式设置 `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER=true` 才会重新开放，主要用于受控调试环境。
 - 生产环境初始化首个高权限账号时，可为后端配置 `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`，再调用 `POST /api/auth/bootstrap-admin` 并在请求头携带 `X-TRMS-Bootstrap-Token`。
-- `bootstrap-admin` 入口只允许创建首个 `admin` 或 `system_admin` 账号；一旦库里已经存在任一高权限账号，该入口会显式拒绝再次使用，后续邀请/审批流程仍待单独实现。
+- `bootstrap-admin` 入口现在只允许创建首个 `system_admin` 账号；一旦库里已经存在任一高权限账号，该入口会显式拒绝再次使用，后续邀请/审批流程仍待单独实现。
 - 用户表会记录账号创建来源，区分 `self_service` 与 `bootstrap_token`，作为最小审计边界。
 
 当前限制：既有业务 API 仍有部分路径通过 `actor_id`、`submitter_id` 或 `member_id` 参数表达操作者身份；后续任务会继续把这些路径迁移到 bearer 身份上下文并补齐强权限控制。

@@ -229,22 +229,22 @@ def test_bootstrap_admin_creates_privileged_account_and_records_audit_source(tmp
         "/api/auth/bootstrap-admin",
         headers={"X-TRMS-Bootstrap-Token": "bootstrap-secret"},
         json=register_payload(
-            username="admin1",
-            role="admin",
-            display_name="张管理员",
-            actor_id="admin-1",
+            username="sysadmin1",
+            role="system_admin",
+            display_name="赵系统管理员",
+            actor_id="sysadmin-1",
             member_code=None,
         ),
     )
 
     assert response.status_code == 201
     body = response.json()
-    assert body["user"]["role"] == "admin"
-    assert body["user"]["roles"] == ["admin"]
+    assert body["user"]["role"] == "system_admin"
+    assert body["user"]["roles"] == ["system_admin"]
 
     session_factory = build_session_factory(f"sqlite:///{tmp_path}/production.db")
     with session_scope(session_factory) as session:
-        row = session.query(UserAccountRow).filter_by(username="admin1").one()
+        row = session.query(UserAccountRow).filter_by(username="sysadmin1").one()
         assert row.registration_source == "bootstrap_token"
         assert row.created_by_user_id is None
 
@@ -256,10 +256,10 @@ def test_bootstrap_admin_rejects_second_privileged_bootstrap(tmp_path):
     )
     client = make_client(tmp_path, runtime_config=runtime_config)
     payload = register_payload(
-        username="admin1",
-        role="admin",
-        display_name="张管理员",
-        actor_id="admin-1",
+        username="sysadmin1",
+        role="system_admin",
+        display_name="赵系统管理员",
+        actor_id="sysadmin-1",
         member_code=None,
     )
 
@@ -287,6 +287,33 @@ def test_bootstrap_admin_rejects_second_privileged_bootstrap(tmp_path):
         code="conflict",
     )
     assert "bootstrap is already completed" in payload["detail"]
+
+
+def test_bootstrap_admin_rejects_plain_admin_role(tmp_path):
+    runtime_config = make_production_runtime_config(
+        tmp_path,
+        TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN="bootstrap-secret",
+    )
+    client = make_client(tmp_path, runtime_config=runtime_config)
+
+    response = client.post(
+        "/api/auth/bootstrap-admin",
+        headers={"X-TRMS-Bootstrap-Token": "bootstrap-secret"},
+        json=register_payload(
+            username="admin1",
+            role="admin",
+            display_name="张管理员",
+            actor_id="admin-1",
+            member_code=None,
+        ),
+    )
+
+    assert_api_error(
+        response,
+        status_code=400,
+        code="bad_request",
+        detail="bootstrap endpoint only supports 'system_admin', got 'admin'",
+    )
 
 
 def test_login_returns_available_roles_for_multi_role_account(tmp_path):

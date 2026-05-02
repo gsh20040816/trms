@@ -123,7 +123,7 @@ class InvalidBootstrapTokenError(ValueError):
 class InvalidBootstrapRoleError(ValueError):
     def __init__(self, role: UserRole) -> None:
         super().__init__(
-            f"bootstrap endpoint only supports privileged roles, got '{role.value}'"
+            f"bootstrap endpoint only supports 'system_admin', got '{role.value}'"
         )
 
 
@@ -206,7 +206,7 @@ def bootstrap_privileged_user(
     bootstrap_token: str | None,
     configured_bootstrap_token: str | None,
 ) -> AuthSession:
-    if not _is_privileged_role(payload.role):
+    if payload.role is not UserRole.SYSTEM_ADMIN:
         raise InvalidBootstrapRoleError(payload.role)
 
     normalized_configured_token = (configured_bootstrap_token or "").strip()

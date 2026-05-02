@@ -132,7 +132,7 @@ curl -X POST http://127.0.0.1:${TRMS_PUBLIC_HTTP_PORT:-8080}/api/auth/bootstrap-
 
 约束如下：
 
-1. 该入口只允许创建首个 `admin` 或 `system_admin`。
+1. 该入口只允许创建首个 `system_admin`。
 2. 一旦库中已经存在任一高权限账号，该接口会显式拒绝再次使用。
 3. `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER` 在生产模板中默认是 `false`，不要改成 `true` 作为长期方案。
 

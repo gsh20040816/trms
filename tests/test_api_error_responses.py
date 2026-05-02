@@ -52,7 +52,7 @@ def test_bootstrap_admin_rejects_member_role_with_standard_400_error(tmp_path):
         status_code=400,
         code="bad_request",
     )
-    assert "bootstrap endpoint only supports privileged roles" in payload["detail"]
+    assert "bootstrap endpoint only supports 'system_admin'" in payload["detail"]
 
 
 def test_request_validation_error_uses_standard_error_payload(tmp_path):
