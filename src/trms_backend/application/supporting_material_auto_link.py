@@ -57,7 +57,7 @@ class SupportingMaterialAutoLinkService:
                 continue
             if material.submitter_id != invoice_material.submitter_id:
                 continue
-            candidate_invoice_ids = self._candidate_invoice_ids_for_material(material)
+            candidate_invoice_ids = self._auto_link_candidate_invoice_ids_for_material(material)
             if candidate_invoice_ids != [invoice.id]:
                 continue
             linked.append(
@@ -143,13 +143,6 @@ class SupportingMaterialAutoLinkService:
         *,
         recognition_task: RecognitionTaskRecord | None = None,
     ) -> list[str]:
-        candidate_invoice_ids = self._candidate_invoice_ids_for_material(
-            material,
-            recognition_task=recognition_task,
-        )
-        if len(candidate_invoice_ids) != 1:
-            return []
-
         effective_recognition_task = recognition_task
         if effective_recognition_task is None:
             effective_recognition_task = self._recognition_task_repository.get_latest_effective_by_material(
@@ -161,13 +154,21 @@ class SupportingMaterialAutoLinkService:
         )
         if recognized_amount_cents is None:
             return []
+        exact_match_ids = [
+            invoice.id
+            for invoice in self._invoice_repository.list_by_task(material.task_id or "")
+            if self._is_same_submitter_invoice(material, invoice)
+            and invoice.amount_cents == recognized_amount_cents
+        ]
+        if len(exact_match_ids) != 1:
+            return []
+        return exact_match_ids
 
-        candidate_invoice = self._invoice_repository.get(candidate_invoice_ids[0])
-        if candidate_invoice is None:
-            return []
-        if candidate_invoice.amount_cents != recognized_amount_cents:
-            return []
-        return candidate_invoice_ids
+    def _is_same_submitter_invoice(self, material: MaterialRecord, invoice: InvoiceRecord) -> bool:
+        invoice_material = self._material_repository.get(invoice.material_id)
+        if invoice_material is None:
+            return False
+        return invoice_material.submitter_id == material.submitter_id
 
     def _prioritize_candidate_invoices(
         self,

@@ -1968,7 +1968,9 @@ def test_attach_supporting_material_allows_same_attachment_for_multiple_invoices
     assert [item["id"] for item in listed_second.json()["items"]] == [supporting_material_id]
 
 
-def test_create_invoice_auto_links_existing_same_submitter_supporting_materials_when_single_candidate(tmp_path):
+def test_create_invoice_auto_links_existing_same_submitter_supporting_materials_only_when_amount_matches(
+    tmp_path,
+):
     client = make_client(tmp_path)
     task_id, invoice_material_id = create_material(client)
     payment_record_material_id = upload_supporting_material(
@@ -1976,6 +1978,11 @@ def test_create_invoice_auto_links_existing_same_submitter_supporting_materials_
         task_id,
         material_type="payment_record",
         filename="payment.png",
+    )
+    set_recognition_amount_cents(
+        client,
+        payment_record_material_id,
+        amount_cents=12345,
     )
     competition_notice_material_id = upload_supporting_material(
         client,
@@ -1994,10 +2001,39 @@ def test_create_invoice_auto_links_existing_same_submitter_supporting_materials_
     invoice_id = response.json()["invoice"]["id"]
     listed = client.get(f"/api/invoices/{invoice_id}/supporting-materials")
     assert listed.status_code == 200
-    assert [item["id"] for item in listed.json()["items"]] == [
-        payment_record_material_id,
-        competition_notice_material_id,
-    ]
+    assert [item["id"] for item in listed.json()["items"]] == [payment_record_material_id]
+    assert competition_notice_material_id not in [item["id"] for item in listed.json()["items"]]
+
+
+def test_create_invoice_does_not_auto_link_existing_supporting_material_without_recognized_amount(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task_id, invoice_material_id = create_material(client)
+    competition_notice_material_id = upload_supporting_material(
+        client,
+        task_id,
+        material_type="competition_notice",
+        filename="50thICPC邀请函（武汉）.pdf",
+        content_type="application/pdf",
+    )
+
+    response = client.post(
+        f"/api/materials/{invoice_material_id}/invoice",
+        json=valid_invoice_payload() | {
+            "invoice_number": "INV-RAIL-12345",
+            "seller_name": "铁路服务商",
+            "amount_cents": 12345,
+            "expense_type": "railway",
+        },
+    )
+
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+    listed = client.get(f"/api/invoices/{invoice_id}/supporting-materials")
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, competition_notice_material_id) == []
 
 
 def test_create_invoice_prioritizes_local_transport_itinerary_when_multiple_invoice_candidates_exist(

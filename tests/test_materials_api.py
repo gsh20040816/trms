@@ -215,6 +215,61 @@ def test_default_material_type_does_not_auto_link_before_recognition(tmp_path):
     assert list_linked_invoice_ids_for_supporting_material(tmp_path, material_id) == []
 
 
+def test_supporting_material_with_recognized_amount_only_auto_links_when_same_amount_invoice_is_unique(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    supporting_response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "competition_notice",
+        },
+        files={"files": ("50thICPC邀请函（武汉）.pdf", b"competition-notice", "application/pdf")},
+    )
+    assert supporting_response.status_code == 201
+    supporting_material_id = supporting_response.json()["items"][0]["id"]
+
+    invoice_material_one = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ride-1.pdf", b"ride-invoice-1", "application/pdf")},
+    ).json()["items"][0]["id"]
+    create_invoice(
+        client,
+        invoice_material_one,
+        amount_cents=12345,
+        expense_type="railway",
+    )
+
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, supporting_material_id) == []
+
+    invoice_material_two = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ride-2.pdf", b"ride-invoice-2", "application/pdf")},
+    ).json()["items"][0]["id"]
+    create_invoice(
+        client,
+        invoice_material_two,
+        amount_cents=8800,
+        expense_type="railway",
+    )
+
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, supporting_material_id) == []
+
+
 def test_submit_pending_assignment_material_without_resolved_identity(tmp_path):
     client = make_client(tmp_path)
 

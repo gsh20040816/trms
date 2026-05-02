@@ -492,14 +492,16 @@ def test_pending_supporting_material_linkage_prioritizes_exact_amount_match_cand
         for item in response.json()["items"]
         if item["material_id"] == supporting_material_id
     )
-    assert item["candidate_invoices"] == [
+    assert item["linked_invoices"] == [
         {
             "invoice_id": second_invoice_id,
             "invoice_number": "M1-002",
             "amount_cents": 12345,
             "expense_type": "hotel",
             "original_filename": "member-one-second.pdf",
-        },
+        }
+    ]
+    assert item["candidate_invoices"] == [
         {
             "invoice_id": first_invoice_id,
             "invoice_number": "M1-001",

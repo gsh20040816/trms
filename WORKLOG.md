@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-05-02 23:06 - Tighten supporting-material auto-linking to recognized exact-amount uniqueness
+
+### 完成内容
+- 完成任务“收紧辅助材料自动关联为‘识别出金额且同金额唯一’规则”。
+- 已检查运行实例 `trms.db` 中的真实误关联记录：
+  - 材料 [50thICPC邀请函（武汉）.pdf](/home/gsh/workspace/TRMS/data/50thICPC邀请函（武汉）.pdf) 对应库内 material `f9a1a251-29fe-4b27-9947-b14db8ade04c`；
+  - 它在 `2026-05-02 14:57:56` 被识别为 `competition_notice`，识别结果里没有 `amount_cents`；
+  - 但仍在 `2026-05-02 14:58:02` 被自动关联到 72.86 元发票 `7a8abf97-d417-4f1c-98cb-dc52e130ff47`；
+  - 这证明旧规则在“发票后创建/回填自动关联”路径里仍接受“无金额但唯一候选”的不安全自动绑定。
+- 已修改 [src/trms_backend/application/supporting_material_auto_link.py](/home/gsh/workspace/TRMS/src/trms_backend/application/supporting_material_auto_link.py)：
+  - `auto_link_for_invoice(...)` 不再使用“候选发票唯一即可自动绑”的旧逻辑；
+  - `auto_link_for_invoice(...)` 和 `auto_link_for_material(...)` 现在统一走同一条安全规则：
+    - 辅助材料必须先识别出 `amount_cents`
+    - 只考虑同提交人、同任务下金额完全相等的发票
+    - 只有当“同金额候选发票恰好一张”时才允许自动关联
+  - 若没有识别金额、金额不相等、或同金额发票不唯一，都会停止自动关联，改走手动候选路径。
+- 已补后端回归测试：
+  - [tests/test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)
+  - [tests/test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py)
+  - 覆盖：
+    - 发票后创建时，支付记录只有在识别金额与发票金额完全一致时才自动关联
+    - 比赛通知这类无金额辅助材料，即使同提交人当前只有一张发票也不自动关联
+    - 辅助材料先上传后补建发票时，只有“识别金额存在且同金额唯一”才回填自动关联
+- 既有异步识别自动关联测试继续通过，确保市内交通行程单“金额匹配且唯一”主路径未回归。
+- 已更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录本轮实例问题收口任务。
+
+### 根因
+- 自动关联逻辑之前有两条不一致的路径：
+  - `auto_link_for_material(...)` 已要求“候选唯一 + 识别金额匹配”
+  - 但 `auto_link_for_invoice(...)` 仍允许“同提交人候选唯一”就回填自动关联
+- 因此像比赛通知这类没有金额字段的辅助材料，只要当时同提交人落入“唯一候选发票”场景，就会被静默误绑到无关发票上。
+
+### 风险与影响面
+- 本轮有意收紧自动关联成功率，换取确定性；部分过去会被自动绑上的无金额辅助材料，现在会转成手动候选确认。
+- 这会增加少量成员/管理员的手动确认动作，但能避免把比赛通知、订单截图、支付记录等错误静默绑到不相关发票上。
+- 当前仍保留候选列表和手动关联主路径，因此功能闭环不会中断，只是从“自动误绑”改为“显式待确认”。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_materials_api.py -k 'auto_link or recognized_amount or same_amount_invoice_is_unique'`
+  - `uv run pytest tests/test_invoices_api.py -k 'auto_links_existing_same_submitter_supporting_materials or does_not_auto_link_existing_supporting_material_without_recognized_amount or prioritizes_local_transport_itinerary'`
+  - `uv run pytest tests/test_recognition_async_jobs.py -k 'auto_link_ambiguous_local_transport_itinerary or amount_mismatches or backfills_itinerary_link'`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `566/566` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 23:00 - Move paper-invoice creation button below helper text
 
 ### 完成内容
