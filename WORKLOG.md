@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-02 16:50 - Restore member supporting-material entry from workbench and recover dedicated material status route
+
+### 完成内容
+- 完成任务“恢复成员工作台进入本人辅助材料总览的稳定入口”。
+- 成员辅助材料总览路由已恢复为真实页面，而不是再被错误重定向回工作台：
+  - [web/src/app/routes.tsx](/home/gsh/workspace/TRMS/web/src/app/routes.tsx) 将 `/member/materials/status` 从 `LegacyMemberWorkbenchRedirect` 改回 [web/src/app/member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx)；
+  - 这样成员已上传但不处于“待关联辅助材料”列表中的支付记录、比赛通知、行程单、订单截图等材料，重新拥有稳定总览入口。
+- 成员工作台已补回到辅助材料总览的显式入口：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 的侧边导航新增“辅助材料页面”按钮，直接跳转到 `/member/materials/status?taskId=...`；
+  - 同时把工作台导航项从“tab key 直接复用为选中态”收口为独立导航模型，避免新增入口时与现有 tab 选中逻辑互相污染。
+- 前端回归测试已补齐：
+  - [web/src/app/member-legacy-route-redirects.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-legacy-route-redirects.test.tsx) 现在锁定 `/member/materials/status` 保持在真实材料状态页，而 `/member/materials/missing` 仍维持回工作台的旧兼容跳转；
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 锁定工作台侧栏存在“辅助材料页面”入口，并校验跳转地址。
+
+### 根因
+- 最近一轮“成员工作台收口”把多个成员旧入口统一重定向到工作台锚点时，`/member/materials/status` 也被一并收成了工作台状态页。
+- 但工作台状态页只展示待处理事项摘要，不承担“本人所有材料总览”职责；与此同时，工作台侧边导航又只剩“工作状态 / 上传页面 / 发票查看页面”，导致辅助材料总览入口彻底丢失。
+- 结果是：只有“待关联辅助材料”还能通过工作台里的摘要卡片进入详情页；那些已经识别成功、已归票或只是想回看自己辅助材料内容的成员，失去了进入支付记录、比赛通知、行程单等材料详情的稳定入口。
+
+### 风险与影响面
+- 本轮只恢复成员端入口与路由，不改动辅助材料识别、归票、权限或详情页字段逻辑。
+- 当前保守口径是：工作台继续承载“待办闭环”和发票主路径，而“成员材料状态页”负责本人辅助材料总览，不额外把两者再次硬合并成一个超长页面。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-legacy-route-redirects.test.tsx src/app/member-invoice-workbench.test.tsx src/app/member-material-status.test.tsx`
+  - 3 个测试文件、16 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 542 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 16:35 - Simplify member paper-invoice entry to amount and expense type only
 
 ### 完成内容

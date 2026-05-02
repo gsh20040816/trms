@@ -9,6 +9,7 @@ import { AdminMissingMaterialsPage } from "./task-missing-materials";
 import { AdminReviewOverviewPage } from "./admin-review-overview";
 import { AdminSplitEditorPage } from "./admin-split-editor";
 import { MemberMaterialDetailPage } from "./member-material-detail";
+import { MemberMaterialStatusPage } from "./member-material-status";
 import { AdminTaskListPage } from "./admin-task-list";
 import { MemberInvoiceWorkbenchPage } from "./member-invoice-workbench";
 import { MemberInvoiceDetailPage } from "./member-invoice-detail";
@@ -57,7 +58,7 @@ export const routes: RouteObject[] = [
           },
           {
             path: "materials/status",
-            element: <LegacyMemberWorkbenchRedirect hash="#member-workbench-status" />,
+            element: <MemberMaterialStatusPage />,
           },
           {
             path: "invoices/workbench",

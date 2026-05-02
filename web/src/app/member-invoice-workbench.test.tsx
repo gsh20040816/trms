@@ -287,6 +287,10 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(screen.getByRole("link", { name: /工作状态/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /上传页面/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /发票查看页面/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /辅助材料页面/ })).toHaveAttribute(
+      "href",
+      "/member/materials/status?taskId=TASK-OPEN",
+    );
     expect(await screen.findByRole("heading", { name: "需要处理的发票列表" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "发票字段" })).not.toBeInTheDocument();

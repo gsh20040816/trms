@@ -141,13 +141,12 @@ describe("member legacy routes", () => {
     expect(router.state.location.hash).toBe("#member-workbench-upload");
   });
 
-  it("redirects legacy status and missing routes to the workbench status views", async () => {
+  it("keeps the legacy status route on the dedicated material status page and still redirects missing route", async () => {
     const statusRouter = renderLegacyRoute("/member/materials/status?taskId=TASK-OPEN");
 
-    expect(await screen.findByRole("heading", { name: "比赛报销材料提交" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "需要你处理的事项" })).toBeInTheDocument();
-    expect(statusRouter.state.location.pathname).toBe("/member/invoices/workbench");
-    expect(statusRouter.state.location.hash).toBe("#member-workbench-status");
+    expect(await screen.findByRole("heading", { name: "成员材料状态" })).toBeInTheDocument();
+    expect(statusRouter.state.location.pathname).toBe("/member/materials/status");
+    expect(statusRouter.state.location.hash).toBe("");
 
     cleanup();
     clearMockSession();

@@ -177,6 +177,14 @@ const WORKBENCH_TAB_HASHES: Record<WorkbenchTab, string> = {
   invoices: "#member-workbench-invoices",
 };
 
+type WorkbenchNavigationItem = {
+  id: string;
+  selected: boolean;
+  label: string;
+  description: string;
+  to: string;
+};
+
 const INVOICE_QUEUE_GROUP_METADATA: Record<Exclude<InvoiceQueueGroupKey, "ready">, Omit<InvoiceQueueGroup, "items" | "key">> = {
   recognition_pending: {
     title: "识别中",
@@ -1449,25 +1457,37 @@ export function MemberInvoiceWorkbenchPage() {
     && hasRecentUploadTransitioningItems
     && uploadProcessingRefreshAttempts < RECENT_UPLOAD_AUTO_REFRESH_MAX_ATTEMPTS
   );
-  const workbenchNavigationItems = selectedTask
+  const workbenchNavigationItems: WorkbenchNavigationItem[] = selectedTask
     ? [
       {
-        key: "status" as const,
+        id: "status",
+        selected: activeTab === "status",
         label: "工作状态",
         description: `${pendingActionCount > 0 ? `${pendingActionCount} 项待处理` : "当前无明显异常"}`,
         to: buildWorkbenchTabAnchor(selectedTask.id, "status"),
       },
       {
-        key: "upload" as const,
+        id: "upload",
+        selected: activeTab === "upload",
         label: "上传页面",
         description: selectedTask.status === "open" ? "可继续补交材料" : `当前${formatTaskStatus(selectedTask.status)}`,
         to: buildWorkbenchTabAnchor(selectedTask.id, "upload"),
       },
       {
-        key: "invoices" as const,
+        id: "invoices",
+        selected: activeTab === "invoices",
         label: "发票查看页面",
         description: `本人 ${workbenchState.status === "ready" ? workbenchState.items.length : 0} 张 / 共享 ${sharedInvoices.length} 张`,
         to: buildWorkbenchTabAnchor(selectedTask.id, "invoices"),
+      },
+      {
+        id: "materials",
+        selected: false,
+        label: "辅助材料页面",
+        description: workbenchState.status === "ready"
+          ? `${workbenchState.report.counts.material_count} 份本人材料`
+          : "查看本人材料状态",
+        to: `/member/materials/status?taskId=${encodeURIComponent(selectedTask.id)}`,
       },
     ]
     : [];
@@ -1931,9 +1951,9 @@ export function MemberInvoiceWorkbenchPage() {
           <aside className="member-workbench-sidebar" aria-label="用户工作台分类">
             {workbenchNavigationItems.map((item) => (
               <Button
-                key={item.key}
+                key={item.id}
                 component={Link}
-                variant={activeTab === item.key ? "contained" : "text"}
+                variant={item.selected ? "contained" : "text"}
                 to={item.to}
                 className="member-workbench-nav-button"
               >
