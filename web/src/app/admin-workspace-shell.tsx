@@ -31,6 +31,7 @@ import { describeAdminTaskStage } from "./admin-task-stage";
 
 export type AdminModuleKey =
   | "overview"
+  | "create"
   | "tasks"
   | "review"
   | "corrections"
@@ -52,7 +53,22 @@ type AdminModuleDefinition = {
   Icon: typeof DashboardIcon;
 };
 
-const ADMIN_MODULES: AdminModuleDefinition[] = [
+const ADMIN_CONTEXT_FREE_MODULES: AdminModuleDefinition[] = [
+  {
+    key: "overview",
+    title: "首页总览",
+    description: "按任务推进查看当前最紧急的处理事项。",
+    Icon: DashboardIcon,
+  },
+  {
+    key: "create",
+    title: "创建任务",
+    description: "先补齐比赛、成员和费用类别，再进入具体任务处理。",
+    Icon: AssignmentIcon,
+  },
+];
+
+const ADMIN_TASK_CONTEXT_MODULES: AdminModuleDefinition[] = [
   {
     key: "overview",
     title: "首页总览",
@@ -102,8 +118,10 @@ function buildModulePath(moduleKey: AdminModuleKey, taskId?: string | null) {
   switch (moduleKey) {
     case "overview":
       return "/admin";
+    case "create":
+      return "/admin/tasks/new";
     case "tasks":
-      return taskId ? `/admin/tasks/${taskId}` : "/admin/tasks/new";
+      return taskId ? `/admin/tasks/${taskId}` : null;
     case "review":
       return taskId ? `/admin/tasks/${taskId}/review` : null;
     case "corrections":
@@ -125,6 +143,7 @@ export function AdminWorkspaceShell({
   children,
 }: AdminWorkspaceShellProps) {
   const taskStage = task ? describeAdminTaskStage(task.status) : null;
+  const navigationModules = taskId ? ADMIN_TASK_CONTEXT_MODULES : ADMIN_CONTEXT_FREE_MODULES;
 
   return (
     <Box
@@ -170,7 +189,7 @@ export function AdminWorkspaceShell({
               disablePadding
               sx={{ display: "grid", gap: 0.5 }}
             >
-              {ADMIN_MODULES.map((adminModule) => {
+              {navigationModules.map((adminModule) => {
                 const path = buildModulePath(adminModule.key, taskId);
                 const isActive = adminModule.key === activeModule;
                 if (!path) {

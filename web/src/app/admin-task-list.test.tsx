@@ -166,6 +166,9 @@ describe("admin task list page", () => {
     expect(screen.getByLabelText("管理员任务概览")).toBeInTheDocument();
     const moduleNav = screen.getByLabelText("管理员模块导航");
     expect(within(moduleNav).getByText("首页总览").closest("a")).toHaveAttribute("aria-current", "page");
+    expect(within(moduleNav).getByText("创建任务").closest("a")).toHaveAttribute("href", "/admin/tasks/new");
+    expect(within(moduleNav).queryByText("任务管理")).not.toBeInTheDocument();
+    expect(within(moduleNav).queryByText("材料审核")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "当前优先推进任务" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "进入当前优先任务" })).toHaveAttribute(
       "href",

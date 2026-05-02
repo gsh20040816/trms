@@ -281,7 +281,7 @@ export function AdminTaskCreatePage() {
 
   return (
     <AdminWorkspaceShell
-      activeModule="tasks"
+      activeModule="create"
       header={(
         <PageHeader
           eyebrow="任务管理"

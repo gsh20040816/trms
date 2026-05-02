@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -156,6 +156,11 @@ describe("admin task create page", () => {
     renderAdminCreateRoute();
 
     expect(screen.getByRole("heading", { name: "创建报销任务" })).toBeInTheDocument();
+    const moduleNav = screen.getByLabelText("管理员模块导航");
+    expect(within(moduleNav).getByText("创建任务").closest("a")).toHaveAttribute("aria-current", "page");
+    expect(within(moduleNav).getByText("首页总览").closest("a")).toHaveAttribute("href", "/admin");
+    expect(within(moduleNav).queryByText("任务管理")).not.toBeInTheDocument();
+    expect(within(moduleNav).queryByText("材料审核")).not.toBeInTheDocument();
     expect(screen.getByText("输入后会实时向后端检索候选成员。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("输入成员姓名、用户名或学号检索")).toBeInTheDocument();
     expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");

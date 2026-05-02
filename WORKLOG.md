@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-05-02 12:37 - Gate admin task navigation until a task context exists
+
+### 完成内容
+- 完成任务“管理员未进入任务时禁用任务管理页并收口导航”。
+- 收口管理员工作台导航壳层：
+  - [admin-workspace-shell.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-workspace-shell.tsx) 新增 `create` 导航模块，并把管理员导航拆成“两种上下文”：
+    - 无任务上下文时只显示“首页总览”和“创建任务”；
+    - 进入具体任务后才显示“任务管理 / 材料审核 / 成员提醒 / 分摊确认 / 导出打印”。
+  - 同时取消旧逻辑里“无 `taskId` 时把 `任务管理` 链到 `/admin/tasks/new`”的错误映射，避免把创建页伪装成任务管理主页。
+- 同步修正创建页激活态：
+  - [admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx) 改为使用 `activeModule=\"create\"`，确保创建页导航语义与页面标题一致。
+- 补充前端导航回归测试：
+  - [admin-task-list.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.test.tsx) 断言管理员首页无任务上下文时只出现“首页总览 / 创建任务”；
+  - [admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx) 断言创建页保持同样的无任务上下文导航，并高亮“创建任务”；
+  - [admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx) 断言进入具体任务后恢复任务内模块导航，且不再显示“创建任务”。
+
+### 根因
+- `AdminWorkspaceShell` 之前只维护一套固定模块定义，并在缺少 `taskId` 时把 `tasks` 模块直接映射到 `/admin/tasks/new`。
+- 这导致管理员在尚未进入任何具体任务上下文时，侧边导航仍展示任务内模块骨架，且“任务管理”实际落点是创建任务页，页面语义和路由语义不一致。
+
+### 风险与影响面
+- 本轮只调整管理员前端导航壳层和测试，没有改动任务创建、任务详情、权限判断或后端路由。
+- 当前保守边界是：只有拿到具体 `taskId` 后才展示任务内模块；如果后续要补“任务管理总览”独立模块，应在新任务中单独定义其页面和导航语义，而不是再次把创建页复用成任务管理主页。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-task-list.test.tsx admin-task-create.test.tsx admin-task-detail.test.tsx`
+  - 3 个测试文件、12 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 522 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 12:30 - Replace legacy yellow backgrounds with real surface semantics
 
 ### 完成内容

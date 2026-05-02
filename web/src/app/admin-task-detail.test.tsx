@@ -160,6 +160,11 @@ describe("admin task detail page", () => {
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
     const moduleNav = screen.getByLabelText("管理员模块导航");
     expect(within(moduleNav).getByText("任务管理").closest("a")).toHaveAttribute("aria-current", "page");
+    expect(within(moduleNav).getByText("材料审核").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/review");
+    expect(within(moduleNav).getByText("成员提醒").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/corrections");
+    expect(within(moduleNav).getByText("分摊确认").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/splits");
+    expect(within(moduleNav).getByText("导出打印").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/exports");
+    expect(within(moduleNav).queryByText("创建任务")).not.toBeInTheDocument();
     expect(screen.getByLabelText("当前任务上下文")).toHaveTextContent("全国邀请赛");
     expect(screen.getByRole("link", { name: "录入或更正发票" })).toHaveAttribute(
       "href",
