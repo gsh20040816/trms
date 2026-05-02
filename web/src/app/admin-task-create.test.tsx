@@ -41,6 +41,14 @@ async function selectMember(keyword: string, optionLabel: string) {
   fireEvent.click(await screen.findByRole("button", { name: optionLabel }));
 }
 
+async function selectAdministrator(keyword: string, optionLabel: string) {
+  const searchInput = screen.getByLabelText("管理员搜索");
+  fireEvent.change(searchInput, {
+    target: { value: keyword },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: optionLabel }));
+}
+
 async function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("比赛名称"), {
     target: { value: "ICPC 区域赛" },
@@ -109,6 +117,18 @@ describe("admin task create page", () => {
           ],
         }));
       }
+      if (url === "/api/tasks/search/administrator-candidates?keyword=finance&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "admin-2",
+              username: "finance-admin",
+              display_name: "李老师",
+              student_id: null,
+            },
+          ],
+        }));
+      }
       if (url === "/api/tasks") {
         return Promise.resolve(jsonResponse([createdTask]));
       }
@@ -159,6 +179,8 @@ describe("admin task create page", () => {
     expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");
     expect(screen.queryByLabelText("项目/课题信息")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("报销人信息")).not.toBeInTheDocument();
+    expect(screen.getByText("默认已包含当前管理员；可继续追加其他管理员。")).toBeInTheDocument();
+    expect(screen.getByText("admin-1")).toBeInTheDocument();
     expect(screen.getByLabelText("参赛费")).toBeChecked();
     expect(screen.getByLabelText("火车票")).toBeChecked();
     expect(screen.getByLabelText("航空费")).toBeChecked();
@@ -167,6 +189,7 @@ describe("admin task create page", () => {
     expect(screen.getByLabelText("其他")).toBeChecked();
 
     await fillRequiredTaskForm();
+    await selectAdministrator("finance", "李老师 / finance-admin");
     fireEvent.change(screen.getByLabelText("发票抬头"), {
       target: { value: "同济大学" },
     });
@@ -193,6 +216,7 @@ describe("admin task create page", () => {
       "other",
     ]);
     expect(requestBody.administrator_id).toBe("admin-1");
+    expect(requestBody.administrator_ids).toEqual(["admin-1", "admin-2"]);
     expect(requestBody).not.toHaveProperty("project_info");
     expect(requestBody).not.toHaveProperty("reimburser_info");
     expect(requestBody.invoice_title).toBe("同济大学");
@@ -246,6 +270,59 @@ describe("admin task create page", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("searches, deduplicates and removes administrator candidates", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/search/administrator-candidates?keyword=finance&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "admin-2",
+              username: "finance-admin",
+              display_name: "李老师",
+              student_id: null,
+            },
+            {
+              actor_id: "admin-1",
+              username: "admin1",
+              display_name: "admin1",
+              student_id: null,
+            },
+          ],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in test: ${url}`);
+    });
+
+    renderAdminCreateRoute();
+
+    expect(screen.getByRole("button", { name: "admin-1" })).toBeInTheDocument();
+
+    await selectAdministrator("finance", "李老师 / finance-admin");
+    expect(screen.getByRole("button", { name: "李老师 / finance-admin" })).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("管理员候选列表")).queryByRole("button", { name: "admin1" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("管理员搜索"), {
+      target: { value: "finance" },
+    });
+    expect(await screen.findByText("没有匹配的管理员。")).toBeInTheDocument();
+
+    const selectedAdministratorChip = screen.getByRole("button", { name: "李老师 / finance-admin" });
+    selectedAdministratorChip.focus();
+    fireEvent.keyDown(selectedAdministratorChip, { key: "Backspace" });
+    fireEvent.keyUp(selectedAdministratorChip, { key: "Backspace" });
+    expect(
+      within(screen.getByLabelText("已选管理员列表")).queryByRole("button", { name: "李老师 / finance-admin" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("管理员候选列表")).getByRole("button", { name: "李老师 / finance-admin" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows backend errors when task creation fails", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
@@ -258,6 +335,18 @@ describe("admin task create page", () => {
               username: "member1",
               display_name: "张三",
               student_id: "2250001",
+            },
+          ],
+        }));
+      }
+      if (url === "/api/tasks/search/administrator-candidates?keyword=finance&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "admin-2",
+              username: "finance-admin",
+              display_name: "李老师",
+              student_id: null,
             },
           ],
         }));
@@ -279,6 +368,7 @@ describe("admin task create page", () => {
     renderAdminCreateRoute();
 
     await fillRequiredTaskForm();
+    await selectAdministrator("finance", "李老师 / finance-admin");
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();

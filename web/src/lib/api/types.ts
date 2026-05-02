@@ -171,6 +171,7 @@ export type ReimbursementTask = {
   member_summaries?: TaskMemberSummary[];
   fee_categories: string[];
   administrator_id: string;
+  administrator_ids?: string[];
   project_info: string;
   reimburser_info: string;
   invoice_title: string;
@@ -188,6 +189,7 @@ export type TaskCreateInput = {
   member_ids: string[];
   fee_categories: string[];
   administrator_id: string;
+  administrator_ids?: string[];
   invoice_title?: string | null;
   tax_number?: string | null;
 };

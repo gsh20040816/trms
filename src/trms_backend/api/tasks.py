@@ -295,6 +295,23 @@ def build_task_router(
         )
         return {"items": [build_user_search_summary(user) for user in users]}
 
+    @router.get("/search/administrator-candidates")
+    def search_administrator_candidates(
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        keyword: Annotated[str, Query(min_length=1, max_length=128)],
+        limit: Annotated[int, Query(ge=1, le=20)] = 10,
+    ):
+        ensure_task_management_role(
+            identity,
+            forbidden_detail="actor is not allowed to search task administrator candidates",
+        )
+        users = auth_repository.search_users(
+            keyword=keyword,
+            roles=(UserRole.ADMIN, UserRole.SYSTEM_ADMIN),
+            limit=limit,
+        )
+        return {"items": [build_user_search_summary(user) for user in users]}
+
     @router.post("/{task_id}/automatic-reminder-tasks", status_code=status.HTTP_201_CREATED)
     def generate_automatic_reminder_tasks(
         task_id: str,

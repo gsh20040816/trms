@@ -183,6 +183,42 @@ def test_admin_bearer_review_summary_and_material_reminders_do_not_require_actor
     assert list_response.json()["items"][0]["administrator_id"] == "admin-1"
 
 
+def test_admin_bearer_can_search_administrator_candidates_without_actor_fields(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = register_and_get_token(
+        client,
+        username="admin1",
+        role="admin",
+        actor_id="admin-1",
+        member_code=None,
+    )
+    register_and_get_token(
+        client,
+        username="finance-admin",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+
+    response = client.get(
+        "/api/tasks/search/administrator-candidates",
+        headers=auth_headers(admin_token),
+        params={"keyword": "finance"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "actor_id": "admin-2",
+                "username": "finance-admin",
+                "display_name": "finance-admin",
+                "student_id": None,
+            }
+        ]
+    }
+
+
 def test_admin_bearer_task_management_routes_bind_to_owned_tasks(tmp_path):
     client = make_client(tmp_path)
     admin_token = register_and_get_token(

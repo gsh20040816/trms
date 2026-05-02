@@ -28,7 +28,7 @@ type TaskCreateFormState = {
   deadline: string;
   memberIds: string[];
   feeCategories: ExpenseType[];
-  administratorId: string;
+  administratorIds: string[];
   invoiceTitle: string;
   taxNumber: string;
 };
@@ -55,7 +55,7 @@ function buildInitialFormState(administratorId: string): TaskCreateFormState {
     deadline: "",
     memberIds: [],
     feeCategories: [...DEFAULT_FEE_CATEGORIES],
-    administratorId,
+    administratorIds: administratorId.trim().length > 0 ? [administratorId] : [],
     invoiceTitle: "",
     taxNumber: "",
   };
@@ -106,8 +106,12 @@ function validateForm(formState: TaskCreateFormState): {
   if (formState.feeCategories.length === 0) {
     errors.feeCategories = "至少选择一个费用类别。";
   }
-  if (formState.administratorId.trim().length === 0) {
-    errors.administratorId = "管理员标识不能为空。";
+  const normalizedAdministrators = formState.administratorIds.map((administratorId) => administratorId.trim());
+  const hasAdministrator = normalizedAdministrators.some((administratorId) => administratorId.length > 0);
+  if (!hasAdministrator) {
+    errors.administratorIds = "至少选择一名管理员。";
+  } else if (normalizedAdministrators.some((administratorId) => administratorId.length === 0)) {
+    errors.administratorIds = "管理员列表不能包含空标识。";
   }
 
   if (Object.keys(errors).length > 0) {
@@ -127,7 +131,8 @@ function validateForm(formState: TaskCreateFormState): {
       deadline: new Date(formState.deadline).toISOString(),
       member_ids: normalizedMembers,
       fee_categories: formState.feeCategories,
-      administrator_id: formState.administratorId.trim(),
+      administrator_id: normalizedAdministrators[0] ?? "",
+      administrator_ids: normalizedAdministrators,
       invoice_title: normalizeOptionalField(formState.invoiceTitle),
       tax_number: normalizeOptionalField(formState.taxNumber),
     },
@@ -142,17 +147,25 @@ export function AdminTaskCreatePage() {
   );
   const [memberInputValue, setMemberInputValue] = useState("");
   const [memberOptions, setMemberOptions] = useState<UserSearchSummary[]>([]);
+  const [administratorInputValue, setAdministratorInputValue] = useState("");
+  const [administratorOptions, setAdministratorOptions] = useState<UserSearchSummary[]>([]);
   const [isSearchingMembers, setIsSearchingMembers] = useState(false);
+  const [isSearchingAdministrators, setIsSearchingAdministrators] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrorState>({});
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [memberSearchError, setMemberSearchError] = useState<unknown>(null);
+  const [administratorSearchError, setAdministratorSearchError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const memberSearchTimerRef = useRef<number | null>(null);
+  const administratorSearchTimerRef = useRef<number | null>(null);
 
   useEffect(() => (
     () => {
       if (memberSearchTimerRef.current !== null) {
         window.clearTimeout(memberSearchTimerRef.current);
+      }
+      if (administratorSearchTimerRef.current !== null) {
+        window.clearTimeout(administratorSearchTimerRef.current);
       }
     }
   ), []);
@@ -166,6 +179,14 @@ export function AdminTaskCreatePage() {
       actor_id: memberId,
       username: memberId,
       display_name: memberId,
+      student_id: null,
+    }
+  ));
+  const selectedAdministratorOptions = formState.administratorIds.map((administratorId) => (
+    administratorOptions.find((option) => option.actor_id === administratorId) ?? {
+      actor_id: administratorId,
+      username: administratorId,
+      display_name: administratorId,
       student_id: null,
     }
   ));
@@ -200,13 +221,28 @@ export function AdminTaskCreatePage() {
       return;
     }
     updateField("memberIds", [...formState.memberIds, member.actor_id]);
-    setMemberOptions((current) => current.filter((option) => option.actor_id !== member.actor_id));
   }
 
   function removeMember(memberId: string) {
     updateField(
       "memberIds",
       formState.memberIds.filter((currentMemberId) => currentMemberId !== memberId),
+    );
+  }
+
+  function addAdministrator(administrator: UserSearchSummary) {
+    if (formState.administratorIds.includes(administrator.actor_id)) {
+      return;
+    }
+    updateField("administratorIds", [...formState.administratorIds, administrator.actor_id]);
+  }
+
+  function removeAdministrator(administratorId: string) {
+    updateField(
+      "administratorIds",
+      formState.administratorIds.filter(
+        (currentAdministratorId) => currentAdministratorId !== administratorId,
+      ),
     );
   }
 
@@ -242,8 +278,43 @@ export function AdminTaskCreatePage() {
     }, 250);
   }
 
+  function handleAdministratorKeywordChange(value: string) {
+    setAdministratorInputValue(value);
+    const keyword = value.trim();
+    if (administratorSearchTimerRef.current !== null) {
+      window.clearTimeout(administratorSearchTimerRef.current);
+      administratorSearchTimerRef.current = null;
+    }
+
+    if (keyword.length === 0) {
+      setAdministratorOptions([]);
+      setAdministratorSearchError(null);
+      setIsSearchingAdministrators(false);
+      return;
+    }
+    setIsSearchingAdministrators(true);
+    setAdministratorSearchError(null);
+    administratorSearchTimerRef.current = window.setTimeout(() => {
+      void trmsApi.searchTaskAdministratorCandidates(keyword, 10)
+        .then((response) => {
+          setAdministratorOptions(response.items);
+        })
+        .catch((error) => {
+          setAdministratorOptions([]);
+          setAdministratorSearchError(error);
+        })
+        .finally(() => {
+          setIsSearchingAdministrators(false);
+          administratorSearchTimerRef.current = null;
+        });
+    }, 250);
+  }
+
   const visibleMemberOptions = memberOptions.filter(
     (option) => !formState.memberIds.includes(option.actor_id),
+  );
+  const visibleAdministratorOptions = administratorOptions.filter(
+    (option) => !formState.administratorIds.includes(option.actor_id),
   );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -484,19 +555,84 @@ export function AdminTaskCreatePage() {
               <h2>管理员信息</h2>
             </div>
           </div>
-          <div className="admin-form-grid">
-            <TextField
-              label="管理员标识"
-              name="administrator-id"
-              value={formState.administratorId}
-              onChange={(event) => {
-                updateField("administratorId", event.target.value);
-              }}
-              error={Boolean(validationErrors.administratorId)}
-              helperText={validationErrors.administratorId}
-              fullWidth
-            />
-          </div>
+          <Stack spacing={3}>
+            <Stack spacing={0.75}>
+              <TextField
+                label="管理员搜索"
+                value={administratorInputValue}
+                onChange={(event) => {
+                  handleAdministratorKeywordChange(event.target.value);
+                }}
+                placeholder="输入管理员姓名、用户名或管理员标识检索"
+                error={Boolean(validationErrors.administratorIds)}
+                helperText={
+                  validationErrors.administratorIds
+                  ?? (
+                    isSearchingAdministrators
+                      ? "正在检索管理员..."
+                      : "默认已包含当前管理员；可继续追加其他管理员。"
+                  )
+                }
+                fullWidth
+              />
+
+              {administratorInputValue.trim().length > 0 ? (
+                <Stack
+                  spacing={0.5}
+                  aria-label="管理员候选列表"
+                  sx={{
+                    borderRadius: 3,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    bgcolor: "background.paper",
+                    py: 0.5,
+                    overflow: "hidden",
+                  }}
+                >
+                  {administratorSearchError ? (
+                    <Typography variant="body2" color="error" sx={{ px: 1.5, py: 1 }}>
+                      管理员检索失败，请稍后重试。
+                    </Typography>
+                  ) : null}
+                  {!administratorSearchError && visibleAdministratorOptions.length === 0 && !isSearchingAdministrators ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, py: 1 }}>
+                      没有匹配的管理员。
+                    </Typography>
+                  ) : null}
+                  {visibleAdministratorOptions.map((option) => (
+                    <Button
+                      key={option.actor_id}
+                      variant="text"
+                      color="inherit"
+                      sx={{
+                        justifyContent: "flex-start",
+                        borderRadius: 0,
+                        px: 1.5,
+                        py: 1,
+                      }}
+                      onClick={() => {
+                        addAdministrator(option);
+                      }}
+                    >
+                      {formatUserSearchSummary(option)}
+                    </Button>
+                  ))}
+                </Stack>
+              ) : null}
+            </Stack>
+
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="已选管理员列表">
+              {selectedAdministratorOptions.map((administrator) => (
+                <Chip
+                  key={administrator.actor_id}
+                  label={formatUserSearchSummary(administrator)}
+                  onDelete={() => {
+                    removeAdministrator(administrator.actor_id);
+                  }}
+                />
+              ))}
+            </Stack>
+          </Stack>
         </section>
 
         <section className="status-card admin-form-card">

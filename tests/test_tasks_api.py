@@ -595,6 +595,92 @@ def test_search_member_candidates_rejects_non_administrator(tmp_path):
     )
 
 
+def test_search_administrator_candidates_returns_matching_admins(tmp_path):
+    client = make_client(tmp_path)
+    register_and_get_token(
+        client,
+        username="ops-admin",
+        role="admin",
+        actor_id="admin-ops",
+        member_code=None,
+    )
+    register_and_get_token(
+        client,
+        username="finance-admin",
+        role="admin",
+        actor_id="admin-finance",
+        member_code=None,
+    )
+    register_and_get_token(
+        client,
+        username="root",
+        role="system_admin",
+        actor_id="sys-root",
+        member_code=None,
+    )
+    register_and_get_token(
+        client,
+        username="alice",
+        role="member",
+        actor_id="member-actor-1",
+        member_code="2250001",
+    )
+
+    response = client.get(
+        "/api/tasks/search/administrator-candidates",
+        params={"keyword": "admin", "limit": 10},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "actor_id": "admin-ops",
+                "username": "ops-admin",
+                "display_name": "ops-admin",
+                "student_id": None,
+            },
+            {
+                "actor_id": "admin-finance",
+                "username": "finance-admin",
+                "display_name": "finance-admin",
+                "student_id": None,
+            },
+            {
+                "actor_id": "admin-1",
+                "username": "admin1",
+                "display_name": "admin1",
+                "student_id": None,
+            },
+        ]
+    }
+
+
+def test_search_administrator_candidates_rejects_non_administrator(tmp_path):
+    client = make_client(tmp_path)
+    member_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="member-actor-1",
+        member_code="2250001",
+    )
+
+    response = client.get(
+        "/api/tasks/search/administrator-candidates",
+        params={"keyword": "admin"},
+        headers=auth_headers(member_token),
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="actor is not allowed to search task administrator candidates",
+    )
+
+
 def test_task_queries_require_bearer_and_enforce_scope(tmp_path):
     client = make_client(tmp_path)
     task = create_task(client)

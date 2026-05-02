@@ -212,6 +212,15 @@ export const trmsApi = {
     );
   },
 
+  searchTaskAdministratorCandidates(keyword: string, limit = 10) {
+    return apiClient.request<ApiListResponse<UserSearchSummary>>(
+      `/tasks/search/administrator-candidates${buildQuery({
+        keyword: keyword.trim(),
+        limit: String(limit),
+      })}`,
+    );
+  },
+
   getTaskReviewSummary(taskId: string, actorId: string) {
     return apiClient.request<TaskReviewSummary>(
       `/tasks/${encodeSegment(taskId)}/review-summary${buildActorScopedQuery(actorId)}`,

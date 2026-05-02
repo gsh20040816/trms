@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-05-02 13:36 - Add administrator candidate search and multi-admin selection in task creation
+
+### 完成内容
+- 完成任务“为管理员选择补齐远程检索接口并复用创建任务页交互”。
+- 后端补齐管理员候选远程检索接口：
+  - [src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py) 新增 `GET /api/tasks/search/administrator-candidates`，仅允许 `admin` / `system_admin` 调用；
+  - 复用现有 `auth_repository.search_users(...)`，按 `username`、`display_name`、`actor_id` 做管理员/系统管理员候选检索，避免为本轮任务扩散到仓储或 schema 改造。
+- 前端创建任务页切到多管理员检索交互：
+  - [web/src/app/admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx) 将单个“管理员标识”文本框改为“默认带当前管理员 + 可继续远程搜索追加管理员”的多选交互；
+  - 创建页提交时同时发送 `administrator_id` 与 `administrator_ids`，保持“首个管理员仍为兼容主字段，其余管理员走完整集合”的现有兼容策略；
+  - 成员与管理员候选列表都改为“缓存候选对象、仅在展示层过滤已选项”，避免选中后标签退化成裸 `actor_id`。
+- API 类型与客户端同步支持多管理员创建：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)、[web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts) 补齐 `administrator_ids` 和管理员候选检索调用。
+- 补充前后端回归测试：
+  - [tests/test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py) 覆盖管理员候选检索成功与非管理员拒绝；
+  - [tests/test_web_bearer_request_identity_api.py](/home/gsh/workspace/TRMS/tests/test_web_bearer_request_identity_api.py) 覆盖 bearer 身份下管理员候选检索不需要额外 `actor_id`；
+  - [web/src/app/admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx) 覆盖默认已选当前管理员、管理员候选检索、添加、去重、移除后回到候选列表，以及创建请求包含 `administrator_ids`。
+
+### 根因
+- 上一轮虽然已经把任务模型与授权链路切到 `administrator_ids`，但管理员创建任务页仍保留单个 `administrator_id` 文本框，且后端只有成员候选检索接口。
+- 这会造成“数据层支持多管理员，但创建主路径无法可靠选择多个管理员”的断层：管理员只能手填单值标识，既没有候选校验，也无法复用成员检索主路径。
+- 因此本轮需要补齐管理员候选检索和创建页多选交互，先把“多管理员任务创建”闭环补完整，再把详情页和其它管理员主路径展示留给后续任务处理。
+
+### 风险与影响面
+- 本轮只覆盖创建任务主路径，没有改动任务详情页、多管理员展示文案或其它管理员页面中的“单负责人”展示；这些仍留给后续任务“收口任务详情页与管理员主路径的多管理员展示和编辑”处理。
+- 当前保守兼容策略保持不变：创建请求与响应仍保留 `administrator_id` 作为主管理员字段，同时新增/沿用 `administrator_ids` 作为完整管理员集合。
+- 本轮未改变管理员候选匹配规则的底层实现，继续复用现有 `search_users` 的包含匹配和创建时间排序；若后续需要更复杂的权重排序，应单独拆任务处理。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py tests/test_web_bearer_request_identity_api.py`
+  - 67 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-task-create.test.tsx`
+  - 1 个测试文件、5 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 534 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 13:27 - Switch task authorization and admin task listings to administrator sets
 
 ### 完成内容
