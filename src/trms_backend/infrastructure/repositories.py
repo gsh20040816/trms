@@ -283,6 +283,41 @@ class SqlAlchemyAuthRepository(AuthRepository):
         matched_users.sort(key=lambda user: normalized_identifiers.index(user.member_code or user.actor_id))
         return matched_users
 
+    def search_users(
+        self,
+        *,
+        keyword: str,
+        roles: tuple[UserRole, ...],
+        limit: int,
+    ) -> list[AuthenticatedUser]:
+        normalized_keyword = keyword.strip().lower()
+        if not normalized_keyword or limit <= 0:
+            return []
+
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(select(UserAccountRow).order_by(UserAccountRow.created_at)).all()
+
+        matched_users: list[AuthenticatedUser] = []
+        for row in rows:
+            row_roles = _roles_from_row(row)
+            if roles and not any(role in row_roles for role in roles):
+                continue
+
+            searchable_values = (
+                row.username,
+                row.display_name,
+                row.member_code or "",
+                row.actor_id,
+            )
+            if not any(normalized_keyword in value.lower() for value in searchable_values if value):
+                continue
+
+            matched_users.append(_authenticated_user_from_row(row))
+            if len(matched_users) >= limit:
+                break
+
+        return matched_users
+
     def create_session(self, *, user_id: str, token_hash: str, active_role: UserRole) -> None:
         with session_scope(self._session_factory) as session:
             session.add(

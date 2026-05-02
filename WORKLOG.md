@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-05-02 12:12 - Fix real-time backend member search in admin task creation
+
+### 完成内容
+- 完成任务“修复管理员创建任务时成员名单未实时请求后端检索候选成员”。
+- 后端新增受控成员检索接口：
+  - [auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py) 为认证仓储补充 `search_users(...)` 能力；
+  - [repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py) 新增按用户名、显示名称、学号和 `actor_id` 的成员检索实现，并限制角色为成员；
+  - [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py) 新增 `GET /api/tasks/search/member-candidates`，仅管理员/系统管理员可调用。
+- 前端创建任务页成员选择改为真实搜索建议交互：
+  - [admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx) 不再使用本地空 `Autocomplete` 和“手输后回车”的伪交互；
+  - 现在输入成员关键字后，会实时请求后端，并在搜索框下直接展示候选成员列表；
+  - 点击候选成员即可加入任务成员名单，已选成员不会继续出现在候选区；
+  - 已选成员仍以 Chip 形式展示，支持删除。
+- 前端与后端类型和测试同步更新：
+  - [types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)、[trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)、[ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts) 新增成员检索摘要类型与格式化；
+  - [test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py) 补充成员检索成功和权限拒绝测试；
+  - [admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx) 改为覆盖“输入关键字 -> 显示候选 -> 点击加入 -> 创建任务”主路径。
+
+### 根因
+- 创建任务页之前使用的是 `Autocomplete` + `freeSolo` + 空 `options`，没有任何后端检索请求，所谓“搜索”只是允许管理员手动输入一段字符串。
+- 这导致前端根本无法根据当前输入实时获得成员候选，更无法保证最终写入任务的是能用于权限判断的真实成员标识。
+- 真正的问题不是“过滤算法不够好”，而是成员选择链路从一开始就没有接后端真实成员数据。
+
+### 风险与影响面
+- 本轮只修复“创建任务时成员实时检索”这一个最小任务，没有同时处理你新提的多管理员、默认全选费用类别、去掉项目/报销人字段等后续需求；这些需求已补入 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md) 待后续逐项实现。
+- 当前候选加入任务时写入的是成员 `actor_id`，这是为了和现有任务权限判断保持一致；如果后续希望统一把任务成员底层标识迁移为别的字段，需要单独调整权限与读模型。
+- 全量验证中 `web` 仍存在 2 条既有 `react-hooks/exhaustive-deps` warning，位于 [task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py -k 'member_candidates or get_task_members'`
+  - 3 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-task-create.test.tsx`
+  - 1 个测试文件、3 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - pytest 522 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - `web` lint 无 error，仍保留 2 条既有 `react-hooks/exhaustive-deps` warning；
+  - 其余验证结果以下一轮补录为准，本轮在收到新的交互反馈后先继续收口成员搜索交互实现。
+
 ## 2026-05-02 11:49 - Simplify registration by removing actor id input
 
 ### 完成内容

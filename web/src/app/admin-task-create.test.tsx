@@ -33,15 +33,15 @@ function renderAdminCreateRoute() {
   render(<RouterProvider router={router} />);
 }
 
-function addMember(memberId: string) {
-  const input = screen.getByLabelText("成员名单");
-  fireEvent.change(input, {
-    target: { value: memberId },
+async function selectMember(keyword: string, optionLabel: string) {
+  const searchInput = screen.getByLabelText("成员名单搜索");
+  fireEvent.change(searchInput, {
+    target: { value: keyword },
   });
-  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.click(await screen.findByRole("button", { name: optionLabel }));
 }
 
-function fillRequiredTaskForm() {
+async function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("比赛名称"), {
     target: { value: "ICPC 区域赛" },
   });
@@ -57,7 +57,7 @@ function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("提交截止时间"), {
     target: { value: "2026-12-01T10:00" },
   });
-  addMember("2250001");
+  await selectMember("2250", "张三 / member1 / 2250001");
   fireEvent.click(screen.getByLabelText("参赛费"));
   fireEvent.change(screen.getByLabelText("项目/课题信息"), {
     target: { value: "ACM competition project" },
@@ -104,6 +104,18 @@ describe("admin task create page", () => {
       if (url === "/api/tasks" && init?.method === "POST") {
         return Promise.resolve(jsonResponse(createdTask, { status: 201 }));
       }
+      if (url === "/api/tasks/search/member-candidates?keyword=2250&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "member-actor-1",
+              username: "member1",
+              display_name: "张三",
+              student_id: "2250001",
+            },
+          ],
+        }));
+      }
       if (url === "/api/tasks") {
         return Promise.resolve(jsonResponse([createdTask]));
       }
@@ -144,10 +156,10 @@ describe("admin task create page", () => {
     renderAdminCreateRoute();
 
     expect(screen.getByRole("heading", { name: "创建报销任务" })).toBeInTheDocument();
-    expect(screen.getByText("当前阶段请填写成员姓名或学号字符串，系统会把它作为该任务内的成员标识；不要填写内部数据库 ID。")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("输入成员姓名或学号后按回车添加")).toBeInTheDocument();
+    expect(screen.getByText("输入后会实时向后端检索候选成员。")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("输入成员姓名、用户名或学号检索")).toBeInTheDocument();
 
-    fillRequiredTaskForm();
+    await fillRequiredTaskForm();
     fireEvent.change(screen.getByLabelText("发票抬头"), {
       target: { value: "同济大学" },
     });
@@ -164,7 +176,7 @@ describe("admin task create page", () => {
     expect(postCall).toBeTruthy();
     const requestBody = JSON.parse((postCall?.[1]?.body as string) ?? "{}") as Record<string, unknown>;
     expect(requestBody.competition_name).toBe("ICPC 区域赛");
-    expect(requestBody.member_ids).toEqual(["2250001"]);
+    expect(requestBody.member_ids).toEqual(["member-actor-1"]);
     expect(requestBody.fee_categories).toEqual(["registration"]);
     expect(requestBody.administrator_id).toBe("admin-1");
     expect(requestBody.invoice_title).toBe("同济大学");
@@ -212,6 +224,18 @@ describe("admin task create page", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
 
+      if (url === "/api/tasks/search/member-candidates?keyword=2250&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "member-actor-1",
+              username: "member1",
+              display_name: "张三",
+              student_id: "2250001",
+            },
+          ],
+        }));
+      }
       if (url === "/api/tasks" && init?.method === "POST") {
         return Promise.resolve(jsonResponse(
           {
@@ -228,7 +252,7 @@ describe("admin task create page", () => {
 
     renderAdminCreateRoute();
 
-    fillRequiredTaskForm();
+    await fillRequiredTaskForm();
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();

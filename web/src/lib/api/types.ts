@@ -223,6 +223,13 @@ export type TaskMemberSummary = {
   student_id: string | null;
 };
 
+export type UserSearchSummary = {
+  actor_id: string;
+  username: string;
+  display_name: string;
+  student_id: string | null;
+};
+
 export type MaterialRecord = {
   id: string;
   status: MaterialStatus;

@@ -1,21 +1,23 @@
-import { startTransition, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import Autocomplete from "@mui/material/Autocomplete";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
+import Chip from "@mui/material/Chip";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import FormGroup from "@mui/material/FormGroup";
 import FormHelperText from "@mui/material/FormHelperText";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader } from "../components/dashboard";
 import { useAuthSession } from "./auth-store";
 import { trmsApi } from "../lib/api/trms";
-import type { ExpenseType, TaskCreateInput } from "../lib/api/types";
+import type { ExpenseType, TaskCreateInput, UserSearchSummary } from "../lib/api/types";
+import { formatUserSearchSummary } from "../lib/ui-text";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 
 type TaskCreateFormState = {
@@ -149,13 +151,34 @@ export function AdminTaskCreatePage() {
     buildInitialFormState(session?.actorId ?? ""),
   );
   const [memberInputValue, setMemberInputValue] = useState("");
+  const [memberOptions, setMemberOptions] = useState<UserSearchSummary[]>([]);
+  const [isSearchingMembers, setIsSearchingMembers] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrorState>({});
   const [submitError, setSubmitError] = useState<unknown>(null);
+  const [memberSearchError, setMemberSearchError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const memberSearchTimerRef = useRef<number | null>(null);
+
+  useEffect(() => (
+    () => {
+      if (memberSearchTimerRef.current !== null) {
+        window.clearTimeout(memberSearchTimerRef.current);
+      }
+    }
+  ), []);
 
   if (!session || session.role !== "admin") {
     return null;
   }
+
+  const selectedMemberOptions = formState.memberIds.map((memberId) => (
+    memberOptions.find((option) => option.actor_id === memberId) ?? {
+      actor_id: memberId,
+      username: memberId,
+      display_name: memberId,
+      student_id: null,
+    }
+  ));
 
   function updateField<Key extends keyof TaskCreateFormState>(
     key: Key,
@@ -182,14 +205,56 @@ export function AdminTaskCreatePage() {
     updateField("feeCategories", nextCategories);
   }
 
-  function commitMemberInput() {
-    const normalized = memberInputValue.trim();
-    if (normalized.length === 0) {
+  function addMember(member: UserSearchSummary) {
+    if (formState.memberIds.includes(member.actor_id)) {
       return;
     }
-    updateField("memberIds", [...formState.memberIds, normalized]);
-    setMemberInputValue("");
+    updateField("memberIds", [...formState.memberIds, member.actor_id]);
+    setMemberOptions((current) => current.filter((option) => option.actor_id !== member.actor_id));
   }
+
+  function removeMember(memberId: string) {
+    updateField(
+      "memberIds",
+      formState.memberIds.filter((currentMemberId) => currentMemberId !== memberId),
+    );
+  }
+
+  function handleMemberKeywordChange(value: string) {
+    setMemberInputValue(value);
+    const keyword = value.trim();
+    if (memberSearchTimerRef.current !== null) {
+      window.clearTimeout(memberSearchTimerRef.current);
+      memberSearchTimerRef.current = null;
+    }
+
+    if (keyword.length === 0) {
+      setMemberOptions([]);
+      setMemberSearchError(null);
+      setIsSearchingMembers(false);
+      return;
+    }
+    setIsSearchingMembers(true);
+    setMemberSearchError(null);
+    memberSearchTimerRef.current = window.setTimeout(() => {
+      void trmsApi.searchTaskMemberCandidates(keyword, 10)
+        .then((response) => {
+          setMemberOptions(response.items);
+        })
+        .catch((error) => {
+          setMemberOptions([]);
+          setMemberSearchError(error);
+        })
+        .finally(() => {
+          setIsSearchingMembers(false);
+          memberSearchTimerRef.current = null;
+        });
+    }, 250);
+  }
+
+  const visibleMemberOptions = memberOptions.filter(
+    (option) => !formState.memberIds.includes(option.actor_id),
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -324,43 +389,78 @@ export function AdminTaskCreatePage() {
           </div>
 
           <Stack spacing={3}>
-            <Autocomplete
-              multiple
-              freeSolo
-              options={[]}
-              value={formState.memberIds}
-              inputValue={memberInputValue}
-              onInputChange={(_event, value, reason) => {
-                if (reason === "reset") {
-                  setMemberInputValue("");
-                  return;
-                }
-                setMemberInputValue(value);
-              }}
-              onChange={(_event, value) => {
-                updateField(
-                  "memberIds",
-                  value
-                    .map((memberId) => memberId.trim())
-                    .filter((memberId) => memberId.length > 0),
-                );
-              }}
-              onKeyDown={(event) => {
-                if ((event.key === "Enter" || event.key === ",") && memberInputValue.trim().length > 0) {
-                  event.preventDefault();
-                  commitMemberInput();
-                }
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="成员名单"
-                  placeholder="输入成员姓名或学号后按回车添加"
-                  error={Boolean(validationErrors.memberIds)}
-                  helperText={validationErrors.memberIds ?? "当前阶段请填写成员姓名或学号字符串，系统会把它作为该任务内的成员标识；不要填写内部数据库 ID。"}
+            <Stack spacing={0.75}>
+              <TextField
+                label="成员名单搜索"
+                value={memberInputValue}
+                onChange={(event) => {
+                  handleMemberKeywordChange(event.target.value);
+                }}
+                placeholder="输入成员姓名、用户名或学号检索"
+                helperText={isSearchingMembers ? "正在检索成员..." : "输入后会实时向后端检索候选成员。"}
+                fullWidth
+              />
+
+              {memberInputValue.trim().length > 0 ? (
+                <Stack
+                  spacing={0.5}
+                  aria-label="成员候选列表"
+                  sx={{
+                    borderRadius: 3,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    bgcolor: "background.paper",
+                    py: 0.5,
+                    overflow: "hidden",
+                  }}
+                >
+                  {memberSearchError ? (
+                    <Typography variant="body2" color="error" sx={{ px: 1.5, py: 1 }}>
+                      成员检索失败，请稍后重试。
+                    </Typography>
+                  ) : null}
+                  {!memberSearchError && visibleMemberOptions.length === 0 && !isSearchingMembers ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, py: 1 }}>
+                      没有匹配的成员。
+                    </Typography>
+                  ) : null}
+                  {visibleMemberOptions.map((option) => (
+                    <Button
+                      key={option.actor_id}
+                      variant="text"
+                      color="inherit"
+                      sx={{
+                        justifyContent: "flex-start",
+                        borderRadius: 0,
+                        px: 1.5,
+                        py: 1,
+                      }}
+                      onClick={() => {
+                        addMember(option);
+                      }}
+                    >
+                      {formatUserSearchSummary(option)}
+                    </Button>
+                  ))}
+                </Stack>
+              ) : null}
+            </Stack>
+
+            {validationErrors.memberIds ? (
+              <FormHelperText error>{validationErrors.memberIds}</FormHelperText>
+            ) : null}
+
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="已选成员列表">
+              {selectedMemberOptions.map((member) => (
+                <Chip
+                  key={member.actor_id}
+                  label={formatUserSearchSummary(member)}
+                  onDelete={() => {
+                    removeMember(member.actor_id);
+                  }}
                 />
-              )}
-            />
+              ))}
+            </Stack>
 
             <FormControl error={Boolean(validationErrors.feeCategories)} component="fieldset" variant="standard">
               <FormGroup className="checkbox-grid" aria-label="费用类别">

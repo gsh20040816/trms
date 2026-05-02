@@ -58,15 +58,15 @@ function renderRoute(entry: string) {
   return render(<RouterProvider router={router} />);
 }
 
-function addMember(memberId: string) {
-  const input = screen.getByLabelText("成员名单");
+async function addMember(keyword: string, optionLabel: string) {
+  const input = screen.getByLabelText("成员名单搜索");
   fireEvent.change(input, {
-    target: { value: memberId },
+    target: { value: keyword },
   });
-  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.click(await screen.findByRole("button", { name: optionLabel }));
 }
 
-function fillRequiredTaskForm() {
+async function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("比赛名称"), {
     target: { value: "E2E 主流程任务" },
   });
@@ -82,7 +82,7 @@ function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("提交截止时间"), {
     target: { value: "2026-11-10T18:00" },
   });
-  addMember("2250001");
+  await addMember("2250", "张三 / member1 / 2250001");
   fireEvent.click(screen.getByLabelText("火车票"));
   fireEvent.change(screen.getByLabelText("项目/课题信息"), {
     target: { value: "TRMS E2E placeholder" },
@@ -521,9 +521,24 @@ describe("frontend main flow e2e placeholder", () => {
       }
 
       if (url === "/api/tasks" && init?.method === "POST") {
+        const body = parseRequestJsonBody(init);
+        expect(body.member_ids).toEqual(["member-actor-1"]);
         workflowState.taskCreated = true;
         workflowState.taskStatus = "draft";
         return Promise.resolve(jsonResponse(buildTask("draft"), { status: 201 }));
+      }
+
+      if (url === "/api/tasks/search/member-candidates?keyword=2250&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "member-actor-1",
+              username: "member1",
+              display_name: "张三",
+              student_id: "2250001",
+            },
+          ],
+        }));
       }
 
       if (url === "/api/tasks") {
@@ -944,7 +959,7 @@ describe("frontend main flow e2e placeholder", () => {
     renderRoute("/admin/tasks/new");
 
     expect(await screen.findByRole("heading", { name: "创建报销任务" })).toBeInTheDocument();
-    fillRequiredTaskForm();
+    await fillRequiredTaskForm();
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));
 
     expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();

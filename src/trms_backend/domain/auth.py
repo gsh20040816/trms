@@ -152,6 +152,15 @@ class AuthRepository(Protocol):
     def list_users_by_member_identifiers(self, identifiers: list[str]) -> list[AuthenticatedUser]:
         raise NotImplementedError
 
+    def search_users(
+        self,
+        *,
+        keyword: str,
+        roles: tuple[UserRole, ...],
+        limit: int,
+    ) -> list[AuthenticatedUser]:
+        raise NotImplementedError
+
     def create_session(self, *, user_id: str, token_hash: str, active_role: UserRole) -> None:
         raise NotImplementedError
 

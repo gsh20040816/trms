@@ -49,6 +49,7 @@ import type {
   TaskReviewSummary,
   TaskStatusUpdate,
   TaskUpdateInput,
+  UserSearchSummary,
   ValidationResult,
 } from "./types";
 
@@ -200,6 +201,15 @@ export const trmsApi = {
 
   getTask(taskId: string) {
     return apiClient.request<ReimbursementTask>(`/tasks/${encodeSegment(taskId)}`);
+  },
+
+  searchTaskMemberCandidates(keyword: string, limit = 10) {
+    return apiClient.request<ApiListResponse<UserSearchSummary>>(
+      `/tasks/search/member-candidates${buildQuery({
+        keyword: keyword.trim(),
+        limit: String(limit),
+      })}`,
+    );
   },
 
   getTaskReviewSummary(taskId: string, actorId: string) {

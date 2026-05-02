@@ -8,6 +8,7 @@ import type {
   TaskExportJobStatus,
   TaskMemberSummary,
   TaskStatus,
+  UserSearchSummary,
   ValidationSeverity,
   ValidationStatus,
 } from "./api/types";
@@ -221,6 +222,23 @@ export function formatTaskMemberSummary(summary: TaskMemberSummary | null | unde
     return parts.join(" / ");
   }
   return summary.member_id;
+}
+
+export function formatUserSearchSummary(summary: UserSearchSummary | null | undefined) {
+  if (!summary) {
+    return "待确认成员";
+  }
+
+  const displayName = summary.display_name?.trim();
+  const username = summary.username?.trim();
+  const studentId = summary.student_id?.trim();
+  const parts = [displayName, username, studentId].filter((value, index, items): value is string => (
+    Boolean(value) && items.indexOf(value) === index
+  ));
+  if (parts.length > 0) {
+    return parts.join(" / ");
+  }
+  return summary.actor_id;
 }
 
 export function formatTaskMemberLabel(

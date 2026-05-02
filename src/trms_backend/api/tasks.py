@@ -140,6 +140,22 @@ class InvoiceMemberSubmissionBatchRequest(BaseModel):
         return self
 
 
+class UserSearchSummary(BaseModel):
+    actor_id: str
+    username: str
+    display_name: str
+    student_id: str | None = None
+
+
+def build_user_search_summary(user) -> UserSearchSummary:
+    return UserSearchSummary(
+        actor_id=user.actor_id,
+        username=user.username,
+        display_name=user.display_name,
+        student_id=user.member_code,
+    )
+
+
 def build_task_router(
     auth_repository: AuthRepository,
     repository: TaskRepository,
@@ -260,6 +276,23 @@ def build_task_router(
             forbidden_detail="actor is not allowed to view task members for this task",
         )
         return {"items": enrich_task_member_summaries(task).member_summaries}
+
+    @router.get("/search/member-candidates")
+    def search_member_candidates(
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        keyword: Annotated[str, Query(min_length=1, max_length=128)],
+        limit: Annotated[int, Query(ge=1, le=20)] = 10,
+    ):
+        ensure_task_management_role(
+            identity,
+            forbidden_detail="actor is not allowed to search task member candidates",
+        )
+        users = auth_repository.search_users(
+            keyword=keyword,
+            roles=(UserRole.MEMBER,),
+            limit=limit,
+        )
+        return {"items": [build_user_search_summary(user) for user in users]}
 
     @router.post("/{task_id}/automatic-reminder-tasks", status_code=status.HTTP_201_CREATED)
     def generate_automatic_reminder_tasks(
