@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -200,7 +200,12 @@ describe("system admin dashboard page", () => {
     expect(await screen.findByDisplayValue("https://vlm.example.com/v1")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("检索账号"), { target: { value: "member1" } });
-    fireEvent.click(screen.getByRole("button", { name: "检索账号" }));
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/system/users/search?keyword=member1&limit=10",
+        expect.anything(),
+      );
+    });
 
     fireEvent.click(await screen.findByRole("button", { name: "王队员 / member1 / 2250001" }));
     const selectedUsers = await screen.findByLabelText("已选系统账号列表");

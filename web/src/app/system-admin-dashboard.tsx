@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import Alert from "@mui/material/Alert";
@@ -200,6 +200,7 @@ export function SystemAdminDashboardPage() {
   });
   const [selectedSystemUser, setSelectedSystemUser] = useState<SystemUserRoleSummary | null>(null);
   const [grantingUserId, setGrantingUserId] = useState<string | null>(null);
+  const userSearchTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -235,6 +236,14 @@ export function SystemAdminDashboardPage() {
       cancelled = true;
     };
   }, [session]);
+
+  useEffect(() => (
+    () => {
+      if (userSearchTimerRef.current !== null) {
+        window.clearTimeout(userSearchTimerRef.current);
+      }
+    }
+  ), []);
 
   if (!session || session.role !== "system_admin") {
     return null;
@@ -339,9 +348,20 @@ export function SystemAdminDashboardPage() {
     }
   }
 
-  async function handleSystemUserSearch() {
-    const keyword = userSearchKeyword.trim();
-    if (!keyword) {
+  function handleSystemUserKeywordChange(value: string) {
+    setUserSearchKeyword(value);
+    const keyword = value.trim();
+
+    if (userSearchTimerRef.current !== null) {
+      window.clearTimeout(userSearchTimerRef.current);
+      userSearchTimerRef.current = null;
+    }
+
+    if (keyword.length === 0) {
+      setUserRoleManagementState({
+        status: "idle",
+        items: [],
+      });
       return;
     }
 
@@ -349,20 +369,26 @@ export function SystemAdminDashboardPage() {
       status: "loading",
       items: current.items,
     }));
-    try {
-      const response = await trmsApi.searchSystemUsers(keyword);
-      setUserRoleManagementState({
-        status: "ready",
-        items: response.items,
-      });
-    } catch (error) {
-      setUserRoleManagementState((current) => ({
-        status: "error",
-        items: current.items,
-        error,
-      }));
-      showError("检索系统账号失败");
-    }
+    userSearchTimerRef.current = window.setTimeout(() => {
+      void trmsApi.searchSystemUsers(keyword)
+        .then((response) => {
+          setUserRoleManagementState({
+            status: "ready",
+            items: response.items,
+          });
+        })
+        .catch((error) => {
+          setUserRoleManagementState((current) => ({
+            status: "error",
+            items: current.items,
+            error,
+          }));
+          showError("检索系统账号失败");
+        })
+        .finally(() => {
+          userSearchTimerRef.current = null;
+        });
+    }, 250);
   }
 
   async function handleGrantAdminRole(user: SystemUserRoleSummary) {
@@ -488,12 +514,12 @@ export function SystemAdminDashboardPage() {
                   <UserSearchCandidatePicker
                     label="检索账号"
                     value={userSearchKeyword}
-                    onChange={setUserSearchKeyword}
+                    onChange={handleSystemUserKeywordChange}
                     placeholder="输入用户名、显示名称、学号或业务标识"
                     helperText={
                       userRoleManagementState.status === "loading"
                         ? "正在检索系统账号..."
-                        : "输入后检索已有账号；选择一个账号后再执行授予管理员。"
+                        : "输入后会实时向后端检索已有账号；选择一个账号后再执行授予管理员。"
                     }
                     showOptions={userSearchKeyword.trim().length > 0}
                     options={userRoleManagementState.items.map((user) => ({
@@ -512,17 +538,6 @@ export function SystemAdminDashboardPage() {
                     }
                     emptyText={userRoleManagementState.status !== "loading" ? "没有匹配的系统账号。" : ""}
                   />
-                  <Stack direction="row" justifyContent="flex-end">
-                    <Button
-                      variant="contained"
-                      disabled={userRoleManagementState.status === "loading" || userSearchKeyword.trim().length === 0}
-                      onClick={() => {
-                        void handleSystemUserSearch();
-                      }}
-                    >
-                      {userRoleManagementState.status === "loading" ? "检索中..." : "检索账号"}
-                    </Button>
-                  </Stack>
 
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="已选系统账号列表">
                     {selectedSystemUser ? (

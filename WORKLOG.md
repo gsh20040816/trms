@@ -1,5 +1,37 @@
 # WORKLOG
 
+## 2026-05-02 22:50 - Fix missing frontend search request in system user role management
+
+### 完成内容
+- 完成任务“修复系统管理员用户身份管理页检索账号不发请求”。
+- 已修改 [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)：
+  - 系统管理员“检索账号”从手动点击按钮触发，改为和管理员任务创建页一致的“输入后延迟实时检索”；
+  - 输入关键字后 250ms 自动请求 `GET /api/system/users/search`；
+  - 清空关键字时会立即清空候选状态，避免残留旧结果；
+  - 页面文案同步收口为“输入后会实时向后端检索已有账号”；
+  - 删除了原先额外的“检索账号”按钮，避免出现“输入了但前端没有任何请求”的断链交互。
+- 已修改 [web/src/app/system-admin-dashboard.test.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.test.tsx)：
+  - 测试从“输入后再点击按钮”改为断言“输入后自动发起 `/api/system/users/search?keyword=member1&limit=10` 请求”；
+  - 继续覆盖选中候选账号并授予管理员的主路径，避免只修搜索不保授权链路。
+- 已更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录本轮最小修复任务。
+
+### 根因
+- 系统管理员页虽然复用了候选列表组件，但没有复用管理员任务创建页已经存在的“输入后自动检索”状态机。
+- 因此前端只有在用户额外点击“检索账号”按钮时才会真正请求后端；如果用户按现有项目其他检索控件的使用习惯只输入关键字，就会观察到“没有发送任何检索请求”。
+
+### 风险与影响面
+- 本轮只修系统管理员页的检索触发方式，不改后端检索接口语义，也不扩展撤销管理员、批量授权等系统管理功能。
+- 当前仍采用前端 250ms 防抖；若后续需要统一更多页面的实时检索逻辑，建议再抽公共 hook，而不是继续在各页各写一份定时器。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/system-admin-dashboard.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `120/120` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:40 - Add password verification and password change to account profile
 
 ### 完成内容
