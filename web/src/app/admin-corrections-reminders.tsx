@@ -371,7 +371,7 @@ export function AdminCorrectionsRemindersPage() {
           <article className="status-card admin-review-panel">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Corrections</p>
+                <p className="eyebrow">更正入口</p>
                 <h2>待人工更正项</h2>
               </div>
               <StatusBadge tone="info">
@@ -385,15 +385,21 @@ export function AdminCorrectionsRemindersPage() {
                 <ul className="admin-review-record-list" aria-label="识别字段更正列表">
                   {recognitionActions.map((item) => (
                     <li key={item.materialId} className="admin-review-record-card">
-                      <div className="task-card-header">
-                        <div>
-                          <p className="task-card-id">待确认发票材料</p>
-                          <h3>{item.filename}</h3>
-                        </div>
-                        <StatusBadge tone={item.recognitionStatus === "failed" ? "danger" : "warning"}>
-                          {formatRecognitionStatus(item.recognitionStatus)}
-                        </StatusBadge>
-                      </div>
+                      <InvoiceSummaryRow
+                        filename={item.filename}
+                        invoiceNumber={item.invoiceNumber}
+                        primaryLabel="待确认发票材料"
+                        amountLabel={item.invoiceNumber ? `票号 ${item.invoiceNumber}` : "尚未形成发票"}
+                        validationLabel={item.recognitionStatus === "failed" ? "识别失败" : "待人工确认"}
+                        validationTone="warning"
+                        supportingMaterialCount={0}
+                        statusHint={item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析提交人"}
+                        trailingContent={(
+                          <StatusBadge tone={item.recognitionStatus === "failed" ? "danger" : "warning"}>
+                            {formatRecognitionStatus(item.recognitionStatus)}
+                          </StatusBadge>
+                        )}
+                      />
                       <div className="admin-review-inline-metadata">
                         <span className="token-chip">提交人 {item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析"}</span>
                         <span className="token-chip">
@@ -511,7 +517,7 @@ export function AdminCorrectionsRemindersPage() {
           <article className="status-card admin-form-card">
             <div className="admin-form-header">
               <div>
-                <p className="eyebrow">Reminders</p>
+                <p className="eyebrow">成员提醒</p>
                 <h2>记录补材料提醒</h2>
               </div>
               <StatusBadge tone="info">{visibleReminders.length} 条已记录提醒</StatusBadge>
@@ -563,12 +569,20 @@ export function AdminCorrectionsRemindersPage() {
             <div className="admin-review-subsection">
               <h4>已记录提醒</h4>
               {visibleReminders.length > 0 ? (
-                <ul className="admin-review-list" aria-label="补材料提醒列表">
+                <ul className="admin-review-record-list" aria-label="补材料提醒列表">
                   {visibleReminders.map((reminder) => (
-                    <li key={reminder.id}>
-                      <strong>{formatTaskMemberLabel(reminder.member_id, memberSummaryMap)}</strong>
-                      <span>{reminder.content}</span>
-                      <span>记录时间：{formatDateTime(reminder.created_at)}</span>
+                    <li key={reminder.id} className="admin-review-record-card">
+                      <div className="task-card-header">
+                        <div>
+                          <p className="task-card-id">补材料提醒</p>
+                          <h3>{formatTaskMemberLabel(reminder.member_id, memberSummaryMap)}</h3>
+                        </div>
+                        <StatusBadge tone="info">已记录</StatusBadge>
+                      </div>
+                      <p>{reminder.content}</p>
+                      <div className="admin-review-inline-metadata">
+                        <span className="token-chip">记录时间 {formatDateTime(reminder.created_at)}</span>
+                      </div>
                     </li>
                   ))}
                 </ul>

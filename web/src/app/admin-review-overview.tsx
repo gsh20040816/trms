@@ -311,6 +311,41 @@ function describeRecognitionFieldValue(
   return "复杂结构";
 }
 
+function buildMaterialSummaryValidationTone(
+  item: ReviewMaterialDetailItem,
+  recognition: RecognitionTaskRecord | null,
+) {
+  const failedValidationCount = item.primaryInvoice?.validations.filter(
+    (validation) => validation.status === "failed",
+  ).length ?? 0;
+  if (failedValidationCount > 0 || recognition?.status === "failed") {
+    return "warning" as const;
+  }
+  if (recognition?.status === "needs_confirmation") {
+    return "warning" as const;
+  }
+  return "success" as const;
+}
+
+function buildMaterialSummaryValidationLabel(
+  item: ReviewMaterialDetailItem,
+  recognition: RecognitionTaskRecord | null,
+) {
+  const failedValidationCount = item.primaryInvoice?.validations.filter(
+    (validation) => validation.status === "failed",
+  ).length ?? 0;
+  if (failedValidationCount > 0) {
+    return "校验失败";
+  }
+  if (recognition?.status === "failed") {
+    return "识别失败";
+  }
+  if (recognition?.status === "needs_confirmation") {
+    return "待人工确认";
+  }
+  return "已归档";
+}
+
 export function AdminReviewOverviewPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
@@ -641,23 +676,23 @@ export function AdminReviewOverviewPage() {
             {visibleSummary.pending_assignment_materials.length > 0 ? (
               <ul className="admin-review-record-list" aria-label="待归属材料列表">
                 {visibleSummary.pending_assignment_materials.map((material) => (
-                  <li key={material.id} className="admin-review-record-card">
-                    <div className="task-card-header">
-                      <div>
-                        <p className="task-card-id">待归属材料</p>
-                        <h3>{material.original_filename}</h3>
-                      </div>
-                      <StatusBadge tone="danger">待归属</StatusBadge>
-                    </div>
+                    <li key={material.id} className="admin-review-record-card">
+                    <InvoiceSummaryRow
+                      filename={material.original_filename}
+                      invoiceNumber={null}
+                      primaryLabel="待归属材料"
+                      amountLabel={formatMaterialType(material.material_type)}
+                      validationLabel="待归属"
+                      validationTone="warning"
+                      supportingMaterialCount={0}
+                      statusHint={material.submitter_id_hint ? formatTaskMemberLabel(material.submitter_id_hint, memberSummaryMap) : "未提供成员提示"}
+                      trailingContent={<StatusBadge tone="danger">待归属</StatusBadge>}
+                    />
                     <div className="admin-review-inline-metadata">
                       <span className="token-chip">{formatMaterialType(material.material_type)}</span>
                       <span className="token-chip">{formatSubmissionChannel(material.channel)}</span>
                     </div>
                     <div className="task-meta-grid admin-review-meta-grid">
-                      <div>
-                        <dt>成员提示</dt>
-                        <dd>{material.submitter_id_hint ? formatTaskMemberLabel(material.submitter_id_hint, memberSummaryMap) : "未提供"}</dd>
-                      </div>
                       <div>
                         <dt>上传时间</dt>
                         <dd>{formatDateTime(material.created_at)}</dd>
@@ -705,15 +740,22 @@ export function AdminReviewOverviewPage() {
                           }}
                           sx={{ display: "block", width: "100%", textAlign: "left", borderRadius: 2 }}
                         >
-                          <div className="task-card-header">
-                            <div>
-                              <p className="task-card-id">材料摘要</p>
-                              <h3>{material.original_filename}</h3>
-                            </div>
-                            <StatusBadge tone={buildRecognitionBadgeTone(recognition)}>
-                              {recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}
-                            </StatusBadge>
-                          </div>
+                          <InvoiceSummaryRow
+                            filename={material.original_filename}
+                            invoiceNumber={item.primaryInvoice?.invoice.invoice_number ?? null}
+                            primaryLabel="材料摘要"
+                            amountLabel={formatMaterialType(material.material_type)}
+                            validationLabel={buildMaterialSummaryValidationLabel(item, recognition)}
+                            validationTone={buildMaterialSummaryValidationTone(item, recognition)}
+                            supportingMaterialCount={item.relatedInvoices.length}
+                            statusHint={`失败 ${failedValidationCount} 条，待确认 ${pendingValidationCount} 条`}
+                            trailingContent={(
+                              <StatusBadge tone={buildRecognitionBadgeTone(recognition)}>
+                                {recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}
+                              </StatusBadge>
+                            )}
+                            selected={isSelected}
+                          />
                           <div className="admin-review-inline-metadata">
                             <span className="token-chip">{formatMaterialType(material.material_type)}</span>
                             <span className="token-chip">{formatSubmissionChannel(material.channel)}</span>
@@ -889,20 +931,12 @@ export function AdminReviewOverviewPage() {
                                   </p>
                                   <dl className="task-meta-grid admin-review-detail-field-grid">
                                     <div>
-                                      <dt>来源</dt>
-                                      <dd>{field.source}</dd>
-                                    </div>
-                                    <div>
                                       <dt>置信度</dt>
                                       <dd>{Math.round(field.confidence * 100)}%</dd>
                                     </div>
                                     <div>
                                       <dt>状态</dt>
                                       <dd>{field.status === "needs_confirmation" ? "待人工确认" : "可直接采用"}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>更新时间</dt>
-                                      <dd>{field.updated_at ? formatDateTime(field.updated_at) : "暂无"}</dd>
                                     </div>
                                   </dl>
                                 </article>

@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-05-02 19:06 - Unify review and reminder pages around compact summary cards
+
+### 完成内容
+- 完成任务“优化材料审核和成员提醒页面展示”。
+- 材料审核列表已改为统一摘要样式：
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx) 左侧“材料审核列表”和上方“待归属材料”都改为基于 [web/src/components/invoice-summary-row.tsx](/home/gsh/workspace/TRMS/web/src/components/invoice-summary-row.tsx) 的摘要行，统一文件名、主发票/状态、附件数和处理提示的展示方式；
+  - 原先重复的卡头、元数据块和多段说明被压缩，只保留必要摘要和少量补充元数据。
+- 识别字段页已去掉冗余展示：
+  - 同文件的“识别字段”标签页不再逐字段展示 `来源`、`更新时间` 这类管理员当下不需要据此决策的重复信息；
+  - 每个字段卡片现在只保留值、置信度和是否待人工确认。
+- 成员提醒页已统一为卡片式摘要：
+  - [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx) 识别待更正项改为统一摘要行；
+  - 已记录提醒列表改为与审核页一致的 `admin-review-record-card` 卡片样式，不再是简单文本列表；
+  - 同时把 `Corrections` / `Reminders` 残留英文标签收口为中文业务文案。
+- 前端测试已补齐：
+  - [web/src/app/admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx) 现在锁定识别字段页不再展示“来源 / 更新时间”；
+  - [web/src/app/admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx) 继续覆盖更正入口和提醒记录主路径渲染。
+
+### 根因
+- 审核页和提醒页虽然都在处理“异常项”，但之前每个列表都用了不同的密度和卡片结构，管理员需要反复适应不同视觉语义。
+- 识别字段标签页又额外展示了很多对当前决策帮助很弱的字段来源和更新时间，信息噪声高于价值。
+
+### 风险与影响面
+- 本轮只收口列表展示和字段密度，没有修改复核摘要接口、提醒创建接口、发票更正入口或分摊跳转逻辑。
+- 当前识别字段仍然保留全部值，只是减少了重复元数据；如果后续需要追查识别来源，仍可从后端响应和更深层调试入口读取，不影响主审核路径。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-review-overview.test.tsx src/app/admin-corrections-reminders.test.tsx`
+- 已通过定向 lint：
+  - `cd web && npm run lint -- src/app/admin-review-overview.tsx src/app/admin-corrections-reminders.tsx src/app/admin-review-overview.test.tsx src/app/admin-corrections-reminders.test.tsx`
+- `./scripts/verify.sh` 待本轮提交前执行。
+
 ## 2026-05-02 19:02 - Compress admin task detail into summary-first layout
 
 ### 完成内容

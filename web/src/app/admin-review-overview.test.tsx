@@ -395,6 +395,8 @@ describe("AdminReviewOverviewPage", () => {
       await Promise.resolve();
     });
     expect(detailPanel.getByText("￥123.45")).toBeInTheDocument();
+    expect(detailPanel.queryByText("来源")).not.toBeInTheDocument();
+    expect(detailPanel.queryByText("更新时间")).not.toBeInTheDocument();
     expect(detailPanel.queryByText(/材料编号/)).not.toBeInTheDocument();
 
     await act(async () => {
