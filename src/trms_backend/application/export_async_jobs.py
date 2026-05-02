@@ -208,6 +208,18 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
             confirmations_by_split_id=confirmations_by_split_id,
         )
 
+    def _build_linked_invoice_ids_by_supporting_material_id(
+        self,
+        invoices,
+    ) -> dict[str, list[str]]:
+        linked_invoice_ids_by_supporting_material_id: dict[str, list[str]] = {}
+        for invoice in invoices:
+            for link in self._invoice_repository.list_supporting_material_links(invoice.id):
+                linked_invoice_ids_by_supporting_material_id.setdefault(link.material_id, []).append(
+                    invoice.material_id
+                )
+        return linked_invoice_ids_by_supporting_material_id
+
     def _build_export_artifact(
         self,
         task: ReimbursementTask,
@@ -228,6 +240,9 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
         for invoice in invoices:
             for confirmation in self._confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
+        linked_invoice_ids_by_supporting_material_id = (
+            self._build_linked_invoice_ids_by_supporting_material_id(invoices)
+        )
 
         if export_job.kind is ExportArtifactKind.REIMBURSEMENT_SUMMARY:
             export = build_reimbursement_summary_export(
@@ -332,6 +347,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                 materials=materials,
                 material_bytes_by_id=material_bytes_by_id,
                 invoices_by_material_id={invoice.material_id: invoice for invoice in invoices},
+                linked_invoice_ids_by_supporting_material_id=linked_invoice_ids_by_supporting_material_id,
             )
             return self._save_artifact(
                 task_id=task.id,
@@ -409,6 +425,7 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
                 materials=materials,
                 material_bytes_by_id=material_bytes_by_id,
                 invoices_by_material_id={invoice.material_id: invoice for invoice in invoices},
+                linked_invoice_ids_by_supporting_material_id=linked_invoice_ids_by_supporting_material_id,
                 generated_at=generated_at,
             )
             merged_pdf_bytes = render_merged_pdf_bytes(

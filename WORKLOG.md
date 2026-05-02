@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-03 00:50 - Optimize merged export ordering for invoice attachments
+
+### 完成内容
+- 完成任务“让附件跟随发票排序，并尽量聚拢共享附件关联发票”。
+- 已修改 [src/trms_backend/domain/exports.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/exports.py)：
+  - `build_merged_pdf_export_plan(...)` 新增 `linked_invoice_ids_by_supporting_material_id` 输入；
+  - merged PDF 排序不再是“全部发票在前、全部附件在后”，而是先按共享附件连接关系把相关发票聚成连续块；
+  - 单发票附件会挂到对应发票后面；多发票共享附件会挂到“最后一个相关发票”后面，避免把相关发票拆散。
+- 已修改 [src/trms_backend/api/exports.py](/home/gsh/workspace/TRMS/src/trms_backend/api/exports.py) 与 [src/trms_backend/application/export_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/export_async_jobs.py)：
+  - merged PDF 预览和完整材料包异步导出现在都会显式读取发票-附件关联关系，并传入统一排序逻辑；
+  - 这样在线预览和最终 ZIP 内的 `merged-printing.pdf` 顺序保持一致。
+- 已修改测试辅助与回归测试：
+  - [tests/test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)
+  - [tests/test_export_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_export_async_jobs.py)
+  - 新增覆盖：
+    - 单发票专属附件紧跟对应发票；
+    - 共享附件会把关联发票尽量排成连续块，再放到最后一个相关发票后；
+    - 完整材料包里的真实 `merged-printing.pdf` 页面顺序与上述规则一致。
+
+### 根因
+- 现有 merged PDF 计划只按“是否发票材料 + 创建时间”排序，没有读取任何发票-附件关联信息；
+- 结果是：
+  - 所有发票材料先排完；
+  - 所有附件材料再统一排在后面；
+  - 共享附件也不会反向影响发票顺序，因此相关发票容易被其他无关发票打散。
+
+### 风险与影响面
+- 本轮只调整 merged PDF / 完整材料包内部顺序，不改附件归属、发票校验、成员工作台或管理员审核逻辑。
+- “尽量把发票放到一起”当前收敛为：共享附件建立发票连通块，块内仍保留原有时间顺序；不会为了极端最优排序引入不可解释的大范围重排。
+- 未额外处理“一个共享附件跨越大量发票、且多个共享附件交叉成复杂图”时的最优排版问题；当前实现优先保证规则稳定、可解释和可测试。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_exports_api.py tests/test_export_async_jobs.py`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过
+  - `pytest` `576/576` 通过
+  - `git diff --check` 通过
+
 ## 2026-05-03 00:35 - Fix reimbursement package export failure caused by paper-invoice placeholder materials
 
 ### 完成内容

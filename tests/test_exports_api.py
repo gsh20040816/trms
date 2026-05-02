@@ -146,6 +146,28 @@ def create_invoice_with_splits(
     invoice_overrides: dict | None = None,
     split_items: list[dict] | None = None,
 ) -> str:
+    invoice_id, _ = create_invoice_with_splits_and_material(
+        client,
+        task_id,
+        submitter_id=submitter_id,
+        filename=filename,
+        material_content=material_content,
+        invoice_overrides=invoice_overrides,
+        split_items=split_items,
+    )
+    return invoice_id
+
+
+def create_invoice_with_splits_and_material(
+    client: TestClient,
+    task_id: str,
+    *,
+    submitter_id: str,
+    filename: str,
+    material_content: bytes | None = None,
+    invoice_overrides: dict | None = None,
+    split_items: list[dict] | None = None,
+) -> tuple[str, str]:
     material_id = upload_invoice_material(
         client,
         task_id,
@@ -167,7 +189,7 @@ def create_invoice_with_splits(
         },
     )
     assert response.status_code == 200
-    return invoice_id
+    return invoice_id, material_id
 
 
 def confirm_split(
@@ -183,9 +205,9 @@ def confirm_split(
     assert response.status_code == 200
 
 
-def build_pdf_bytes(*, encrypted: bool = False) -> bytes:
+def build_pdf_bytes(*, encrypted: bool = False, width: int = 200, height: int = 200) -> bytes:
     writer = PdfWriter()
-    writer.add_blank_page(width=200, height=200)
+    writer.add_blank_page(width=width, height=height)
     if encrypted:
         writer.encrypt("secret")
     buffer = BytesIO()
@@ -946,6 +968,87 @@ def test_merged_pdf_preview_marks_paper_invoice_placeholder_without_blocking(tmp
             "material_type": "invoice",
             "original_filename": "invoice.pdf",
         },
+    ]
+
+
+def test_merged_pdf_preview_places_supporting_materials_after_related_invoice_block(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    invoice_a_id, invoice_a_material_id = create_invoice_with_splits_and_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-a.pdf",
+        material_content=build_pdf_bytes(width=101, height=101),
+        invoice_overrides={"invoice_number": "INV-A"},
+    )
+    invoice_b_id, invoice_b_material_id = create_invoice_with_splits_and_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-b.pdf",
+        material_content=build_pdf_bytes(width=202, height=202),
+        invoice_overrides={"invoice_number": "INV-B"},
+    )
+    invoice_c_id, invoice_c_material_id = create_invoice_with_splits_and_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-c.pdf",
+        material_content=build_pdf_bytes(width=303, height=303),
+        invoice_overrides={"invoice_number": "INV-C"},
+    )
+    exclusive_attachment_material_id = upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="attachment-a.pdf",
+        content=build_pdf_bytes(width=111, height=111),
+    )
+    shared_attachment_material_id = upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="competition_notice",
+        filename="attachment-shared.pdf",
+        content=build_pdf_bytes(width=222, height=222),
+    )
+    for invoice_id, material_id in (
+        (invoice_a_id, exclusive_attachment_material_id),
+        (invoice_a_id, shared_attachment_material_id),
+        (invoice_c_id, shared_attachment_material_id),
+    ):
+        attach_response = client.put(
+            f"/api/invoices/{invoice_id}/supporting-materials/{material_id}",
+            headers=admin_auth_headers(client),
+        )
+        assert attach_response.status_code == 200
+
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/merged-pdf",
+        params={"actor_id": "admin-1", "format": "pdf"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert [item["material_id"] for item in response.json()["ordered_items"]] == [
+        invoice_a_material_id,
+        exclusive_attachment_material_id,
+        invoice_c_material_id,
+        shared_attachment_material_id,
+        invoice_b_material_id,
+    ]
+    assert [item["original_filename"] for item in response.json()["ordered_items"]] == [
+        "invoice-a.pdf",
+        "attachment-a.pdf",
+        "invoice-c.pdf",
+        "attachment-shared.pdf",
+        "invoice-b.pdf",
     ]
 
 

@@ -28,6 +28,7 @@ from test_exports_api import (
     build_png_bytes,
     create_export_job,
     create_invoice_with_splits,
+    create_invoice_with_splits_and_material,
     upload_supporting_material,
 )
 from test_tasks_api import (
@@ -604,6 +605,88 @@ def test_reimbursement_package_export_skips_paper_invoice_placeholder_in_merged_
         ]
         assert len(manifest["materials"]) == 2
         assert len(PdfReader(BytesIO(archive.read("merged-printing.pdf"))).pages) == 1
+
+
+def test_reimbursement_package_export_groups_shared_attachment_related_invoices(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+
+    invoice_a_id, _ = create_invoice_with_splits_and_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-a.pdf",
+        material_content=build_pdf_bytes(width=101, height=101),
+        invoice_overrides={"invoice_number": "INV-A"},
+    )
+    _, _ = create_invoice_with_splits_and_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-b.pdf",
+        material_content=build_pdf_bytes(width=202, height=202),
+        invoice_overrides={"invoice_number": "INV-B"},
+    )
+    invoice_c_id, _ = create_invoice_with_splits_and_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice-c.pdf",
+        material_content=build_pdf_bytes(width=303, height=303),
+        invoice_overrides={"invoice_number": "INV-C"},
+    )
+    exclusive_attachment_material_id = upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="attachment-a.pdf",
+        content=build_pdf_bytes(width=111, height=111),
+    )
+    shared_attachment_material_id = upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="competition_notice",
+        filename="attachment-shared.pdf",
+        content=build_pdf_bytes(width=222, height=222),
+    )
+    for invoice_id, material_id in (
+        (invoice_a_id, exclusive_attachment_material_id),
+        (invoice_a_id, shared_attachment_material_id),
+        (invoice_c_id, shared_attachment_material_id),
+    ):
+        attach_response = client.put(
+            f"/api/invoices/{invoice_id}/supporting-materials/{material_id}",
+            headers=admin_auth_headers(client),
+        )
+        assert attach_response.status_code == 200
+
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(
+        client,
+        task_id,
+        kind="reimbursement_package",
+        format="zip",
+    )
+    processor = build_processor(tmp_path, runtime_config)
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+
+    artifact_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=admin_auth_headers(client),
+    )
+    assert artifact_download.status_code == 200
+
+    with ZipFile(BytesIO(artifact_download.content)) as archive:
+        merged_pdf = PdfReader(BytesIO(archive.read("merged-printing.pdf")))
+        page_widths = [int(float(page.mediabox.width)) for page in merged_pdf.pages]
+        assert page_widths == [101, 111, 303, 222, 202]
 
 
 def test_export_async_processor_rejects_stale_reimbursement_package_job(tmp_path):

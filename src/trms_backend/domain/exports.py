@@ -980,6 +980,7 @@ def build_merged_pdf_export_plan(
     materials: list[MaterialRecord],
     material_bytes_by_id: dict[str, bytes],
     invoices_by_material_id: dict[str, InvoiceRecord] | None = None,
+    linked_invoice_ids_by_supporting_material_id: dict[str, list[str]] | None = None,
     generated_at: datetime | None = None,
 ) -> MergedPdfExportPlan:
     boundary = build_task_export_boundary(task, actor_id=actor_id)
@@ -987,18 +988,14 @@ def build_merged_pdf_export_plan(
         raise TaskExportJobNotReadyError(boundary.blocking_reasons)
     _ensure_export_format_supported(ExportArtifactKind.MERGED_PDF, format)
 
-    ordered_materials = sorted(
-        (
-            material
-            for material in materials
-            if material.task_id == task.id
-        ),
-        key=lambda material: (
-            0 if material.material_type is MaterialType.INVOICE else 1,
-            material.created_at,
-            material.original_filename,
-            material.id,
-        ),
+    task_materials = [
+        material
+        for material in materials
+        if material.task_id == task.id
+    ]
+    ordered_materials = _build_merged_pdf_material_order(
+        task_materials,
+        linked_invoice_ids_by_supporting_material_id=linked_invoice_ids_by_supporting_material_id,
     )
 
     ordered_items: list[MergedPdfPlanItem] = []
@@ -1055,6 +1052,121 @@ def build_merged_pdf_export_plan(
         generated_at=generated_at,
         ordered_items=ordered_items,
     )
+
+
+def _build_merged_pdf_material_order(
+    materials: list[MaterialRecord],
+    *,
+    linked_invoice_ids_by_supporting_material_id: dict[str, list[str]] | None,
+) -> list[MaterialRecord]:
+    sort_key = lambda material: (material.created_at, material.original_filename, material.id)
+
+    invoice_materials = sorted(
+        [material for material in materials if material.material_type is MaterialType.INVOICE],
+        key=sort_key,
+    )
+    if not invoice_materials:
+        return sorted(materials, key=sort_key)
+
+    invoice_material_ids = {material.id for material in invoice_materials}
+    invoice_material_by_id = {material.id: material for material in invoice_materials}
+    invoice_rank_by_id = {
+        material.id: index for index, material in enumerate(invoice_materials)
+    }
+    supporting_materials = {
+        material.id: material
+        for material in materials
+        if material.material_type is not MaterialType.INVOICE
+    }
+
+    adjacency: dict[str, set[str]] = {
+        material.id: set() for material in invoice_materials
+    }
+    normalized_linked_invoice_ids_by_supporting_material_id: dict[str, list[str]] = {}
+    for material_id, linked_ids in (linked_invoice_ids_by_supporting_material_id or {}).items():
+        normalized_linked_ids: list[str] = []
+        seen_ids: set[str] = set()
+        for invoice_material_id in linked_ids:
+            if invoice_material_id not in invoice_material_ids or invoice_material_id in seen_ids:
+                continue
+            seen_ids.add(invoice_material_id)
+            normalized_linked_ids.append(invoice_material_id)
+        if not normalized_linked_ids:
+            continue
+        normalized_linked_invoice_ids_by_supporting_material_id[material_id] = normalized_linked_ids
+        if len(normalized_linked_ids) < 2:
+            continue
+        first_invoice_material_id = normalized_linked_ids[0]
+        for other_invoice_material_id in normalized_linked_ids[1:]:
+            adjacency[first_invoice_material_id].add(other_invoice_material_id)
+            adjacency[other_invoice_material_id].add(first_invoice_material_id)
+
+    ordered_invoice_materials: list[MaterialRecord] = []
+    visited_invoice_material_ids: set[str] = set()
+    for material in invoice_materials:
+        if material.id in visited_invoice_material_ids:
+            continue
+        stack = [material.id]
+        component_invoice_material_ids: list[str] = []
+        while stack:
+            current_material_id = stack.pop()
+            if current_material_id in visited_invoice_material_ids:
+                continue
+            visited_invoice_material_ids.add(current_material_id)
+            component_invoice_material_ids.append(current_material_id)
+            for neighbor_material_id in sorted(
+                adjacency[current_material_id],
+                key=lambda candidate: invoice_rank_by_id[candidate],
+                reverse=True,
+            ):
+                if neighbor_material_id not in visited_invoice_material_ids:
+                    stack.append(neighbor_material_id)
+        ordered_invoice_materials.extend(
+            sorted(
+                (invoice_material_by_id[item_id] for item_id in component_invoice_material_ids),
+                key=sort_key,
+            )
+        )
+
+    invoice_position_by_material_id = {
+        material.id: index for index, material in enumerate(ordered_invoice_materials)
+    }
+    supporting_materials_by_last_invoice_id: dict[str, list[MaterialRecord]] = {}
+    trailing_supporting_materials: list[MaterialRecord] = []
+    for material_id, material in supporting_materials.items():
+        linked_ids = normalized_linked_invoice_ids_by_supporting_material_id.get(material_id, [])
+        if not linked_ids:
+            trailing_supporting_materials.append(material)
+            continue
+        last_invoice_material_id = max(
+            linked_ids,
+            key=lambda item_id: invoice_position_by_material_id[item_id],
+        )
+        supporting_materials_by_last_invoice_id.setdefault(last_invoice_material_id, []).append(material)
+
+    ordered_materials: list[MaterialRecord] = []
+    for invoice_material in ordered_invoice_materials:
+        ordered_materials.append(invoice_material)
+        ordered_materials.extend(
+            sorted(
+                supporting_materials_by_last_invoice_id.get(invoice_material.id, []),
+                key=lambda material: (
+                    min(
+                        invoice_position_by_material_id[item_id]
+                        for item_id in normalized_linked_invoice_ids_by_supporting_material_id.get(
+                            material.id,
+                            [],
+                        )
+                    ),
+                    material.created_at,
+                    material.original_filename,
+                    material.id,
+                ),
+            )
+        )
+
+    ordered_materials.extend(sorted(trailing_supporting_materials, key=sort_key))
+    return ordered_materials
 
 
 def build_reimbursement_package_manifest(

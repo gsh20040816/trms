@@ -133,6 +133,17 @@ def build_export_router(
             confirmations_by_split_id=confirmations_by_split_id,
         )
 
+    def build_linked_invoice_ids_by_supporting_material_id(
+        invoices,
+    ) -> dict[str, list[str]]:
+        linked_invoice_ids_by_supporting_material_id: dict[str, list[str]] = {}
+        for invoice in invoices:
+            for link in invoice_repository.list_supporting_material_links(invoice.id):
+                linked_invoice_ids_by_supporting_material_id.setdefault(link.material_id, []).append(
+                    invoice.material_id
+                )
+        return linked_invoice_ids_by_supporting_material_id
+
     def with_export_job_status_view(task, export_job):
         snapshot = build_current_export_snapshot(task)
         retry_counts = build_task_export_retry_counts(
@@ -490,6 +501,9 @@ def build_export_router(
                 materials=materials,
                 material_bytes_by_id=material_bytes_by_id,
                 invoices_by_material_id={invoice.material_id: invoice for invoice in invoices},
+                linked_invoice_ids_by_supporting_material_id=build_linked_invoice_ids_by_supporting_material_id(
+                    invoices
+                ),
             )
         except TaskExportActorNotAllowedError as error:
             raise HTTPException(
