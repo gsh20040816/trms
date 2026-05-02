@@ -60,6 +60,9 @@ class TaskExportBoundary(BaseModel):
     )
 
 
+EXPORT_NOT_READY_STAGE_REASON = "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
+
+
 class TaskExportJobStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -432,9 +435,7 @@ def build_task_export_boundary(
 
     blocking_reasons: list[str] = []
     if task.status not in {TaskStatus.READY_TO_EXPORT, TaskStatus.COMPLETED}:
-        blocking_reasons.append(
-            "当前任务还未进入“可导出”或“已完成”阶段，暂时不能生成正式导出材料。"
-        )
+        blocking_reasons.append(EXPORT_NOT_READY_STAGE_REASON)
 
     return TaskExportBoundary(
         task_id=task.id,

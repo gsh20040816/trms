@@ -1373,20 +1373,20 @@
 .admin-dashboard-priority-main {
   padding: 20px;
   border-radius: 18px;
-  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 45%, #ffffff 100%);
-  border: 1px solid #fdba74;
+  background: linear-gradient(135deg, #f8fbff 0%, #eef6ff 52%, #ffffff 100%);
+  border: 1px solid #c7dcf7;
 }
 
 .admin-dashboard-priority-main h3 {
   margin: 4px 0 6px;
   font-size: 1.35rem;
-  color: #7c2d12;
+  color: #16324f;
 }
 
 .admin-dashboard-priority-summary,
 .admin-dashboard-priority-description {
   margin: 0;
-  color: #7c2d12;
+  color: #36506b;
 }
 
 .admin-dashboard-priority-description {
@@ -1425,12 +1425,12 @@
 .admin-task-summary-strip > div {
   padding: 14px 16px;
   border-radius: 12px;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
+  background: linear-gradient(180deg, #f8fbff 0%, #f3f8ff 100%);
+  border: 1px solid #d7e6f7;
 }
 
 .admin-task-summary-strip > div > span {
-  color: #9a3412;
+  color: #36506b;
   font-size: 0.85rem;
   font-weight: 700;
 }

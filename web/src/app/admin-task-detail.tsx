@@ -225,6 +225,29 @@ function buildReadinessGroups(readiness: TaskReadinessSummary) {
   }));
 }
 
+function isExportStageAvailable(taskStatus: TaskStatus) {
+  return taskStatus === "ready_to_export" || taskStatus === "completed";
+}
+
+function buildReadinessGroupStatus(
+  groupKey: string,
+  total: number,
+  taskStatus: TaskStatus,
+) {
+  if (groupKey === "export" && total === 0 && !isExportStageAvailable(taskStatus)) {
+    return {
+      tone: "neutral" as const,
+      label: "阶段未到",
+      title: "当前阶段未开放正式导出",
+    };
+  }
+  return {
+    tone: total > 0 ? "warning" as const : "success" as const,
+    label: total > 0 ? "仍需处理" : "已通过",
+    title: `${total} 项待处理`,
+  };
+}
+
 function buildVisiblePriorityIssues(readiness: TaskReadinessSummary) {
   return readiness.issues.filter((issue) => issue.kind !== "export_blocker");
 }
@@ -750,15 +773,20 @@ export function AdminTaskDetailPage() {
                 <div className="admin-task-readiness-groups" aria-label="任务就绪度统计">
                   {readinessGroups.map((group) => (
                     <section key={group.key} className="admin-task-readiness-card">
+                      {(() => {
+                        const groupStatus = buildReadinessGroupStatus(group.key, group.total, visibleTask.status);
+                        return (
                       <div className="task-card-header">
                         <div>
                           <p className="task-card-id">{group.title}</p>
-                          <h3>{group.total} 项待处理</h3>
+                          <h3>{groupStatus.title}</h3>
                         </div>
-                        <StatusBadge tone={group.total > 0 ? "warning" : "success"}>
-                          {group.total > 0 ? "仍需处理" : "已通过"}
+                        <StatusBadge tone={groupStatus.tone}>
+                          {groupStatus.label}
                         </StatusBadge>
                       </div>
+                        );
+                      })()}
                       <dl className="admin-task-readiness-metrics">
                         {group.items.map((item) => (
                           <div key={item.label}>
@@ -779,6 +807,10 @@ export function AdminTaskDetailPage() {
                       ))}
                     </ul>
                   </div>
+                ) : !isExportStageAvailable(visibleTask.status) ? (
+                  <p className="field-hint">
+                    当前任务仍处于{formatTaskStatus(visibleTask.status)}阶段；进入“可导出”或“已完成”阶段后，再检查正式导出门禁。
+                  </p>
                 ) : (
                   <p className="field-hint">当前任务已满足导出边界，可以进入导出页生成材料包。</p>
                 )}
@@ -798,7 +830,9 @@ export function AdminTaskDetailPage() {
                   <p className="field-hint">
                     {visibleReadiness.export_blocking_reasons.length > 0
                       ? "当前没有待处理异常；导出阶段门禁请看上方“导出阻塞原因”。"
-                      : "当前没有待处理异常，管理员可以直接进入导出页生成最新材料包。"}
+                      : !isExportStageAvailable(visibleTask.status)
+                        ? "当前没有待处理异常；导出会在任务进入“可导出”或“已完成”阶段后开放。"
+                        : "当前没有待处理异常，管理员可以直接进入导出页生成最新材料包。"}
                   </p>
                 ) : (
                   <div className="page-stack">

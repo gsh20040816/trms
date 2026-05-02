@@ -1,5 +1,59 @@
 # WORKLOG
 
+## 2026-05-03 00:05 - Stop admin task detail from overstating linkage/export blockers and cool down warm background panels
+
+### 完成内容
+- 完成任务“收口管理员任务详情页的就绪度误报与暖色背景”。
+- 已修改 [src/trms_backend/domain/task_readiness.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_readiness.py)：
+  - `pending_supporting_material_linkage_count` 不再直接统计全部 `pending_linkage_report.items`；
+  - 改为只统计“当前没有任何已关联发票”的辅助材料，避免把“已有关联、但仍保留候选参考”的材料继续误报成待关联附件；
+  - `export_blocking_reason_count` 与 `export_blocking_reasons` 不再把“当前任务还未进入可导出或已完成阶段”这种纯流程阶段提示当成异常阻塞计数；
+  - 因此任务详情页“识别与归档 / 待关联附件”和“导出准备 / 导出阻塞”两处数字都会自动收口到真正需要管理员处理的问题。
+- 已修改 [src/trms_backend/domain/exports.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/exports.py)：
+  - 抽出统一的 `EXPORT_NOT_READY_STAGE_REASON` 常量，供导出边界和 readiness 聚合共用，避免后续魔法字符串漂移。
+- 已修改 [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)：
+  - 当导出阶段还未开放但不存在真正异常阻塞时，“导出准备”卡片改为中性状态“阶段未到 / 当前阶段未开放正式导出”；
+  - “导出阻塞原因”列表为空时，会根据当前任务状态显示中性阶段说明，而不是误导成“已通过”或“仍需处理”；
+  - “异常优先队列”空态文案同步收口为“当前没有待处理异常；导出会在任务进入可导出或已完成阶段后开放”。
+- 已修改 [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)：
+  - 把 [data/11.png](/home/gsh/workspace/TRMS/data/11.png) 中管理员名单 / 当前费用类别所在的暖黄色摘要块改成冷白-浅蓝背景；
+  - 把 [data/12.png](/home/gsh/workspace/TRMS/data/12.png) 中“建议优先处理的任务”主卡片从暖橙渐变改成冷白-浅蓝渐变；
+  - 相应标题与说明文字从棕橙系收口到蓝灰系，和后台主色板保持一致。
+- 已补/已更新回归测试：
+  - 后端：[tests/test_task_readiness_api.py](/home/gsh/workspace/TRMS/tests/test_task_readiness_api.py)
+  - 前端：[web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - 继续复用 [tests/test_task_review_summary_api.py](/home/gsh/workspace/TRMS/tests/test_task_review_summary_api.py) 保证管理员聚合摘要口径不回退。
+
+### 根因
+- 任务就绪度此前直接把 `build_task_supporting_material_linkage_report(...)` 的全部条目都计成“待关联附件”，没有区分：
+  - 真正没有任何有效归属的材料；
+  - 已经挂到有效发票，但仍保留历史候选参考的材料。
+- 同时，导出准备区直接把 `build_task_export_boundary(...)` 的所有 `blocking_reasons` 都视为异常阻塞；
+- 但“任务还没进入可导出阶段”本质上是正常流程状态，不是异常；
+- 结果就是管理员任务详情页既会高估待关联附件数量，也会把阶段未到误渲染成“1 项待处理”。
+- 视觉上，管理员摘要条和首页优先任务卡还残留暖黄色背景，和当前后台以冷白/浅蓝为主的主视觉不协调，截图里会显得突兀。
+
+### 风险与影响面
+- 本轮只收口管理员任务详情页的 readiness 聚合和局部配色，不改导出页真实 boundary 规则；
+- `build_task_export_boundary(...)` 仍会在导出页明确拒绝“阶段未到”的正式导出动作，只是不再把它包装成任务详情页里的异常计数；
+- 背景色调整只影响 `admin-task-detail` 摘要条和 `admin-task-list` 优先任务卡两处局部容器，不改全站状态色或按钮色。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_task_review_summary_api.py tests/test_task_readiness_api.py`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-list.test.tsx src/app/admin-task-detail.test.tsx`
+- 已通过定向前端构建：
+  - `cd web && npm run build`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `572/572` 通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `123/123` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 23:55 - Stop admin review and readiness summaries from flagging non-invoice confirmation as a key risk
 
 ### 完成内容

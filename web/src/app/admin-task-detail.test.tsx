@@ -270,23 +270,10 @@ describe("admin task detail page", () => {
                   split_incomplete_count: 0,
                   pending_confirmation_count: 0,
                   disputed_confirmation_count: 0,
-                  export_blocking_reason_count: 1,
+                  export_blocking_reason_count: 0,
                 },
-                issues: [
-                  {
-                    kind: "export_blocker",
-                    label: "导出阻塞原因",
-                    count: 1,
-                    blocking: true,
-                    invoice_ids: [],
-                    material_ids: [],
-                    split_ids: [],
-                    details: ["task must be ready_to_export or completed before real exports can be generated"],
-                  },
-                ],
-                export_blocking_reasons: [
-                  "task must be ready_to_export or completed before real exports can be generated",
-                ],
+                issues: [],
+                export_blocking_reasons: [],
               }
             : {}),
         })));
@@ -356,8 +343,11 @@ describe("admin task detail page", () => {
     expect(screen.getByRole("button", { name: "切换为草稿" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为已截止" })).toBeInTheDocument();
     expect(screen.getByLabelText("异常优先队列")).toHaveTextContent(
-      "当前没有待处理异常；导出阶段门禁请看上方“导出阻塞原因”。",
+      "当前没有待处理异常；导出会在任务进入“可导出”或“已完成”阶段后开放。",
     );
+    expect(screen.getByText("当前任务仍处于收集中阶段；进入“可导出”或“已完成”阶段后，再检查正式导出门禁。")).toBeInTheDocument();
+    expect(screen.getByText("当前阶段未开放正式导出")).toBeInTheDocument();
+    expect(screen.getByText("阶段未到")).toBeInTheDocument();
   });
 
   it("allows saving draft task basic configuration", async () => {

@@ -6,7 +6,10 @@ from pydantic import BaseModel, Field
 
 from trms_backend.application.supporting_material_auto_link import SupportingMaterialAutoLinkService
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
-from trms_backend.domain.exports import build_task_export_boundary
+from trms_backend.domain.exports import (
+    EXPORT_NOT_READY_STAGE_REASON,
+    build_task_export_boundary,
+)
 from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, ValidationSeverity, ValidationStatus
 from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.missing_materials import (
@@ -104,6 +107,11 @@ def build_task_readiness_summary(
         linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
         supporting_material_auto_link_service=supporting_material_auto_link_service,
     )
+    actionable_pending_linkage_items = [
+        item
+        for item in pending_linkage_report.items
+        if _is_actionable_pending_supporting_material_linkage_item(item)
+    ]
     missing_materials = aggregate_task_missing_materials(
         task_id=task.id,
         invoices=invoices,
@@ -111,6 +119,11 @@ def build_task_readiness_summary(
         validations_by_invoice_id=validations_by_invoice_id,
     )
     export_boundary = build_task_export_boundary(task, actor_id=normalized_administrator_id)
+    actionable_export_blocking_reasons = [
+        reason
+        for reason in export_boundary.blocking_reasons
+        if reason != EXPORT_NOT_READY_STAGE_REASON
+    ]
 
     issues: list[TaskReadinessIssue] = []
 
@@ -160,14 +173,14 @@ def build_task_readiness_summary(
             )
         )
 
-    if pending_linkage_report.items:
+    if actionable_pending_linkage_items:
         issues.append(
             TaskReadinessIssue(
                 kind=TaskReadinessIssueKind.SUPPORTING_MATERIAL_LINKAGE,
                 label="待关联附件",
-                count=len(pending_linkage_report.items),
-                material_ids=[item.material_id for item in pending_linkage_report.items],
-                invoice_ids=_dedup_invoice_ids_from_linkage_items(pending_linkage_report.items),
+                count=len(actionable_pending_linkage_items),
+                material_ids=[item.material_id for item in actionable_pending_linkage_items],
+                invoice_ids=_dedup_invoice_ids_from_linkage_items(actionable_pending_linkage_items),
             )
         )
 
@@ -237,13 +250,13 @@ def build_task_readiness_summary(
             )
         )
 
-    if export_boundary.blocking_reasons:
+    if actionable_export_blocking_reasons:
         issues.append(
             TaskReadinessIssue(
                 kind=TaskReadinessIssueKind.EXPORT_BLOCKER,
                 label="导出阻塞原因",
-                count=len(export_boundary.blocking_reasons),
-                details=export_boundary.blocking_reasons,
+                count=len(actionable_export_blocking_reasons),
+                details=actionable_export_blocking_reasons,
             )
         )
 
@@ -255,16 +268,16 @@ def build_task_readiness_summary(
             pending_recognition_count=len(pending_recognition_material_ids),
             failed_recognition_count=len(failed_recognition_material_ids),
             needs_confirmation_recognition_count=len(needs_confirmation_material_ids),
-            pending_supporting_material_linkage_count=len(pending_linkage_report.items),
+            pending_supporting_material_linkage_count=len(actionable_pending_linkage_items),
             missing_material_count=len(missing_materials.items),
             blocker_validation_count=len(blocker_validations),
             split_incomplete_count=len(split_incomplete_invoice_ids),
             pending_confirmation_count=len(pending_confirmation_split_ids),
             disputed_confirmation_count=len(disputed_confirmation_split_ids),
-            export_blocking_reason_count=len(export_boundary.blocking_reasons),
+            export_blocking_reason_count=len(actionable_export_blocking_reasons),
         ),
         issues=issues,
-        export_blocking_reasons=export_boundary.blocking_reasons,
+        export_blocking_reasons=actionable_export_blocking_reasons,
     )
 
 
@@ -297,6 +310,12 @@ def _dedup_invoice_ids_from_linkage_items(
             seen.add(candidate.invoice_id)
             invoice_ids.append(candidate.invoice_id)
     return invoice_ids
+
+
+def _is_actionable_pending_supporting_material_linkage_item(
+    item: PendingSupportingMaterialLinkageItem,
+) -> bool:
+    return len(item.linked_invoices) == 0
 
 
 def _collect_non_missing_blocker_validations(
