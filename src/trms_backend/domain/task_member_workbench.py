@@ -9,7 +9,7 @@ from trms_backend.application.supporting_material_auto_link import SupportingMat
 from trms_backend.domain.confirmations import ConfirmationRecord
 from trms_backend.domain.expense_details import ExpenseDetailItem
 from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, ValidationStatus
-from trms_backend.domain.materials import MaterialRecord
+from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.missing_materials import MissingMaterialItem
 from trms_backend.domain.recognitions import (
     RecognitionFailureDetail,
@@ -170,15 +170,6 @@ def build_task_member_workbench_summary(
         invoice.material_id: invoice
         for invoice in invoices
     }
-    pending_linkage_material_ids_by_invoice_id = {
-        invoice.id: {
-            item.material_id
-            for item in pending_supporting_material_linkage_report.items
-            if any(candidate.invoice_id == invoice.id for candidate in item.candidate_invoices)
-        }
-        for invoice in invoices
-    }
-
     items: list[TaskMemberWorkbenchItem] = []
     for material in sorted(report.materials, key=lambda item: (item.created_at, item.material_id), reverse=True):
         invoice = invoices_by_material_id.get(material.material_id)
@@ -186,11 +177,6 @@ def build_task_member_workbench_summary(
             [entry for entry in report.missing_materials if entry.invoice_id == invoice.id]
             if invoice is not None
             else []
-        )
-        supporting_material_linkage_pending = (
-            len(pending_linkage_material_ids_by_invoice_id.get(invoice.id, set())) > 0
-            if invoice is not None
-            else False
         )
         splits = splits_by_invoice_id.get(invoice.id, []) if invoice is not None else []
         confirmations = confirmations_by_invoice_id.get(invoice.id, []) if invoice is not None else []
@@ -201,7 +187,6 @@ def build_task_member_workbench_summary(
             missing_materials=missing_materials,
             splits=splits,
             confirmations=confirmations,
-            supporting_material_linkage_pending=supporting_material_linkage_pending,
         )
         items.append(
             TaskMemberWorkbenchItem(
@@ -252,19 +237,17 @@ def _collect_blocking_reasons(
     missing_materials: list[MissingMaterialItem],
     splits: list[ExpenseSplitRecord],
     confirmations: list[ConfirmationRecord],
-    supporting_material_linkage_pending: bool,
 ) -> list[TaskMemberWorkbenchBlockingReason]:
     reasons: list[TaskMemberWorkbenchBlockingReason] = []
+    is_invoice_material = material.material_type is MaterialType.INVOICE
 
-    if material.recognition_status is RecognitionTaskStatus.PENDING:
+    if material.recognition_status is RecognitionTaskStatus.PENDING and is_invoice_material:
         reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_PENDING)
     if (
         material.recognition_status in {RecognitionTaskStatus.FAILED, RecognitionTaskStatus.NEEDS_CONFIRMATION}
-        or invoice is None
+        or (invoice is None and is_invoice_material)
     ):
         reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_REVIEW)
-    if supporting_material_linkage_pending:
-        reasons.append(TaskMemberWorkbenchBlockingReason.SUPPORTING_MATERIAL_LINKAGE)
     if missing_materials:
         reasons.append(TaskMemberWorkbenchBlockingReason.MISSING_MATERIALS)
     if _has_split_coverage_gap(invoice=invoice, splits=splits):

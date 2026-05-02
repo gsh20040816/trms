@@ -39,13 +39,27 @@ def mark_recognition_succeeded(
     buyer_name: str = "同济大学",
     tax_number: str = "12100000425006117D",
     raw_response: dict[str, object] | None = None,
+    recognized_fields: dict[str, object] | None = None,
 ) -> None:
     list_response = client.get(
         f"/api/materials/{material_id}/recognition-tasks",
         headers=admin_auth_headers(client),
     )
     assert list_response.status_code == 200
-    recognition_task_id = list_response.json()["latest_effective"]["id"]
+    latest_effective = list_response.json()["latest_effective"]
+    if latest_effective is None:
+        create_response = client.post(
+            f"/api/materials/{material_id}/recognition-tasks",
+            headers=admin_auth_headers(client),
+        )
+        assert create_response.status_code == 201
+        list_response = client.get(
+            f"/api/materials/{material_id}/recognition-tasks",
+            headers=admin_auth_headers(client),
+        )
+        assert list_response.status_code == 200
+        latest_effective = list_response.json()["items"][0]
+    recognition_task_id = latest_effective["id"]
 
     update_response = client.patch(
         f"/api/recognition-tasks/{recognition_task_id}/status",
@@ -67,6 +81,7 @@ def mark_recognition_succeeded(
                         "confidence": 1,
                         "status": "recognized",
                     },
+                    **(recognized_fields or {}),
                 },
             },
         },
@@ -297,9 +312,8 @@ def test_member_workbench_summary_maps_blocking_reasons_and_pending_linkage(tmp_
         if item["invoice"] is not None
     }
     assert items_by_invoice_number["REG-001"]["ready_for_submission"] is False
-    assert items_by_invoice_number["REG-001"]["queue_group"] == "supporting_material_linkage"
+    assert items_by_invoice_number["REG-001"]["queue_group"] == "missing_materials"
     assert items_by_invoice_number["REG-001"]["blocking_reasons"] == [
-        "supporting_material_linkage",
         "missing_materials",
     ]
     assert sorted(
@@ -307,11 +321,63 @@ def test_member_workbench_summary_maps_blocking_reasons_and_pending_linkage(tmp_
         for entry in items_by_invoice_number["REG-001"]["missing_materials"]
     ) == ["competition_notice", "payment_record"]
 
-    assert items_by_invoice_number["RAIL-001"]["ready_for_submission"] is False
-    assert items_by_invoice_number["RAIL-001"]["queue_group"] == "supporting_material_linkage"
-    assert items_by_invoice_number["RAIL-001"]["blocking_reasons"] == [
-        "supporting_material_linkage",
-    ]
+    assert items_by_invoice_number["RAIL-001"]["ready_for_submission"] is True
+    assert items_by_invoice_number["RAIL-001"]["queue_group"] == "ready"
+    assert items_by_invoice_number["RAIL-001"]["blocking_reasons"] == []
+
+
+def test_member_workbench_non_invoice_success_without_invoice_is_not_marked_as_recognition_review(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    supporting_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="payment.png",
+        content_type="image/png",
+    )
+    mark_recognition_succeeded(
+        client,
+        supporting_material_id,
+        recognized_fields={
+            "material_type": {
+                "value": "payment_record",
+                "source": "ai",
+                "confidence": 0.98,
+                "status": "recognized",
+                "updated_at": None,
+            },
+            "amount_cents": {
+                "value": 12345,
+                "source": "ai",
+                "confidence": 0.93,
+                "status": "recognized",
+                "updated_at": None,
+            },
+        },
+    )
+
+    response = client.get(
+        f"/api/tasks/{task_id}/member-workbench",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    payment_item = next(
+        item
+        for item in body["items"]
+        if item["material"]["material_id"] == supporting_material_id
+    )
+    assert payment_item["invoice"] is None
+    assert payment_item["recognition"]["status"] == "succeeded"
+    assert payment_item["queue_group"] == "ready"
+    assert payment_item["blocking_reasons"] == []
+    assert payment_item["ready_for_submission"] is True
 
 
 def test_member_workbench_summary_redacts_shared_attachment_details_and_recognition_raw_response(tmp_path):

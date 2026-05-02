@@ -1,5 +1,51 @@
 # WORKLOG
 
+## 2026-05-02 16:14 - Close false recognition blockers for recognized supporting materials and remove pending-linkage submission gate
+
+### 完成内容
+- 完成任务“收口已识别辅助材料的阻塞分组与待关联附件展示”。
+- 后端成员工作台读模型已收口“非发票材料 != 待成票阻塞”：
+  - [src/trms_backend/domain/task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py) 仅对 `invoice` 材料保留“识别中 / 识别失败或待确认 / 未形成发票即阻塞”的旧逻辑；
+  - 已识别成功的支付记录、比赛通知、行程单、订单截图等辅助材料，即使本身不会形成发票，也不再被强行归入 `recognition_review`；
+  - 同时取消把“存在待关联辅助材料”写入发票 `blocking_reasons` 的逻辑，成员提交门禁不再因为附件待关联被整体卡住。
+- 成员工作台前端已同步到新口径：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 的“问题发票”分组只再处理真正的发票材料，不再把辅助材料伪装成问题发票；
+  - “附件待关联”分组说明调整为“可继续提交发票，但辅助材料仍需人工归属”；
+  - 待关联辅助材料摘要不再在工作台长篇展开候选发票明细，只保留原因摘要并引导进入材料详情页处理。
+- 待关联辅助材料可见性进一步收口：
+  - 工作台只展示 `linked_invoices` 为空的待关联材料；
+  - 对“已经关联过至少一张发票，但不存在剩余候选”的材料，不再继续显示在工作台待关联列表中，避免出现“关联已闭合仍提示阻塞”的假状态。
+- 补齐回归测试：
+  - [tests/test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py) 更新发票阻塞断言，并新增“已识别成功的非发票材料不再进入 `recognition_review`”回归；
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 更新工作台待关联摘要断言，并新增“非发票材料只留在待关联摘要、不再进入问题发票分组”回归。
+
+### 根因
+- 问题 1、2、4 的共同根因不是识别链本身全失败，而是“成员工作台读模型把所有 `invoice is None` 的材料都当成待成票异常”。
+- 这条假设对发票材料成立，但对支付记录、比赛通知、行程单等辅助材料不成立，因为它们识别成功后本来就不应形成发票记录。
+- 同时，工作台还把“存在待关联辅助材料”直接投影成发票 `blocking_reasons`，导致即使发票校验本身闭合，也会被错误阻止提交。
+- 待关联摘要层又继续把候选发票和已关联发票一并长列表展示，放大了“已经关联过仍像未处理”的错觉。
+
+### 风险与影响面
+- 本轮只收口成员工作台读模型和前端展示，没有改管理员任务就绪度、附件详情页勾选逻辑或后端 attach / detach API。
+- 当前保守口径是：辅助材料未关联不再阻止成员提交发票，但管理员侧任务就绪度仍会继续看到待关联附件，避免把问题静默吞掉。
+- 已有关联且仍存在剩余候选的材料仍会继续保留在待关联列表中；本轮没有把“一材多票”的编辑能力收窄回单票。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_task_member_workbench_api.py -k 'blocking_reasons_and_pending_linkage or non_invoice_success_without_invoice_is_not_marked_as_recognition_review'`
+  - 2 个用例通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx`
+  - 1 个测试文件 10 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 542 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 15:38 - Close high-failure LLM placeholder outputs from database recognition history
 
 ### 完成内容
