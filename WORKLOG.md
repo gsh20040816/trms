@@ -1,5 +1,106 @@
 # WORKLOG
 
+## 2026-05-02 22:26 - Reuse admin search interaction for system user role management
+
+### 完成内容
+- 根据用户提供的截图 [data/6.png](/home/gsh/workspace/TRMS/data/6.png)，继续收口系统管理员“用户身份管理”前端交互。
+- 已确认截图暴露的问题不是后端角色授权失败，而是系统管理员页之前用了独立拼装的一套检索结果卡片，和管理员任务创建页的“搜索输入 + 候选列表 + 已选摘要”交互不一致，导致视觉和操作节奏都偏离现有主路径。
+- 已新增公共前端组件：
+  - [web/src/components/UserSearchCandidatePicker.tsx](/home/gsh/workspace/TRMS/web/src/components/UserSearchCandidatePicker.tsx)
+  - 统一封装：
+    - 搜索输入框
+    - 候选列表
+    - 检索失败文案
+    - 空结果文案
+- 已把管理员任务创建页的两处用户检索都切到该公共组件：
+  - [web/src/app/admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx)
+  - 成员搜索与管理员搜索现在共用同一套候选列表渲染逻辑，不再继续手写重复 MUI 结构。
+- 已把系统管理员工作台的用户身份管理也切到同一套交互：
+  - [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)
+  - 当前流程已收口为：
+    - 输入关键字检索账号
+    - 在候选列表里点击一个候选账号
+    - 选中结果进入“已选系统账号列表”
+    - 再对当前选中账号执行“授予管理员”
+  - 这与管理员任务创建页的“搜 -> 选 -> 形成已选摘要”逻辑保持一致，不再是系统管理页独立的一套交互。
+- 已同步更新前端测试：
+  - [web/src/app/system-admin-dashboard.test.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.test.tsx)
+  - [web/src/app/admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx)
+  - 覆盖公共组件复用后的系统管理检索/授权主路径与任务创建页回归。
+
+### 根因
+- 系统管理员页上一轮虽然补了功能入口，但前端没有复用项目里已经稳定存在的“管理员添加用户”检索交互，导致：
+  - 候选与操作混排；
+  - 选中态不清晰；
+  - 局部 UI 结构与现有管理路径割裂。
+- 这类问题继续靠页面内单独调样式，只会保留两套几乎相同但逐渐漂移的前端逻辑。
+
+### 风险与影响面
+- 本轮只复用“搜索输入 + 候选列表 + 已选摘要”这一层交互逻辑，不改变后端角色授权 API 语义。
+- 仍未实现管理员角色撤销或系统用户详情页；当前只是把“检索并授权管理员”的主路径统一到已有交互范式。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_system_admin_api.py -k 'search_existing_users or grant_admin_role'`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/system-admin-dashboard.test.tsx src/app/admin-task-create.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 562 个用例全部通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `119/119` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
+## 2026-05-02 22:18 - Add system-admin user role management entry
+
+### 完成内容
+- 完成任务“为系统管理员前端补齐用户身份管理入口”。
+- 后端系统管理 API 已补齐系统管理员专用用户检索接口：
+  - [src/trms_backend/api/system.py](/home/gsh/workspace/TRMS/src/trms_backend/api/system.py)
+  - 新增 `GET /api/system/users/search?keyword=...&limit=...`
+  - 仅 `system_admin` 可调用；
+  - 返回系统管理页真正需要的账号摘要：`id`、`actor_id`、`username`、`display_name`、`student_id`、`roles`。
+- 前端系统管理工作台已新增“用户身份管理”区，而不是继续要求系统管理员手工拼接口：
+  - [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)
+  - 支持输入关键字检索已有账号；
+  - 检索结果会展示用户摘要、业务标识和当前角色；
+  - 对普通账号可直接点击“授予管理员”；
+  - 已是 `admin` 或 `system_admin` 的账号会显示禁用态，避免重复操作误导。
+- 前端系统 API 封装与类型已补齐：
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - [web/src/lib/ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts)
+- 授予成功后，前端会立即把当前检索结果里的角色列表刷新为最新值，并在不是幂等场景时同步把系统管理概览里的管理员数量 `admin` 加一。
+- 已补后端测试：
+  - [tests/test_system_admin_api.py](/home/gsh/workspace/TRMS/tests/test_system_admin_api.py)
+  - 覆盖系统管理员检索已有用户。
+- 已补前端测试：
+  - [web/src/app/system-admin-dashboard.test.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.test.tsx)
+  - 覆盖系统管理员页面中的搜索与授予管理员主路径。
+
+### 根因
+- 之前虽然已经存在真实的 `PUT /api/system/users/{user_id}/roles/admin`，但前端没有入口，也缺少配套的用户检索接口。
+- 这导致“系统管理员授予管理员角色”实际上只能靠外部脚本或手工调用 API，无法称为产品级闭环。
+
+### 风险与影响面
+- 本轮只补“检索账号 + 授予管理员”入口，不包含：
+  - 撤销管理员角色；
+  - 更细粒度的用户详情页；
+  - 系统管理员自身的多角色调整。
+- 当前前端在授予成功后会本地把管理员计数 `+1`；如果后续同页再引入更复杂的跨页并发用户管理，最好还是统一回源刷新 dashboard。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_system_admin_api.py -k 'grant_admin_role or search_existing_users or dashboard_rejects_plain_admin'`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/system-admin-dashboard.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 562 个用例全部通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `119/119` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:48 - Add self-service profile update API and account page
 
 ### 完成内容

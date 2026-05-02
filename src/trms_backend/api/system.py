@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from trms_backend.api.request_identity import (
@@ -51,10 +51,30 @@ class SystemDashboardResponse(BaseModel):
     user_counts: SystemUserCountSummary
 
 
+class SystemUserRoleSummary(BaseModel):
+    id: str
+    actor_id: str
+    username: str
+    display_name: str
+    student_id: str | None = None
+    roles: list[UserRole] = Field(default_factory=list)
+
+
 class SystemAdminRoleGrantResponse(BaseModel):
     user: AuthenticatedUser
     role: UserRole
     already_assigned: bool
+
+
+def build_system_user_role_summary(user: AuthenticatedUser) -> SystemUserRoleSummary:
+    return SystemUserRoleSummary(
+        id=user.id,
+        actor_id=user.actor_id,
+        username=user.username,
+        display_name=user.display_name,
+        student_id=user.member_code,
+        roles=user.roles,
+    )
 
 
 def build_system_router(
@@ -147,6 +167,22 @@ def build_system_router(
         return {
             "text_llm": summarize_system_ai_provider_override(saved.text_llm),
             "vlm": summarize_system_ai_provider_override(saved.vlm),
+        }
+
+    @router.get("/users/search")
+    def search_system_users(
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        keyword: Annotated[str, Query(min_length=1, max_length=128)],
+        limit: Annotated[int, Query(ge=1, le=20)] = 10,
+    ):
+        ensure_system_admin(identity)
+        users = auth_repository.search_users(
+            keyword=keyword,
+            roles=(UserRole.MEMBER, UserRole.ADMIN, UserRole.SYSTEM_ADMIN),
+            limit=limit,
+        )
+        return {
+            "items": [build_system_user_role_summary(user) for user in users]
         }
 
     @router.put("/users/{user_id}/roles/admin")

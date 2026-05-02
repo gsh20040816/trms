@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -138,6 +138,39 @@ describe("system admin dashboard page", () => {
         }));
       }
 
+      if (url === "/api/system/users/search?keyword=member1&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: "user-member-1",
+              actor_id: "2250001",
+              username: "member1",
+              display_name: "王队员",
+              student_id: "2250001",
+              roles: ["member"],
+            },
+          ],
+        }));
+      }
+
+      if (url === "/api/system/users/user-member-1/roles/admin" && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse({
+          user: {
+            id: "user-member-1",
+            username: "member1",
+            role: "member",
+            roles: ["member", "admin"],
+            actor_id: "2250001",
+            display_name: "王队员",
+            member_code: "2250001",
+            created_at: "2026-04-28T00:00:00Z",
+            updated_at: "2026-05-02T23:00:00Z",
+          },
+          role: "admin",
+          already_assigned: false,
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in system admin test: ${url}`);
     });
 
@@ -165,6 +198,15 @@ describe("system admin dashboard page", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存识别 Provider 配置" }));
 
     expect(await screen.findByDisplayValue("https://vlm.example.com/v1")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("检索账号"), { target: { value: "member1" } });
+    fireEvent.click(screen.getByRole("button", { name: "检索账号" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "王队员 / member1 / 2250001" }));
+    const selectedUsers = await screen.findByLabelText("已选系统账号列表");
+    expect(within(selectedUsers).getByText("王队员 / member1 / 2250001")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "授予管理员" }));
+    expect(await screen.findByRole("button", { name: "已是管理员" })).toBeDisabled();
   });
 
   it("blocks ordinary admins before requesting system settings", async () => {

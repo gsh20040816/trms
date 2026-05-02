@@ -223,6 +223,41 @@ def test_system_admin_can_grant_admin_role_to_existing_user_with_audit(tmp_path)
     }
 
 
+def test_system_admin_can_search_existing_users(tmp_path):
+    client = make_client(tmp_path)
+    member_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "member1",
+            "password": "correct-password",
+            "role": "member",
+            "display_name": "王队员",
+            "actor_id": "2250001",
+            "member_code": "2250001",
+        },
+    )
+    assert member_response.status_code == 201
+
+    response = client.get(
+        "/api/system/users/search?keyword=member1&limit=10",
+        headers=system_admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "id": member_response.json()["user"]["id"],
+                "actor_id": "2250001",
+                "username": "member1",
+                "display_name": "王队员",
+                "student_id": "2250001",
+                "roles": ["member"],
+            }
+        ]
+    }
+
+
 def test_system_admin_grant_admin_role_is_idempotent(tmp_path):
     client = make_client(tmp_path)
     member_response = client.post(

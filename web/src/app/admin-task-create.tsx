@@ -10,9 +10,9 @@ import FormGroup from "@mui/material/FormGroup";
 import FormHelperText from "@mui/material/FormHelperText";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
-import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { UserSearchCandidatePicker } from "../components/UserSearchCandidatePicker";
 import { PageHeader } from "../components/dashboard";
 import { useAuthSession } from "./auth-store";
 import { trmsApi } from "../lib/api/trms";
@@ -450,62 +450,24 @@ export function AdminTaskCreatePage() {
           </div>
 
           <Stack spacing={3}>
-            <Stack spacing={0.75}>
-              <TextField
-                label="成员名单搜索"
-                value={memberInputValue}
-                onChange={(event) => {
-                  handleMemberKeywordChange(event.target.value);
-                }}
-                placeholder="输入成员姓名、用户名或学号检索"
-                helperText={isSearchingMembers ? "正在检索成员..." : "输入后会实时向后端检索候选成员。"}
-                fullWidth
-              />
-
-              {memberInputValue.trim().length > 0 ? (
-                <Stack
-                  spacing={0.5}
-                  aria-label="成员候选列表"
-                  sx={{
-                    borderRadius: 3,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: "background.paper",
-                    py: 0.5,
-                    overflow: "hidden",
-                  }}
-                >
-                  {memberSearchError ? (
-                    <Typography variant="body2" color="error" sx={{ px: 1.5, py: 1 }}>
-                      成员检索失败，请稍后重试。
-                    </Typography>
-                  ) : null}
-                  {!memberSearchError && visibleMemberOptions.length === 0 && !isSearchingMembers ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, py: 1 }}>
-                      没有匹配的成员。
-                    </Typography>
-                  ) : null}
-                  {visibleMemberOptions.map((option) => (
-                    <Button
-                      key={option.actor_id}
-                      variant="text"
-                      color="inherit"
-                      sx={{
-                        justifyContent: "flex-start",
-                        borderRadius: 0,
-                        px: 1.5,
-                        py: 1,
-                      }}
-                      onClick={() => {
-                        addMember(option);
-                      }}
-                    >
-                      {formatUserSearchSummary(option)}
-                    </Button>
-                  ))}
-                </Stack>
-              ) : null}
-            </Stack>
+            <UserSearchCandidatePicker
+              label="成员名单搜索"
+              value={memberInputValue}
+              onChange={handleMemberKeywordChange}
+              placeholder="输入成员姓名、用户名或学号检索"
+              helperText={isSearchingMembers ? "正在检索成员..." : "输入后会实时向后端检索候选成员。"}
+              showOptions={memberInputValue.trim().length > 0}
+              options={visibleMemberOptions.map((option) => ({
+                key: option.actor_id,
+                label: formatUserSearchSummary(option),
+                onSelect: () => {
+                  addMember(option);
+                },
+              }))}
+              listAriaLabel="成员候选列表"
+              searchErrorText={memberSearchError ? "成员检索失败，请稍后重试。" : null}
+              emptyText={!isSearchingMembers ? "没有匹配的成员。" : ""}
+            />
 
             {validationErrors.memberIds ? (
               <FormHelperText error>{validationErrors.memberIds}</FormHelperText>
@@ -556,70 +518,32 @@ export function AdminTaskCreatePage() {
             </div>
           </div>
           <Stack spacing={3}>
-            <Stack spacing={0.75}>
-              <TextField
-                label="管理员搜索"
-                value={administratorInputValue}
-                onChange={(event) => {
-                  handleAdministratorKeywordChange(event.target.value);
-                }}
-                placeholder="输入管理员姓名、用户名或管理员标识检索"
-                error={Boolean(validationErrors.administratorIds)}
-                helperText={
-                  validationErrors.administratorIds
-                  ?? (
-                    isSearchingAdministrators
-                      ? "正在检索管理员..."
-                      : "默认已包含当前管理员；可继续追加其他管理员。"
-                  )
-                }
-                fullWidth
-              />
-
-              {administratorInputValue.trim().length > 0 ? (
-                <Stack
-                  spacing={0.5}
-                  aria-label="管理员候选列表"
-                  sx={{
-                    borderRadius: 3,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: "background.paper",
-                    py: 0.5,
-                    overflow: "hidden",
-                  }}
-                >
-                  {administratorSearchError ? (
-                    <Typography variant="body2" color="error" sx={{ px: 1.5, py: 1 }}>
-                      管理员检索失败，请稍后重试。
-                    </Typography>
-                  ) : null}
-                  {!administratorSearchError && visibleAdministratorOptions.length === 0 && !isSearchingAdministrators ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, py: 1 }}>
-                      没有匹配的管理员。
-                    </Typography>
-                  ) : null}
-                  {visibleAdministratorOptions.map((option) => (
-                    <Button
-                      key={option.actor_id}
-                      variant="text"
-                      color="inherit"
-                      sx={{
-                        justifyContent: "flex-start",
-                        borderRadius: 0,
-                        px: 1.5,
-                        py: 1,
-                      }}
-                      onClick={() => {
-                        addAdministrator(option);
-                      }}
-                    >
-                      {formatUserSearchSummary(option)}
-                    </Button>
-                  ))}
-                </Stack>
-              ) : null}
-            </Stack>
+            <UserSearchCandidatePicker
+              label="管理员搜索"
+              value={administratorInputValue}
+              onChange={handleAdministratorKeywordChange}
+              placeholder="输入管理员姓名、用户名或管理员标识检索"
+              error={Boolean(validationErrors.administratorIds)}
+              helperText={
+                validationErrors.administratorIds
+                ?? (
+                  isSearchingAdministrators
+                    ? "正在检索管理员..."
+                    : "默认已包含当前管理员；可继续追加其他管理员。"
+                )
+              }
+              showOptions={administratorInputValue.trim().length > 0}
+              options={visibleAdministratorOptions.map((option) => ({
+                key: option.actor_id,
+                label: formatUserSearchSummary(option),
+                onSelect: () => {
+                  addAdministrator(option);
+                },
+              }))}
+              listAriaLabel="管理员候选列表"
+              searchErrorText={administratorSearchError ? "管理员检索失败，请稍后重试。" : null}
+              emptyText={!isSearchingAdministrators ? "没有匹配的管理员。" : ""}
+            />
 
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="已选管理员列表">
               {selectedAdministratorOptions.map((administrator) => (

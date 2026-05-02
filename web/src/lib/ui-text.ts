@@ -20,6 +20,10 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   system_admin: "系统管理员",
 };
 
+export function formatUserRole(role: UserRole) {
+  return ROLE_LABELS[role] ?? role;
+}
+
 export const WORKSPACE_LABELS: Record<UserRole, string> = {
   member: "成员工作台",
   admin: "管理员工作台",

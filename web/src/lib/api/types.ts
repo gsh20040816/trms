@@ -130,6 +130,15 @@ export type SystemUserCountSummary = {
   system_admin: number;
 };
 
+export type SystemUserRoleSummary = {
+  id: string;
+  actor_id: string;
+  username: string;
+  display_name: string;
+  student_id: string | null;
+  roles: UserRole[];
+};
+
 export type SystemDashboard = {
   service_health: string;
   global_invoice_config: GlobalInvoiceConfig | null;

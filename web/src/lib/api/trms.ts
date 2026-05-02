@@ -36,6 +36,7 @@ import type {
   SystemDashboard,
   SystemAiProviderConfigPayload,
   SystemAiProviderConfigSummary,
+  SystemUserRoleSummary,
   TaskCreateInput,
   TaskExportBoundary,
   TaskExportJobRecord,
@@ -186,6 +187,25 @@ export const trmsApi = {
     }>("/system/recognition-provider-config", {
       method: "PUT",
       body: payload,
+    });
+  },
+
+  searchSystemUsers(keyword: string, limit = 10) {
+    return apiClient.request<ApiListResponse<SystemUserRoleSummary>>(
+      `/system/users/search${buildQuery({
+        keyword: keyword.trim(),
+        limit: String(limit),
+      })}`,
+    );
+  },
+
+  grantUserAdminRole(userId: string) {
+    return apiClient.request<{
+      user: AuthenticatedUser;
+      role: "admin";
+      already_assigned: boolean;
+    }>(`/system/users/${encodeSegment(userId)}/roles/admin`, {
+      method: "PUT",
     });
   },
 

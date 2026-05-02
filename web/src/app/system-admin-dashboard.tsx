@@ -13,12 +13,15 @@ import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { PageHeader, RoleWorkspace, StatCard } from "../components/dashboard";
+import { UserSearchCandidatePicker } from "../components/UserSearchCandidatePicker";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
 import type {
   SystemAiProviderConfigPayload,
   SystemDashboard,
+  SystemUserRoleSummary,
 } from "../lib/api/types";
+import { formatUserSearchSummary, formatUserRole } from "../lib/ui-text";
 import { useAuthSession } from "./auth-store";
 
 type SystemDashboardState =
@@ -50,6 +53,12 @@ type RecognitionProviderFormState = {
 };
 
 type RecognitionProviderFormErrors = Partial<Record<keyof RecognitionProviderFormState, string>>;
+
+type UserRoleManagementState =
+  | { status: "idle"; items: SystemUserRoleSummary[] }
+  | { status: "loading"; items: SystemUserRoleSummary[] }
+  | { status: "error"; items: SystemUserRoleSummary[]; error: unknown }
+  | { status: "ready"; items: SystemUserRoleSummary[] };
 
 function buildConfigFormState(dashboard: SystemDashboard): ConfigFormState {
   return {
@@ -184,6 +193,13 @@ export function SystemAdminDashboardPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingRecognitionProviders, setIsSavingRecognitionProviders] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
+  const [userSearchKeyword, setUserSearchKeyword] = useState("");
+  const [userRoleManagementState, setUserRoleManagementState] = useState<UserRoleManagementState>({
+    status: "idle",
+    items: [],
+  });
+  const [selectedSystemUser, setSelectedSystemUser] = useState<SystemUserRoleSummary | null>(null);
+  const [grantingUserId, setGrantingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -323,6 +339,82 @@ export function SystemAdminDashboardPage() {
     }
   }
 
+  async function handleSystemUserSearch() {
+    const keyword = userSearchKeyword.trim();
+    if (!keyword) {
+      return;
+    }
+
+    setUserRoleManagementState((current) => ({
+      status: "loading",
+      items: current.items,
+    }));
+    try {
+      const response = await trmsApi.searchSystemUsers(keyword);
+      setUserRoleManagementState({
+        status: "ready",
+        items: response.items,
+      });
+    } catch (error) {
+      setUserRoleManagementState((current) => ({
+        status: "error",
+        items: current.items,
+        error,
+      }));
+      showError("检索系统账号失败");
+    }
+  }
+
+  async function handleGrantAdminRole(user: SystemUserRoleSummary) {
+    setGrantingUserId(user.id);
+    try {
+      const response = await trmsApi.grantUserAdminRole(user.id);
+      const updatedUser = response.user;
+      const updatedUserSummary: SystemUserRoleSummary = {
+        id: updatedUser.id,
+        actor_id: updatedUser.actor_id,
+        username: updatedUser.username,
+        display_name: updatedUser.display_name,
+        student_id: updatedUser.member_code,
+        roles: updatedUser.roles,
+      };
+      setUserRoleManagementState((current) => ({
+        status: "ready",
+        items: current.items.map((item) => (
+          item.id === user.id
+            ? updatedUserSummary
+            : item
+        )),
+      }));
+      setSelectedSystemUser(updatedUserSummary);
+      if (!response.already_assigned) {
+        setState((current) => (
+          current.status === "ready"
+            ? {
+              status: "ready",
+              dashboard: {
+                ...current.dashboard,
+                user_counts: {
+                  ...current.dashboard.user_counts,
+                  admin: current.dashboard.user_counts.admin + 1,
+                },
+              },
+            }
+            : current
+        ));
+      }
+      showSuccess(
+        response.already_assigned
+          ? `账号 ${updatedUser.username} 已具备管理员角色`
+          : `已为账号 ${updatedUser.username} 授予管理员角色`,
+      );
+    } catch {
+      showError("授予管理员角色失败");
+    } finally {
+      setGrantingUserId(null);
+    }
+  }
+
   return (
     <RoleWorkspace
       header={(
@@ -375,6 +467,118 @@ export function SystemAdminDashboardPage() {
 
         {dashboard ? (
           <>
+            <Card>
+              <CardContent>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                  <Box>
+                    <Typography variant="overline" color="text.secondary">
+                      User Roles
+                    </Typography>
+                    <Typography variant="h5" sx={{ mt: 0.5 }}>
+                      用户身份管理
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      在这里检索现有账号，并把成员或普通账号追加为管理员角色。真实多角色来源应走这里的受控授权，而不是公开注册时直接写入多角色数组。
+                    </Typography>
+                  </Box>
+                  <Chip label="仅系统管理员" color="primary" size="small" variant="outlined" />
+                </Stack>
+
+                <Stack spacing={3} sx={{ mt: 3 }}>
+                  <UserSearchCandidatePicker
+                    label="检索账号"
+                    value={userSearchKeyword}
+                    onChange={setUserSearchKeyword}
+                    placeholder="输入用户名、显示名称、学号或业务标识"
+                    helperText={
+                      userRoleManagementState.status === "loading"
+                        ? "正在检索系统账号..."
+                        : "输入后检索已有账号；选择一个账号后再执行授予管理员。"
+                    }
+                    showOptions={userSearchKeyword.trim().length > 0}
+                    options={userRoleManagementState.items.map((user) => ({
+                      key: user.id,
+                      label: formatUserSearchSummary(user),
+                      onSelect: () => {
+                        setSelectedSystemUser(user);
+                        setUserSearchKeyword("");
+                      },
+                    }))}
+                    listAriaLabel="系统账号候选列表"
+                    searchErrorText={
+                      userRoleManagementState.status === "error"
+                        ? "系统账号检索失败，请稍后重试。"
+                        : null
+                    }
+                    emptyText={userRoleManagementState.status !== "loading" ? "没有匹配的系统账号。" : ""}
+                  />
+                  <Stack direction="row" justifyContent="flex-end">
+                    <Button
+                      variant="contained"
+                      disabled={userRoleManagementState.status === "loading" || userSearchKeyword.trim().length === 0}
+                      onClick={() => {
+                        void handleSystemUserSearch();
+                      }}
+                    >
+                      {userRoleManagementState.status === "loading" ? "检索中..." : "检索账号"}
+                    </Button>
+                  </Stack>
+
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="已选系统账号列表">
+                    {selectedSystemUser ? (
+                      <Chip
+                        label={formatUserSearchSummary(selectedSystemUser)}
+                        onDelete={() => {
+                          setSelectedSystemUser(null);
+                        }}
+                      />
+                    ) : null}
+                  </Stack>
+
+                  {selectedSystemUser ? (
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
+                          <Box>
+                            <Typography variant="subtitle1">{formatUserSearchSummary(selectedSystemUser)}</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                              业务标识：{selectedSystemUser.actor_id}
+                            </Typography>
+                            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                              {selectedSystemUser.roles.map((role) => (
+                                <Chip key={role} size="small" label={formatUserRole(role)} />
+                              ))}
+                            </Stack>
+                          </Box>
+                          <Stack direction="row" spacing={1} alignItems="flex-start">
+                            <Button
+                              variant="outlined"
+                              disabled={
+                                grantingUserId === selectedSystemUser.id
+                                || selectedSystemUser.roles.includes("admin")
+                                || selectedSystemUser.roles.includes("system_admin")
+                              }
+                              onClick={() => {
+                                void handleGrantAdminRole(selectedSystemUser);
+                              }}
+                            >
+                              {grantingUserId === selectedSystemUser.id
+                                ? "授权中..."
+                                : selectedSystemUser.roles.includes("system_admin")
+                                  ? "系统管理员"
+                                  : selectedSystemUser.roles.includes("admin")
+                                    ? "已是管理员"
+                                    : "授予管理员"}
+                            </Button>
+                          </Stack>
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </Stack>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
