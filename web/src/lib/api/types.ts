@@ -88,6 +88,7 @@ export type GlobalInvoiceConfig = {
 export type RuntimeSummary = {
   environment: string;
   public_api_base_url: string;
+  system_timezone: string;
   async_job_mode: string;
   file_storage_backend: string;
   llm_provider_configured: boolean;

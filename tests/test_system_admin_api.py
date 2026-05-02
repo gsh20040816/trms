@@ -13,6 +13,7 @@ def make_client(tmp_path):
         env={
             "DATABASE_URL": f"sqlite:///{tmp_path}/test.db",
             "TRMS_PUBLIC_API_BASE_URL": "http://127.0.0.1:9876/api",
+            "TZ": "Asia/Shanghai",
             "TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN": "bootstrap-secret",
             "TRMS_AUTH_TELEGRAM_INBOUND_TOKEN": "telegram-secret",
             "TRMS_AUTH_EMAIL_INBOUND_TOKEN": "email-secret",
@@ -89,6 +90,7 @@ def test_system_admin_dashboard_returns_real_config_and_runtime_summary(tmp_path
         "runtime": {
             "environment": "development",
             "public_api_base_url": "http://127.0.0.1:9876/api",
+            "system_timezone": "Asia/Shanghai",
             "async_job_mode": "in_process",
             "file_storage_backend": "local",
             "llm_provider_configured": True,

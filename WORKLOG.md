@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-05-03 01:20 - Fix system timezone summary and expose browser timezone in frontend
+
+### 完成内容
+- 完成任务“读取环境变量作为系统时区，并在前端展示浏览器提供的时区值”。
+- 已修改 [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)：
+  - 运行时配置新增 `system_timezone` 字段；
+  - 启动时会读取 `TZ` 环境变量，未配置时默认 `UTC`；
+  - 对时区值增加 IANA 时区名校验，避免把空值或非法字符串当作有效系统时区。
+- 已修改 [src/trms_backend/api/system.py](/home/gsh/workspace/TRMS/src/trms_backend/api/system.py) 与 [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)：
+  - 系统管理页依赖的 `/api/system/dashboard` 运行时摘要新增 `system_timezone` 字段；
+  - 前后端类型定义保持一致。
+- 已修改 [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)：
+  - 当前运行状态区新增“系统时区”和“浏览器时区”展示；
+  - 浏览器时区直接读取 `Intl.DateTimeFormat().resolvedOptions().timeZone`，未提供时显式展示降级文案。
+- 已补测试与配置示例：
+  - [tests/test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py)
+  - [tests/test_system_admin_api.py](/home/gsh/workspace/TRMS/tests/test_system_admin_api.py)
+  - [web/src/app/system-admin-dashboard.test.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.test.tsx)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+
+### 根因
+- 后端运行时配置此前没有任何“系统时区”概念，系统管理页也只展示环境、API 地址和异步模式等摘要；
+- 结果是服务端实际部署即使通过环境变量设置了时区，前端也无法看到当前系统按哪个时区运行；
+- 同时前端虽然默认会按浏览器本地时区格式化时间，但页面没有把浏览器提供的时区值显式展示出来，排障时很难区分“服务端时区”和“当前浏览器时区”。
+
+### 风险与影响面
+- 本轮只补充运行时摘要与展示，不改变数据库中时间的存储策略，也不改现有 UTC 时间戳写入逻辑。
+- `TZ` 现在要求是有效 IANA 时区名；若部署继续使用非 IANA 字符串，启动会显式报配置错误，而不是静默展示错误时区。
+- 浏览器时区展示只用于排障摘要，不参与后端鉴权、导出排序或业务状态流转。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_runtime_config.py tests/test_system_admin_api.py`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/system-admin-dashboard.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `576/576` 通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `123/123` 通过；
+  - `web` 构建通过；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 00:50 - Optimize merged export ordering for invoice attachments
 
 ### 完成内容

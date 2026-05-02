@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 from trms_backend.domain.system_ai_provider_config import (
@@ -19,6 +20,7 @@ DEFAULT_DATABASE_URL = "sqlite:///./trms.db"
 DEFAULT_MATERIAL_STORAGE_DIR = "./data/materials"
 DEFAULT_API_HOST = "127.0.0.1"
 DEFAULT_API_PORT = 9876
+DEFAULT_SYSTEM_TIMEZONE = "UTC"
 DEFAULT_CORS_ALLOWED_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://localhost:5173",
@@ -276,6 +278,7 @@ class RuntimeConfig(BaseModel):
     file_storage: FileStorageConfig
     cors_allowed_origins: tuple[str, ...]
     public_api_base_url: str
+    system_timezone: str
     api_host: str
     api_port: int = Field(ge=1, le=65535)
     async_jobs: AsyncJobConfig
@@ -325,6 +328,11 @@ class RuntimeConfig(BaseModel):
             allow_path=True,
         )
 
+    @field_validator("system_timezone")
+    @classmethod
+    def validate_system_timezone(cls, value: str) -> str:
+        return _normalize_timezone_name(value, field_name="system_timezone")
+
     @field_validator("api_host")
     @classmethod
     def validate_api_host(cls, value: str) -> str:
@@ -353,6 +361,7 @@ class RuntimeConfig(BaseModel):
                 "file_storage": self.file_storage.to_safe_log_fields(),
                 "cors_allowed_origins": list(self.cors_allowed_origins),
                 "public_api_base_url": self.public_api_base_url,
+                "system_timezone": self.system_timezone,
                 "api_host": self.api_host,
                 "api_port": self.api_port,
                 "async_jobs": {
@@ -386,6 +395,7 @@ def load_runtime_config(
     material_storage_dir: str | Path | None = None,
     cors_allowed_origins: str | Iterable[str] | None = None,
     public_api_base_url: str | None = None,
+    system_timezone: str | None = None,
     api_host: str | None = None,
     api_port: str | int | None = None,
     storage_backend: str | None = None,
@@ -457,6 +467,9 @@ def load_runtime_config(
             host=str(raw_api_host),
             port=str(raw_api_port),
         )
+    raw_system_timezone = _resolve_value(system_timezone, environment_variables.get("TZ"))
+    if raw_system_timezone is None:
+        raw_system_timezone = DEFAULT_SYSTEM_TIMEZONE
 
     raw_storage_backend = _resolve_value(
         storage_backend,
@@ -612,6 +625,7 @@ def load_runtime_config(
                 "file_storage": storage_payload,
                 "cors_allowed_origins": raw_cors_allowed_origins,
                 "public_api_base_url": raw_public_api_base_url,
+                "system_timezone": raw_system_timezone,
                 "api_host": raw_api_host,
                 "api_port": raw_api_port,
                 "async_jobs": {
@@ -841,6 +855,17 @@ def _strip_optional_quotes(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
         return value[1:-1]
     return value
+
+
+def _normalize_timezone_name(value: str, *, field_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} must not be empty")
+    try:
+        ZoneInfo(normalized)
+    except ZoneInfoNotFoundError as error:
+        raise ValueError(f"{field_name} must be a valid IANA timezone name") from error
+    return normalized
 
 
 def _has_meaningful_value(value: object | None) -> bool:

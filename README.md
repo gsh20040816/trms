@@ -123,6 +123,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_STORAGE_S3_KEY_PREFIX`
 - `TRMS_CORS_ALLOWED_ORIGINS`：逗号分隔的 `http(s)://host[:port]` 列表
 - `TRMS_PUBLIC_API_BASE_URL`
+- `TZ`：系统时区，默认 `UTC`；建议使用 IANA 时区名，例如 `Asia/Shanghai`
 - `TRMS_API_HOST`
 - `TRMS_API_PORT`
 - `TRMS_ASYNC_JOB_MODE`

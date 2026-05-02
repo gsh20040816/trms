@@ -26,6 +26,7 @@ from trms_backend.runtime_config import RuntimeConfig, apply_system_ai_provider_
 class RuntimeSummaryResponse(BaseModel):
     environment: str
     public_api_base_url: str
+    system_timezone: str
     async_job_mode: str
     file_storage_backend: str
     llm_provider_configured: bool
@@ -123,6 +124,7 @@ def build_system_router(
             runtime=RuntimeSummaryResponse(
                 environment=effective_runtime_config.environment,
                 public_api_base_url=effective_runtime_config.public_api_base_url,
+                system_timezone=effective_runtime_config.system_timezone,
                 async_job_mode=effective_runtime_config.async_jobs.mode,
                 file_storage_backend=effective_runtime_config.file_storage.backend,
                 llm_provider_configured=effective_runtime_config.llm_provider is not None,

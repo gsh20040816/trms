@@ -168,6 +168,15 @@ function renderBooleanChip(value: boolean, trueLabel: string, falseLabel: string
   );
 }
 
+function resolveBrowserTimeZone() {
+  try {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim();
+    return timeZone || "浏览器未提供";
+  } catch {
+    return "浏览器未提供";
+  }
+}
+
 export function SystemAdminDashboardPage() {
   const session = useAuthSession();
   const { showError, showSuccess } = useSnackbar();
@@ -254,6 +263,7 @@ export function SystemAdminDashboardPage() {
   const hasValidationErrors = Object.keys(validationErrors).length > 0;
   const recognitionProviderValidationErrors = validateRecognitionProviderForm(recognitionProviderFormState);
   const hasRecognitionProviderValidationErrors = Object.keys(recognitionProviderValidationErrors).length > 0;
+  const browserTimeZone = resolveBrowserTimeZone();
   const summaryCards = dashboard ? [
     {
       label: "成员账号",
@@ -892,6 +902,18 @@ export function SystemAdminDashboardPage() {
                     <Typography variant="subtitle2">公开 API 基地址</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                       {dashboard.runtime.public_api_base_url}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2">系统时区</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      {dashboard.runtime.system_timezone}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2">浏览器时区</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      {browserTimeZone}
                     </Typography>
                   </Box>
                   <Box>

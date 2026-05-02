@@ -29,6 +29,7 @@ def test_load_runtime_config_uses_development_defaults():
         "http://localhost:5173",
     )
     assert config.public_api_base_url == "http://127.0.0.1:9876/api"
+    assert config.system_timezone == "UTC"
     assert config.api_host == "127.0.0.1"
     assert config.api_port == 9876
     assert config.async_jobs.mode == "in_process"
@@ -50,6 +51,7 @@ def test_load_runtime_environment_variables_reads_root_dotenv_file(monkeypatch, 
                 "TRMS_API_PORT=8100",
                 "TRMS_CORS_ALLOWED_ORIGINS=http://127.0.0.1:4173",
                 "TRMS_PUBLIC_API_BASE_URL=http://127.0.0.1:8100/api",
+                "TZ=Asia/Shanghai",
                 'TRMS_LLM_API_KEY="sk-dotenv-secret"',
                 "TRMS_LLM_MODEL='gpt-4.1-mini'",
             ]
@@ -73,6 +75,7 @@ def test_load_runtime_environment_variables_reads_root_dotenv_file(monkeypatch, 
     assert config.api_port == 8100
     assert config.cors_allowed_origins == ("http://127.0.0.1:4173",)
     assert config.public_api_base_url == "http://127.0.0.1:8100/api"
+    assert config.system_timezone == "Asia/Shanghai"
     assert config.llm_provider is not None
     assert config.llm_provider.api_key.get_secret_value() == "sk-dotenv-secret"
     assert config.llm_provider.model == "gpt-4.1-mini"

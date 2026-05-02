@@ -45,6 +45,11 @@ describe("system admin dashboard page", () => {
 
   it("loads the dashboard and allows saving global invoice config", async () => {
     setMockSession("system_admin");
+    const resolvedOptions = new Intl.DateTimeFormat().resolvedOptions();
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...resolvedOptions,
+      timeZone: "Asia/Shanghai",
+    });
 
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
@@ -75,6 +80,7 @@ describe("system admin dashboard page", () => {
           runtime: {
             environment: "development",
             public_api_base_url: "http://127.0.0.1:9876/api",
+            system_timezone: "Asia/Shanghai",
             async_job_mode: "in_process",
             file_storage_backend: "local",
             llm_provider_configured: false,
@@ -181,6 +187,7 @@ describe("system admin dashboard page", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByDisplayValue("同济大学 ACM 实验室")).toBeInTheDocument();
     expect(screen.getByText("http://127.0.0.1:9876/api")).toBeInTheDocument();
+    expect(screen.getAllByText("Asia/Shanghai")).toHaveLength(2);
     expect(screen.getByDisplayValue("https://text.example.com/v1")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("发票抬头"), { target: { value: "同济大学" } });
