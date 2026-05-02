@@ -295,6 +295,56 @@ def test_task_readiness_reports_recognition_blockers(tmp_path):
     ]
 
 
+def test_task_readiness_does_not_count_non_invoice_needs_confirmation_as_review_blocker(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    payment_material_id = upload_material(
+        client,
+        task_id,
+        material_type="payment_record",
+        filename="payment.png",
+    )
+
+    payment_recognition_task_id = latest_recognition_task_id(client, payment_material_id)
+    response = client.patch(
+        f"/api/recognition-tasks/{payment_recognition_task_id}/status",
+        headers=admin_auth_headers(client),
+        json={
+            "target_status": "needs_confirmation",
+            "result": {
+                "raw_response": {"provider": "placeholder-ai", "document_type": "payment_record"},
+                "recognized_fields": {
+                    "material_type": {
+                        "value": "payment_record",
+                        "source": "ai",
+                        "confidence": 0.95,
+                        "status": "recognized",
+                    },
+                    "location": {
+                        "value": "如家商旅酒店武汉大学街道口店",
+                        "source": "ai",
+                        "confidence": 0.7,
+                        "status": "needs_confirmation",
+                    },
+                },
+            },
+        },
+    )
+    assert response.status_code == 200
+
+    response = client.get(
+        f"/api/tasks/{task_id}/readiness",
+        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["counts"]["needs_confirmation_recognition_count"] == 0
+    issues_by_kind = {item["kind"]: item for item in body["issues"]}
+    assert "recognition_needs_confirmation" not in issues_by_kind
+
+
 def test_task_readiness_reports_supporting_material_and_missing_material_blockers(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task_with_payload(

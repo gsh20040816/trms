@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
 from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, ValidationSeverity, ValidationStatus
-from trms_backend.domain.materials import MaterialRecord
+from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.recognitions import RecognitionTaskRecord, RecognitionTaskStatus
 from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.tasks import ReimbursementTask, ensure_task_administrator
@@ -151,7 +151,10 @@ def build_task_review_summary(
             pending_recognition_count += 1
         elif recognition.status is RecognitionTaskStatus.FAILED:
             failed_recognition_count += 1
-        elif recognition.status is RecognitionTaskStatus.NEEDS_CONFIRMATION:
+        elif (
+            recognition.status is RecognitionTaskStatus.NEEDS_CONFIRMATION
+            and material_item.material.material_type is MaterialType.INVOICE
+        ):
             needs_confirmation_recognition_count += 1
 
     return TaskReviewSummary(

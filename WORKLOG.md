@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-02 23:55 - Stop admin review and readiness summaries from flagging non-invoice confirmation as a key risk
+
+### 完成内容
+- 完成任务“收口管理员审核风险与就绪度，避免把非发票待确认误标成重点风险”。
+- 已修改 [src/trms_backend/domain/task_review_summary.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_review_summary.py)：
+  - 管理员 `review-summary` 中的 `needs_confirmation_recognition_count` 不再对所有 `needs_confirmation` 材料统一计数；
+  - 改为仅统计 `material_type == invoice` 的待确认材料；
+  - 因此 `payment_record`、`competition_notice`、`itinerary`、`order_screenshot` 等非发票辅助材料，即使有低置信字段，也不会再出现在管理员“识别待人工确认”风险摘要里。
+- 已修改 [src/trms_backend/domain/task_readiness.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_readiness.py)：
+  - `TaskReadinessSummary` 里的 `needs_confirmation_recognition_count` 与 `recognition_needs_confirmation` issue 同步收紧为“仅发票材料”；
+  - 任务详情页“低置信待确认”统计与异常优先队列因此会自动一起恢复，无需前端额外打补丁。
+- 已补后端回归测试：
+  - [tests/test_task_review_summary_api.py](/home/gsh/workspace/TRMS/tests/test_task_review_summary_api.py)
+  - [tests/test_task_readiness_api.py](/home/gsh/workspace/TRMS/tests/test_task_readiness_api.py)
+  - 新增覆盖：非发票 `needs_confirmation` 材料仍保留识别状态，但不会再被管理员风险摘要计成重点待处理项。
+
+### 根因
+- 管理员界面的“审核风险”“任务就绪度总览”都依赖后端聚合计数：
+  - `TaskReviewSummary.counts.needs_confirmation_recognition_count`
+  - `TaskReadinessCounts.needs_confirmation_recognition_count`
+- 这两处此前都把所有 `RecognitionTaskStatus.NEEDS_CONFIRMATION` 统一视为管理员重点风险；
+- 但前面成员主路径已经确认：非发票辅助材料的 `needs_confirmation` 并不天然阻塞发票提交流程；
+- 所以像支付记录里某个地点/分类线索低置信时，会在管理员界面被错误放大成“识别待人工确认”重点项，和当前产品口径冲突。
+
+### 风险与影响面
+- 本轮只收紧管理员聚合摘要中的“待人工确认”计数口径，不改材料本身的识别状态存储；
+- 管理员如果主动点开某份非发票材料详情，仍能看到它的低置信字段与识别状态，这一层可见性保留；
+- 发票材料 `needs_confirmation` 仍继续进入管理员风险摘要和就绪度门禁，不放宽发票主审核链路。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_task_review_summary_api.py tests/test_task_readiness_api.py`
+- 已通过定向编译检查：
+  - `uv run python -m compileall src tests`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `572/572` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 23:45 - Stop member workbench status summary from flagging non-invoice confirmation as pending
 
 ### 完成内容

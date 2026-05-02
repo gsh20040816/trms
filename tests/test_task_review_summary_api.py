@@ -264,6 +264,57 @@ def test_review_summary_includes_pending_assignment_materials_for_task_hint(tmp_
     assert body["materials"] == []
 
 
+def test_review_summary_does_not_count_non_invoice_needs_confirmation_as_admin_risk(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    payment_material_id = upload_material(
+        client,
+        task_id,
+        material_type="payment_record",
+        filename="payment.png",
+    )
+
+    payment_recognition_task_id = latest_recognition_task_id(client, payment_material_id)
+    response = client.patch(
+        f"/api/recognition-tasks/{payment_recognition_task_id}/status",
+        headers=admin_auth_headers(client),
+        json={
+            "target_status": "needs_confirmation",
+            "result": {
+                "raw_response": {"provider": "placeholder-ai", "document_type": "payment_record"},
+                "recognized_fields": {
+                    "material_type": {
+                        "value": "payment_record",
+                        "source": "ai",
+                        "confidence": 0.95,
+                        "status": "recognized",
+                    },
+                    "location": {
+                        "value": "如家商旅酒店武汉大学街道口店",
+                        "source": "ai",
+                        "confidence": 0.7,
+                        "status": "needs_confirmation",
+                    },
+                },
+            },
+        },
+    )
+    assert response.status_code == 200
+
+    response = client.get(
+        f"/api/tasks/{task_id}/review-summary",
+        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["counts"]["material_count"] == 1
+    assert body["counts"]["needs_confirmation_recognition_count"] == 0
+    materials_by_id = {item["material"]["id"]: item for item in body["materials"]}
+    assert materials_by_id[payment_material_id]["latest_recognition"]["status"] == "needs_confirmation"
+
+
 def test_non_administrator_cannot_get_review_summary(tmp_path):
     client = make_client(tmp_path)
     task_id, _, _, _ = create_review_fixture(client)

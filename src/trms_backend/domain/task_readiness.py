@@ -8,7 +8,7 @@ from trms_backend.application.supporting_material_auto_link import SupportingMat
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
 from trms_backend.domain.exports import build_task_export_boundary
 from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, ValidationSeverity, ValidationStatus
-from trms_backend.domain.materials import MaterialRecord
+from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.missing_materials import (
     aggregate_task_missing_materials,
     is_missing_material_validation_result,
@@ -148,6 +148,7 @@ def build_task_readiness_summary(
         materials,
         latest_recognitions_by_material_id,
         RecognitionTaskStatus.NEEDS_CONFIRMATION,
+        invoice_only=True,
     )
     if needs_confirmation_material_ids:
         issues.append(
@@ -271,9 +272,13 @@ def _material_ids_by_recognition_status(
     materials: list[MaterialRecord],
     latest_recognitions_by_material_id: dict[str, RecognitionTaskRecord | None],
     target_status: RecognitionTaskStatus,
+    *,
+    invoice_only: bool = False,
 ) -> list[str]:
     material_ids: list[str] = []
     for material in sorted(materials, key=lambda item: (item.created_at, item.id)):
+        if invoice_only and material.material_type is not MaterialType.INVOICE:
+            continue
         recognition = latest_recognitions_by_material_id.get(material.id)
         if recognition is not None and recognition.status is target_status:
             material_ids.append(material.id)
