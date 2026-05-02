@@ -110,6 +110,11 @@ class PrivilegedSelfRegistrationDisabledError(ValueError):
         super().__init__(f"self-service registration for role '{role.value}' is disabled")
 
 
+class SelfServiceMultipleRolesNotAllowedError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("self-service registration only supports a single role")
+
+
 class PrivilegedBootstrapDisabledError(ValueError):
     def __init__(self) -> None:
         super().__init__("privileged account bootstrap is not configured")
@@ -201,6 +206,8 @@ def register_user(
         privileged_role = next((role for role in requested_roles if _is_privileged_role(role)), None)
         if privileged_role is not None:
             raise PrivilegedSelfRegistrationDisabledError(privileged_role)
+    if any(role is not payload.role for role in requested_roles):
+        raise SelfServiceMultipleRolesNotAllowedError()
     user = repository.create_user(
         _build_user_create(
             payload,

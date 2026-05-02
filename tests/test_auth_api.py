@@ -323,14 +323,31 @@ def test_login_returns_available_roles_for_multi_role_account(tmp_path):
         "/api/auth/register",
         json=register_payload(
             role="member",
-            roles=["member", "admin"],
             actor_id="hybrid-1",
             member_code="MEM-001",
         ),
     )
 
     assert register_response.status_code == 201
-    assert register_response.json()["user"]["roles"] == ["member", "admin"]
+    user = register_response.json()["user"]
+    sysadmin_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            username="sysadmin1",
+            role="system_admin",
+            display_name="赵系统管理员",
+            actor_id="sysadmin-1",
+            member_code=None,
+        ),
+    )
+    assert sysadmin_response.status_code == 201
+    sysadmin_token = sysadmin_response.json()["access_token"]
+    grant_response = client.put(
+        f"/api/system/users/{user['id']}/roles/admin",
+        headers={"Authorization": f"Bearer {sysadmin_token}"},
+    )
+    assert grant_response.status_code == 200
+    assert grant_response.json()["user"]["roles"] == ["member", "admin"]
 
     login_response = client.post(
         "/api/auth/login",
@@ -348,11 +365,28 @@ def test_switch_role_updates_active_role_for_current_session(tmp_path):
         "/api/auth/register",
         json=register_payload(
             role="member",
-            roles=["member", "admin"],
             actor_id="hybrid-1",
             member_code="MEM-001",
         ),
     )
+    assert register_response.status_code == 201
+    user = register_response.json()["user"]
+    sysadmin_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            username="sysadmin1",
+            role="system_admin",
+            display_name="赵系统管理员",
+            actor_id="sysadmin-1",
+            member_code=None,
+        ),
+    )
+    assert sysadmin_response.status_code == 201
+    grant_response = client.put(
+        f"/api/system/users/{user['id']}/roles/admin",
+        headers={"Authorization": f"Bearer {sysadmin_response.json()['access_token']}"},
+    )
+    assert grant_response.status_code == 200
     token = register_response.json()["access_token"]
 
     response = client.post(
@@ -410,4 +444,22 @@ def test_production_register_rejects_privileged_role_in_role_set(tmp_path):
         status_code=403,
         code="forbidden",
         detail="self-service registration for role 'admin' is disabled",
+    )
+
+
+def test_register_rejects_multi_role_self_service_payload_in_development(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            roles=["member", "admin"],
+        ),
+    )
+
+    assert_api_error(
+        response,
+        status_code=400,
+        code="bad_request",
+        detail="self-service registration only supports a single role",
     )

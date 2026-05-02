@@ -234,11 +234,16 @@ def test_system_admin_grant_admin_role_is_idempotent(tmp_path):
             "display_name": "王队员",
             "actor_id": "2250001",
             "member_code": "2250001",
-            "roles": ["member", "admin"],
         },
     )
     assert member_response.status_code == 201
     member_user = member_response.json()["user"]
+
+    first_response = client.put(
+        f"/api/system/users/{member_user['id']}/roles/admin",
+        headers=system_admin_auth_headers(client),
+    )
+    assert first_response.status_code == 200
 
     response = client.put(
         f"/api/system/users/{member_user['id']}/roles/admin",
@@ -250,8 +255,9 @@ def test_system_admin_grant_admin_role_is_idempotent(tmp_path):
     assert response.json()["user"]["roles"] == ["member", "admin"]
 
     audit_logs = list_user_audit_logs(tmp_path, member_user["id"])
-    assert len(audit_logs) == 1
-    assert audit_logs[0].detail["already_assigned"] is True
+    assert len(audit_logs) == 2
+    assert audit_logs[0].detail["already_assigned"] is False
+    assert audit_logs[1].detail["already_assigned"] is True
 
 
 def test_system_admin_dashboard_rejects_plain_admin(tmp_path):

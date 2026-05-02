@@ -19,6 +19,7 @@ from trms_backend.domain.auth import (
     PrivilegedSelfRegistrationDisabledError,
     RoleNotAssignedError,
     RoleSwitchInput,
+    SelfServiceMultipleRolesNotAllowedError,
     UserLoginInput,
     UserRegisterInput,
     UsernameAlreadyExistsError,
@@ -56,6 +57,11 @@ def build_auth_router(
         except PrivilegedSelfRegistrationDisabledError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except SelfServiceMultipleRolesNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(error),
             ) from error
 

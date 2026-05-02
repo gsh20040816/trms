@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-05-02 22:36 - Remove product reliance on multi-role self-service registration
+
+### 完成内容
+- 完成任务“收口多角色账号的受控赋权路径，移除公开注册对 `roles[]` 的产品级依赖”。
+- 已把公开注册口径收紧为“只允许单角色自注册”：
+  - [src/trms_backend/domain/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py)
+  - [src/trms_backend/api/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/api/auth.py)
+  - `register_user(...)` 现在会在自注册场景下拒绝 `roles` 中附带额外角色的 payload；
+  - 生产环境若 `roles` 中混入 `admin`，仍优先按“高权限自注册被禁用”返回 `403`，不把越权行为降格成普通参数错误。
+- 多角色账号的真实构造路径已切回受控授权：
+  - 相关认证测试不再直接用 `/api/auth/register roles=["member","admin"]` 造多角色账号；
+  - 改为先注册普通成员，再由系统管理员调用真实的 `PUT /api/system/users/{user_id}/roles/admin` 赋权；
+  - 这样登录、`/auth/me` 与 `/auth/switch-role` 的兼容测试验证的是“真实产品路径生成的多角色账号”，而不是测试式直写数据。
+- 已补开发环境拒绝多角色自注册的回归：
+  - [tests/test_auth_api.py](/home/gsh/workspace/TRMS/tests/test_auth_api.py)
+  - 新增“开发环境下 `/auth/register` 直传多角色数组返回 `400`”测试，明确区分测试夹具能力与产品行为。
+- 已同步更新 README 口径：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - 明确说明：
+    - `/api/auth/register` 只接受单角色自注册；
+    - 追加 `admin` 角色应由 `system_admin` 调用系统管理接口完成；
+    - 公开注册直写多角色数组不再视为真实产品赋权路径。
+
+### 根因
+- 仓库此前虽然已经具备 `roles[]` 模型和角色切换能力，但测试主要通过公开注册时直接写入多角色数组构造账号。
+- 这会把“测试夹具捷径”误当成“产品赋权路径”，从而掩盖真正缺失的受控管理流程与审计边界。
+
+### 风险与影响面
+- 本轮只收紧公开注册的多角色输入，不影响：
+  - 现有单角色成员/管理员/系统管理员注册；
+  - 已经存在的多角色账号登录、`/auth/me` 和 `/auth/switch-role`；
+  - 系统管理员通过真实接口追加 `admin` 角色的路径。
+- 仍未实现更通用的角色撤销、批量角色管理或前端账号管理页；当前只是先把“产品口径”从公开注册直写上移开。
+
+### 验证结果
+- 已通过定向认证测试：
+  - `uv run pytest tests/test_auth_api.py -k 'login_returns_available_roles_for_multi_role_account or switch_role_updates_active_role_for_current_session or register_rejects_multi_role_self_service_payload_in_development or production_register_rejects_privileged_role_in_role_set'`
+- 已通过系统管理角色授权测试：
+  - `uv run pytest tests/test_system_admin_api.py -k 'grant_admin_role'`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 558 个用例全部通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:24 - Add audited system-admin API for granting admin role
 
 ### 完成内容
