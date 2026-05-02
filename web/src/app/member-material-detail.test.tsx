@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
 import { clearMockSession, setMockSession } from "./auth-store";
@@ -214,8 +214,61 @@ describe("MemberMaterialDetailPage", () => {
     expect(recognizedFieldSection).toBeInTheDocument();
     expect(within(recognizedFieldSection).getByText(fieldLabel)).toBeInTheDocument();
     expect(within(recognizedFieldSection).getByText(expectedValue)).toBeInTheDocument();
-    expect(screen.getByLabelText("当前已关联发票列表")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "已关联发票 INV-LINKED-001" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "候选发票 INV-CANDIDATE-001" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "关联归属发票" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "归属发票参考" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /INV-LINKED-001/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /INV-CANDIDATE-001/ })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "查看发票 INV-LINKED-001" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看发票 INV-CANDIDATE-001" })).toBeInTheDocument();
+  });
+
+  it("updates linked invoices from the material detail page", async () => {
+    const requests: Array<{ method: string; url: string }> = [];
+    const summary = buildMaterialSummary("payment_record", "amount_cents", 12345);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      requests.push({ method, url });
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(summary));
+      }
+      if (url === "/api/invoices/INV-CANDIDATE-001/supporting-materials/MAT-TYPE-001" && method === "PUT") {
+        return Promise.resolve(jsonResponse({ item: { id: "MAT-TYPE-001" } }));
+      }
+      if (url === "/api/invoices/INV-LINKED-001/supporting-materials/MAT-TYPE-001" && method === "DELETE") {
+        return Promise.resolve(jsonResponse({ status: "deleted" }));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/member/materials/MAT-TYPE-001?taskId=TASK-OPEN"],
+    });
+
+    act(() => {
+      render(<RouterProvider router={router} />);
+    });
+
+    expect(await screen.findByRole("heading", { name: "支付记录详情" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /INV-LINKED-001/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /INV-CANDIDATE-001/ }));
+    fireEvent.click(screen.getByRole("button", { name: "更改关联" }));
+
+    await waitFor(() => {
+      expect(requests).toContainEqual({
+        method: "DELETE",
+        url: "/api/invoices/INV-LINKED-001/supporting-materials/MAT-TYPE-001",
+      });
+      expect(requests).toContainEqual({
+        method: "PUT",
+        url: "/api/invoices/INV-CANDIDATE-001/supporting-materials/MAT-TYPE-001",
+      });
+    });
   });
 });

@@ -617,10 +617,14 @@ test.describe.serial("TRMS 真实主流程 UX 验收", () => {
 
     await expect(page.getByRole("heading", { name: "待关联辅助材料" })).toBeVisible();
     await expect(page.getByText("当前存在多张候选发票，系统不会自动绑定")).toBeVisible();
-    await page.getByRole("button", { name: "关联到发票 UX-FIX-RAIL-001" }).click();
-    await expectToast(page, "已将 fixture-itinerary.png 关联到发票 UX-FIX-RAIL-001，页面已刷新最新附件状态。");
+    await page.getByRole("link", { name: "去辅助材料页处理" }).click();
+    await expect(page.getByRole("heading", { name: "行程单详情" })).toBeVisible();
+    await page.getByRole("checkbox", { name: /UX-FIX-RAIL-001/ }).check();
+    await page.getByRole("button", { name: "更改关联" }).click();
+    await expectToast(page, "辅助材料归属已更新，页面已刷新最新关联结果。");
     await takeStepScreenshot(page, "ux-ready-member-linked.png");
 
+    await page.goto(`${baseUrl}/member/invoices/workbench?taskId=${readyFixture.taskId}`);
     await page.getByRole("button", { name: "选择全部本人发票" }).click();
     await page.getByRole("button", { name: "批量提交选中发票" }).click();
     await expect(page.getByText("批量提交成功：共处理 2 张发票。")).toBeVisible();

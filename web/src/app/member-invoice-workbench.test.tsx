@@ -356,12 +356,13 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(screen.getByRole("region", { name: "待关联辅助材料列表" })).toHaveClass("member-status-section-warning");
     expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
     expect(screen.getByText(/当前已关联：INV-LINKED-001/)).toBeInTheDocument();
-    expect(screen.getByText(/仍可继续关联的候选发票：INV-READY-001/)).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "归属发票" })).toHaveTextContent("INV-READY-001 / ￥123.45 / ready.pdf");
+    expect(screen.getByText(/当前仍有 2 张候选发票可勾选：INV-READY-001/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "去辅助材料页处理" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "归属发票" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
   });
 
-  it("uses a single select to choose the target invoice before saving linkage", async () => {
+  it("routes pending supporting materials to the dedicated material detail page for linkage editing", async () => {
     mockCommonFetch(buildWorkbenchSummary({
       pending_supporting_material_linkage_items: [
         {
@@ -394,12 +395,10 @@ describe("MemberInvoiceWorkbenchPage", () => {
     const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
-    fireEvent.mouseDown(screen.getByRole("combobox", { name: "归属发票" }));
-    fireEvent.click(await screen.findByRole("option", { name: "INV-SECOND-001 / ￥543.21 / second.pdf" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存归属" }));
+    fireEvent.click(screen.getByRole("link", { name: "去辅助材料页处理" }));
 
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/member/invoices/INV-SECOND-001");
+      expect(router.state.location.pathname).toBe("/member/materials/MAT-PAY-001");
     });
   });
 
@@ -423,6 +422,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
     expect(screen.getByText("当前没有候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "归属发票" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "去辅助材料页处理" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "去上传区补录或补传发票" })).toBeInTheDocument();
   });
 

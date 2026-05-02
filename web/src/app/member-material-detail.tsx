@@ -3,11 +3,11 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import {
   EmptyState,
   PageHeader,
@@ -98,13 +98,13 @@ const MATERIAL_PAGE_CONFIG: Record<
     title: "支付记录详情",
     description: "这里处理支付时间、金额和支付场景，不再展示发票专有表单。",
     fields: ["amount_cents", "transaction_time", "location", "expense_type", "trip_route", "transport_mode"],
-    nextStep: "确认支付记录金额和时间是否可信；若仍未归属到发票，请回工作台待关联区完成归属。",
+    nextStep: "确认支付记录金额和时间是否可信；若仍未归属到发票，请直接在本页下方勾选归属发票并提交更改。",
   },
   competition_notice: {
     title: "比赛通知详情",
     description: "这里处理比赛通知里的比赛时间、地点和费用类别线索。",
     fields: ["transaction_time", "location", "expense_type", "trip_route"],
-    nextStep: "确认比赛名称相关时间和地点线索是否足够支持报名费或差旅材料。",
+    nextStep: "确认比赛名称相关时间和地点线索是否足够支持报名费或差旅材料；需要归属发票时，直接在本页下方勾选并提交。",
   },
   itinerary: {
     title: "行程单详情",
@@ -121,19 +121,19 @@ const MATERIAL_PAGE_CONFIG: Record<
       "return_departure_airport_code",
       "return_arrival_airport_code",
     ],
-    nextStep: "确认路线、机场代码和舱位是否完整，便于航空或市内交通发票通过校验。",
+    nextStep: "确认路线、机场代码和舱位是否完整，便于航空或市内交通发票通过校验；需要归票时，直接在本页下方勾选。",
   },
   order_screenshot: {
     title: "订单截图详情",
     description: "这里处理订单截图中的金额、时间和路线证据，不再展示发票字段补录区。",
     fields: ["amount_cents", "transaction_time", "location", "expense_type", "trip_route", "transport_mode"],
-    nextStep: "确认订单截图是否能作为住宿、交通或其他费用的辅助凭证。",
+    nextStep: "确认订单截图是否能作为住宿、交通或其他费用的辅助凭证；若需要归属发票，请在本页下方勾选。",
   },
   other_attachment: {
     title: "其他材料详情",
     description: "这里保留系统能识别出的时间、地点和费用线索，避免强行套用发票表单。",
     fields: ["transaction_time", "location", "expense_type", "trip_route", "transport_mode"],
-    nextStep: "若系统误判了材料类型，请先改正类型；否则只保留明确可读的辅助线索。",
+    nextStep: "若系统误判了材料类型，请先改正类型；否则只保留明确可读的辅助线索，并在本页下方处理归属发票。",
   },
 };
 
@@ -223,6 +223,24 @@ function findPendingLinkageItem(
   return summary.pending_supporting_material_linkage_items.find((item) => item.material_id === materialId) ?? null;
 }
 
+function buildLinkageInvoiceOptions(item: PendingSupportingMaterialLinkageItem | null) {
+  if (!item) {
+    return [];
+  }
+  const options = new Map<string, PendingSupportingMaterialLinkageItem["linked_invoices"][number]>();
+  for (const invoice of item.linked_invoices) {
+    options.set(invoice.invoice_id, invoice);
+  }
+  for (const invoice of item.candidate_invoices) {
+    options.set(invoice.invoice_id, invoice);
+  }
+  return [...options.values()];
+}
+
+function normalizeInvoiceIdSelection(invoiceIds: string[]) {
+  return [...new Set(invoiceIds)].sort();
+}
+
 export function MemberMaterialDetailPage() {
   const session = useAuthSession();
   const navigate = useNavigate();
@@ -236,6 +254,14 @@ export function MemberMaterialDetailPage() {
   const [savingMaterialType, setSavingMaterialType] = useState(false);
   const [retryingRecognition, setRetryingRecognition] = useState(false);
   const [openingOriginal, setOpeningOriginal] = useState(false);
+  const [linkageSelectionDraft, setLinkageSelectionDraft] = useState<{
+    baseKey: string;
+    selectedIds: string[];
+  }>({
+    baseKey: "",
+    selectedIds: [],
+  });
+  const [savingLinkageChanges, setSavingLinkageChanges] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -278,7 +304,21 @@ export function MemberMaterialDetailPage() {
   const pendingLinkageItem = detailState.status === "ready"
     ? findPendingLinkageItem(detailState.summary, materialId)
     : null;
+  const linkageInvoiceOptions = useMemo(
+    () => buildLinkageInvoiceOptions(pendingLinkageItem),
+    [pendingLinkageItem],
+  );
+  const currentLinkedInvoiceIds = useMemo(
+    () => normalizeInvoiceIdSelection(pendingLinkageItem?.linked_invoices.map((invoice) => invoice.invoice_id) ?? []),
+    [pendingLinkageItem],
+  );
   const abnormalReasons = useMemo(() => (item ? collectAbnormalReasons(item) : []), [item]);
+  const currentLinkedInvoiceIdsKey = currentLinkedInvoiceIds.join(",");
+  const selectedLinkedInvoiceIds = linkageSelectionDraft.baseKey === currentLinkedInvoiceIdsKey
+    ? linkageSelectionDraft.selectedIds
+    : currentLinkedInvoiceIds;
+  const selectedLinkedInvoiceIdsKey = normalizeInvoiceIdSelection(selectedLinkedInvoiceIds).join(",");
+  const linkageSelectionChanged = selectedLinkedInvoiceIdsKey !== currentLinkedInvoiceIdsKey;
 
   useEffect(() => {
     if (!task || !item || item.material.material_type !== "invoice") {
@@ -347,6 +387,59 @@ export function MemberMaterialDetailPage() {
       showError(error instanceof ApiError ? error.summary.message : "原文件暂时无法打开。");
     } finally {
       setOpeningOriginal(false);
+    }
+  }
+
+  function handleLinkedInvoiceSelectionChange(invoiceId: string, checked: boolean) {
+    setLinkageSelectionDraft({
+      baseKey: currentLinkedInvoiceIdsKey,
+      selectedIds: checked
+        ? normalizeInvoiceIdSelection([...selectedLinkedInvoiceIds, invoiceId])
+        : selectedLinkedInvoiceIds.filter((currentInvoiceId) => currentInvoiceId !== invoiceId),
+    });
+  }
+
+  async function handleLinkageSave() {
+    if (!pendingLinkageItem) {
+      return;
+    }
+
+    const selectedInvoiceIds = new Set(selectedLinkedInvoiceIds);
+    const currentInvoiceIds = new Set(currentLinkedInvoiceIds);
+    const invoicesToAttach = linkageInvoiceOptions.filter(
+      (invoice) => selectedInvoiceIds.has(invoice.invoice_id) && !currentInvoiceIds.has(invoice.invoice_id),
+    );
+    const invoicesToDetach = linkageInvoiceOptions.filter(
+      (invoice) => !selectedInvoiceIds.has(invoice.invoice_id) && currentInvoiceIds.has(invoice.invoice_id),
+    );
+
+    if (invoicesToAttach.length === 0 && invoicesToDetach.length === 0) {
+      return;
+    }
+
+    let hasAppliedChanges = false;
+    setSavingLinkageChanges(true);
+    try {
+      for (const invoice of invoicesToAttach) {
+        await trmsApi.attachInvoiceSupportingMaterial(invoice.invoice_id, pendingLinkageItem.material_id);
+        hasAppliedChanges = true;
+      }
+      for (const invoice of invoicesToDetach) {
+        await trmsApi.detachInvoiceSupportingMaterial(invoice.invoice_id, pendingLinkageItem.material_id);
+        hasAppliedChanges = true;
+      }
+      showSuccess("辅助材料归属已更新，页面已刷新最新关联结果。");
+    } catch (error) {
+      const message = error instanceof ApiError ? error.summary.message : "更改辅助材料归属失败。";
+      showError(message);
+      if (hasAppliedChanges) {
+        showWarning("部分归属更改可能已经生效，页面将刷新为后端最新状态。");
+      }
+    } finally {
+      if (hasAppliedChanges) {
+        setReloadVersion((current) => current + 1);
+      }
+      setSavingLinkageChanges(false);
     }
   }
 
@@ -471,66 +564,85 @@ export function MemberMaterialDetailPage() {
             </ul>
           </SectionCard>
 
-          <SectionCard title="归属发票参考" description="当前页只展示候选归属和跳转入口，真正的归属确认仍在工作台中完成。">
+          <SectionCard title="关联归属发票" description="在这里勾选当前材料应关联的发票，再统一提交“更改关联”；不再回工作台做二次编辑。">
             {pendingLinkageItem ? (
               <>
-                {pendingLinkageItem.linked_invoices.length > 0 ? (
-                  <>
-                    <p className="field-hint">
-                      当前材料已关联到 {pendingLinkageItem.linked_invoices.length} 张发票；如果还需要补到其他发票，继续在下方候选列表里处理。
-                    </p>
-                    <ul className="invoice-material-list" aria-label="当前已关联发票列表">
-                      {pendingLinkageItem.linked_invoices.map((linkedInvoice) => (
-                        <li key={linkedInvoice.invoice_id}>
-                          <InvoiceSummaryRow
-                            filename={item.material.original_filename}
-                            invoiceNumber={linkedInvoice.invoice_number}
-                            amountLabel={formatCurrencyFromCents(linkedInvoice.amount_cents)}
-                            validationLabel="已关联"
-                            validationTone="success"
-                            supportingMaterialCount={1}
-                            statusHint={`费用类型 ${formatExpenseType(linkedInvoice.expense_type)}`}
-                            trailingContent={<StatusBadge tone="success">已关联</StatusBadge>}
-                            action={{
-                              ariaLabel: `已关联发票 ${linkedInvoice.invoice_number}`,
-                              onClick: () => { void navigate(buildInvoiceDetailPath(currentTaskId, linkedInvoice.invoice_id)); },
-                            }}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
                 <p className="field-hint">
                   {pendingLinkageItem.pending_reason === "multiple_candidates"
-                    ? "系统找到仍可继续关联的候选发票，尚未自动补齐全部归属。"
-                    : "系统暂时没有找到安全候选发票，请先补发票或回工作台处理。"}
+                    ? "系统识别到多张候选发票，请逐行勾选这份材料真正应归属的发票。"
+                    : pendingLinkageItem.pending_reason === "manual_confirmation_required"
+                      ? "系统只找到一张候选发票，但自动关联条件不足；请你手动勾选确认后再提交。"
+                      : "系统暂时没有安全候选发票；若下方没有可勾选发票，请先补录或补传对应发票。"}
                 </p>
-                {pendingLinkageItem.candidate_invoices.length > 0 ? (
-                  <ul className="invoice-material-list" aria-label="候选归属发票列表">
-                    {pendingLinkageItem.candidate_invoices.map((candidate) => (
-                      <li key={candidate.invoice_id}>
-                        <InvoiceSummaryRow
-                          filename={item.material.original_filename}
-                          invoiceNumber={candidate.invoice_number}
-                          amountLabel={formatCurrencyFromCents(candidate.amount_cents)}
-                          validationLabel="候选归属"
-                          validationTone="neutral"
-                          supportingMaterialCount={0}
-                          statusHint={`费用类型 ${formatExpenseType(candidate.expense_type)}`}
-                          trailingContent={<StatusBadge tone="info">{formatExpenseType(candidate.expense_type)}</StatusBadge>}
-                          action={{
-                            ariaLabel: `候选发票 ${candidate.invoice_number}`,
-                            onClick: () => { void navigate(buildInvoiceDetailPath(currentTaskId, candidate.invoice_id)); },
-                          }}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
+                {linkageInvoiceOptions.length > 0 ? (
+                  <>
+                    <ul className="invoice-material-list" aria-label="归属发票勾选列表">
+                      {linkageInvoiceOptions.map((invoiceOption) => {
+                        const checked = selectedLinkedInvoiceIds.includes(invoiceOption.invoice_id);
+                        return (
+                          <li key={invoiceOption.invoice_id}>
+                            <div className="page-stack">
+                              <label className="invoice-selection-toggle">
+                                <Checkbox
+                                  checked={checked}
+                                  disabled={savingLinkageChanges}
+                                  onChange={(event) => {
+                                    handleLinkedInvoiceSelectionChange(invoiceOption.invoice_id, event.target.checked);
+                                  }}
+                                  inputProps={{
+                                    "aria-label": `归属发票 ${invoiceOption.invoice_number} ${invoiceOption.original_filename} ${formatCurrencyFromCents(invoiceOption.amount_cents)}`,
+                                  }}
+                                />
+                                <span>
+                                  {invoiceOption.invoice_number} / {invoiceOption.original_filename} / {formatCurrencyFromCents(invoiceOption.amount_cents)}
+                                </span>
+                              </label>
+                              <p className="field-hint">
+                                费用类型 {formatExpenseType(invoiceOption.expense_type)}；当前{checked ? "已勾选关联" : "未勾选关联"}。
+                              </p>
+                              <div className="inline-actions">
+                                <Button
+                                  type="button"
+                                  variant="outlined"
+                                  size="small"
+                                  onClick={() => { void navigate(buildInvoiceDetailPath(currentTaskId, invoiceOption.invoice_id)); }}
+                                >
+                                  查看发票 {invoiceOption.invoice_number}
+                                </Button>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="inline-actions">
+                      <Button
+                        type="button"
+                        variant="contained"
+                        disabled={savingLinkageChanges || !linkageSelectionChanged}
+                        onClick={() => { void handleLinkageSave(); }}
+                      >
+                        {savingLinkageChanges ? "更改关联中..." : "更改关联"}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="page-stack">
+                    <p className="field-hint">当前没有可勾选的候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。</p>
+                    <div className="inline-actions">
+                      <Button
+                        component={Link}
+                        variant="outlined"
+                        to={taskId ? `/member/invoices/workbench?taskId=${encodeURIComponent(taskId)}#member-workbench-upload` : "/member/invoices/workbench"}
+                      >
+                        去上传区补录或补传发票
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
-              <p className="field-hint">当前材料没有待处理的归属候选；若你已在工作台完成归属，这里不会重复展示发票级编辑表单。</p>
+              <p className="field-hint">当前材料没有待处理的归属候选；若归属已经闭合，这里不会重复展示额外编辑表单。</p>
             )}
           </SectionCard>
         </>

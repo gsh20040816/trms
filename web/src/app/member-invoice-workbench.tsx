@@ -154,13 +154,6 @@ type InvoiceBatchActionFeedback = InvoiceMemberSubmissionBatchResponse & {
   action: InvoiceBatchAction;
 };
 
-type PendingSupportingMaterialLinkageAction = {
-  materialId: string;
-  invoiceId: string;
-};
-
-type PendingSupportingMaterialSelectionMap = Record<string, string>;
-
 type UploadProcessingStageKey =
   | "received"
   | "recognition_pending"
@@ -453,13 +446,16 @@ function summarizePendingActionsWithLinkage(
 ) {
   const actions = summarizePendingActions(task, report);
   if (pendingSupportingMaterialLinkageItems.length > 0) {
+    const primaryPendingItem = pendingSupportingMaterialLinkageItems[0] ?? null;
     actions.unshift({
       id: "supporting-material-linkage",
       title: "处理待关联辅助材料",
-      detail: `当前有 ${pendingSupportingMaterialLinkageItems.length} 份辅助材料还没归到发票；这些材料不会自动算作已补齐附件。`,
-      to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-pending-linkage"),
+      detail: `当前有 ${pendingSupportingMaterialLinkageItems.length} 份辅助材料还没归到发票；请逐份进入辅助材料详情页确认归属。`,
+      to: pendingSupportingMaterialLinkageItems.length === 1 && primaryPendingItem
+        ? buildMaterialDetailPath(task.id, primaryPendingItem.material_id)
+        : buildWorkbenchTaskAnchor(task.id, "#member-workbench-pending-linkage"),
       tone: "warning",
-      label: "查看待关联列表",
+      label: pendingSupportingMaterialLinkageItems.length === 1 ? "去材料页处理" : "查看待处理材料",
     });
   }
   return actions;
@@ -603,12 +599,6 @@ function formatPendingSupportingMaterialLinkageReason(
     return "系统找到唯一候选发票，但仍需你手动确认归属";
   }
   return "当前存在多张候选发票，系统不会自动绑定";
-}
-
-function formatPendingSupportingMaterialCandidateOption(
-  candidate: PendingSupportingMaterialLinkageItem["candidate_invoices"][number],
-) {
-  return `${candidate.invoice_number} / ${formatCurrencyFromCents(candidate.amount_cents)} / ${candidate.original_filename}`;
 }
 
 function formatTaskDateRange(task: ReimbursementTask) {
@@ -794,10 +784,6 @@ function extractFailedBatchUploadResponse(error: unknown): MaterialBatchUploadRe
     items: payload.items,
     failures: payload.failures,
   };
-}
-
-function buildPendingSupportingMaterialLinkageActionKey(action: PendingSupportingMaterialLinkageAction) {
-  return `${action.materialId}:${action.invoiceId}`;
 }
 
 function findPendingSupportingMaterialLinkageMatches(
@@ -1061,21 +1047,14 @@ function buildUploadProcessingSnapshot(
       tone: "warning",
       label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
       detail: pendingLinkageItem.pending_reason === "multiple_candidates"
-        ? "系统已经识别出这份辅助材料，但存在多张候选发票，需要你在下面选择归属发票。"
+        ? "系统已经识别出这份辅助材料，但存在多张候选发票，需要你到材料详情页勾选归属发票。"
         : pendingLinkageItem.pending_reason === "manual_confirmation_required"
-          ? "系统已经识别出这份辅助材料，也找到了唯一候选发票；但自动关联条件不足，需要你在下面手动确认归属。"
-          : "系统已经识别出这份辅助材料，但当前还没有安全候选发票；请先补传或补录发票。",
+          ? "系统已经识别出这份辅助材料，也找到了唯一候选发票；但自动关联条件不足，需要你到材料详情页手动确认归属。"
+          : "系统已经识别出这份辅助材料，但当前还没有安全候选发票；请先到材料详情页确认线索，再补传或补录发票。",
       steps: ["received", "recognized", "action_required"],
       transitioning: false,
-      actionLabel: pendingLinkageItem.pending_reason === "no_candidate"
-        ? "去上传区补发票"
-        : "去选择候选发票",
-      actionHref: buildWorkbenchTaskAnchor(
-        taskId,
-        pendingLinkageItem.pending_reason !== "no_candidate"
-          ? "#member-workbench-pending-linkage"
-          : "#member-workbench-upload",
-      ),
+      actionLabel: "去材料页处理",
+      actionHref: buildMaterialDetailPath(taskId, pendingLinkageItem.material_id),
     };
   }
 
@@ -1185,9 +1164,6 @@ export function MemberInvoiceWorkbenchPage() {
   const [invoiceBatchActionError, setInvoiceBatchActionError] = useState<unknown>(null);
   const [invoiceBatchActionFeedback, setInvoiceBatchActionFeedback] = useState<InvoiceBatchActionFeedback | null>(null);
   const [runningInvoiceBatchAction, setRunningInvoiceBatchAction] = useState<InvoiceBatchAction | null>(null);
-  const [runningPendingSupportingMaterialLinkageActionKey, setRunningPendingSupportingMaterialLinkageActionKey] = useState<string | null>(null);
-  const [pendingSupportingMaterialLinkageErrors, setPendingSupportingMaterialLinkageErrors] = useState<Record<string, string>>({});
-  const [pendingSupportingMaterialSelections, setPendingSupportingMaterialSelections] = useState<PendingSupportingMaterialSelectionMap>({});
   const [expandedProblemInvoiceGroupKeys, setExpandedProblemInvoiceGroupKeys] = useState<string[]>([]);
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
 
@@ -1205,8 +1181,6 @@ export function MemberInvoiceWorkbenchPage() {
     setInvoiceBatchActionError(null);
     setInvoiceBatchActionFeedback(null);
     setRunningInvoiceBatchAction(null);
-    setRunningPendingSupportingMaterialLinkageActionKey(null);
-    setPendingSupportingMaterialLinkageErrors({});
     setExpandedProblemInvoiceGroupKeys([]);
   }
 
@@ -1521,60 +1495,6 @@ export function MemberInvoiceWorkbenchPage() {
       window.clearTimeout(timerId);
     };
   }, [canAutoRefreshRecentUploadStatus]);
-
-  function handlePendingSupportingMaterialCandidateSelect(invoiceId: string) {
-    if (workbenchState.status !== "ready") {
-      return;
-    }
-    void navigate(buildInvoiceDetailPath(workbenchState.task.id, invoiceId));
-  }
-
-  async function handlePendingSupportingMaterialAttach(
-    item: PendingSupportingMaterialLinkageItem,
-    candidateInvoiceId: string,
-    candidateInvoiceNumber: string,
-  ) {
-    if (!session || workbenchState.status !== "ready") {
-      return;
-    }
-
-    const actionKey = buildPendingSupportingMaterialLinkageActionKey({
-      materialId: item.material_id,
-      invoiceId: candidateInvoiceId,
-    });
-    setPendingSupportingMaterialLinkageErrors((current) => {
-      const next = { ...current };
-      delete next[item.material_id];
-      return next;
-    });
-    setRunningPendingSupportingMaterialLinkageActionKey(actionKey);
-
-    try {
-      await trmsApi.attachInvoiceSupportingMaterial(candidateInvoiceId, item.material_id);
-      handlePendingSupportingMaterialCandidateSelect(candidateInvoiceId);
-      setWorkbenchReloadVersion((current) => current + 1);
-      showSuccess(`已将 ${item.original_filename} 关联到发票 ${candidateInvoiceNumber}，页面已刷新最新附件状态。`);
-    } catch (error) {
-      const message = error instanceof ApiError ? error.summary.message : "关联辅助材料失败，请稍后重试。";
-      setPendingSupportingMaterialLinkageErrors((current) => ({
-        ...current,
-        [item.material_id]: message,
-      }));
-      showError(message);
-    } finally {
-      setRunningPendingSupportingMaterialLinkageActionKey(null);
-    }
-  }
-
-  function handlePendingSupportingMaterialSelectionChange(
-    materialId: string,
-    candidateInvoiceId: string,
-  ) {
-    setPendingSupportingMaterialSelections((current) => ({
-      ...current,
-      [materialId]: candidateInvoiceId,
-    }));
-  }
 
   function handleBatchInvoiceSelectionChange(
     listKey: ReadyInvoiceSelectionListKey,
@@ -2661,7 +2581,7 @@ export function MemberInvoiceWorkbenchPage() {
                   <div>
                     <h4>待关联辅助材料</h4>
                     <p className="field-hint">
-                      这些材料还没有安全归到某张发票，因此不会算作已补齐附件；这里会明确告诉你为什么没自动关联，以及下一步该看哪张票。
+                      这些材料还没有安全归到某张发票，因此不会算作已补齐附件；工作台只保留摘要，真正的勾选和“更改关联”已经收口到辅助材料详情页。
                     </p>
                   </div>
                   <StatusBadge tone="warning">{pendingSupportingMaterialLinkageItems.length} 份</StatusBadge>
@@ -2669,124 +2589,47 @@ export function MemberInvoiceWorkbenchPage() {
                 <ul className="member-status-message-list">
                   {pendingSupportingMaterialLinkageItems.map((item) => (
                     <li key={item.material_id}>
-                      {(() => {
-                        const hasRunningAction = runningPendingSupportingMaterialLinkageActionKey?.startsWith(`${item.material_id}:`) ?? false;
-                        const selectedCandidateInvoiceId = pendingSupportingMaterialSelections[item.material_id]
-                          ?? item.candidate_invoices[0]?.invoice_id
-                          ?? "";
-                        const selectedCandidate = item.candidate_invoices.find(
-                          (candidate) => candidate.invoice_id === selectedCandidateInvoiceId,
-                        ) ?? item.candidate_invoices[0] ?? null;
-                        const selectedCandidateActionKey = selectedCandidate
-                          ? buildPendingSupportingMaterialLinkageActionKey({
-                            materialId: item.material_id,
-                            invoiceId: selectedCandidate.invoice_id,
-                          })
-                          : null;
-                        return (
-                          <>
-                            <strong>{formatMaterialType(item.material_type)} / {item.original_filename}</strong>
-                            <span>{formatPendingSupportingMaterialLinkageReason(item.pending_reason)}</span>
-                            {item.linked_invoices.length > 0 ? (
-                              <span>
-                                当前已关联：
-                                {item.linked_invoices.map((linkedInvoice) => (
-                                  `${linkedInvoice.invoice_number}（${formatExpenseType(linkedInvoice.expense_type)} / ${formatCurrencyFromCents(linkedInvoice.amount_cents)}）`
-                                )).join("；")}
-                              </span>
-                            ) : null}
-                            {item.candidate_invoices.length > 0 ? (
-                              <span>
-                                仍可继续关联的候选发票：
-                                {item.candidate_invoices.map((candidate) => (
-                                  `${candidate.invoice_number}（${formatExpenseType(candidate.expense_type)} / ${formatCurrencyFromCents(candidate.amount_cents)} / ${candidate.original_filename}）`
-                                )).join("；")}
-                              </span>
-                            ) : (
-                              <span>当前没有候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。</span>
-                            )}
-                            <span>上传时间：{formatDateTime(item.created_at)}</span>
-                            <div className="inline-actions">
-                              {item.pending_reason === "no_candidate" ? (
-                                <Button
-                                  component={Link}
-                                  variant="outlined"
-                                  size="small"
-                                  to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}
-                                >
-                                  去上传区补录或补传发票
-                                </Button>
-                              ) : null}
-                              {item.candidate_invoices.length > 0 ? (
-                                <>
-                                  <TextField
-                                    select
-                                    size="small"
-                                    label="归属发票"
-                                    value={selectedCandidateInvoiceId}
-                                    onChange={(event) => {
-                                      handlePendingSupportingMaterialSelectionChange(
-                                        item.material_id,
-                                        event.target.value,
-                                      );
-                                    }}
-                                    disabled={hasRunningAction}
-                                    sx={{ minWidth: 320 }}
-                                  >
-                                    {item.candidate_invoices.map((candidate) => (
-                                      <MenuItem
-                                        key={`candidate:${item.material_id}:${candidate.invoice_id}`}
-                                        value={candidate.invoice_id}
-                                      >
-                                        {formatPendingSupportingMaterialCandidateOption(candidate)}
-                                      </MenuItem>
-                                    ))}
-                                  </TextField>
-                                  <Button
-                                    type="button"
-                                    variant="contained"
-                                    size="small"
-                                    disabled={hasRunningAction || selectedCandidate === null}
-                                    onClick={() => {
-                                      if (selectedCandidate === null) {
-                                        return;
-                                      }
-                                      void handlePendingSupportingMaterialAttach(
-                                        item,
-                                        selectedCandidate.invoice_id,
-                                        selectedCandidate.invoice_number,
-                                      );
-                                    }}
-                                  >
-                                    {selectedCandidate && runningPendingSupportingMaterialLinkageActionKey === selectedCandidateActionKey
-                                      ? `关联中 ${selectedCandidate.invoice_number}...`
-                                      : "保存归属"}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outlined"
-                                    size="small"
-                                    disabled={hasRunningAction || selectedCandidate === null}
-                                    onClick={() => {
-                                      if (selectedCandidate === null) {
-                                        return;
-                                      }
-                                      handlePendingSupportingMaterialCandidateSelect(selectedCandidate.invoice_id);
-                                    }}
-                                  >
-                                    查看所选发票
-                                  </Button>
-                                </>
-                              ) : null}
-                            </div>
-                            {pendingSupportingMaterialLinkageErrors[item.material_id] ? (
-                              <p className="field-error field-error-block">
-                                {pendingSupportingMaterialLinkageErrors[item.material_id]}
-                              </p>
-                            ) : null}
-                          </>
-                        );
-                      })()}
+                      <strong>{formatMaterialType(item.material_type)} / {item.original_filename}</strong>
+                      <span>{formatPendingSupportingMaterialLinkageReason(item.pending_reason)}</span>
+                      {item.linked_invoices.length > 0 ? (
+                        <span>
+                          当前已关联：
+                          {item.linked_invoices.map((linkedInvoice) => (
+                            `${linkedInvoice.invoice_number}（${formatExpenseType(linkedInvoice.expense_type)} / ${formatCurrencyFromCents(linkedInvoice.amount_cents)}）`
+                          )).join("；")}
+                        </span>
+                      ) : null}
+                      {item.candidate_invoices.length > 0 ? (
+                        <span>
+                          当前仍有 {item.candidate_invoices.length} 张候选发票可勾选：
+                          {item.candidate_invoices.map((candidate) => (
+                            `${candidate.invoice_number}（${formatExpenseType(candidate.expense_type)} / ${formatCurrencyFromCents(candidate.amount_cents)} / ${candidate.original_filename}）`
+                          )).join("；")}
+                        </span>
+                      ) : (
+                        <span>当前没有候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。</span>
+                      )}
+                      <span>上传时间：{formatDateTime(item.created_at)}</span>
+                      <div className="inline-actions">
+                        <Button
+                          component={Link}
+                          variant="contained"
+                          size="small"
+                          to={buildMaterialDetailPath(workbenchState.task.id, item.material_id)}
+                        >
+                          去辅助材料页处理
+                        </Button>
+                        {item.pending_reason === "no_candidate" ? (
+                          <Button
+                            component={Link}
+                            variant="outlined"
+                            size="small"
+                            to={buildWorkbenchTaskAnchor(workbenchState.task.id, "#member-workbench-upload")}
+                          >
+                            去上传区补录或补传发票
+                          </Button>
+                        ) : null}
+                      </div>
                     </li>
                   ))}
                 </ul>

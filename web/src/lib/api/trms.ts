@@ -450,6 +450,15 @@ export const trmsApi = {
     );
   },
 
+  detachInvoiceSupportingMaterial(invoiceId: string, materialId: string) {
+    return apiClient.request<{ status: string }>(
+      `/invoices/${encodeSegment(invoiceId)}/supporting-materials/${encodeSegment(materialId)}`,
+      {
+        method: "DELETE",
+      },
+    );
+  },
+
   listInvoiceSplits(invoiceId: string) {
     return apiClient.request<ApiListResponse<ExpenseSplitRecord>>(
       `/invoices/${encodeSegment(invoiceId)}/splits`,

@@ -1,5 +1,51 @@
 # WORKLOG
 
+## 2026-05-02 15:12 - Fix supporting material linkage entry flow and move linkage editing into material detail page
+
+### 完成内容
+- 完成任务“修复待关联辅助材料入口与归属编辑交互，并删除冗余归属参考区块”。
+- 成员工作台中的待关联辅助材料入口已从“在工作台直接改归属”收口为“跳转到辅助材料详情页处理”：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 删除工作台内嵌的候选发票下拉、保存归属和查看所选发票按钮；
+  - 待关联区现在只展示材料摘要、未自动关联原因、当前已关联发票、候选发票摘要以及“去辅助材料页处理”入口；
+  - 最近上传状态和待处理事项里的辅助材料动作入口，也统一改为跳转到具体辅助材料详情页，而不是锚点回到工作台长列表。
+- 辅助材料详情页已承接真实归属编辑交互：
+  - [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx) 删除冗余“归属发票参考”区块，改为“关联归属发票”编辑区；
+  - 页面会把“已关联发票 + 仍可继续关联的候选发票”合并成单一勾选列表，每行至少展示发票号、原始文件名、金额，并保留跳到对应发票详情页的入口；
+  - 用户修改勾选后通过“更改关联”统一提交，前端会按差异执行 attach / detach 请求；
+  - 若部分请求已经生效但后续步骤失败，页面会明确提示“部分归属更改可能已经生效”，并刷新到后端最新状态，避免继续显示假状态。
+- 测试与 UX 脚本同步更新：
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 改为验证工作台只保留入口，不再渲染归属下拉；
+  - [web/src/app/member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx) 新增材料详情页勾选后会发起 attach / detach 请求的回归；
+  - [tests/ux/real-user-flows.spec.mjs](/home/gsh/workspace/TRMS/tests/ux/real-user-flows.spec.mjs) 同步把真实主流程里的待关联辅助材料操作改成“进入材料详情页勾选再提交”。
+
+### 根因
+- 上一轮虽然已经把“待关联辅助材料”从发票长详情里收口成工作台中的独立区块，但真正的归属编辑仍留在工作台长列表里完成。
+- 同时，辅助材料详情页只保留了“归属发票参考”只读区块，用户看到候选发票却不能直接完成归属修改，导致入口和实际操作断裂。
+- 结果是：
+  - 工作台仍承担了过重的编辑职责；
+  - 辅助材料详情页成了只读中转页，和“成员材料详情按识别类型进入独立页面”的产品方向不一致；
+  - 同一材料可关联多张发票后，工作台里的单下拉保存模式也不再是最自然的编辑模型。
+
+### 风险与影响面
+- 本轮只调整成员前端入口与交互收口，没有修改后端待关联候选生成逻辑，也没有改管理员端辅助材料查看方式。
+- 当前“更改关联”按差异顺序逐条请求 attach / detach；若后端未来支持原子批量更新接口，可以再单独收口为一次提交，减少部分成功场景。
+- 本轮保守假设仍是：材料详情页展示的“已关联 + 候选发票并集”足以覆盖当前成员可操作的归属集合；若后续要支持更复杂的推荐排序或批量筛选，应另起任务，不在本轮扩散。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-material-detail.test.tsx src/app/member-invoice-workbench.test.tsx`
+- 已通过前端静态检查与构建：
+  - `cd web && npm run lint -- --quiet`
+  - `cd web && npm run build`
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 539 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 14:49 - Fix itinerary vs order screenshot recognition mix-up and add DB-backed regression sample
 
 ### 完成内容
