@@ -99,7 +99,7 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
     expect(screen.getByRole("complementary", { name: "用户工作台分类" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /工作状态/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /上传页面/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /发票查看页面/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /材料查看页面/ })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "识别结果" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "报销草稿汇总" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
@@ -234,8 +234,8 @@ describe("MemberInvoiceWorkbenchPage layout grouping", () => {
 
     renderWorkbench("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
-    const readySection = await screen.findByRole("region", { name: "未提交发票列表" });
-    expect(within(readySection).getByRole("button", { name: /未提交发票 invoice\.pdf INV-001/ })).toBeInTheDocument();
+    const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
+    expect(within(readySection).getByRole("button", { name: /未提交材料 invoice\.pdf INV-001/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "所有发票列表" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /共享发票 team-railway\.pdf TEAM-001/ })).toBeInTheDocument();
     expect(screen.getByText("票号 TEAM-001")).toBeInTheDocument();

@@ -20,6 +20,7 @@ from trms_backend.domain.recognitions import (
 )
 from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.task_member_status import (
+    MEMBER_SUBMISSION_IGNORED_RULE_CODES,
     TaskMemberMaterialStatusItem,
     TaskMemberStatusActorNotAllowedError,
     TaskMemberStatusReport,
@@ -275,6 +276,11 @@ def _collect_blocking_reasons(
 ) -> list[TaskMemberWorkbenchBlockingReason]:
     reasons: list[TaskMemberWorkbenchBlockingReason] = []
     is_invoice_material = material.material_type is MaterialType.INVOICE
+    filtered_validations = [
+        validation
+        for validation in validations
+        if validation.rule_code not in MEMBER_SUBMISSION_IGNORED_RULE_CODES
+    ]
 
     if material.recognition_status is RecognitionTaskStatus.PENDING and is_invoice_material:
         reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_PENDING)
@@ -291,7 +297,10 @@ def _collect_blocking_reasons(
         reasons.append(TaskMemberWorkbenchBlockingReason.CONFIRMATION_INCOMPLETE)
     if (
         not reasons
-        and any(validation.status in {ValidationStatus.FAILED, ValidationStatus.PENDING} for validation in validations)
+        and any(
+            validation.status in {ValidationStatus.FAILED, ValidationStatus.PENDING}
+            for validation in filtered_validations
+        )
     ):
         reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_REVIEW)
 

@@ -696,6 +696,21 @@ def validate_local_transport_rideshare_trip_requirement(
     supporting_material_recognitions: dict[str, RecognitionTaskRecord | None],
 ) -> ValidationResult:
     requires_local_transport_validation = invoice.expense_type is ExpenseType.LOCAL_TRANSPORT
+    if invoice.is_paper_invoice:
+        return _validation_result(
+            rule_code=LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
+            target_id=invoice.id,
+            status=ValidationStatus.NOT_APPLICABLE,
+            message="纸质发票暂不执行网约车行程信息校验",
+            evidence={
+                "expense_type": invoice.expense_type.value,
+                "invoice_material_id": invoice.material_id,
+                "requires_local_transport_validation": requires_local_transport_validation,
+                "is_paper_invoice": True,
+                "rideshare_detections": [],
+                "trip_information_materials": [],
+            },
+        )
     rideshare_detections = _collect_rideshare_detections(
         invoice,
         recognition_task,

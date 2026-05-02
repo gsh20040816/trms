@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-05-02 17:10 - Merge supporting materials back into member workbench material lists and narrow paper-invoice submission gate
+
+### 完成内容
+- 成员工作台已按最新产品口径收口为“工作状态 / 上传页面 / 材料查看页面”三段：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 删除额外的“辅助材料页面”导航；
+  - 原“发票查看页面”已改名为“材料查看页面”；
+  - 辅助材料不再拆成独立待关联区，而是并回“未提交材料 / 已提交材料 / 问题材料”主列表。
+- 辅助材料在材料列表中的展示与联动已补齐：
+  - 非发票材料不再显示“待补录校验”，改为“校验跟随发票”；
+  - 已归属发票的辅助材料，会按关联发票的提交状态进入未提交或已提交材料列表；
+  - 辅助材料也会显示同位候选框，但保持灰态禁用；当用户勾选关联发票时，该附件候选框会同步呈现为已勾选，显式表达“随发票一并提交且不可单独取消”；
+  - 待归票辅助材料会进入“问题材料 -> 附件待关联”分组，而不是再出现独立板块。
+- 纸质发票后端边界已收口：
+  - [src/trms_backend/api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py) 生成纸质发票号时改为带随机后缀的唯一系统号，避免同成员/同任务/同费用类型下出现稳定占位号冲突，确保重复票号校验真实生效；
+  - [src/trms_backend/domain/invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py) 对纸质发票跳过“市内交通网约车行程信息”校验，不再把纸票误伤成缺网约车行程单；
+  - [src/trms_backend/domain/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_status.py) [src/trms_backend/domain/task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py) [src/trms_backend/application/invoice_member_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/invoice_member_submission.py) 新增“成员提交门禁”口径：只忽略 `invoice_paper_receipt_required` 对成员提交和成员工作台 `ready_for_submission` 的阻塞，其余 blocker 例如缺比赛通知、缺支付记录仍继续阻塞；管理员推进到 `ready_to_export` 时，纸票待收票仍会阻塞。
+- 前后端回归测试已同步更新：
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [web/src/app/member-invoice-workbench-layout.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-layout.test.tsx)
+  - [web/src/app/member-invoice-workbench-aggregate.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench-aggregate.test.tsx)
+  - [web/src/app/member-legacy-route-redirects.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-legacy-route-redirects.test.tsx)
+  - [tests/test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py)
+  - [tests/test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)
+  - [tests/test_invoice_member_submission_api.py](/home/gsh/workspace/TRMS/tests/test_invoice_member_submission_api.py)
+  - [tests/test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py)
+
+### 根因
+- 成员工作台此前把材料主路径错误地重新按“发票”和“辅助材料待关联区”拆开，导致：
+  - 已归票或无阻塞的辅助材料没有自然并入材料列表；
+  - 非发票材料沿用了发票口径的“待补录校验”摘要；
+  - 发票可选、附件不可见，无法表达“提交发票时附件会一起提交”的真实业务语义。
+- 纸质发票此前还存在三个后端边界问题：
+  - 系统生成的纸质发票号过于稳定，只编码任务/成员/费用类型，无法区分同类多张纸票；
+  - 纸票仍然会被市内交通网约车规则误伤；
+  - 成员提交直接复用了“管理员可进入 ready_to_export”的门禁，导致“待管理员确认收票”这类管理员后置动作也把成员提交提前卡死。
+
+### 风险与影响面
+- 本轮没有放宽管理员推进门禁；纸票未收仍然会继续阻止任务进入 `ready_to_export`。
+- 成员提交只忽略“纸票待收票”这一条阻塞，没有顺手放宽缺比赛通知、缺支付记录等其他 blocker，避免把管理员复核边界一起冲掉。
+- 当前工作台里辅助材料的灰态候选框只是表达“随发票联动选择”，并不是可单独提交对象；后续如果要把“材料提交单”持久化到后端模型，应作为独立任务处理。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx src/app/member-invoice-workbench-layout.test.tsx src/app/member-invoice-workbench-aggregate.test.tsx src/app/member-legacy-route-redirects.test.tsx`
+  - 4 个测试文件、15 个用例通过。
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_invoice_validation_rules.py -k 'paper_invoice_receipt_requirement or paper_invoice_skips_local_transport'`
+  - `uv run pytest tests/test_invoices_api.py -k 'paper_invoice'`
+  - `uv run pytest tests/test_invoice_member_submission_api.py -k 'paper_invoice or batch_submit'`
+  - `uv run pytest tests/test_task_member_workbench_api.py -k 'ready_state or paper_invoice_ignores_receipt_confirmation or blocking_reasons'`
+- `./scripts/verify.sh` 尚未运行；提交前需再执行一次仓库级验证。
+
 ## 2026-05-02 16:50 - Restore member supporting-material entry from workbench and recover dedicated material status route
 
 ### 完成内容

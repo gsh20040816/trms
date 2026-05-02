@@ -1,4 +1,5 @@
 import re
+from uuid import uuid4
 from datetime import date, datetime, timezone
 from typing import Annotated
 
@@ -244,7 +245,11 @@ def build_invoice_router(
         return f"paper-invoice-{normalized_invoice_number}.txt"
 
     def build_generated_paper_invoice_number(*, task_id: str, actor_id: str, expense_type: ExpenseType) -> str:
-        return f"PAPER-{task_id[:8].upper()}-{actor_id[:6].upper()}-{expense_type.value.upper()}"
+        unique_suffix = uuid4().hex[:8].upper()
+        return (
+            f"PAPER-{task_id[:8].upper()}-{actor_id[:6].upper()}-"
+            f"{expense_type.value.upper()}-{unique_suffix}"
+        )
 
     def build_paper_invoice_placeholder_content(
         *,

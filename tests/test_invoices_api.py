@@ -423,6 +423,47 @@ def test_member_can_create_paper_invoice_and_admin_can_confirm_receipt(tmp_path)
     assert receipt_validation["message"] == "纸质发票已由管理员确认收到"
 
 
+def test_create_paper_invoice_generates_distinct_invoice_numbers_for_same_member_and_expense_type(tmp_path):
+    client = make_client(tmp_path)
+    task = create_admin_task(client)
+    open_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert open_response.status_code == 200
+    member_token = register_and_get_token(
+        client,
+        username="paper-member-dup",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+
+    first_response = client.post(
+        f"/api/tasks/{task['id']}/paper-invoices",
+        json={
+            "expense_type": "registration",
+            "amount_cents": 8800,
+        },
+        headers=auth_headers(member_token),
+    )
+    second_response = client.post(
+        f"/api/tasks/{task['id']}/paper-invoices",
+        json={
+            "expense_type": "registration",
+            "amount_cents": 9900,
+        },
+        headers=auth_headers(member_token),
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    first_invoice_number = first_response.json()["invoice"]["invoice_number"]
+    second_invoice_number = second_response.json()["invoice"]["invoice_number"]
+    assert first_invoice_number != second_invoice_number
+
+
 def test_task_administrator_can_record_invoice_for_member_material(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)

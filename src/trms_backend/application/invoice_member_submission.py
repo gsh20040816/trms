@@ -18,7 +18,7 @@ from trms_backend.domain.tasks import (
     ReimbursementTask,
     TaskReviewValidationError,
     TaskStatus,
-    ensure_task_can_enter_ready_to_export,
+    ensure_invoices_ready_for_member_submission,
 )
 
 
@@ -189,12 +189,11 @@ class InvoiceMemberSubmissionService:
             )
 
         try:
-            ensure_task_can_enter_ready_to_export(
+            ensure_invoices_ready_for_member_submission(
                 [invoice],
                 validations_by_invoice_id=validations_by_invoice_id,
                 splits_by_invoice_id=splits_by_invoice_id,
                 confirmations_by_split_id=confirmations_by_split_id,
-                pending_assignment_material_ids=[],
             )
         except TaskReviewValidationError as error:
             return InvoiceMemberSubmissionFailure(

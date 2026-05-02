@@ -14,6 +14,9 @@ from trms_backend.domain.splits import ExpenseSplitRecord
 from trms_backend.domain.tasks import ReimbursementTask
 
 
+MEMBER_SUBMISSION_IGNORED_RULE_CODES = {"invoice_paper_receipt_required"}
+
+
 class TaskMemberStatusActorNotAllowedError(ValueError):
     def __init__(self) -> None:
         super().__init__("actor is not allowed to view member status for this task")
@@ -113,11 +116,12 @@ def build_task_member_status_report(
                 ),
                 invoice_id=invoice.id if invoice is not None else None,
                 invoice_number=invoice.invoice_number if invoice is not None else None,
-                validation_status=_summarize_validation_status(validations),
+                validation_status=_summarize_validation_status_for_member_submission(validations),
                 validation_messages=[
                     validation.message
                     for validation in validations
                     if validation.status in {ValidationStatus.FAILED, ValidationStatus.PENDING}
+                    and validation.rule_code not in MEMBER_SUBMISSION_IGNORED_RULE_CODES
                 ],
                 created_at=material.created_at,
             )
@@ -208,3 +212,14 @@ def _summarize_validation_status(validations: list[ValidationResult]) -> Validat
     if ValidationStatus.PASSED in statuses:
         return ValidationStatus.PASSED
     return ValidationStatus.NOT_APPLICABLE
+
+
+def _summarize_validation_status_for_member_submission(
+    validations: list[ValidationResult],
+) -> ValidationStatus:
+    filtered_validations = [
+        validation
+        for validation in validations
+        if validation.rule_code not in MEMBER_SUBMISSION_IGNORED_RULE_CODES
+    ]
+    return _summarize_validation_status(filtered_validations)

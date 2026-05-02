@@ -327,3 +327,69 @@ def test_outsider_member_cannot_submit_task_invoices(tmp_path):
 
     assert response.status_code == 403
     assert response.json()["detail"] == "actor is not allowed to submit invoices for this task"
+
+
+def test_member_can_submit_paper_invoice_before_admin_confirms_receipt_but_task_cannot_enter_ready_to_export(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = create_task(
+        client,
+        payload=valid_task_payload() | {"fee_categories": ["registration", "railway", "hotel"]},
+    )
+    open_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert open_response.status_code == 200
+    task_id = task["id"]
+    member_headers = member_auth_headers(client, username="paper-submit-member", actor_id="2250001")
+
+    create_response = client.post(
+        f"/api/tasks/{task_id}/paper-invoices",
+        json={
+            "expense_type": "railway",
+            "amount_cents": 8800,
+        },
+        headers=member_headers,
+    )
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["invoice"]["id"]
+
+    split_response = client.get(
+        f"/api/invoices/{invoice_id}/splits",
+        headers=member_headers,
+    )
+    assert split_response.status_code == 200
+    split_id = split_response.json()["items"][0]["id"]
+    confirm_split(client, split_id, actor_id="2250001", member_id="2250001")
+
+    submit_response = client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        json={"invoice_ids": [invoice_id]},
+        headers=member_headers,
+    )
+    assert submit_response.status_code == 200
+    assert submit_response.json()["status"] == "success"
+    assert submit_response.json()["items"][0]["member_submission_status"] == "submitted"
+
+    closed_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "closed"},
+        headers=admin_auth_headers(client),
+    )
+    assert closed_response.status_code == 200
+    reviewing_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "reviewing"},
+        headers=admin_auth_headers(client),
+    )
+    assert reviewing_response.status_code == 200
+    ready_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "ready_to_export"},
+        headers=admin_auth_headers(client),
+    )
+    assert ready_response.status_code == 409
+    assert "blocker validations are not resolved" in ready_response.json()["detail"]

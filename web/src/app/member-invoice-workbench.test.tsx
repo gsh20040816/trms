@@ -286,19 +286,15 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(screen.getByRole("complementary", { name: "用户工作台分类" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /工作状态/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /上传页面/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /发票查看页面/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /辅助材料页面/ })).toHaveAttribute(
-      "href",
-      "/member/materials/status?taskId=TASK-OPEN",
-    );
+    expect(screen.getByRole("link", { name: /材料查看页面/ })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "需要处理的发票列表" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "发票字段" })).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "可提交发票列表" })).not.toHaveClass("member-status-section-warning");
-    expect(screen.getByRole("region", { name: "问题发票分组" })).toHaveClass("member-status-section-warning");
+    expect(screen.getByRole("region", { name: "可提交材料列表" })).not.toHaveClass("member-status-section-warning");
+    expect(screen.getByRole("region", { name: "问题材料分组" })).toHaveClass("member-status-section-warning");
 
-    const readySection = screen.getByRole("region", { name: "未提交发票列表" });
-    fireEvent.click(within(readySection).getByRole("button", { name: /未提交发票 ready\.pdf INV-READY-001/ }));
+    const readySection = screen.getByRole("region", { name: "未提交材料列表" });
+    fireEvent.click(within(readySection).getByRole("button", { name: /未提交材料 ready\.pdf INV-READY-001/ }));
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/member/invoices/INV-READY-001");
@@ -316,8 +312,51 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByText("批量提交成功：共处理 1 张发票。")).toBeInTheDocument();
   });
 
-  it("shows only unlinked pending supporting materials and keeps candidate details inside the material page", async () => {
+  it("shows pending supporting materials inside problem material groups instead of a standalone section", async () => {
     mockCommonFetch(buildWorkbenchSummary({
+      items: [
+        ...buildWorkbenchSummary().items,
+        {
+          material: {
+            material_id: "MAT-PAY-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "pay.png",
+            material_status: "assigned",
+            recognition_status: "succeeded",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T11:00:00+08:00",
+          },
+          invoice: null,
+          recognition: {
+            id: "REC-PAY-001",
+            material_id: "MAT-PAY-001",
+            status: "succeeded",
+            failure: null,
+            recognized_fields: {
+              material_type: { value: "payment_record", source: "ai", confidence: 0.99, status: "recognized", updated_at: null },
+              amount_cents: { value: 12345, source: "ai", confidence: 0.99, status: "recognized", updated_at: null },
+            },
+            manual_corrections: [],
+            created_at: "2026-04-28T11:00:00+08:00",
+            updated_at: "2026-04-28T11:00:00+08:00",
+          },
+          validations: [],
+          supporting_materials: [],
+          splits: [],
+          confirmations: [],
+          related_expense_details: [],
+          missing_materials: [],
+          queue_group: "ready",
+          blocking_reasons: [],
+          ready_for_submission: true,
+        },
+      ],
       pending_supporting_material_linkage_items: [
         {
           material_id: "MAT-LINKED-001",
@@ -374,117 +413,20 @@ describe("MemberInvoiceWorkbenchPage", () => {
     }));
     renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
-    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "待关联辅助材料列表" })).toHaveClass("member-status-section-warning");
-    expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
-    expect(screen.queryByText("支付记录 / linked-pay.png")).not.toBeInTheDocument();
-    expect(screen.getByText("当前存在 2 张候选发票；请进入辅助材料详情页查看并勾选真正归属。")).toBeInTheDocument();
-    expect(screen.queryByText(/当前仍有 2 张候选发票可勾选/)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "去辅助材料页处理" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "问题材料" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "待关联辅助材料" })).not.toBeInTheDocument();
+    const problemSection = screen.getByRole("region", { name: "问题材料分组" });
+    expect(within(problemSection).getByRole("region", { name: "附件待关联 分组" })).toBeInTheDocument();
+    expect(within(problemSection).getByRole("button", { name: /附件待关联 支付记录 pay\.png/ })).toBeInTheDocument();
+    expect(within(problemSection).queryByRole("checkbox", { name: /批量选择发票/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "归属发票" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "展开的发票详情" })).not.toBeInTheDocument();
   });
 
-  it("routes pending supporting materials to the dedicated material detail page for linkage editing", async () => {
-    mockCommonFetch(buildWorkbenchSummary({
-      pending_supporting_material_linkage_items: [
-        {
-          material_id: "MAT-PAY-001",
-          submitter_id: "2250001",
-          material_type: "payment_record",
-          original_filename: "pay.png",
-          pending_reason: "multiple_candidates",
-          linked_invoices: [],
-          candidate_invoices: [
-            {
-              invoice_id: "INV-READY-001",
-              invoice_number: "INV-READY-001",
-              amount_cents: 12345,
-              expense_type: "railway",
-              original_filename: "ready.pdf",
-            },
-            {
-              invoice_id: "INV-SECOND-001",
-              invoice_number: "INV-SECOND-001",
-              amount_cents: 54321,
-              expense_type: "hotel",
-              original_filename: "second.pdf",
-            },
-          ],
-          created_at: "2026-04-28T11:00:00+08:00",
-        },
-      ],
-    }));
-    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
-
-    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: "去辅助材料页处理" }));
-
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/member/materials/MAT-PAY-001");
-    });
-  });
-
-  it("shows the empty-candidate state without rendering a select", async () => {
-    mockCommonFetch(buildWorkbenchSummary({
-      pending_supporting_material_linkage_items: [
-        {
-          material_id: "MAT-NO-CANDIDATE-001",
-          submitter_id: "2250001",
-          material_type: "competition_notice",
-          original_filename: "notice.pdf",
-          pending_reason: "no_candidate",
-          linked_invoices: [],
-          candidate_invoices: [],
-          created_at: "2026-04-28T11:00:00+08:00",
-        },
-      ],
-    }));
-    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
-
-    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
-    expect(screen.getByText("当前没有候选发票；通常意味着你还没有创建对应发票，或材料提交人与现有发票不匹配。")).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "归属发票" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "去辅助材料页处理" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "去上传区补录或补传发票" })).toBeInTheDocument();
-  });
-
-  it("routes non-invoice materials to the dedicated material detail page", async () => {
-    mockCommonFetch(buildWorkbenchSummary({
-      pending_supporting_material_linkage_items: [
-        {
-          material_id: "MAT-PAY-001",
-          submitter_id: "2250001",
-          material_type: "payment_record",
-          original_filename: "pay.png",
-          pending_reason: "manual_confirmation_required",
-          linked_invoices: [],
-          candidate_invoices: [
-            {
-              invoice_id: "INV-READY-001",
-              invoice_number: "INV-READY-001",
-              amount_cents: 12345,
-              expense_type: "railway",
-              original_filename: "ready.pdf",
-            },
-          ],
-          created_at: "2026-04-28T10:00:00+08:00",
-        },
-      ],
-    }));
-    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
-
-    expect(await screen.findByRole("heading", { name: "需要处理的发票列表" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: "去辅助材料页处理" }));
-
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/member/materials/MAT-PAY-001");
-    });
-  });
-
-  it("does not keep non-invoice recognized materials inside problem invoice groups", async () => {
+  it("routes pending supporting materials from problem material groups to the dedicated material detail page", async () => {
     mockCommonFetch(buildWorkbenchSummary({
       items: [
+        ...buildWorkbenchSummary().items,
         {
           material: {
             material_id: "MAT-PAY-001",
@@ -538,26 +480,29 @@ describe("MemberInvoiceWorkbenchPage", () => {
             {
               invoice_id: "INV-READY-001",
               invoice_number: "INV-READY-001",
-              amount_cents: 308700,
-              expense_type: "hotel",
-              original_filename: "hotel.pdf",
+              amount_cents: 12345,
+              expense_type: "railway",
+              original_filename: "ready.pdf",
             },
           ],
           created_at: "2026-04-28T10:00:00+08:00",
         },
       ],
     }));
-    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
-    expect(await screen.findByRole("heading", { name: "问题发票" })).toBeInTheDocument();
-    expect(screen.getByText("当前无问题发票")).toBeInTheDocument();
-    expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "识别失败或待确认" })).not.toBeInTheDocument();
+    const problemSection = await screen.findByRole("region", { name: "问题材料分组" });
+    fireEvent.click(within(problemSection).getByRole("button", { name: /附件待关联 支付记录 pay\.png/ }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/member/materials/MAT-PAY-001");
+    });
   });
 
-  it("shows non-invoice materials only inside the pending-linkage summary instead of problem invoice groups", async () => {
+  it("shows ready non-invoice materials inside the unsubmitted material list without batch checkbox", async () => {
     mockCommonFetch(buildWorkbenchSummary({
       items: [
+        ...buildWorkbenchSummary().items,
         {
           material: {
             material_id: "MAT-PAY-001",
@@ -565,12 +510,12 @@ describe("MemberInvoiceWorkbenchPage", () => {
             material_type: "payment_record",
             original_filename: "pay.png",
             material_status: "assigned",
-            recognition_status: "needs_confirmation",
+            recognition_status: "succeeded",
             recognition_failure_stage: null,
             recognition_failure_reason: null,
             invoice_id: null,
             invoice_number: null,
-            validation_status: "pending",
+            validation_status: "passed",
             validation_messages: [],
             created_at: "2026-04-28T10:00:00+08:00",
           },
@@ -578,14 +523,21 @@ describe("MemberInvoiceWorkbenchPage", () => {
           recognition: {
             id: "REC-PAY-001",
             material_id: "MAT-PAY-001",
-            status: "needs_confirmation",
+            status: "succeeded",
             failure: null,
             recognized_fields: {
               amount_cents: {
                 value: 12345,
                 source: "ai",
                 confidence: 0.76,
-                status: "needs_confirmation",
+                status: "recognized",
+                updated_at: "2026-04-28T10:05:00+08:00",
+              },
+              material_type: {
+                value: "payment_record",
+                source: "ai",
+                confidence: 0.99,
+                status: "recognized",
                 updated_at: "2026-04-28T10:05:00+08:00",
               },
             },
@@ -604,35 +556,223 @@ describe("MemberInvoiceWorkbenchPage", () => {
           ready_for_submission: true,
         },
       ],
-      pending_supporting_material_linkage_items: [
-        {
-          material_id: "MAT-PAY-001",
-          submitter_id: "2250001",
-          material_type: "payment_record",
-          original_filename: "pay.png",
-          pending_reason: "manual_confirmation_required",
-          linked_invoices: [],
-          candidate_invoices: [
-            {
-              invoice_id: "INV-READY-001",
-              invoice_number: "INV-READY-001",
-              amount_cents: 12345,
-              expense_type: "railway",
-              original_filename: "ready.pdf",
-            },
-          ],
-          created_at: "2026-04-28T10:00:00+08:00",
-        },
-      ],
+      pending_supporting_material_linkage_items: [],
     }));
 
     renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
-    expect(await screen.findByRole("heading", { name: "待关联辅助材料" })).toBeInTheDocument();
-    expect(screen.getByText("支付记录 / pay.png")).toBeInTheDocument();
-    expect(screen.getByText("系统找到唯一候选发票，但仍需你手动确认归属")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "识别失败或待确认" })).not.toBeInTheDocument();
-    expect(screen.queryByText("票号 待补录")).not.toBeInTheDocument();
+    const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
+    expect(within(readySection).getByRole("button", { name: /未提交材料 支付记录 pay\.png/ })).toBeInTheDocument();
+    expect(within(readySection).queryByRole("checkbox", { name: /批量选择发票 pay\.png/ })).not.toBeInTheDocument();
+    expect(within(readySection).getByText("校验跟随发票")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "问题材料分组" })).toHaveTextContent("当前无问题材料");
+  });
+
+  it("moves linked supporting materials into the submitted material list when their invoice is submitted", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      items: [
+        {
+          ...buildWorkbenchSummary().items[0],
+          supporting_materials: [
+            {
+              id: "MAT-PAY-001",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "payment_record",
+              storage_key: "TASK-OPEN/MAT-PAY-001-pay.png",
+              original_filename: "pay.png",
+              content_type: "image/png",
+              size_bytes: 8,
+              sha256: "b".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T09:30:00+08:00",
+            },
+          ],
+        },
+        {
+          material: {
+            material_id: "MAT-PAY-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "pay.png",
+            material_status: "assigned",
+            recognition_status: "succeeded",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T09:30:00+08:00",
+          },
+          invoice: null,
+          recognition: {
+            id: "REC-PAY-001",
+            material_id: "MAT-PAY-001",
+            status: "succeeded",
+            failure: null,
+            recognized_fields: {
+              material_type: { value: "payment_record", source: "ai", confidence: 0.99, status: "recognized", updated_at: null },
+            },
+            manual_corrections: [],
+            created_at: "2026-04-28T09:30:00+08:00",
+            updated_at: "2026-04-28T09:30:00+08:00",
+          },
+          validations: [],
+          supporting_materials: [],
+          splits: [],
+          confirmations: [],
+          related_expense_details: [],
+          missing_materials: [],
+          queue_group: "ready",
+          blocking_reasons: [],
+          ready_for_submission: true,
+        },
+      ],
+      report: {
+        ...buildWorkbenchSummary().report,
+        counts: {
+          ...buildWorkbenchSummary().report.counts,
+          material_count: 2,
+          recognition_succeeded_count: 2,
+          validation_passed_count: 2,
+        },
+        materials: [
+          ...buildWorkbenchSummary().report.materials,
+          {
+            material_id: "MAT-PAY-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "pay.png",
+            material_status: "assigned",
+            recognition_status: "succeeded",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T09:30:00+08:00",
+          },
+        ],
+      },
+    }));
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
+    expect(within(readySection).getByText("已关联到发票 INV-READY-001；选择该发票时会一并提交此附件。")).toBeInTheDocument();
+  });
+
+  it("shows a disabled gray checkbox for linked supporting materials and syncs its checked state with the parent invoice", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      items: [
+        {
+          ...buildWorkbenchSummary().items[0],
+          supporting_materials: [
+            {
+              id: "MAT-PAY-001",
+              status: "assigned",
+              task_id: "TASK-OPEN",
+              submitter_id: "2250001",
+              task_id_hint: null,
+              submitter_id_hint: null,
+              channel: "web",
+              material_type: "payment_record",
+              storage_key: "TASK-OPEN/MAT-PAY-001-pay.png",
+              original_filename: "pay.png",
+              content_type: "image/png",
+              size_bytes: 8,
+              sha256: "b".repeat(64),
+              duplicate_of: null,
+              claimed_by: null,
+              claimed_at: null,
+              created_at: "2026-04-28T09:30:00+08:00",
+            },
+          ],
+        },
+        {
+          material: {
+            material_id: "MAT-PAY-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "pay.png",
+            material_status: "assigned",
+            recognition_status: "succeeded",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T09:30:00+08:00",
+          },
+          invoice: null,
+          recognition: {
+            id: "REC-PAY-001",
+            material_id: "MAT-PAY-001",
+            status: "succeeded",
+            failure: null,
+            recognized_fields: {
+              material_type: { value: "payment_record", source: "ai", confidence: 0.99, status: "recognized", updated_at: null },
+            },
+            manual_corrections: [],
+            created_at: "2026-04-28T09:30:00+08:00",
+            updated_at: "2026-04-28T09:30:00+08:00",
+          },
+          validations: [],
+          supporting_materials: [],
+          splits: [],
+          confirmations: [],
+          related_expense_details: [],
+          missing_materials: [],
+          queue_group: "ready",
+          blocking_reasons: [],
+          ready_for_submission: true,
+        },
+      ],
+      report: {
+        ...buildWorkbenchSummary().report,
+        counts: {
+          ...buildWorkbenchSummary().report.counts,
+          material_count: 2,
+          recognition_succeeded_count: 2,
+          validation_passed_count: 2,
+        },
+        materials: [
+          ...buildWorkbenchSummary().report.materials,
+          {
+            material_id: "MAT-PAY-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "pay.png",
+            material_status: "assigned",
+            recognition_status: "succeeded",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T09:30:00+08:00",
+          },
+        ],
+      },
+    }));
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
+    const attachmentCheckbox = within(readySection).getByRole("checkbox", { name: "关联附件随发票提交 pay.png" });
+    expect(attachmentCheckbox).toBeDisabled();
+    expect(attachmentCheckbox).not.toBeChecked();
+
+    fireEvent.click(within(readySection).getByRole("checkbox", { name: "批量选择发票 INV-READY-001" }));
+    expect(attachmentCheckbox).toBeChecked();
   });
 
   it("allows members to create a paper invoice from the workbench", async () => {
@@ -728,8 +868,8 @@ describe("MemberInvoiceWorkbenchPage", () => {
     }));
     renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
-    const problemSection = await screen.findByRole("region", { name: "问题发票分组" });
-    const summaryList = within(problemSection).getByRole("list", { name: "识别失败或待确认 发票摘要列表" });
+    const problemSection = await screen.findByRole("region", { name: "问题材料分组" });
+    const summaryList = within(problemSection).getByRole("list", { name: "识别失败或待确认 材料摘要列表" });
     expect(within(summaryList).getByRole("button", { name: /识别失败或待确认 problem\.pdf INV-PROBLEM-001/ })).toBeInTheDocument();
     expect(within(summaryList).getAllByText("识别失败或待确认").length).toBeGreaterThanOrEqual(1);
     expect(within(summaryList).queryByRole("button", { name: "批量提交选中发票" })).not.toBeInTheDocument();

@@ -507,6 +507,79 @@ def ensure_task_can_enter_ready_to_export(
         raise TaskReviewValidationError(reasons)
 
 
+def ensure_invoices_ready_for_member_submission(
+    invoices: list[InvoiceRecord],
+    *,
+    validations_by_invoice_id: dict[str, list[ValidationResult]],
+    splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
+    confirmations_by_split_id: dict[str, ConfirmationRecord],
+) -> None:
+    invoices_missing_validations: list[str] = []
+    invoices_with_member_blocker_issues: list[str] = []
+    invoices_missing_splits: list[str] = []
+    splits_missing_confirmation: list[str] = []
+    splits_pending_confirmation: list[str] = []
+    disputed_splits: list[str] = []
+
+    member_submission_ignored_rule_codes = {"invoice_paper_receipt_required"}
+
+    for invoice in invoices:
+        validations = validations_by_invoice_id.get(invoice.id, [])
+        if not validations:
+            invoices_missing_validations.append(invoice.id)
+        elif any(
+            result.severity == ValidationSeverity.BLOCKER
+            and result.status in {ValidationStatus.FAILED, ValidationStatus.PENDING}
+            and result.rule_code not in member_submission_ignored_rule_codes
+            for result in validations
+        ):
+            invoices_with_member_blocker_issues.append(invoice.id)
+
+        splits = splits_by_invoice_id.get(invoice.id, [])
+        if not splits:
+            invoices_missing_splits.append(invoice.id)
+            continue
+
+        for split in splits:
+            confirmation = confirmations_by_split_id.get(split.id)
+            if confirmation is None:
+                splits_missing_confirmation.append(split.id)
+                continue
+            if confirmation.status == ConfirmationStatus.PENDING:
+                splits_pending_confirmation.append(split.id)
+                continue
+            if confirmation.status == ConfirmationStatus.DISPUTED:
+                disputed_splits.append(split.id)
+
+    reasons: list[str] = []
+    if invoices_missing_validations:
+        reasons.append(
+            "missing invoice validations for invoices: "
+            + ", ".join(invoices_missing_validations)
+        )
+    if invoices_with_member_blocker_issues:
+        reasons.append(
+            "blocker validations are not resolved for invoices: "
+            + ", ".join(invoices_with_member_blocker_issues)
+        )
+    if invoices_missing_splits:
+        reasons.append("missing expense splits for invoices: " + ", ".join(invoices_missing_splits))
+    if splits_missing_confirmation:
+        reasons.append(
+            "member confirmations are still missing for splits: "
+            + ", ".join(splits_missing_confirmation)
+        )
+    if splits_pending_confirmation:
+        reasons.append(
+            "member confirmations are still pending for splits: "
+            + ", ".join(splits_pending_confirmation)
+        )
+    if disputed_splits:
+        reasons.append("member confirmations are disputed for splits: " + ", ".join(disputed_splits))
+    if reasons:
+        raise TaskReviewValidationError(reasons)
+
+
 def close_expired_open_tasks(
     repository: TaskRepository,
     *,

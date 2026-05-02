@@ -304,8 +304,8 @@ describe("MemberInvoiceWorkbenchPage aggregate loading", () => {
 
     renderWorkbenchRoute();
 
-    const readySection = await screen.findByRole("region", { name: "未提交发票列表" });
-    expect(within(readySection).getByRole("button", { name: /未提交发票 railway\.pdf INV-OPEN-001/ })).toBeInTheDocument();
+    const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
+    expect(within(readySection).getByRole("button", { name: /未提交材料 railway\.pdf INV-OPEN-001/ })).toBeInTheDocument();
     expect(requestedUrls).toContain("/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001");
     expect(requestedUrls).not.toContain("/api/tasks/TASK-OPEN/member-status?actor_id=2250001");
     expect(requestedUrls).not.toContain("/api/tasks/TASK-OPEN/shared-invoices?actor_id=2250001");

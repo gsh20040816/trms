@@ -332,6 +332,23 @@ def test_paper_invoice_receipt_requirement_passes_after_admin_confirms_receipt()
     assert result.evidence["paper_invoice_received_by"] == "admin-1"
 
 
+def test_paper_invoice_skips_local_transport_rideshare_trip_requirement():
+    invoice = make_invoice(expense_type=ExpenseType.LOCAL_TRANSPORT)
+    invoice.is_paper_invoice = True
+
+    result = validate_local_transport_rideshare_trip_requirement(
+        invoice,
+        recognition_task=None,
+        supporting_materials=[],
+        supporting_material_recognitions={},
+    )
+
+    assert result.rule_code == LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE
+    assert result.status is ValidationStatus.NOT_APPLICABLE
+    assert result.message == "纸质发票暂不执行网约车行程信息校验"
+    assert result.evidence["is_paper_invoice"] is True
+
+
 @pytest.mark.parametrize(
     ("supporting_materials", "expected_status"),
     [

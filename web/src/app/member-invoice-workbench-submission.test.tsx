@@ -419,9 +419,9 @@ describe("MemberInvoiceWorkbenchPage batch submission", () => {
     renderWorkbenchRoute();
 
     const batchSection = await screen.findByRole("region", { name: "批量提交与撤回区" });
-    expect(screen.getByRole("button", { name: /未提交发票 railway\.pdf INV-001/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /已提交发票 hotel\.pdf INV-002/ })).toBeInTheDocument();
-    expect(within(batchSection).getByText("已选 0 张")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /未提交材料 railway\.pdf INV-001/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /已提交材料 hotel\.pdf INV-002/ })).toBeInTheDocument();
+    expect(within(batchSection).getByText("已选 0 张发票")).toBeInTheDocument();
     expect(screen.getByText("未提交列表已选 0 / 1")).toBeInTheDocument();
     expect(screen.getByText("已提交列表已选 0 / 1")).toBeInTheDocument();
 
@@ -429,7 +429,7 @@ describe("MemberInvoiceWorkbenchPage batch submission", () => {
       fireEvent.click(screen.getByRole("checkbox", { name: "批量选择发票 INV-001" }));
     });
 
-    expect(within(batchSection).getByText("已选 1 张")).toBeInTheDocument();
+    expect(within(batchSection).getByText("已选 1 张发票")).toBeInTheDocument();
     expect(screen.getByText("未提交列表已选 1 / 1")).toBeInTheDocument();
     expect(screen.getByText("已提交列表已选 0 / 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "清空未提交选择" })).toBeEnabled();
@@ -439,7 +439,7 @@ describe("MemberInvoiceWorkbenchPage batch submission", () => {
       fireEvent.click(screen.getByRole("checkbox", { name: "批量选择发票 INV-002" }));
     });
 
-    expect(within(batchSection).getByText("已选 2 张")).toBeInTheDocument();
+    expect(within(batchSection).getByText("已选 2 张发票")).toBeInTheDocument();
     expect(screen.getByText("未提交列表已选 1 / 1")).toBeInTheDocument();
     expect(screen.getByText("已提交列表已选 1 / 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "清空已提交选择" })).toBeEnabled();

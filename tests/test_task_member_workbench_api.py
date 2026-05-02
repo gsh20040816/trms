@@ -10,7 +10,7 @@ from test_task_member_status_api import (
     member_auth_headers,
     upload_material,
 )
-from test_tasks_api import admin_auth_headers
+from test_tasks_api import admin_auth_headers, create_task, valid_task_payload
 
 
 def make_client(tmp_path):
@@ -324,6 +324,40 @@ def test_member_workbench_summary_maps_blocking_reasons_and_pending_linkage(tmp_
     assert items_by_invoice_number["RAIL-001"]["ready_for_submission"] is True
     assert items_by_invoice_number["RAIL-001"]["queue_group"] == "ready"
     assert items_by_invoice_number["RAIL-001"]["blocking_reasons"] == []
+
+
+def test_member_workbench_paper_invoice_ignores_receipt_confirmation_for_member_submission_readiness(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task = create_task(
+        client,
+        payload=valid_task_payload() | {"fee_categories": ["registration", "railway", "hotel"]},
+    )
+    assert client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    ).status_code == 200
+    member_headers = member_auth_headers(client, username="paper-workbench-member", actor_id="2250001")
+
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/paper-invoices",
+        json={"expense_type": "railway", "amount_cents": 8800},
+        headers=member_headers,
+    )
+    assert create_response.status_code == 201
+
+    response = client.get(
+        f"/api/tasks/{task['id']}/member-workbench",
+        headers=member_headers,
+    )
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["invoice"]["is_paper_invoice"] is True
+    assert item["ready_for_submission"] is True
+    assert item["queue_group"] == "ready"
+    assert item["blocking_reasons"] == []
 
 
 def test_member_workbench_non_invoice_success_without_invoice_is_not_marked_as_recognition_review(
