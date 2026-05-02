@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import ButtonBase from "@mui/material/ButtonBase";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 
@@ -15,6 +18,7 @@ import type {
   ExpenseSplitRecord,
   RecognitionTaskRecord,
   ReimbursementTask,
+  TaskMemberSummary,
   TaskReviewSummary,
   TaskReviewSummaryInvoiceItem,
   TaskReviewSummaryMaterialItem,
@@ -311,22 +315,6 @@ function describeRecognitionFieldValue(
   return "复杂结构";
 }
 
-function buildMaterialSummaryValidationTone(
-  item: ReviewMaterialDetailItem,
-  recognition: RecognitionTaskRecord | null,
-) {
-  const failedValidationCount = item.primaryInvoice?.validations.filter(
-    (validation) => validation.status === "failed",
-  ).length ?? 0;
-  if (failedValidationCount > 0 || recognition?.status === "failed") {
-    return "warning" as const;
-  }
-  if (recognition?.status === "needs_confirmation") {
-    return "warning" as const;
-  }
-  return "success" as const;
-}
-
 function buildMaterialSummaryValidationLabel(
   item: ReviewMaterialDetailItem,
   recognition: RecognitionTaskRecord | null,
@@ -344,6 +332,42 @@ function buildMaterialSummaryValidationLabel(
     return "待人工确认";
   }
   return "已归档";
+}
+
+function getReviewDetailItemSelectorStatus(
+  item: ReviewMaterialDetailItem,
+  recognition: RecognitionTaskRecord | null,
+) {
+  const label = buildMaterialSummaryValidationLabel(item, recognition);
+  if (label === "已归档") {
+    return { label: "是", tone: "success" as const };
+  }
+  if (label === "待人工确认") {
+    return { label: "待确认", tone: "warning" as const };
+  }
+  return { label: "否", tone: "warning" as const };
+}
+
+function getReviewDetailItemSelectorNumber(item: ReviewMaterialDetailItem) {
+  return item.primaryInvoice?.invoice.invoice_number ?? "未形成主发票";
+}
+
+function getReviewDetailItemSelectorAmount(item: ReviewMaterialDetailItem) {
+  return item.primaryInvoice
+    ? formatInvoiceAmountFromCents(item.primaryInvoice.invoice.amount_cents)
+    : "未形成主发票";
+}
+
+function getReviewDetailItemSelectorType(item: ReviewMaterialDetailItem) {
+  return formatMaterialType(item.materialItem.material.material_type);
+}
+
+function getReviewDetailItemSelectorHint(
+  item: ReviewMaterialDetailItem,
+  memberSummaryMap: Map<string, TaskMemberSummary>,
+) {
+  const recognition = item.materialItem.latest_recognition;
+  return `提交人 ${formatTaskMemberLabel(item.materialItem.material.submitter_id, memberSummaryMap)}；${recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}`;
 }
 
 export function AdminReviewOverviewPage() {
@@ -411,7 +435,9 @@ export function AdminReviewOverviewPage() {
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleSummary = state.status === "ready" && !isForeignTask ? state.reviewSummary : null;
   const visibleOverdueSummary = state.status === "ready" && !isForeignTask ? state.overdueSummary : null;
-  const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
+  const memberSummaryMap: Map<string, TaskMemberSummary> = visibleTask
+    ? buildTaskMemberSummaryMap(visibleTask.member_summaries)
+    : new Map<string, TaskMemberSummary>();
   const selectedDetailItem = visibleSummary
     ? detailItems.find((item) => item.materialItem.material.id === selectedMaterialId) ?? null
     : null;
@@ -719,71 +745,93 @@ export function AdminReviewOverviewPage() {
                 先从左侧选中当前要处理的材料，再在右侧同页查看原件、识别字段、校验异常和分摊去向。
               </p>
               {detailItems.length > 0 ? (
-                <ul className="invoice-material-list" aria-label="材料审核列表">
-                  {detailItems.map((item) => {
-                    const material = item.materialItem.material;
-                    const recognition = item.materialItem.latest_recognition;
-                    const failedValidationCount = item.primaryInvoice?.validations.filter(
-                      (validation) => validation.status === "failed",
-                    ).length ?? 0;
-                    const pendingValidationCount = item.primaryInvoice?.validations.filter(
-                      (validation) => validation.status === "pending",
-                    ).length ?? 0;
-                    const isSelected = material.id === selectedMaterialId;
-                    return (
-                      <li key={material.id}>
-                        <ButtonBase
-                          className={`invoice-material-button ${isSelected ? "invoice-material-button-selected" : ""}`}
-                          aria-pressed={isSelected}
-                          onClick={() => {
-                            setSelectedMaterialId(material.id);
-                          }}
-                          sx={{ display: "block", width: "100%", textAlign: "left", borderRadius: 2 }}
-                        >
-                          <InvoiceSummaryRow
-                            filename={material.original_filename}
-                            invoiceNumber={item.primaryInvoice?.invoice.invoice_number ?? null}
-                            primaryLabel="材料摘要"
-                            amountLabel={formatMaterialType(material.material_type)}
-                            validationLabel={buildMaterialSummaryValidationLabel(item, recognition)}
-                            validationTone={buildMaterialSummaryValidationTone(item, recognition)}
-                            supportingMaterialCount={item.relatedInvoices.length}
-                            statusHint={`失败 ${failedValidationCount} 条，待确认 ${pendingValidationCount} 条`}
-                            trailingContent={(
-                              <StatusBadge tone={buildRecognitionBadgeTone(recognition)}>
-                                {recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}
-                              </StatusBadge>
-                            )}
-                            selected={isSelected}
-                          />
-                          <div className="admin-review-inline-metadata">
-                            <span className="token-chip">{formatMaterialType(material.material_type)}</span>
-                            <span className="token-chip">{formatSubmissionChannel(material.channel)}</span>
-                            <span className="token-chip">{formatTaskMemberLabel(material.submitter_id, memberSummaryMap)}</span>
-                          </div>
-                          <dl className="task-meta-grid invoice-editor-summary-grid">
-                            <div>
-                              <dt>主发票</dt>
-                              <dd>{describeInvoiceReference(item.primaryInvoice)}</dd>
-                            </div>
-                            <div>
-                              <dt>关联发票</dt>
-                              <dd>{item.relatedInvoices.length}</dd>
-                            </div>
-                            <div>
-                              <dt>校验异常</dt>
-                              <dd>失败 {failedValidationCount} 条，待确认 {pendingValidationCount} 条</dd>
-                            </div>
-                            <div>
-                              <dt>上传时间</dt>
-                              <dd>{formatDateTime(material.created_at)}</dd>
-                            </div>
-                          </dl>
-                        </ButtonBase>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="invoice-editor-select-panel">
+                  <FormControl fullWidth>
+                    <InputLabel id="admin-review-material-select-label">目标材料</InputLabel>
+                    <Select
+                      labelId="admin-review-material-select-label"
+                      label="目标材料"
+                      aria-label="目标材料"
+                      value={selectedMaterialId}
+                      onChange={(event) => {
+                        setSelectedMaterialId(String(event.target.value));
+                      }}
+                      renderValue={(value) => {
+                        const currentItem = detailItems.find(
+                          (item) => item.materialItem.material.id === String(value),
+                        );
+                        if (!currentItem) {
+                          return "请选择材料";
+                        }
+                        const material = currentItem.materialItem.material;
+                        const selectorStatus = getReviewDetailItemSelectorStatus(
+                          currentItem,
+                          currentItem.materialItem.latest_recognition,
+                        );
+                        return (
+                          <span className="invoice-editor-select-value">
+                            <span className="invoice-editor-select-value-title">
+                              <strong title={getReviewDetailItemSelectorNumber(currentItem)}>
+                                发票号：{getReviewDetailItemSelectorNumber(currentItem)}
+                              </strong>
+                              <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                                校验通过：{selectorStatus.label}
+                              </span>
+                            </span>
+                            <span title={material.original_filename}>文件：{material.original_filename}</span>
+                            <span>
+                              类型：{getReviewDetailItemSelectorType(currentItem)}；金额：{getReviewDetailItemSelectorAmount(currentItem)}
+                            </span>
+                          </span>
+                        );
+                      }}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            maxHeight: 420,
+                            width: "min(560px, calc(100vw - 32px))",
+                          },
+                        },
+                        MenuListProps: {
+                          "aria-label": "材料下拉选项",
+                        },
+                      }}
+                    >
+                      {detailItems.map((item) => {
+                        const material = item.materialItem.material;
+                        const selectorStatus = getReviewDetailItemSelectorStatus(
+                          item,
+                          item.materialItem.latest_recognition,
+                        );
+                        return (
+                          <MenuItem key={material.id} value={material.id} className="invoice-editor-select-option">
+                            <span className="invoice-editor-select-option-content">
+                              <span className="invoice-editor-select-option-title">
+                                <strong title={getReviewDetailItemSelectorNumber(item)}>
+                                  发票号：{getReviewDetailItemSelectorNumber(item)}
+                                </strong>
+                                <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                                  校验通过：{selectorStatus.label}
+                                </span>
+                              </span>
+                              <span className="invoice-editor-select-option-grid">
+                                <span title={material.original_filename}>原始文件名：{material.original_filename}</span>
+                                <span>类型：{getReviewDetailItemSelectorType(item)}</span>
+                                <span>金额：{getReviewDetailItemSelectorAmount(item)}</span>
+                                <span title={getReviewDetailItemSelectorHint(item, memberSummaryMap)}>
+                                  {getReviewDetailItemSelectorHint(item, memberSummaryMap)}
+                                </span>
+                              </span>
+                            </span>
+                          </MenuItem>
+                        );
+                      })}
+                    </Select>
+                  </FormControl>
+                  <p className="field-hint">
+                    点击下拉框后再展开候选材料；下拉层高度固定，滚动发生在展开层内部，不再把左侧材料区拉成很长的列表。
+                  </p>
+                </div>
               ) : (
                 <p className="field-hint">当前任务还没有已归档材料。</p>
               )}

@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 
 import Button from "@mui/material/Button";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
@@ -172,10 +176,32 @@ function buildInvoiceCorrectionActions(summary: TaskReviewSummary): InvoiceCorre
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
+function pickSelectedInvoiceCorrectionId(
+  actions: InvoiceCorrectionAction[],
+  currentInvoiceId: string,
+) {
+  const visibleIds = new Set(actions.map((item) => item.invoiceId));
+  if (currentInvoiceId && visibleIds.has(currentInvoiceId)) {
+    return currentInvoiceId;
+  }
+  return actions[0]?.invoiceId ?? "";
+}
+
+function buildInvoiceCorrectionSelectorStatus(item: InvoiceCorrectionAction) {
+  if (item.abnormalValidations.some((validation) => validation.status === "failed")) {
+    return { label: "否", tone: "warning" as const };
+  }
+  if (item.abnormalValidations.some((validation) => validation.status === "pending")) {
+    return { label: "待确认", tone: "warning" as const };
+  }
+  return { label: "是", tone: "success" as const };
+}
+
 export function AdminCorrectionsRemindersPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
   const [pageState, setPageState] = useState<CorrectionReminderPageState>({ status: "loading" });
+  const [preferredInvoiceActionId, setPreferredInvoiceActionId] = useState("");
   const [memberId, setMemberId] = useState("");
   const [content, setContent] = useState("");
   const [formErrors, setFormErrors] = useState<ReminderFormErrors>({});
@@ -251,6 +277,8 @@ export function AdminCorrectionsRemindersPage() {
     ),
     [pageState],
   );
+  const selectedInvoiceActionId = pickSelectedInvoiceCorrectionId(invoiceActions, preferredInvoiceActionId);
+  const selectedInvoiceAction = invoiceActions.find((item) => item.invoiceId === selectedInvoiceActionId) ?? null;
 
   if (!session || session.role !== "admin") {
     return null;
@@ -445,45 +473,114 @@ export function AdminCorrectionsRemindersPage() {
             <div className="admin-review-subsection">
               <h4>存在异常校验或异议的发票</h4>
               {invoiceActions.length > 0 ? (
-                <ul className="admin-review-record-list" aria-label="金额更正列表">
-                  {invoiceActions.map((item) => (
-                    <li key={item.invoiceId} className="admin-review-record-card">
+                <div className="invoice-editor-select-panel">
+                  <FormControl fullWidth>
+                    <InputLabel id="admin-correction-invoice-select-label">待更正发票</InputLabel>
+                    <Select
+                      labelId="admin-correction-invoice-select-label"
+                      label="待更正发票"
+                      aria-label="待更正发票"
+                      value={selectedInvoiceActionId}
+                      onChange={(event) => {
+                        setPreferredInvoiceActionId(String(event.target.value));
+                      }}
+                      renderValue={(value) => {
+                        const currentItem = invoiceActions.find((item) => item.invoiceId === String(value));
+                        if (!currentItem) {
+                          return "请选择待更正发票";
+                        }
+                        const selectorStatus = buildInvoiceCorrectionSelectorStatus(currentItem);
+                        return (
+                          <span className="invoice-editor-select-value">
+                            <span className="invoice-editor-select-value-title">
+                              <strong title={currentItem.invoiceNumber}>发票号：{currentItem.invoiceNumber}</strong>
+                              <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                                校验通过：{selectorStatus.label}
+                              </span>
+                            </span>
+                            <span title={currentItem.filename}>文件：{currentItem.filename}</span>
+                            <span>
+                              类型：{formatExpenseType(currentItem.expenseType)}；金额：{formatCurrencyFromCents(currentItem.amountCents)}
+                            </span>
+                          </span>
+                        );
+                      }}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            maxHeight: 420,
+                            width: "min(560px, calc(100vw - 32px))",
+                          },
+                        },
+                        MenuListProps: {
+                          "aria-label": "待更正发票下拉选项",
+                        },
+                      }}
+                    >
+                      {invoiceActions.map((item) => {
+                        const selectorStatus = buildInvoiceCorrectionSelectorStatus(item);
+                        return (
+                          <MenuItem key={item.invoiceId} value={item.invoiceId} className="invoice-editor-select-option">
+                            <span className="invoice-editor-select-option-content">
+                              <span className="invoice-editor-select-option-title">
+                                <strong title={item.invoiceNumber}>发票号：{item.invoiceNumber}</strong>
+                                <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                                  校验通过：{selectorStatus.label}
+                                </span>
+                              </span>
+                              <span className="invoice-editor-select-option-grid">
+                                <span title={item.filename}>原始文件名：{item.filename}</span>
+                                <span>类型：{formatExpenseType(item.expenseType)}</span>
+                                <span>金额：{formatCurrencyFromCents(item.amountCents)}</span>
+                                <span>待确认分摊 {item.pendingSplitCount} 条；异议分摊 {item.disputedSplitCount} 条</span>
+                              </span>
+                            </span>
+                          </MenuItem>
+                        );
+                      })}
+                    </Select>
+                  </FormControl>
+                  <p className="field-hint">
+                    点击下拉框后再展开待更正发票；展开层内部滚动查看候选发票，不再让左侧整列继续拉长。
+                  </p>
+                  {selectedInvoiceAction ? (
+                    <div className="admin-review-record-card" aria-label="当前待更正发票">
                       <InvoiceSummaryRow
-                        filename={item.filename}
-                        invoiceNumber={item.invoiceNumber}
-                        amountLabel={formatCurrencyFromCents(item.amountCents)}
-                        validationLabel={item.abnormalValidations.some((validation) => validation.status === "failed") ? "校验失败" : "校验待确认"}
+                        filename={selectedInvoiceAction.filename}
+                        invoiceNumber={selectedInvoiceAction.invoiceNumber}
+                        amountLabel={formatCurrencyFromCents(selectedInvoiceAction.amountCents)}
+                        validationLabel={selectedInvoiceAction.abnormalValidations.some((validation) => validation.status === "failed") ? "校验失败" : "校验待确认"}
                         validationTone="warning"
                         supportingMaterialCount={0}
-                        statusHint={`待确认分摊 ${item.pendingSplitCount} 条；异议分摊 ${item.disputedSplitCount} 条`}
-                        trailingContent={<StatusBadge tone="info">{formatExpenseType(item.expenseType)}</StatusBadge>}
+                        statusHint={`待确认分摊 ${selectedInvoiceAction.pendingSplitCount} 条；异议分摊 ${selectedInvoiceAction.disputedSplitCount} 条`}
+                        trailingContent={<StatusBadge tone="info">{formatExpenseType(selectedInvoiceAction.expenseType)}</StatusBadge>}
                       />
                       <div className="admin-review-inline-metadata">
-                        <span className="token-chip">{formatExpenseType(item.expenseType)}</span>
-                        <span className="token-chip">异常校验 {item.abnormalValidations.length} 条</span>
-                        <span className="token-chip">异议分摊 {item.disputedSplitCount} 条</span>
+                        <span className="token-chip">{formatExpenseType(selectedInvoiceAction.expenseType)}</span>
+                        <span className="token-chip">异常校验 {selectedInvoiceAction.abnormalValidations.length} 条</span>
+                        <span className="token-chip">异议分摊 {selectedInvoiceAction.disputedSplitCount} 条</span>
                       </div>
                       <div className="task-meta-grid admin-review-meta-grid">
                         <div>
                           <dt>待确认分摊</dt>
-                          <dd>{item.pendingSplitCount}</dd>
+                          <dd>{selectedInvoiceAction.pendingSplitCount}</dd>
                         </div>
                         <div>
                           <dt>最近更新时间</dt>
-                          <dd>{formatDateTime(item.updatedAt)}</dd>
+                          <dd>{formatDateTime(selectedInvoiceAction.updatedAt)}</dd>
                         </div>
                       </div>
-                      <ul className="admin-review-list" aria-label={`发票 ${item.invoiceNumber} 异常摘要`}>
-                        {item.abnormalValidations.slice(0, 3).map((validation) => (
+                      <ul className="admin-review-list" aria-label={`发票 ${selectedInvoiceAction.invoiceNumber} 异常摘要`}>
+                        {selectedInvoiceAction.abnormalValidations.slice(0, 3).map((validation) => (
                           <li key={validation.id}>
                             <strong>{validation.rule_code}</strong>
                             <span>{validation.message}</span>
                           </li>
                         ))}
-                        {item.abnormalValidations.length > 3 ? (
+                        {selectedInvoiceAction.abnormalValidations.length > 3 ? (
                           <li>
                             <strong>其他异常</strong>
-                            <span>还有 {item.abnormalValidations.length - 3} 条异常校验未在此处展开。</span>
+                            <span>还有 {selectedInvoiceAction.abnormalValidations.length - 3} 条异常校验未在此处展开。</span>
                           </li>
                         ) : null}
                       </ul>
@@ -492,7 +589,7 @@ export function AdminCorrectionsRemindersPage() {
                           component={RouterLink}
                           variant="contained"
                           size="small"
-                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.materialId)}`}
+                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedInvoiceAction.materialId)}`}
                         >
                           更正发票金额与字段
                         </Button>
@@ -500,14 +597,14 @@ export function AdminCorrectionsRemindersPage() {
                           component={RouterLink}
                           variant="outlined"
                           size="small"
-                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(item.invoiceId)}`}
+                          to={`/admin/tasks/${taskId}/splits?invoiceId=${encodeURIComponent(selectedInvoiceAction.invoiceId)}`}
                         >
                           调整当前发票分摊
                         </Button>
                       </div>
-                    </li>
-                  ))}
-                </ul>
+                    </div>
+                  ) : null}
+                </div>
               ) : (
                 <p className="field-hint">当前没有因异常校验或成员异议而需要优先更正的发票。</p>
               )}

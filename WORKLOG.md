@@ -8,6 +8,14 @@
   - 默认只展示当前选中的发票摘要；
   - 点击后才展开候选列表；
   - 下拉层通过 `MenuProps.PaperProps.sx.maxHeight` 控制最大高度，候选内容在下拉层内部滚动，而不是把左侧区域继续拉成长列表。
+- 根据用户补充截图，已确认本轮真正需要收口的并不只是发票录入页，还包括三个管理员主路径页面：
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx) 的“材料审核列表”；
+  - [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx) 的“可编辑分摊的发票”；
+  - [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx) 左侧“存在异常校验或异议的发票”。
+- 以上三个真实页面现在都已改成“默认折叠、点击展开、展开层内部滚动”的受控下拉：
+  - 材料审核页：下拉候选展示主发票号、原始文件名、材料类型、主发票金额和校验通过状态；选中后继续在右侧查看详情；
+  - 分摊编辑页：下拉候选展示发票号、原始文件名、费用类型、金额和校验通过状态；选中后继续在右侧编辑分摊；
+  - 成员提醒页：左侧异常发票区改为下拉候选，展开后内部滚动查看候选发票，选中后在下方保留当前发票异常摘要与跳转按钮。
 - 下拉项摘要口径已收口为管理员筛选最需要的信息：
   - 发票号；
   - 原始文件名；
@@ -18,7 +26,12 @@
   - 尚未形成正式发票记录时，发票号、金额和类型会优先回退展示最近识别建议；
   - “是否校验通过”仍保持真实口径，未建票时显示“待补录”，不伪装成已通过。
 - [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 新增下拉摘要与候选项样式，限制候选网格在窄屏下收口为单列，避免移动端横向挤压。
-- [web/src/app/admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx) 已更新：
+- 前端测试已同步更新：
+  - [web/src/app/admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx)
+  - [web/src/app/admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)
+  - [web/src/app/admin-split-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.test.tsx)
+  - [web/src/app/admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)
+- 这些测试现在会明确校验：
   - 校验左侧显示为 `combobox` 样式的下拉摘要；
   - 校验展开后能看到“原始文件名 / 类型 / 金额 / 校验通过”候选信息；
   - 保持右侧识别字段、校验异常和保存逻辑测试继续通过。
@@ -26,14 +39,17 @@
 ### 根因
 - 管理员发票查看页此前沿用了“左侧长列表 + 右侧详情”的展开模式，但在发票数量较多时，左侧会不断拉长，筛选效率下降。
 - 用户要求并不是简单把列表换个样式，而是要“默认折叠、点击展开、下拉内部滚动”的受控选择器；之前的实现不满足这一交互边界。
+- 本轮中途根据用户提供的截图已确认：真正暴露问题的主路径不是最先改动的发票录入页，而是材料审核页、分摊编辑页和成员提醒页左侧候选区。后续修改已按截图对应的真实页面收口，而不是继续停留在错误页面上。
 
 ### 风险与影响面
-- 本轮只改管理员发票查看页的左侧选择交互，没有改右侧预览、识别审计、校验异常和保存 API。
+- 本轮只改管理员相关页面左侧候选选择交互，没有改右侧预览、识别审计、校验异常、提醒保存和分摊保存 API。
 - 本轮对“类型”的展示采用费用类型口径：优先展示正式发票 `expense_type`，没有正式发票时回退最近识别建议；如果后续产品想把这里改成“材料类型”或“发票类别”，需要再单独明确字段语义。
 
 ### 验证结果
 - 已通过定向前端测试：
   - `cd web && npm test -- --run src/app/admin-invoice-editor.test.tsx`
+- 已通过补充的三组相关页面定向测试：
+  - `cd web && npm test -- --run src/app/admin-review-overview.test.tsx src/app/admin-split-editor.test.tsx src/app/admin-corrections-reminders.test.tsx`
 - 已运行 `./scripts/verify.sh`：
   - `web` 全量测试 `116/116` 通过；
   - `web` 构建通过；

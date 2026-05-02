@@ -375,15 +375,30 @@ describe("AdminReviewOverviewPage", () => {
     expect(pendingList.queryByText(/TASK-REVIEW/)).not.toBeInTheDocument();
     expect(pendingList.queryByText(/材料编号/)).not.toBeInTheDocument();
 
-    const materialList = within(screen.getByLabelText("材料审核列表"));
-    expect(materialList.getByText("invoice.pdf")).toBeInTheDocument();
-    expect(materialList.getByText("payment.png")).toBeInTheDocument();
-    expect(materialList.queryByText(/材料编号/)).not.toBeInTheDocument();
+    const materialSelector = screen.getByRole("combobox", { name: "目标材料" });
+    expect(materialSelector).toHaveTextContent("发票号：INV-001");
+    expect(materialSelector).toHaveTextContent("文件：invoice.pdf");
+    expect(materialSelector).toHaveTextContent("类型：发票；金额：￥123.45");
+    expect(materialSelector).toHaveTextContent("校验通过：否");
+
+    await act(async () => {
+      fireEvent.mouseDown(materialSelector);
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
+    expect(screen.getByText("原始文件名：payment.png")).toBeInTheDocument();
+    expect(screen.getAllByText("校验通过：否").length).toBeGreaterThan(0);
+    expect(screen.getByText("类型：发票")).toBeInTheDocument();
+    expect(screen.getByText("金额：￥123.45")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /invoice\.pdf/i }));
+      await Promise.resolve();
+    });
 
     const detailPanel = within(screen.getByLabelText("当前材料详情"));
     expect(await detailPanel.findByText("invoice.pdf")).toBeInTheDocument();
     expect(detailPanel.queryByText(/材料编号/)).not.toBeInTheDocument();
-    const detailTabs = within(detailPanel.getByRole("tablist", { name: "当前材料详情标签页" }));
+    const detailTabs = within(screen.getByRole("tablist", { name: "当前材料详情标签页" }));
     expect(detailTabs.getByRole("tab", { name: "附件预览" })).toHaveAttribute("aria-selected", "true");
     expect(await detailPanel.findByLabelText("原始票据 PDF 预览")).toHaveAttribute(
       "data",
@@ -419,7 +434,11 @@ describe("AdminReviewOverviewPage", () => {
       "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
     );
     await act(async () => {
-      fireEvent.click(materialList.getByRole("button", { name: /payment\.png/i }));
+      fireEvent.mouseDown(screen.getByRole("combobox", { name: "目标材料" }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /payment\.png/i }));
       await Promise.resolve();
     });
 

@@ -285,9 +285,25 @@ describe("AdminCorrectionsRemindersPage", () => {
       "href",
       "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
     );
-    const invoiceCorrectionList = within(screen.getByLabelText("金额更正列表"));
-    expect(invoiceCorrectionList.getByText("invoice.pdf")).toBeInTheDocument();
-    expect(invoiceCorrectionList.getByText("票号 INV-001")).toBeInTheDocument();
+    const invoiceSelector = screen.getByRole("combobox", { name: "待更正发票" });
+    expect(invoiceSelector).toHaveTextContent("发票号：INV-001");
+    expect(invoiceSelector).toHaveTextContent("文件：invoice.pdf");
+    expect(invoiceSelector).toHaveTextContent("类型：参赛费；金额：￥123.45");
+    expect(invoiceSelector).toHaveTextContent("校验通过：否");
+    await act(async () => {
+      fireEvent.mouseDown(invoiceSelector);
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
+    expect(screen.getByText("类型：参赛费")).toBeInTheDocument();
+    expect(screen.getByText("金额：￥123.45")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /invoice\.pdf/i }));
+      await Promise.resolve();
+    });
+    const invoiceCorrectionCard = within(screen.getByLabelText("当前待更正发票"));
+    expect(invoiceCorrectionCard.getByText("invoice.pdf")).toBeInTheDocument();
+    expect(invoiceCorrectionCard.getByText("票号 INV-001")).toBeInTheDocument();
     expect(screen.queryByText(/材料编号/)).not.toBeInTheDocument();
 
     const reminderList = within(await screen.findByLabelText("补材料提醒列表"));

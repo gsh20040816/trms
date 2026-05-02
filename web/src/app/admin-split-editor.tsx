@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import Button from "@mui/material/Button";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
@@ -16,7 +20,7 @@ import type {
   TaskReviewSummaryInvoiceItem,
   TaskReviewSummaryMaterialItem,
 } from "../lib/api/types";
-import { buildTaskMemberSummaryMap, formatTaskMemberLabel } from "../lib/ui-text";
+import { buildTaskMemberSummaryMap, formatExpenseType, formatTaskMemberLabel } from "../lib/ui-text";
 import { isTaskVisibleToAdministrator } from "../lib/task-administrators";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
@@ -215,6 +219,21 @@ function buildInvoiceSummaryValidation(item: TaskReviewSummaryInvoiceItem) {
 
 function formatConfirmationStatus(status: ConfirmationStatus) {
   return CONFIRMATION_STATUS_LABELS[status];
+}
+
+function getSplitInvoiceSubmitterLabel(item: SplitInvoiceItem, task: ReimbursementTask | null) {
+  const submitterId = item.materialItem?.material.submitter_id ?? null;
+  return `提交人 ${formatTaskMemberLabel(submitterId, buildTaskMemberSummaryMap(task?.member_summaries))}`;
+}
+
+function getSplitInvoiceSelectorStatus(item: SplitInvoiceItem) {
+  if (countFailedValidations(item.invoiceItem) > 0) {
+    return { label: "否", tone: "warning" as const };
+  }
+  if (countPendingValidations(item.invoiceItem) > 0) {
+    return { label: "待确认", tone: "warning" as const };
+  }
+  return { label: "是", tone: "success" as const };
 }
 
 function countCurrentConfirmationStatus(
@@ -552,38 +571,96 @@ export function AdminSplitEditorPage() {
                 当前任务还没有已录入发票，暂时无法编辑费用分摊。
               </p>
             ) : (
-              <ul className="invoice-material-list" aria-label="任务发票列表">
-                {splitInvoiceItems.map((item) => {
-                  const invoice = item.invoiceItem.invoice;
-                  const material = item.materialItem?.material ?? null;
-                  const isSelected = invoice.id === selectedInvoiceId;
-                  return (
-                    <li key={invoice.id}>
-                      <InvoiceSummaryRow
-                        filename={material?.original_filename ?? invoice.invoice_number}
-                        invoiceNumber={invoice.invoice_number}
-                        amountLabel={formatCurrencyFromCents(invoice.amount_cents)}
-                        validationLabel={buildInvoiceSummaryValidation(item.invoiceItem).label}
-                        validationTone={buildInvoiceSummaryValidation(item.invoiceItem).tone}
-                        supportingMaterialCount={item.invoiceItem.supporting_material_ids.length}
-                        statusHint={`提交人 ${material?.submitter_id ?? "未知提交人"}；分摊 ${item.invoiceItem.splits.length} 条`}
-                        trailingContent={(
-                          <StatusBadge tone={item.invoiceItem.splits.length > 0 ? "info" : "warning"}>
-                            {item.invoiceItem.splits.length > 0 ? `${item.invoiceItem.splits.length} 条分摊` : "待分摊"}
-                          </StatusBadge>
-                        )}
-                        selected={isSelected}
-                        action={{
-                          ariaLabel: `任务发票 ${material?.original_filename ?? invoice.invoice_number} ${invoice.invoice_number}`,
-                          onClick: () => {
-                            handleSelectInvoice(item);
-                          },
-                        }}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="invoice-editor-select-panel">
+                <FormControl fullWidth>
+                  <InputLabel id="admin-split-invoice-select-label">目标发票</InputLabel>
+                  <Select
+                    labelId="admin-split-invoice-select-label"
+                    label="目标发票"
+                    aria-label="目标发票"
+                    value={selectedInvoiceId}
+                    onChange={(event) => {
+                      const nextItem = findSelectedInvoiceItem(
+                        splitInvoiceItems,
+                        String(event.target.value),
+                      );
+                      if (nextItem) {
+                        handleSelectInvoice(nextItem);
+                      }
+                    }}
+                    renderValue={(value) => {
+                      const currentItem = findSelectedInvoiceItem(
+                        splitInvoiceItems,
+                        String(value),
+                      );
+                      if (!currentItem) {
+                        return "请选择发票";
+                      }
+                      const invoice = currentItem.invoiceItem.invoice;
+                      const material = currentItem.materialItem?.material ?? null;
+                      const selectorStatus = getSplitInvoiceSelectorStatus(currentItem);
+                      return (
+                        <span className="invoice-editor-select-value">
+                          <span className="invoice-editor-select-value-title">
+                            <strong title={invoice.invoice_number}>发票号：{invoice.invoice_number}</strong>
+                            <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                              校验通过：{selectorStatus.label}
+                            </span>
+                          </span>
+                          <span title={material?.original_filename ?? invoice.invoice_number}>
+                            文件：{material?.original_filename ?? invoice.invoice_number}
+                          </span>
+                          <span>
+                            类型：{formatExpenseType(invoice.expense_type)}；金额：{formatCurrencyFromCents(invoice.amount_cents)}
+                          </span>
+                        </span>
+                      );
+                    }}
+                    MenuProps={{
+                      PaperProps: {
+                        sx: {
+                          maxHeight: 420,
+                          width: "min(560px, calc(100vw - 32px))",
+                        },
+                      },
+                      MenuListProps: {
+                        "aria-label": "发票下拉选项",
+                      },
+                    }}
+                  >
+                    {splitInvoiceItems.map((item) => {
+                      const invoice = item.invoiceItem.invoice;
+                      const material = item.materialItem?.material ?? null;
+                      const selectorStatus = getSplitInvoiceSelectorStatus(item);
+                      return (
+                        <MenuItem key={invoice.id} value={invoice.id} className="invoice-editor-select-option">
+                          <span className="invoice-editor-select-option-content">
+                            <span className="invoice-editor-select-option-title">
+                              <strong title={invoice.invoice_number}>发票号：{invoice.invoice_number}</strong>
+                              <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                                校验通过：{selectorStatus.label}
+                              </span>
+                            </span>
+                            <span className="invoice-editor-select-option-grid">
+                              <span title={material?.original_filename ?? invoice.invoice_number}>
+                                原始文件名：{material?.original_filename ?? invoice.invoice_number}
+                              </span>
+                              <span>类型：{formatExpenseType(invoice.expense_type)}</span>
+                              <span>金额：{formatCurrencyFromCents(invoice.amount_cents)}</span>
+                              <span title={getSplitInvoiceSubmitterLabel(item, visibleTask)}>
+                                {getSplitInvoiceSubmitterLabel(item, visibleTask)}
+                              </span>
+                            </span>
+                          </span>
+                        </MenuItem>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+                <p className="field-hint">
+                  点击下拉框后再展开候选发票；列表高度固定，滚动发生在下拉层内部，不再把左侧整列拉长。
+                </p>
+              </div>
             )}
           </article>
 

@@ -370,7 +370,22 @@ describe("admin split editor page", () => {
     renderAdminSplitEditorRoute();
 
     expect(await screen.findByRole("heading", { name: "费用分摊编辑" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /任务发票 invoice\.pdf INV-001/ })).toBeInTheDocument();
+    const invoiceSelector = screen.getByRole("combobox", { name: "目标发票" });
+    expect(invoiceSelector).toHaveTextContent("发票号：INV-001");
+    expect(invoiceSelector).toHaveTextContent("文件：invoice.pdf");
+    expect(invoiceSelector).toHaveTextContent("类型：铁路交通；金额：￥123.45");
+    expect(invoiceSelector).toHaveTextContent("校验通过：否");
+    await act(async () => {
+      fireEvent.mouseDown(invoiceSelector);
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
+    expect(screen.getByText("类型：铁路交通")).toBeInTheDocument();
+    expect(screen.getByText("金额：￥123.45")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /invoice\.pdf/i }));
+      await Promise.resolve();
+    });
     expect(screen.getAllByText("票号 INV-001").length).toBeGreaterThan(0);
     expect(screen.getByText("当前发票号 INV-001")).toBeInTheDocument();
     expect(screen.getByText("+￥0.00")).toBeInTheDocument();
