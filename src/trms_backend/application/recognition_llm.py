@@ -23,7 +23,7 @@ from trms_backend.domain.recognitions import (
 from trms_backend.runtime_config import LLMProviderConfig
 
 LOW_CONFIDENCE_THRESHOLD = 0.8
-PROMPT_VERSION = "trms-recognition-v4"
+PROMPT_VERSION = "trms-recognition-v5"
 _CONFIDENCE_TEXT_TO_FLOAT = {
     "high": 0.95,
     "medium": 0.7,
@@ -125,6 +125,19 @@ _BOOLEAN_TEXT_TO_VALUE = {
     "可报销": True,
     "不可报销": False,
 }
+_LOCAL_TRANSPORT_ITINERARY_PRIMARY_SIGNALS = (
+    "amap itinerary",
+    "电子行程单",
+    "行程单",
+)
+_LOCAL_TRANSPORT_ITINERARY_SECONDARY_SIGNALS = (
+    "行程时间",
+    "上车时间",
+    "下车时间",
+    "起点",
+    "终点",
+    "单行程",
+)
 
 class RecognitionInputSource(StrEnum):
     PDF_TEXT = "pdf_text"
@@ -548,6 +561,12 @@ class OpenAiCompatibleRecognitionClient:
             )
         )
         classification_output = cast(RecognitionClassificationOutput, classification_output)
+        classification_output, classification_guardrail = _apply_classification_guardrails(
+            classification_output,
+            document_input=document_input,
+        )
+        if classification_guardrail is not None:
+            classification_fields = _recognized_fields_from_output(classification_output)
         extraction_schema = _select_extraction_schema(classification_output)
         extraction_output, extraction_fields, extraction_raw_response = self._run_recognition_stage(
             request_payload=_build_extraction_chat_completions_payload(
@@ -598,6 +617,8 @@ class OpenAiCompatibleRecognitionClient:
             },
             "extraction": extraction_raw_response,
         }
+        if classification_guardrail is not None:
+            raw_response["classification_guardrail"] = classification_guardrail
         if airfare_route_raw_response is not None:
             raw_response["airfare_route"] = airfare_route_raw_response
 
@@ -785,6 +806,7 @@ def _build_classification_chat_completions_payload(
             "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
             "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
             "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
+            "Use material_type.value=itinerary for ride-hailing or travel trip statements that explicitly present themselves as 行程单 / 电子行程单 / ITINERARY and expose trip timeline or route fields such as 行程时间, 起点, 终点, 上车时间, or 下车时间.",
             "For local_transport electronic invoices or e-tickets, classify them as invoice, set expense_type_candidate.value=local_transport, and treat them as rideshare evidence requiring a matching itinerary/order trip record.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
             "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
@@ -812,6 +834,7 @@ def _build_classification_chat_completions_payload(
                     "classification_confidence.value must equal the overall classification confidence in [0, 1]. "
                     "Never invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi. "
                     "Map invoice subtypes to material_type.value='invoice' and platform order subtypes to material_type.value='order_screenshot'. "
+                    "Ride-hailing or travel trip statements that explicitly present themselves as 行程单, 电子行程单, or ITINERARY and expose trip timeline or route fields such as 行程时间, 起点, 终点, 上车时间, or 下车时间 must be classified as material_type.value='itinerary', not as order_screenshot. "
                     "Local_transport electronic invoices or e-tickets must be classified as invoice, assigned expense_type_candidate.value='local_transport', and treated as rideshare evidence requiring a matching itinerary/order trip record. "
                     "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "
                     "payment records, competition notices, travel itineraries, train or flight documents, rideshare receipts, "
@@ -1250,6 +1273,70 @@ def _should_run_airfare_route_stage(
         return True
     expense_type_field = extracted_fields.get("expense_type")
     return expense_type_field is not None and expense_type_field.value == ExpenseType.AIRFARE.value
+
+
+def _apply_classification_guardrails(
+    classification_output: RecognitionClassificationOutput,
+    *,
+    document_input: RecognitionDocumentInput,
+) -> tuple[RecognitionClassificationOutput, dict[str, Any] | None]:
+    if classification_output.material_type.value not in {
+        MaterialType.ORDER_SCREENSHOT,
+        MaterialType.OTHER_ATTACHMENT,
+    }:
+        return classification_output, None
+    if classification_output.document_family.value not in {
+        RecognitionDocumentFamily.ORDER_SCREENSHOT,
+        RecognitionDocumentFamily.OTHER_ATTACHMENT,
+    }:
+        return classification_output, None
+    if classification_output.expense_type_candidate.value is not ExpenseType.LOCAL_TRANSPORT:
+        return classification_output, None
+    if classification_output.is_reimbursement_voucher.value:
+        return classification_output, None
+
+    matched_signals = _detect_local_transport_itinerary_signals(document_input)
+    if not matched_signals:
+        return classification_output, None
+
+    corrected_output = classification_output.model_copy(
+        update={
+            "document_family": RecognitionDocumentFamilyField(
+                value=RecognitionDocumentFamily.ITINERARY,
+                confidence=classification_output.document_family.confidence,
+            ),
+            "material_type": RecognitionMaterialTypeField(
+                value=MaterialType.ITINERARY,
+                confidence=classification_output.material_type.confidence,
+            ),
+        }
+    )
+    return corrected_output, {
+        "reason": "local_transport_itinerary_text_signals",
+        "matched_signals": matched_signals,
+        "overridden_document_family": RecognitionDocumentFamily.ITINERARY.value,
+        "overridden_material_type": MaterialType.ITINERARY.value,
+    }
+
+
+def _detect_local_transport_itinerary_signals(
+    document_input: RecognitionDocumentInput,
+) -> list[str]:
+    if document_input.source is not RecognitionInputSource.PDF_TEXT or document_input.text is None:
+        return []
+
+    normalized_text = document_input.text.lower()
+    primary_matches = [
+        signal for signal in _LOCAL_TRANSPORT_ITINERARY_PRIMARY_SIGNALS if signal in normalized_text
+    ]
+    secondary_matches = [
+        signal
+        for signal in _LOCAL_TRANSPORT_ITINERARY_SECONDARY_SIGNALS
+        if signal in document_input.text
+    ]
+    if not primary_matches or not secondary_matches:
+        return []
+    return [*primary_matches, *secondary_matches]
 
 
 @lru_cache(maxsize=None)

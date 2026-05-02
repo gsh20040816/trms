@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-02 14:49 - Fix itinerary vs order screenshot recognition mix-up and add DB-backed regression sample
+
+### 完成内容
+- 完成任务“修复行程单与订单截图识别混淆，并补充数据库实例回归样本”。
+- 识别分类提示词已明确区分“电子行程单”和“订单截图”：
+  - [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py) 将提示词版本提升到 `trms-recognition-v5`；
+  - 分类 prompt 新增硬约束：网约车/出行平台材料如果明确自称 `行程单`、`电子行程单` 或 `ITINERARY`，且可见 `行程时间`、`起点`、`终点`、`上车时间`、`下车时间` 等行程字段，必须判为 `itinerary`，不能继续归成 `order_screenshot`。
+- 增加保守后处理纠偏，覆盖当前数据库中的已知坏样本：
+  - 当模型把材料判成 `order_screenshot` 或 `other_attachment`，同时又满足“`local_transport`、非直接报销凭证、PDF 文本中存在 `AMAP ITINERARY` / `电子行程单` / `行程单` 主信号，且存在 `行程时间` / `起点` / `终点` / `上车时间` / `单行程` 等次级信号”时，后处理会把分类纠偏到 `itinerary`；
+  - 纠偏信息会写入识别原始响应中的 `classification_guardrail`，便于后续审计“模型原判”和“系统纠偏”。
+- 补齐真实样本特征回归测试：
+  - [tests/test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py) 新增 prompt 回归，固定要求“高德打车电子行程单”类文本信号应走 `itinerary`；
+  - 同文件新增数据库已知样本特征回归，模拟 `【桔子出行-72.86元-1个行程】高德打车电子行程单.pdf` 被模型误判为 `order_screenshot` 时，系统仍会纠偏为 `itinerary` 并选择行程单 schema。
+
+### 根因
+- 当前 `trms-recognition-v4` 只明确了“本地交通电子发票/电子票应归为 invoice”，但没有把“网约车电子行程单”和“平台订单截图”的边界写硬。
+- 结果是模型在真实样本中看到“高德打车”“本地交通”“金额/路线”等特征后，会把 `AMAP ITINERARY / 行程时间 / 起点 / 终点` 这类强行程单信号压过去，直接输出 `order_screenshot`。
+- 当前归一化层此前只做枚举别名收敛，不会利用文本中的强结构信号对明显错误分类做兜底纠偏，所以错误分类会直接流入后续行程单归票和前端展示链路。
+
+### 风险与影响面
+- 本轮只收口“本地交通电子行程单误判为订单截图”这一类高置信问题，没有扩大到所有出行平台截图的重分类。
+- 纠偏当前只作用于 `pdf_text` 输入；扫描 PDF / 图片若仍依赖纯 VLM 输出出现同类误判，本轮不会静默重写，需要后续结合图像侧真实样本再单独补。
+- 纠偏前提包含“模型已判为 `local_transport` 且非直接报销凭证”，避免把酒店、铁路、航空订单截图误改成行程单；这意味着若模型连费用类型也一起判错，本轮不会越界硬改。
+
+### 数据库实例核查
+- 已实际核查当前 `trms.db`：
+  - 材料 `2b1affba-5e62-4a47-941e-96d34b94199c`（`【桔子出行-72.86元-1个行程】高德打车电子行程单.pdf`）的最新识别任务 `19ac0614-39ab-4568-9523-2a8e8677a45a` 原始分类结果确实是 `order_screenshot`；
+  - 同任务下另一份材料 `70b15820-cc3d-46a8-9750-dafff7941c1e`（`【62580约车-42.50元-1个行程】高德打车电子行程单.pdf`）当前分类结果为 `itinerary`；
+  - 本轮据此提炼出“主信号 + 次级行程字段”的最小回归样本，而没有直接改动数据库现存识别结果。
+
+### 验证结果
+- 已通过定向识别测试：
+  - `uv run pytest tests/test_recognition_llm.py -k 'itinerary or gaode or classification_prompt'`
+- 已通过相关异步归票回归：
+  - `uv run pytest tests/test_recognition_async_jobs.py -k 'itinerary or auto_link'`
+
 ## 2026-05-02 14:41 - Tighten supporting material auto-linking and expose single manual candidates
 
 ### 完成内容

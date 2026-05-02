@@ -5,6 +5,7 @@ import pytest
 
 from trms_backend.application.recognition_llm import (
     OpenAiCompatibleRecognitionClient,
+    PROMPT_VERSION,
     RecognitionDocumentInput,
     RecognitionLlmExecutionError,
 )
@@ -260,7 +261,10 @@ def test_openai_compatible_recognition_client_uses_json_object_response_format()
     assert captured_requests[0]["authorization"] == "Bearer sk-test"
     assert captured_requests[0]["payload"]["response_format"] == {"type": "json_object"}
     assert captured_requests[1]["payload"]["response_format"] == {"type": "json_object"}
-    assert "Prompt version: trms-recognition-v4." in captured_requests[0]["payload"]["messages"][0]["content"]
+    assert (
+        f"Prompt version: {PROMPT_VERSION}."
+        in captured_requests[0]["payload"]["messages"][0]["content"]
+    )
     assert "Stage 1 only" in captured_requests[0]["payload"]["messages"][1]["content"]
     assert "Selected schema: invoice." in captured_requests[1]["payload"]["messages"][0]["content"]
     assert result.recognized_fields["invoice_number"].value == "INV-001"
@@ -271,8 +275,9 @@ def test_openai_compatible_recognition_client_uses_json_object_response_format()
     assert result.recognized_fields["is_reimbursement_voucher"].value is True
     assert result.recognized_fields["classification_confidence"].value == 0.97
     assert result.raw_response["classification"]["attempts"] == 1
-    assert result.raw_response["classification"]["request"]["user_prompt"]["prompt_version"] == (
-        "trms-recognition-v4"
+    assert (
+        result.raw_response["classification"]["request"]["user_prompt"]["prompt_version"]
+        == PROMPT_VERSION
     )
     assert (
         result.raw_response["classification"]["request"]["user_prompt"]["recognition_input"]["source"]
@@ -373,13 +378,14 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
             "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
             "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
             "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
+            "Use material_type.value=itinerary for ride-hailing or travel trip statements that explicitly present themselves as 行程单 / 电子行程单 / ITINERARY and expose trip timeline or route fields such as 行程时间, 起点, 终点, 上车时间, or 下车时间.",
             "For local_transport electronic invoices or e-tickets, classify them as invoice, set expense_type_candidate.value=local_transport, and treat them as rideshare evidence requiring a matching itinerary/order trip record.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
             "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
             "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
             "classification_confidence.value must be a float between 0 and 1 describing the overall confidence of the classification result.",
         ],
-        "prompt_version": "trms-recognition-v4",
+        "prompt_version": PROMPT_VERSION,
         "stage": "classification",
     }
     assert extraction_user_prompt["stage"] == "metadata_extraction"
@@ -587,6 +593,173 @@ def test_openai_itinerary_extraction_prompt_requests_local_transport_amount_and_
         "expense_type.value=local_transport."
     ) in extraction_user_prompt["instructions"]
     assert result.recognized_fields["amount_cents"].value == 4250
+    assert result.raw_response["selected_schema"]["name"] == "itinerary"
+
+
+def test_openai_classification_prompt_requires_local_transport_electronic_itinerary_to_use_itinerary_type():
+    captured_requests = []
+    itinerary_text = (
+        "高德地图-打车-行程单\n"
+        "AMAP ITINERARY\n"
+        "申请时间：2025-11-04\n"
+        "行程时间：2025-11-03 18:59至2025-11-03 19:40\n"
+        "共计1单行程，合计72.86元\n"
+        "起点：虹桥站-P9停车库-B1临时上客点\n"
+        "终点：同济大学嘉定校区(北门)\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    build_classification_output(
+                                        document_family="itinerary",
+                                        material_type="itinerary",
+                                        expense_type_candidate="local_transport",
+                                        is_reimbursement_voucher=False,
+                                        classification_confidence=0.96,
+                                        field_confidence=0.96,
+                                    ),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps({"output": {}}, ensure_ascii=False)}}]},
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    itinerary_input = RecognitionDocumentInput(
+        source="pdf_text",
+        text=itinerary_text,
+        page_count=1,
+        text_character_count=len(itinerary_text),
+    )
+
+    client.recognize(material=build_material(), document_input=itinerary_input)
+
+    classification_system_prompt = captured_requests[0]["messages"][0]["content"]
+    classification_user_prompt = json.loads(captured_requests[0]["messages"][1]["content"])
+    assert (
+        "Ride-hailing or travel trip statements that explicitly present themselves as 行程单, 电子行程单, or ITINERARY"
+        in classification_system_prompt
+    )
+    assert any(
+        "Use material_type.value=itinerary for ride-hailing or travel trip statements that explicitly present themselves as 行程单 / 电子行程单 / ITINERARY"
+        in item
+        for item in classification_user_prompt["instructions"]
+    )
+
+
+def test_openai_compatible_recognition_client_corrects_gaode_itinerary_misclassified_as_order_screenshot():
+    gaode_itinerary_text = (
+        "高德地图——打车——行程单\n"
+        "AMAP ITINERARY\n"
+        "申请时间：2025-11-04\n"
+        "行程时间：2025-11-03 18:59至2025-11-03 19:40\n"
+        "行程人手机号：17857097980\n"
+        "共计1单行程，合计72.86元\n"
+        "序号 服务商 车型 上车时间 城市 起点 终点 金额\n"
+        "1 桔子出行 经济型 2025-11-03 18:59 上海市 虹桥站-P9停车库-B1临时上客点 同济大学嘉定校区(北门) 72.86元\n"
+    )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                build_two_stage_handler(
+                    classification_content={
+                        "output": {
+                            "document_family": {
+                                "value": "order_screenshot",
+                                "confidence": 0.95,
+                            },
+                            "material_type": {
+                                "value": "order_screenshot",
+                                "confidence": 0.95,
+                            },
+                            "expense_type_candidate": {
+                                "value": "local_transport",
+                                "confidence": 0.95,
+                            },
+                            "is_reimbursement_voucher": {
+                                "value": False,
+                                "confidence": 0.9,
+                            },
+                            "classification_confidence": {
+                                "value": 0.95,
+                                "confidence": 1.0,
+                            },
+                        }
+                    },
+                    extraction_content={
+                        "output": {
+                            "amount_cents": {
+                                "value": 7286,
+                                "confidence": 0.95,
+                            },
+                            "expense_type": {
+                                "value": "local_transport",
+                                "confidence": 0.95,
+                            },
+                            "trip_route": {
+                                "value": "虹桥站-P9停车库-B1临时上客点 到 同济大学嘉定校区(北门)",
+                                "confidence": 0.95,
+                            },
+                            "transport_mode": {
+                                "value": "ride_hailing",
+                                "confidence": 0.95,
+                            },
+                        }
+                    },
+                )
+            ),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    itinerary_input = RecognitionDocumentInput(
+        source="pdf_text",
+        text=gaode_itinerary_text,
+        page_count=1,
+        text_character_count=len(gaode_itinerary_text),
+    )
+
+    result = client.recognize(material=build_material(), document_input=itinerary_input)
+
+    assert result.recognized_fields["document_family"].value == "itinerary"
+    assert result.recognized_fields["material_type"].value == "itinerary"
+    assert result.recognized_fields["expense_type_candidate"].value == "local_transport"
+    assert result.raw_response["classification_guardrail"] == {
+        "reason": "local_transport_itinerary_text_signals",
+        "matched_signals": [
+            "amap itinerary",
+            "行程单",
+            "行程时间",
+            "上车时间",
+            "起点",
+            "终点",
+            "单行程",
+        ],
+        "overridden_document_family": "itinerary",
+        "overridden_material_type": "itinerary",
+    }
     assert result.raw_response["selected_schema"]["name"] == "itinerary"
 
 
@@ -1119,7 +1292,7 @@ def test_openai_compatible_recognition_client_rejects_non_json_content():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_not_json"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v4"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == PROMPT_VERSION
     assert error.value.raw_response["raw_content"] == "not-json"
 
 
@@ -1141,7 +1314,7 @@ def test_openai_compatible_recognition_client_rejects_missing_fields_output():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_missing_fields"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v4"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == PROMPT_VERSION
     assert error.value.raw_response["parsed_content"]["output"]["document_family"] is None
     assert error.value.raw_response["parsed_content"]["output"]["classification_confidence"] is None
 
@@ -1187,7 +1360,7 @@ def test_openai_compatible_recognition_client_reports_invalid_schema_details():
         client.recognize(material=build_material(), document_input=build_document_input())
 
     assert error.value.failure.reason == "llm_output_invalid"
-    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == "trms-recognition-v4"
+    assert error.value.raw_response["request"]["user_prompt"]["prompt_version"] == PROMPT_VERSION
     assert error.value.raw_response["parsed_content"] == {
         "output": {
             "document_family": {
