@@ -599,6 +599,9 @@ function formatPendingSupportingMaterialLinkageReason(
   if (reason === "no_candidate") {
     return "当前没有可安全匹配的候选发票";
   }
+  if (reason === "manual_confirmation_required") {
+    return "系统找到唯一候选发票，但仍需你手动确认归属";
+  }
   return "当前存在多张候选发票，系统不会自动绑定";
 }
 
@@ -1059,15 +1062,17 @@ function buildUploadProcessingSnapshot(
       label: UPLOAD_PROCESSING_STAGE_LABELS.action_required,
       detail: pendingLinkageItem.pending_reason === "multiple_candidates"
         ? "系统已经识别出这份辅助材料，但存在多张候选发票，需要你在下面选择归属发票。"
-        : "系统已经识别出这份辅助材料，但当前还没有安全候选发票；请先补传或补录发票。",
+        : pendingLinkageItem.pending_reason === "manual_confirmation_required"
+          ? "系统已经识别出这份辅助材料，也找到了唯一候选发票；但自动关联条件不足，需要你在下面手动确认归属。"
+          : "系统已经识别出这份辅助材料，但当前还没有安全候选发票；请先补传或补录发票。",
       steps: ["received", "recognized", "action_required"],
       transitioning: false,
-      actionLabel: pendingLinkageItem.pending_reason === "multiple_candidates"
-        ? "去选择候选发票"
-        : "去上传区补发票",
+      actionLabel: pendingLinkageItem.pending_reason === "no_candidate"
+        ? "去上传区补发票"
+        : "去选择候选发票",
       actionHref: buildWorkbenchTaskAnchor(
         taskId,
-        pendingLinkageItem.pending_reason === "multiple_candidates"
+        pendingLinkageItem.pending_reason !== "no_candidate"
           ? "#member-workbench-pending-linkage"
           : "#member-workbench-upload",
       ),

@@ -433,6 +433,60 @@ def test_member_workbench_pending_linkage_keeps_remaining_candidates_after_parti
     ]
 
 
+def test_member_workbench_shows_single_manual_candidate_when_auto_link_is_not_safe(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="member-one-invoice.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        invoice_material_id,
+        actor_id="2250001",
+        invoice_number="MANUAL-001",
+        amount_cents=10000,
+        expense_type="railway",
+    )
+    mark_recognition_succeeded(client, invoice_material_id)
+
+    supporting_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="member-one-payment.png",
+        content_type="image/png",
+    )
+
+    response = client.get(
+        f"/api/tasks/{task_id}/member-workbench",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    item = next(
+        item
+        for item in body["pending_supporting_material_linkage_items"]
+        if item["material_id"] == supporting_material_id
+    )
+    assert item["pending_reason"] == "manual_confirmation_required"
+    assert item["candidate_invoices"] == [
+        {
+            "invoice_id": invoice_id,
+            "invoice_number": "MANUAL-001",
+            "amount_cents": 10000,
+            "expense_type": "railway",
+            "original_filename": "member-one-invoice.pdf",
+        }
+    ]
+
+
 def test_non_member_cannot_view_member_workbench_summary(tmp_path):
     client = make_client(tmp_path)
     task_id, _ = create_ready_workbench_fixture(client)

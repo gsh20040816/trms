@@ -77,7 +77,7 @@ class SupportingMaterialAutoLinkService:
         if not self._is_auto_linkable_supporting_material(material):
             return []
 
-        candidate_invoice_ids = self._candidate_invoice_ids_for_material(
+        candidate_invoice_ids = self._auto_link_candidate_invoice_ids_for_material(
             material,
             recognition_task=recognition_task,
         )
@@ -89,6 +89,19 @@ class SupportingMaterialAutoLinkService:
                 material.id,
             )
         ]
+
+    def list_manual_candidate_invoice_ids_for_material(
+        self,
+        material: MaterialRecord,
+        *,
+        recognition_task: RecognitionTaskRecord | None = None,
+    ) -> list[str]:
+        if not _is_assigned_supporting_link_context(material):
+            return []
+        return self._candidate_invoice_ids_for_material(
+            material,
+            recognition_task=recognition_task,
+        )
 
     def _is_auto_linkable_supporting_material(self, material: MaterialRecord) -> bool:
         if not _is_assigned_supporting_link_context(material):
@@ -123,6 +136,38 @@ class SupportingMaterialAutoLinkService:
             candidate_invoices,
             recognition_task=recognition_task,
         )
+
+    def _auto_link_candidate_invoice_ids_for_material(
+        self,
+        material: MaterialRecord,
+        *,
+        recognition_task: RecognitionTaskRecord | None = None,
+    ) -> list[str]:
+        candidate_invoice_ids = self._candidate_invoice_ids_for_material(
+            material,
+            recognition_task=recognition_task,
+        )
+        if len(candidate_invoice_ids) != 1:
+            return []
+
+        effective_recognition_task = recognition_task
+        if effective_recognition_task is None:
+            effective_recognition_task = self._recognition_task_repository.get_latest_effective_by_material(
+                material.id
+            )
+        recognized_amount_cents = _extract_first_int_field(
+            effective_recognition_task,
+            LOCAL_TRANSPORT_ITINERARY_AMOUNT_FIELD_NAMES,
+        )
+        if recognized_amount_cents is None:
+            return []
+
+        candidate_invoice = self._invoice_repository.get(candidate_invoice_ids[0])
+        if candidate_invoice is None:
+            return []
+        if candidate_invoice.amount_cents != recognized_amount_cents:
+            return []
+        return candidate_invoice_ids
 
     def _prioritize_candidate_invoices(
         self,

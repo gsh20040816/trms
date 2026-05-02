@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from trms_backend.application.supporting_material_auto_link import SupportingMaterialAutoLinkService
 from trms_backend.domain.confirmations import ConfirmationRecord
 from trms_backend.domain.expense_details import ExpenseDetailItem
 from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, ValidationStatus
@@ -128,6 +129,7 @@ def build_task_member_workbench_summary(
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
     confirmations_by_invoice_id: dict[str, list[ConfirmationRecord]],
     current_confirmations_by_split_id: dict[str, ConfirmationRecord],
+    supporting_material_auto_link_service: SupportingMaterialAutoLinkService,
 ) -> TaskMemberWorkbenchSummary:
     try:
         report = build_task_member_status_report(
@@ -152,6 +154,7 @@ def build_task_member_workbench_summary(
         invoices=invoices,
         materials_by_id=materials_by_id,
         linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
+        supporting_material_auto_link_service=supporting_material_auto_link_service,
     )
     shared_invoice_report = build_task_shared_invoice_report(
         task,

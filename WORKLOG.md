@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-05-02 14:41 - Tighten supporting material auto-linking and expose single manual candidates
+
+### 完成内容
+- 完成任务“收紧辅助材料自动关联条件，并显式暴露未自动关联的单候选材料”。
+- 后端自动关联规则已收紧到“金额完全一致且同金额发票唯一”：
+  - [src/trms_backend/application/supporting_material_auto_link.py](/home/gsh/workspace/TRMS/src/trms_backend/application/supporting_material_auto_link.py) 将辅助材料自动关联与人工候选查询拆成两条路径；
+  - 自动关联现在要求：材料处于已归属上下文、识别结果中存在 `amount_cents`、候选发票唯一且该发票金额与识别金额完全一致；
+  - 不再因为“同提交人当前只有一张发票”就在上传后或识别后直接自动绑定。
+- 待关联候选报告与成员工作台已同步到新规则：
+  - [src/trms_backend/domain/task_supporting_material_linkage.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_supporting_material_linkage.py) 新增 `manual_confirmation_required`，用于表达“系统找到唯一候选发票，但自动关联条件不足，需要人工确认”；
+  - [src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)、[src/trms_backend/domain/task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py)、[src/trms_backend/domain/task_readiness.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_readiness.py) 统一通过同一套候选逻辑生成待关联列表与工作台阻塞信息；
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)、[web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 补齐新状态文案与上传后行动指引，避免单候选材料静默消失。
+- 补齐后端回归测试：
+  - [tests/test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py) 覆盖“识别前无金额时不自动关联”；
+  - [tests/test_recognition_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_recognition_async_jobs.py) 覆盖“识别后金额一致自动关联”“金额不一致不自动关联”；
+  - [tests/test_supporting_material_linkage_api.py](/home/gsh/workspace/TRMS/tests/test_supporting_material_linkage_api.py)、[tests/test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py) 覆盖“单候选但仍需人工确认”的待关联展示。
+- 已根据当前实例数据库中的明确错误数据做一次最小清理：
+  - 删除 [invoice_supporting_material_links] 中 `98c3e195-f87e-40ee-8b7d-2db26e45fa8a` 这条错误关联；
+  - 对应材料 `2b1affba-5e62-4a47-941e-96d34b94199c`（`【桔子出行-72.86元-1个行程】高德打车电子行程单.pdf`）当前已不再错误关联到 `25312000000355838261` 这张 `42.50` 元发票。
+
+### 根因
+- 现有自动关联规则过宽：
+  - 非行程单辅助材料只要同提交人在任务下恰好只有一张发票，就会在没有金额证据的情况下直接自动关联；
+  - 行程单虽然有金额/日期打分逻辑，但在“唯一最佳候选”时也没有把“金额必须完全一致”作为自动绑定前提。
+- 同时，待关联列表原先直接按“同提交人名下全部发票”生成候选，并在“只有一个候选”时直接跳过展示。
+- 结果是两类问题同时出现：
+  - 系统会错误自动绑票；
+  - 某些未满足安全自动关联前提、但又只有一个人工候选的材料，会从待关联列表里静默消失。
+
+### 风险与影响面
+- 本轮只修第 2 条“错误的自动关联附件”主问题，没有同时处理行程单/订单截图识别混淆、非发票失败展示、辅助材料页交互改造和 LLM 历史失败率分析。
+- 当前数据库里能无歧义判断为错误的自动关联已清掉 1 条；其余比赛通知等多发票关联因为系统已支持一材多票、且库里没有“自动/手工关联来源”字段，本轮没有贸然删除。
+- 对 `333e167e-63fb-4797-a9b8-78943b110995` 与 `25319166100007042896` 的核查结果是：在当前数据库快照里两者都存在成功识别记录，后者识别字段相对完整；因此本轮没有伪装成“已修复第 3 条”，而是已将其拆到后续独立任务。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_materials_api.py tests/test_supporting_material_linkage_api.py tests/test_task_member_workbench_api.py tests/test_recognition_async_jobs.py -k 'auto_link or linkage or workbench'`
+- 已通过定向前端测试：
+  - `cd web && npm test -- member-invoice-workbench.test.tsx`
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 537 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 13:49 - Close multi-administrator display and editing across admin task detail and primary routes
 
 ### 完成内容

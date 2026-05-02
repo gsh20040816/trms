@@ -17,6 +17,7 @@ from trms_backend.application.invoice_member_submission import (
 from trms_backend.application.invoice_member_submission_withdrawal import (
     InvoiceMemberSubmissionWithdrawalService,
 )
+from trms_backend.application.supporting_material_auto_link import SupportingMaterialAutoLinkService
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
     AutomaticReminderTaskGenerate,
@@ -174,6 +175,11 @@ def build_task_router(
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     authenticated_request_identity = build_authenticated_request_identity_dependency(
         auth_repository
+    )
+    supporting_material_auto_link_service = SupportingMaterialAutoLinkService(
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        recognition_task_repository=recognition_task_repository,
     )
     invoice_member_submission_service = InvoiceMemberSubmissionService(
         material_repository=material_repository,
@@ -611,6 +617,7 @@ def build_task_router(
                 splits_by_invoice_id=splits_by_invoice_id,
                 confirmations_by_invoice_id=confirmations_by_invoice_id,
                 current_confirmations_by_split_id=current_confirmations_by_split_id,
+                supporting_material_auto_link_service=supporting_material_auto_link_service,
             )
         except TaskMemberWorkbenchActorNotAllowedError as error:
             raise HTTPException(
@@ -801,6 +808,7 @@ def build_task_router(
             invoices=invoices,
             materials_by_id=materials_by_id,
             linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
+            supporting_material_auto_link_service=supporting_material_auto_link_service,
         )
 
     @router.get("/{task_id}/missing-materials")
@@ -1032,6 +1040,7 @@ def build_task_router(
                 splits_by_invoice_id=splits_by_invoice_id,
                 confirmations_by_split_id=confirmations_by_split_id,
                 linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
+                supporting_material_auto_link_service=supporting_material_auto_link_service,
             )
         except TaskReadinessActorNotAllowedError as error:
             raise HTTPException(

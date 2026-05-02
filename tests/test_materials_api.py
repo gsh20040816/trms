@@ -157,7 +157,7 @@ def test_submit_material_defaults_material_type_when_client_omits_it(tmp_path):
     assert audit_logs[0].detail["material_type"] == "other_attachment"
 
 
-def test_submit_supporting_material_auto_links_to_single_candidate_invoice(tmp_path):
+def test_submit_supporting_material_does_not_auto_link_before_recognized_amount_is_available(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)
     invoice_material_id = client.post(
@@ -183,9 +183,7 @@ def test_submit_supporting_material_auto_links_to_single_candidate_invoice(tmp_p
 
     assert response.status_code == 201
     supporting_material_id = response.json()["items"][0]["id"]
-    assert list_linked_invoice_ids_for_supporting_material(tmp_path, supporting_material_id) == [
-        invoice_id
-    ]
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, supporting_material_id) == []
 
 
 def test_default_material_type_does_not_auto_link_before_recognition(tmp_path):

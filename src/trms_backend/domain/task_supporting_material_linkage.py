@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from trms_backend.application.supporting_material_auto_link import SupportingMaterialAutoLinkService
 from trms_backend.domain.invoices import ExpenseType, InvoiceRecord
 from trms_backend.domain.materials import MaterialRecord, MaterialStatus, MaterialType
 from trms_backend.domain.tasks import ReimbursementTask
@@ -12,6 +13,7 @@ from trms_backend.domain.tasks import ReimbursementTask
 
 class PendingSupportingMaterialLinkageReason(StrEnum):
     NO_CANDIDATE = "no_candidate"
+    MANUAL_CONFIRMATION_REQUIRED = "manual_confirmation_required"
     MULTIPLE_CANDIDATES = "multiple_candidates"
 
 
@@ -53,6 +55,7 @@ def build_task_supporting_material_linkage_report(
     invoices: list[InvoiceRecord],
     materials_by_id: dict[str, MaterialRecord],
     linked_invoice_ids_by_material_id: dict[str, list[str]],
+    supporting_material_auto_link_service: SupportingMaterialAutoLinkService,
 ) -> TaskSupportingMaterialLinkageReport:
     normalized_actor_id = actor_id.strip()
 
@@ -68,14 +71,13 @@ def build_task_supporting_material_linkage_report(
             continue
         if not include_all_members and material.submitter_id != normalized_actor_id:
             continue
+        candidate_invoice_ids = supporting_material_auto_link_service.list_manual_candidate_invoice_ids_for_material(
+            material
+        )
         candidate_invoices = [
             invoice
             for invoice in invoices
-            if _invoice_belongs_to_submitter(
-                invoice=invoice,
-                submitter_id=material.submitter_id,
-                materials_by_id=materials_by_id,
-            )
+            if invoice.id in candidate_invoice_ids
         ]
         linked_invoice_ids = set(linked_invoice_ids_by_material_id.get(material.id, []))
 
@@ -93,10 +95,11 @@ def build_task_supporting_material_linkage_report(
                 invoice for invoice in candidate_invoices if invoice.id not in linked_invoice_ids
             ]
             if not linked_invoice_ids and len(remaining_candidate_invoices) == 1:
-                continue
+                pending_reason = PendingSupportingMaterialLinkageReason.MANUAL_CONFIRMATION_REQUIRED
+            else:
+                pending_reason = PendingSupportingMaterialLinkageReason.MULTIPLE_CANDIDATES
             if len(remaining_candidate_invoices) == 0:
                 continue
-            pending_reason = PendingSupportingMaterialLinkageReason.MULTIPLE_CANDIDATES
 
         if (
             pending_reason is PendingSupportingMaterialLinkageReason.NO_CANDIDATE
@@ -134,20 +137,6 @@ def build_task_supporting_material_linkage_report(
         actor_id=normalized_actor_id,
         items=items,
     )
-
-
-def _invoice_belongs_to_submitter(
-    *,
-    invoice: InvoiceRecord,
-    submitter_id: str,
-    materials_by_id: dict[str, MaterialRecord],
-) -> bool:
-    invoice_material = materials_by_id.get(invoice.material_id)
-    if invoice_material is None:
-        return False
-    return invoice_material.submitter_id == submitter_id
-
-
 def _build_candidate_invoice_summary(
     invoice: InvoiceRecord,
     *,

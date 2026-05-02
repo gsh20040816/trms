@@ -774,6 +774,7 @@ export type TaskSharedInvoiceReport = {
 
 export type PendingSupportingMaterialLinkageReason =
   | "no_candidate"
+  | "manual_confirmation_required"
   | "multiple_candidates";
 
 export type PendingSupportingMaterialLinkageCandidateInvoiceSummary = {

@@ -193,7 +193,18 @@ def test_admin_can_list_pending_supporting_material_linkage_items(tmp_path):
     assert body["task_id"] == task_id
     assert body["actor_id"] == "admin-1"
     items_by_id = {item["material_id"]: item for item in body["items"]}
-    assert member_one_auto_linked_supporting not in items_by_id
+    assert items_by_id[member_one_auto_linked_supporting]["pending_reason"] == (
+        "manual_confirmation_required"
+    )
+    assert items_by_id[member_one_auto_linked_supporting]["candidate_invoices"] == [
+        {
+            "invoice_id": items_by_id[member_one_auto_linked_supporting]["candidate_invoices"][0]["invoice_id"],
+            "invoice_number": "M1-001",
+            "amount_cents": 10000,
+            "expense_type": "railway",
+            "original_filename": "member-one-invoice.pdf",
+        }
+    ]
     assert items_by_id[member_three_pending_supporting] == {
         "material_id": member_three_pending_supporting,
         "submitter_id": "2250003",
@@ -243,7 +254,7 @@ def test_member_only_sees_own_pending_supporting_material_linkage_items(tmp_path
         amount_cents=10000,
         expense_type="railway",
     )
-    upload_material(
+    member_one_pending_supporting = upload_material(
         client,
         task_id,
         submitter_id="2250001",
@@ -265,7 +276,10 @@ def test_member_only_sees_own_pending_supporting_material_linkage_items(tmp_path
         headers=member_auth_headers(client, username="member1", actor_id="2250001"),
     )
     assert member_one_response.status_code == 200
-    assert member_one_response.json()["items"] == []
+    assert [item["material_id"] for item in member_one_response.json()["items"]] == [
+        member_one_pending_supporting
+    ]
+    assert member_one_response.json()["items"][0]["pending_reason"] == "manual_confirmation_required"
 
     member_two_response = client.get(
         f"/api/tasks/{task_id}/supporting-material-linkage",
@@ -354,6 +368,59 @@ def test_pending_supporting_material_linkage_keeps_remaining_candidates_after_on
             "amount_cents": 30000,
             "expense_type": "hotel",
             "original_filename": "member-two-second.pdf",
+        }
+    ]
+
+
+def test_pending_supporting_material_linkage_shows_single_manual_candidate_when_auto_link_is_not_safe(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    invoice_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="member-one-invoice.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        invoice_material_id,
+        actor_id="2250001",
+        invoice_number="M1-001",
+        amount_cents=10000,
+        expense_type="railway",
+    )
+    supporting_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="member-one-payment.png",
+        content_type="image/png",
+    )
+
+    response = client.get(
+        f"/api/tasks/{task_id}/supporting-material-linkage",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    item = next(
+        item for item in body["items"] if item["material_id"] == supporting_material_id
+    )
+    assert item["pending_reason"] == "manual_confirmation_required"
+    assert item["linked_invoices"] == []
+    assert item["candidate_invoices"] == [
+        {
+            "invoice_id": invoice_id,
+            "invoice_number": "M1-001",
+            "amount_cents": 10000,
+            "expense_type": "railway",
+            "original_filename": "member-one-invoice.pdf",
         }
     ]
 

@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from trms_backend.application.supporting_material_auto_link import SupportingMaterialAutoLinkService
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
 from trms_backend.domain.exports import build_task_export_boundary
 from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, ValidationSeverity, ValidationStatus
@@ -84,6 +85,7 @@ def build_task_readiness_summary(
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
     confirmations_by_split_id: dict[str, ConfirmationRecord],
     linked_invoice_ids_by_material_id: dict[str, list[str]],
+    supporting_material_auto_link_service: SupportingMaterialAutoLinkService,
 ) -> TaskReadinessSummary:
     normalized_administrator_id = ensure_task_administrator(
         task,
@@ -100,6 +102,7 @@ def build_task_readiness_summary(
         invoices=invoices,
         materials_by_id=materials_by_id,
         linked_invoice_ids_by_material_id=linked_invoice_ids_by_material_id,
+        supporting_material_auto_link_service=supporting_material_auto_link_service,
     )
     missing_materials = aggregate_task_missing_materials(
         task_id=task.id,
