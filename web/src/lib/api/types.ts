@@ -202,6 +202,8 @@ export type TaskUpdateInput = {
   deadline: ApiDateTime;
   member_ids: string[];
   fee_categories: string[];
+  administrator_id?: string;
+  administrator_ids?: string[];
   invoice_title: string;
   tax_number: string;
 };

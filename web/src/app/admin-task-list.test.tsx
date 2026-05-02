@@ -50,6 +50,7 @@ function mockAdminTaskEndpoints() {
           member_ids: ["2250001", "2250002"],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
+          administrator_ids: ["admin-1", "admin-2"],
           project_info: "Project A",
           reimburser_info: "张管理员",
           invoice_title: "同济大学",
@@ -68,6 +69,7 @@ function mockAdminTaskEndpoints() {
           member_ids: ["2250001"],
           fee_categories: ["registration"],
           administrator_id: "admin-1",
+          administrator_ids: ["admin-1"],
           project_info: "Project B",
           reimburser_info: "张管理员",
           invoice_title: "同济大学",
@@ -177,6 +179,7 @@ describe("admin task list page", () => {
     expect(screen.getAllByText("全国邀请赛").length).toBeGreaterThan(0);
     expect(screen.getAllByText("区域赛报销").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "补材料" })).toBeInTheDocument();
+    expect(screen.getAllByText("上海 · 2 名管理员").length).toBeGreaterThan(0);
 
     await act(async () => {
       fireEvent.change(screen.getByRole("searchbox", { name: "搜索任务" }), {
@@ -229,6 +232,7 @@ describe("admin task list page", () => {
           member_ids: ["2250001"],
           fee_categories: ["registration"],
           administrator_id: "admin-2",
+          administrator_ids: ["admin-2"],
           project_info: "Project C",
           reimburser_info: "李管理员",
           invoice_title: "同济大学",

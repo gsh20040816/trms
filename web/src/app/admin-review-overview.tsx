@@ -36,6 +36,7 @@ import {
   formatValidationSeverity,
   formatValidationStatus,
 } from "../lib/ui-text";
+import { isTaskVisibleToAdministrator } from "../lib/task-administrators";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -365,7 +366,7 @@ export function AdminReviewOverviewPage() {
   );
 
   const task = state.status === "ready" ? state.task : null;
-  const isForeignTask = task ? task.administrator_id !== session?.actorId : false;
+  const isForeignTask = task && session ? !isTaskVisibleToAdministrator(task, session.actorId) : false;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleSummary = state.status === "ready" && !isForeignTask ? state.reviewSummary : null;
   const visibleOverdueSummary = state.status === "ready" && !isForeignTask ? state.overdueSummary : null;

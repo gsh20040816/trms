@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 
 import Autocomplete from "@mui/material/Autocomplete";
@@ -10,6 +10,7 @@ import FormGroup from "@mui/material/FormGroup";
 import FormHelperText from "@mui/material/FormHelperText";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
@@ -23,8 +24,15 @@ import type {
   TaskReadinessSummary,
   TaskStatus,
   TaskUpdateInput,
+  UserSearchSummary,
 } from "../lib/api/types";
-import { buildTaskMemberSummaryMap, formatExpenseType, formatTaskMemberLabel, formatTaskStatus } from "../lib/ui-text";
+import { buildTaskMemberSummaryMap, formatExpenseType, formatTaskMemberLabel, formatTaskStatus, formatUserSearchSummary } from "../lib/ui-text";
+import {
+  buildTaskAdministratorSearchOptions,
+  formatTaskAdministratorCountLabel,
+  getTaskAdministratorIds,
+  isTaskVisibleToAdministrator,
+} from "../lib/task-administrators";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -40,6 +48,7 @@ type TaskEditFormState = {
   competitionEndDate: string;
   deadline: string;
   memberIds: string[];
+  administratorIds: string[];
   feeCategories: ExpenseType[];
   invoiceTitle: string;
   taxNumber: string;
@@ -173,6 +182,7 @@ function buildFormState(task: ReimbursementTask): TaskEditFormState {
     competitionEndDate: task.competition_end_date,
     deadline: toDateTimeLocalValue(task.deadline),
     memberIds: [...task.member_ids],
+    administratorIds: getTaskAdministratorIds(task),
     feeCategories: task.fee_categories as ExpenseType[],
     invoiceTitle: task.invoice_title,
     taxNumber: task.tax_number,
@@ -256,12 +266,25 @@ export function AdminTaskDetailPage() {
   const [state, setState] = useState<TaskDetailState>({ status: "loading" });
   const [formState, setFormState] = useState<TaskEditFormState | null>(null);
   const [memberInputValue, setMemberInputValue] = useState("");
+  const [administratorInputValue, setAdministratorInputValue] = useState("");
+  const [administratorOptions, setAdministratorOptions] = useState<UserSearchSummary[]>([]);
+  const [administratorSearchError, setAdministratorSearchError] = useState<unknown>(null);
+  const [isSearchingAdministrators, setIsSearchingAdministrators] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrorState>({});
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [statusUpdateError, setStatusUpdateError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const administratorSearchTimerRef = useRef<number | null>(null);
+
+  useEffect(() => (
+    () => {
+      if (administratorSearchTimerRef.current !== null) {
+        window.clearTimeout(administratorSearchTimerRef.current);
+      }
+    }
+  ), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,6 +315,9 @@ export function AdminTaskDetailPage() {
         setFormState(buildFormState(task));
         setValidationErrors({});
         setMemberInputValue("");
+        setAdministratorInputValue("");
+        setAdministratorSearchError(null);
+        setIsSearchingAdministrators(false);
       } catch (error) {
         if (cancelled) {
           return;
@@ -338,11 +364,17 @@ export function AdminTaskDetailPage() {
   const task = state.status === "ready" ? state.task : null;
   const readiness = state.status === "ready" ? state.readiness : null;
   const allowedTransitions = task ? TASK_STATUS_TRANSITIONS[task.status] : [];
-  const isForeignTask = task ? task.administrator_id !== session.actorId : false;
+  const isForeignTask = task ? !isTaskVisibleToAdministrator(task, session.actorId) : false;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleReadiness = state.status === "ready" && !isForeignTask ? state.readiness : null;
   const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
   const isDraftEditable = visibleTask?.status === "draft";
+  const selectedAdministratorOptions = formState
+    ? buildTaskAdministratorSearchOptions(formState.administratorIds, administratorOptions)
+    : [];
+  const visibleAdministratorOptions = formState
+    ? administratorOptions.filter((option) => !formState.administratorIds.includes(option.actor_id))
+    : [];
 
   function updateField<Key extends keyof TaskEditFormState>(
     key: Key,
@@ -390,6 +422,60 @@ export function AdminTaskDetailPage() {
     setMemberInputValue("");
   }
 
+  function addAdministrator(administrator: UserSearchSummary) {
+    if (!formState || formState.administratorIds.includes(administrator.actor_id)) {
+      return;
+    }
+    updateField("administratorIds", [...formState.administratorIds, administrator.actor_id]);
+  }
+
+  function removeAdministrator(administratorId: string) {
+    if (!formState) {
+      return;
+    }
+    updateField(
+      "administratorIds",
+      formState.administratorIds.filter(
+        (currentAdministratorId) => currentAdministratorId !== administratorId,
+      ),
+    );
+  }
+
+  function handleAdministratorKeywordChange(value: string) {
+    setAdministratorInputValue(value);
+    const keyword = value.trim();
+    if (administratorSearchTimerRef.current !== null) {
+      window.clearTimeout(administratorSearchTimerRef.current);
+      administratorSearchTimerRef.current = null;
+    }
+
+    if (keyword.length === 0) {
+      setAdministratorOptions([]);
+      setAdministratorSearchError(null);
+      setIsSearchingAdministrators(false);
+      return;
+    }
+
+    setIsSearchingAdministrators(true);
+    setAdministratorSearchError(null);
+    administratorSearchTimerRef.current = window.setTimeout(() => {
+      void trmsApi.searchTaskAdministratorCandidates(keyword, 10)
+        .then((response) => {
+          startTransition(() => {
+            setAdministratorOptions(response.items);
+          });
+        })
+        .catch((error) => {
+          setAdministratorOptions([]);
+          setAdministratorSearchError(error);
+        })
+        .finally(() => {
+          setIsSearchingAdministrators(false);
+          administratorSearchTimerRef.current = null;
+        });
+    }, 250);
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!visibleTask || !formState || !isDraftEditable) {
@@ -406,7 +492,11 @@ export function AdminTaskDetailPage() {
 
     setIsSubmitting(true);
     try {
-      const updatedTask = await trmsApi.updateTask(visibleTask.id, payload);
+      const updatedTask = await trmsApi.updateTask(visibleTask.id, {
+        ...payload,
+        administrator_id: formState.administratorIds[0] ?? visibleTask.administrator_id,
+        administrator_ids: formState.administratorIds,
+      });
       setState({
         status: "ready",
         task: updatedTask,
@@ -541,8 +631,8 @@ export function AdminTaskDetailPage() {
                 <dd>{formatDateTime(visibleTask.deadline)}</dd>
               </div>
               <div>
-                <dt>任务负责人</dt>
-                <dd>{session.displayName}</dd>
+                <dt>任务管理员</dt>
+                <dd>{formatTaskAdministratorCountLabel(visibleTask)}</dd>
               </div>
               <div>
                 <dt>发票抬头</dt>
@@ -553,6 +643,13 @@ export function AdminTaskDetailPage() {
                 <dd>{visibleTask.tax_number}</dd>
               </div>
             </dl>
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务管理员列表" sx={{ mt: 2 }}>
+              {buildTaskAdministratorSearchOptions(getTaskAdministratorIds(visibleTask), administratorOptions).map((administrator) => (
+                <span key={administrator.actor_id} className="token-chip">
+                  {formatUserSearchSummary(administrator)}
+                </span>
+              ))}
+            </Stack>
           </article>
 
           {visibleReadiness ? (
@@ -785,7 +882,7 @@ export function AdminTaskDetailPage() {
                 <div className="admin-form-header">
                   <div>
                     <p className="eyebrow">Members</p>
-                    <h3>成员名单与费用类别</h3>
+                    <h3>成员名单、管理员与费用类别</h3>
                   </div>
                 </div>
 
@@ -836,6 +933,90 @@ export function AdminTaskDetailPage() {
                       </li>
                     ))}
                   </ul>
+
+                  <Stack spacing={0.75}>
+                    <TextField
+                      label="管理员搜索"
+                      value={administratorInputValue}
+                      onChange={(event) => {
+                        handleAdministratorKeywordChange(event.target.value);
+                      }}
+                      placeholder="输入管理员姓名、用户名或管理员标识检索"
+                      error={Boolean(validationErrors.administratorIds)}
+                      helperText={
+                        validationErrors.administratorIds
+                        ?? (
+                          isSearchingAdministrators
+                            ? "正在检索管理员..."
+                            : "草稿任务可继续追加或移除管理员；首位管理员会作为兼容主负责人字段返回。"
+                        )
+                      }
+                      disabled={!isDraftEditable}
+                      fullWidth
+                    />
+
+                    {administratorInputValue.trim().length > 0 ? (
+                      <Stack
+                        spacing={0.5}
+                        aria-label="管理员候选列表"
+                        sx={{
+                          borderRadius: 3,
+                          border: "1px solid",
+                          borderColor: "divider",
+                          bgcolor: "background.paper",
+                          py: 0.5,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {administratorSearchError ? (
+                          <Typography variant="body2" color="error" sx={{ px: 1.5, py: 1 }}>
+                            管理员检索失败，请稍后重试。
+                          </Typography>
+                        ) : null}
+                        {!administratorSearchError && visibleAdministratorOptions.length === 0 && !isSearchingAdministrators ? (
+                          <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, py: 1 }}>
+                            没有匹配的管理员。
+                          </Typography>
+                        ) : null}
+                        {visibleAdministratorOptions.map((option) => (
+                          <Button
+                            key={option.actor_id}
+                            variant="text"
+                            color="inherit"
+                            sx={{
+                              justifyContent: "flex-start",
+                              borderRadius: 0,
+                              px: 1.5,
+                              py: 1,
+                            }}
+                            disabled={!isDraftEditable}
+                            onClick={() => {
+                              addAdministrator(option);
+                            }}
+                          >
+                            {formatUserSearchSummary(option)}
+                          </Button>
+                        ))}
+                      </Stack>
+                    ) : null}
+                  </Stack>
+
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务管理员已选列表">
+                    {selectedAdministratorOptions.map((administrator) => (
+                      <Button
+                        key={administrator.actor_id}
+                        variant="outlined"
+                        color="inherit"
+                        size="small"
+                        disabled={!isDraftEditable}
+                        onClick={() => {
+                          removeAdministrator(administrator.actor_id);
+                        }}
+                      >
+                        {formatUserSearchSummary(administrator)}
+                      </Button>
+                    ))}
+                  </Stack>
 
                   <FormControl error={Boolean(validationErrors.feeCategories)} component="fieldset" variant="standard">
                     <FormGroup className="checkbox-grid" aria-label="费用类别">

@@ -32,6 +32,7 @@ import {
   formatTaskMemberLabel,
   formatValidationRule,
 } from "../lib/ui-text";
+import { isTaskVisibleToAdministrator } from "../lib/task-administrators";
 import { useAuthSession } from "./auth-store";
 
 type InvoiceEditorPageState =
@@ -581,7 +582,7 @@ export function AdminInvoiceEditorPage() {
     ? buildInvoiceMaterialItems(pageState.summary)
     : [];
   const task = pageState.status === "ready" ? pageState.task : null;
-  const isForeignTask = task ? task.administrator_id !== session?.actorId : false;
+  const isForeignTask = task && session ? !isTaskVisibleToAdministrator(task, session.actorId) : false;
   const visibleTask = pageState.status === "ready" && !isForeignTask ? pageState.task : null;
   const visibleSummary = pageState.status === "ready" && !isForeignTask ? pageState.summary : null;
   const selectedItem = visibleSummary ? findSelectedItem(invoiceMaterialItems, selectedMaterialId) : null;

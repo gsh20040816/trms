@@ -134,6 +134,7 @@ describe("admin task detail page", () => {
           ],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
+          administrator_ids: ["admin-1", "admin-2"],
           project_info: "Project A",
           reimburser_info: "张管理员",
           invoice_title: "同济大学",
@@ -158,6 +159,9 @@ describe("admin task detail page", () => {
     expect(screen.queryByText("报销人信息")).not.toBeInTheDocument();
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
+    expect(screen.getByText("2 名管理员")).toBeInTheDocument();
+    expect(screen.getByLabelText("任务管理员列表")).toHaveTextContent("admin-1");
+    expect(screen.getByLabelText("任务管理员列表")).toHaveTextContent("admin-2");
     const moduleNav = screen.getByLabelText("管理员模块导航");
     expect(within(moduleNav).getByText("任务管理").closest("a")).toHaveAttribute("aria-current", "page");
     expect(within(moduleNav).getByText("材料审核").closest("a")).toHaveAttribute("href", "/admin/tasks/TASK-ALPHA/review");
@@ -359,6 +363,8 @@ describe("admin task detail page", () => {
           competition_end_date: "2026-08-03",
           deadline: "2026-08-10T10:00:00.000Z",
           member_ids: ["2250001", "2250002"],
+          administrator_id: "admin-1",
+          administrator_ids: ["admin-1", "admin-2"],
           fee_categories: ["registration", "hotel"],
           invoice_title: "同济大学",
           tax_number: "91310000TEST00001",
@@ -374,6 +380,7 @@ describe("admin task detail page", () => {
           member_ids: ["2250001", "2250002"],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
+          administrator_ids: ["admin-1", "admin-2"],
           project_info: "Project After",
           reimburser_info: "张管理员",
           invoice_title: "同济大学",
@@ -389,6 +396,19 @@ describe("admin task detail page", () => {
         })));
       }
 
+      if (url === "/api/tasks/search/administrator-candidates?keyword=%E6%9D%8E&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "admin-2",
+              username: "admin2",
+              display_name: "李管理员",
+              student_id: null,
+            },
+          ],
+        }));
+      }
+
       if (url === "/api/tasks/TASK-DRAFT-EDIT") {
         return Promise.resolve(jsonResponse({
           id: "TASK-DRAFT-EDIT",
@@ -401,6 +421,7 @@ describe("admin task detail page", () => {
           member_ids: ["2250001", "2250002"],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
+          administrator_ids: ["admin-1"],
           project_info: "Project Before",
           reimburser_info: "张管理员",
           invoice_title: "同济大学",
@@ -416,15 +437,77 @@ describe("admin task detail page", () => {
     renderAdminTaskDetailRoute("TASK-DRAFT-EDIT");
 
     expect(await screen.findByDisplayValue("待编辑任务")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("管理员搜索"), {
+      target: { value: "李" },
+    });
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 260);
+      });
+    });
+    fireEvent.click(await screen.findByText("李管理员 / admin2"));
+    expect(await screen.findByLabelText("任务管理员已选列表")).toHaveTextContent("李管理员 / admin2");
     fireEvent.change(screen.getByLabelText("比赛名称"), {
       target: { value: "已更新任务" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存任务基础配置" }));
 
-    expect(await screen.findByRole("heading", { name: "任务基础配置已更新" })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("已更新任务")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("已更新任务")).toBeInTheDocument();
     expect(screen.queryByLabelText("项目/课题信息")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("报销人信息")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("任务管理员已选列表")).toHaveTextContent("李管理员 / admin2");
+  });
+
+  it("allows a secondary administrator to access the task detail page", async () => {
+    clearMockSession();
+    setMockSession("admin", {
+      actorId: "admin-2",
+      displayName: "李管理员",
+      username: "admin2",
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-SECONDARY") {
+        return Promise.resolve(jsonResponse({
+          id: "TASK-SECONDARY",
+          status: "reviewing",
+          competition_name: "多管理员任务",
+          competition_location: "上海",
+          competition_start_date: "2026-08-01",
+          competition_end_date: "2026-08-03",
+          deadline: "2026-08-10T18:00:00+08:00",
+          member_ids: ["2250001"],
+          member_summaries: [
+            { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+          ],
+          fee_categories: ["registration"],
+          administrator_id: "admin-1",
+          administrator_ids: ["admin-1", "admin-2"],
+          project_info: "",
+          reimburser_info: "",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+          created_at: "2026-04-20T09:00:00+08:00",
+          updated_at: "2026-04-25T10:00:00+08:00",
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-SECONDARY/readiness?actor_id=admin-2") {
+        return Promise.resolve(jsonResponse(buildReadinessResponse({
+          task_id: "TASK-SECONDARY",
+          administrator_id: "admin-2",
+        })));
+      }
+
+      throw new Error(`Unhandled fetch URL in secondary admin detail test: ${url}`);
+    });
+
+    renderAdminTaskDetailRoute("TASK-SECONDARY");
+
+    expect(await screen.findByRole("heading", { name: "任务就绪度总览" })).toBeInTheDocument();
+    expect(screen.queryByText("当前任务不属于此管理员")).not.toBeInTheDocument();
   });
 
   it("shows task config as read-only once the task is no longer draft", async () => {

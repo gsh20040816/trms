@@ -17,6 +17,7 @@ import type {
   TaskReviewSummaryMaterialItem,
 } from "../lib/api/types";
 import { buildTaskMemberSummaryMap, formatTaskMemberLabel } from "../lib/ui-text";
+import { isTaskVisibleToAdministrator } from "../lib/task-administrators";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -336,7 +337,7 @@ export function AdminSplitEditorPage() {
   }
 
   const task = pageState.status === "ready" ? pageState.task : null;
-  const isForeignTask = task ? task.administrator_id !== session.actorId : false;
+  const isForeignTask = task ? !isTaskVisibleToAdministrator(task, session.actorId) : false;
   const visibleTask = pageState.status === "ready" && !isForeignTask ? pageState.task : null;
   const visibleSummary = pageState.status === "ready" && !isForeignTask ? pageState.summary : null;
   const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();

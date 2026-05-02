@@ -23,6 +23,7 @@ import {
   formatUserIdentityLabel,
   formatValidationRule,
 } from "../lib/ui-text";
+import { isTaskVisibleToAdministrator } from "../lib/task-administrators";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
 
@@ -269,7 +270,7 @@ export function AdminMissingMaterialsPage() {
   }
 
   const task = state.status === "ready" ? state.task : null;
-  const isForeignTask = task ? task.administrator_id !== session.actorId : false;
+  const isForeignTask = task ? !isTaskVisibleToAdministrator(task, session.actorId) : false;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleList = state.status === "ready" && !isForeignTask ? state.list : null;
   const summary = visibleList ? buildMissingMaterialSummary(visibleList.items) : null;

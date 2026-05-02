@@ -14,6 +14,7 @@ import type {
   TaskStatus,
 } from "../lib/api/types";
 import { formatTaskStatus } from "../lib/ui-text";
+import { formatTaskAdministratorCountLabel, isTaskVisibleToAdministrator } from "../lib/task-administrators";
 import { describeAdminTaskStage } from "./admin-task-stage";
 import { AdminWorkspaceShell } from "./admin-workspace-shell";
 import { useAuthSession } from "./auth-store";
@@ -125,7 +126,7 @@ export function AdminTaskListPage() {
 
       try {
         const allTasks = await trmsApi.listTasks();
-        const ownedTasks = allTasks.filter((task) => task.administrator_id === session.actorId);
+        const ownedTasks = allTasks.filter((task) => isTaskVisibleToAdministrator(task, session.actorId));
         const items = await Promise.all(
           ownedTasks.map(async (task) => {
             const [reviewSummary, overdueSummary] = await Promise.all([
@@ -370,7 +371,7 @@ export function AdminTaskListPage() {
                     <div className="table-primary">
                       <strong>{task.competition_name}</strong>
                       <span>
-                        {task.competition_location} · 负责人 {session.displayName}
+                        {task.competition_location} · {formatTaskAdministratorCountLabel(task)}
                       </span>
                     </div>
                   </td>

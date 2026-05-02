@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-05-02 13:49 - Close multi-administrator display and editing across admin task detail and primary routes
+
+### 完成内容
+- 完成任务“收口任务详情页与管理员主路径的多管理员展示和编辑”。
+- 前端统一收口多管理员任务的可见性判断与展示口径：
+  - 新增 [web/src/lib/task-administrators.ts](/home/gsh/workspace/TRMS/web/src/lib/task-administrators.ts)，集中提供 `administrator_ids` 归一化、管理员集合可见性判断和多管理员计数/回显辅助；
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx) 不再把 `administrator_id` 当唯一负责人，任务摘要改为展示“任务管理员”数量与管理员列表；
+  - [web/src/app/admin-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.tsx) 首页列表改为按管理员集合筛任务，并把“负责人”文案改成多管理员数量口径；
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)、[web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)、[web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)、[web/src/app/admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx)、[web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 同步切到管理员集合判断，避免次管理员在详情、复核、提醒、分摊、缺失材料和发票录入主路径被误判为越权。
+- 任务详情页补齐多管理员编辑闭环：
+  - 复用创建任务页已有的管理员远程检索交互，在草稿任务详情中支持搜索、添加、移除管理员；
+  - 保存草稿时同时提交 `administrator_id` 与 `administrator_ids`，保持“首位管理员作为兼容主字段，完整集合走 `administrator_ids`”的现有兼容策略；
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts) 同步补齐任务更新请求的多管理员类型字段；
+  - [web/src/app/auth-store.ts](/home/gsh/workspace/TRMS/web/src/app/auth-store.ts) 的 `setMockSession(...)` 补了最小测试覆写能力，仅用于前端测试表达“同角色但不同管理员 actorId”的场景，不影响生产登录逻辑。
+- 补齐前端回归测试：
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx) 覆盖多管理员列表展示、详情页追加管理员并保存、次管理员可进入任务详情；
+  - [web/src/app/admin-task-list.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.test.tsx) 覆盖多管理员数量展示，并保留“确实无可见任务时显示空状态”的原约束；
+  - [web/src/app/admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx) 覆盖次管理员可进入复核总览主路径。
+
+### 根因
+- 前两轮已经完成多管理员数据模型、后端授权链路和创建任务交互，但前端管理员主路径仍残留“单管理员”假设：
+  - 多个页面继续用 `task.administrator_id !== session.actorId` 判定越权；
+  - 任务详情仍把当前登录管理员当成唯一负责人展示，也无法编辑管理员集合；
+  - 管理员首页列表仍只按单个 `administrator_id` 过滤任务。
+- 这会导致“后端已支持多管理员、创建页也能配置多个管理员，但次管理员在主工作台和详情页仍像越权用户”的半完成状态。
+
+### 风险与影响面
+- 本轮只收口前端展示、前端访问判断和任务详情页编辑交互，没有改动后端权限规则、数据库 schema 或兼容字段策略。
+- 当前保守兼容策略保持不变：`administrator_id` 继续表示兼容主负责人，`administrator_ids` 表示完整管理员集合；前端展示和访问判断已统一以管理员集合为准。
+- `eslint` 仍保留 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 中 2 条既有 `react-hooks/exhaustive-deps` warning；本轮未扩大到无关 hook 重构。
+
+### 验证结果
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 534 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 13:36 - Add administrator candidate search and multi-admin selection in task creation
 
 ### 完成内容

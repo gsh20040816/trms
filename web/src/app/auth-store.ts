@@ -46,17 +46,21 @@ function normalizeAvailableRoles(
   return [fallbackRole];
 }
 
-function createSession(role: UserRole, availableRoles?: UserRole[]): AuthSession {
+function createSession(
+  role: UserRole,
+  availableRoles?: UserRole[],
+  overrides?: Partial<Omit<AuthSession, "role" | "availableRoles" | "isMock">>,
+): AuthSession {
   const roleRoute = getRoleRouteOrThrow(role);
   const normalizedAvailableRoles = normalizeAvailableRoles(availableRoles, role);
   return {
     role,
     availableRoles: normalizedAvailableRoles,
-    actorId: roleRoute.mockActorId,
-    displayName: roleRoute.mockDisplayName,
-    memberCode: roleRoute.mockMemberCode,
-    username: null,
-    accessToken: null,
+    actorId: overrides?.actorId ?? roleRoute.mockActorId,
+    displayName: overrides?.displayName ?? roleRoute.mockDisplayName,
+    memberCode: overrides?.memberCode ?? roleRoute.mockMemberCode,
+    username: overrides?.username ?? null,
+    accessToken: overrides?.accessToken ?? null,
     isMock: true,
   };
 }
@@ -200,8 +204,14 @@ export function buildLoginPath(nextPath?: string) {
   return `/login?${searchParams.toString()}`;
 }
 
-export function setMockSession(role: UserRole, availableRoles?: UserRole[]) {
-  currentSession = createSession(role, availableRoles);
+export function setMockSession(
+  role: UserRole,
+  availableRolesOrOverrides?: UserRole[] | Partial<Omit<AuthSession, "role" | "availableRoles" | "isMock">>,
+  overrides?: Partial<Omit<AuthSession, "role" | "availableRoles" | "isMock">>,
+) {
+  const availableRoles = Array.isArray(availableRolesOrOverrides) ? availableRolesOrOverrides : undefined;
+  const resolvedOverrides = Array.isArray(availableRolesOrOverrides) ? overrides : availableRolesOrOverrides;
+  currentSession = createSession(role, availableRoles, resolvedOverrides);
   persistSession(currentSession);
   emitChange();
 }

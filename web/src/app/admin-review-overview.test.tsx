@@ -101,6 +101,7 @@ describe("AdminReviewOverviewPage", () => {
           ],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
+          administrator_ids: ["admin-1", "admin-2"],
           project_info: "ACM 竞赛项目",
           reimburser_info: "张管理员",
           invoice_title: "同济大学",
@@ -447,6 +448,86 @@ describe("AdminReviewOverviewPage", () => {
       "href",
       "/admin/tasks/TASK-REVIEW/invoices?materialId=MAT-INV-001",
     );
+  });
+
+  it("allows a secondary administrator to view review overview", async () => {
+    setMockSession("admin", {
+      actorId: "admin-2",
+      displayName: "李管理员",
+      username: "admin2",
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-REVIEW") {
+        return Promise.resolve(jsonResponse({
+          id: "TASK-REVIEW",
+          status: "reviewing",
+          competition_name: "ICPC 复核任务",
+          competition_location: "上海",
+          competition_start_date: "2026-05-01",
+          competition_end_date: "2026-05-03",
+          deadline: "2026-05-10T18:00:00+08:00",
+          member_ids: ["2250001"],
+          member_summaries: [
+            { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+          ],
+          fee_categories: ["registration"],
+          administrator_id: "admin-1",
+          administrator_ids: ["admin-1", "admin-2"],
+          project_info: "",
+          reimburser_info: "",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+          created_at: "2026-04-20T09:00:00+08:00",
+          updated_at: "2026-04-25T10:00:00+08:00",
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-REVIEW/review-summary?actor_id=admin-2") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-REVIEW",
+          administrator_id: "admin-2",
+          counts: {
+            material_count: 0,
+            pending_assignment_material_count: 0,
+            invoice_count: 0,
+            validation_count: 0,
+            blocker_failed_validation_count: 0,
+            split_count: 0,
+            confirmed_split_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+            pending_recognition_count: 0,
+            failed_recognition_count: 0,
+            needs_confirmation_recognition_count: 0,
+          },
+          materials: [],
+          pending_assignment_materials: [],
+          invoices: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-REVIEW/overdue-confirmations?actor_id=admin-2") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-REVIEW",
+          administrator_id: "admin-2",
+          confirmation_deadline: "2026-05-10T18:00:00+08:00",
+          is_overdue: false,
+          total_overdue_members: 0,
+          overdue_member_ids: [],
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in secondary review test: ${url}`);
+    });
+
+    renderReviewRoute();
+
+    expect(await screen.findByRole("heading", { name: "管理员复核总览" })).toBeInTheDocument();
+    expect(screen.queryByText("当前任务不属于此管理员")).not.toBeInTheDocument();
   });
 
   it("shows placeholder text when recognized invoice amount is missing", async () => {
