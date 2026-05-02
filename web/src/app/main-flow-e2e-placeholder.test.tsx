@@ -83,12 +83,6 @@ async function fillRequiredTaskForm() {
     target: { value: "2026-11-10T18:00" },
   });
   await addMember("2250", "张三 / member1 / 2250001");
-  fireEvent.change(screen.getByLabelText("项目/课题信息"), {
-    target: { value: "TRMS E2E placeholder" },
-  });
-  fireEvent.change(screen.getByLabelText("报销人信息"), {
-    target: { value: "张管理员" },
-  });
   fireEvent.change(screen.getByLabelText("发票抬头"), {
     target: { value: "同济大学" },
   });
@@ -109,8 +103,8 @@ function buildTask(status: "draft" | "open" | "ready_to_export") {
     member_ids: ["2250001"],
     fee_categories: ["railway"],
     administrator_id: "admin-1",
-    project_info: "TRMS E2E placeholder",
-    reimburser_info: "张管理员",
+    project_info: "",
+    reimburser_info: "",
     invoice_title: "同济大学",
     tax_number: "91310000TEST00001",
     created_at: "2026-04-28T12:00:00+08:00",

@@ -117,8 +117,6 @@ def valid_task_payload():
         "member_ids": ["2250001", "2250002", "2250003"],
         "fee_categories": ["registration", "railway", "hotel"],
         "administrator_id": "admin-1",
-        "project_info": "ACM competition project",
-        "reimburser_info": "Lab reimbursement owner",
         "invoice_title": "同济大学",
         "tax_number": "12100000425006117D",
     }
@@ -133,8 +131,6 @@ def valid_task_update_payload(**overrides):
         "deadline": "2026-12-10T00:00:00Z",
         "member_ids": ["2250001", "2250099"],
         "fee_categories": ["registration", "hotel"],
-        "project_info": "Updated ACM competition project",
-        "reimburser_info": "Updated reimbursement owner",
         "invoice_title": "更新后的同济大学",
         "tax_number": "91310000UPDATED0001",
     } | overrides
@@ -236,6 +232,8 @@ def test_create_and_get_task(tmp_path):
     assert body["id"]
     assert body["status"] == "draft"
     assert body["competition_name"] == "ICPC Asia Regional"
+    assert body["project_info"] == ""
+    assert body["reimburser_info"] == ""
     assert body["invoice_title"] == "同济大学"
 
     fetched = client.get(
@@ -801,8 +799,8 @@ def test_update_task_allows_replace_in_draft(tmp_path):
     assert body["competition_location"] == "Hangzhou"
     assert body["member_ids"] == ["2250001", "2250099"]
     assert body["fee_categories"] == ["registration", "hotel"]
-    assert body["project_info"] == "Updated ACM competition project"
-    assert body["reimburser_info"] == "Updated reimbursement owner"
+    assert body["project_info"] == ""
+    assert body["reimburser_info"] == ""
     assert body["invoice_title"] == "更新后的同济大学"
     assert body["tax_number"] == "91310000UPDATED0001"
 
@@ -957,10 +955,9 @@ def test_update_task_status_rejects_open_when_fee_categories_missing(tmp_path):
     )
 
 
-def test_update_task_status_rejects_open_when_project_info_missing(tmp_path):
+def test_update_task_status_allows_open_without_project_and_reimburser_info(tmp_path):
     client = make_client(tmp_path)
     created = create_task(client)
-    update_task_row(tmp_path, created["id"], project_info="   ")
 
     response = client.patch(
         f"/api/tasks/{created['id']}/status",
@@ -968,25 +965,11 @@ def test_update_task_status_rejects_open_when_project_info_missing(tmp_path):
         headers=admin_auth_headers(client),
     )
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "task is missing required publish fields: project_info"
-
-
-def test_update_task_status_rejects_open_when_reimburser_info_missing(tmp_path):
-    client = make_client(tmp_path)
-    created = create_task(client)
-    update_task_row(tmp_path, created["id"], reimburser_info="   ")
-
-    response = client.patch(
-        f"/api/tasks/{created['id']}/status",
-        json={"target_status": "open"},
-        headers=admin_auth_headers(client),
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == (
-        "task is missing required publish fields: reimburser_info"
-    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "open"
+    assert body["project_info"] == ""
+    assert body["reimburser_info"] == ""
 
 
 def test_update_task_status_rejects_invalid_transition(tmp_path):

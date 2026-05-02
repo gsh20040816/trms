@@ -58,12 +58,6 @@ async function fillRequiredTaskForm() {
     target: { value: "2026-12-01T10:00" },
   });
   await selectMember("2250", "张三 / member1 / 2250001");
-  fireEvent.change(screen.getByLabelText("项目/课题信息"), {
-    target: { value: "ACM competition project" },
-  });
-  fireEvent.change(screen.getByLabelText("报销人信息"), {
-    target: { value: "张管理员" },
-  });
 }
 
 describe("admin task create page", () => {
@@ -89,8 +83,8 @@ describe("admin task create page", () => {
       member_ids: ["2250001"],
       fee_categories: ["registration"],
       administrator_id: "admin-1",
-      project_info: "ACM competition project",
-      reimburser_info: "张管理员",
+      project_info: "",
+      reimburser_info: "",
       invoice_title: "同济大学",
       tax_number: "12100000425006117D",
       created_at: "2026-04-28T08:00:00+08:00",
@@ -163,6 +157,8 @@ describe("admin task create page", () => {
     expect(screen.getByText("输入后会实时向后端检索候选成员。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("输入成员姓名、用户名或学号检索")).toBeInTheDocument();
     expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");
+    expect(screen.queryByLabelText("项目/课题信息")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("报销人信息")).not.toBeInTheDocument();
     expect(screen.getByLabelText("参赛费")).toBeChecked();
     expect(screen.getByLabelText("火车票")).toBeChecked();
     expect(screen.getByLabelText("航空费")).toBeChecked();
@@ -197,6 +193,8 @@ describe("admin task create page", () => {
       "other",
     ]);
     expect(requestBody.administrator_id).toBe("admin-1");
+    expect(requestBody).not.toHaveProperty("project_info");
+    expect(requestBody).not.toHaveProperty("reimburser_info");
     expect(requestBody.invoice_title).toBe("同济大学");
     expect(requestBody.tax_number).toBe("12100000425006117D");
   });
@@ -239,12 +237,6 @@ describe("admin task create page", () => {
     });
     fireEvent.change(screen.getByLabelText("提交截止时间"), {
       target: { value: "2026-12-01T10:00" },
-    });
-    fireEvent.change(screen.getByLabelText("项目/课题信息"), {
-      target: { value: "ACM competition project" },
-    });
-    fireEvent.change(screen.getByLabelText("报销人信息"), {
-      target: { value: "张管理员" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "创建草稿任务" }));

@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-02 12:58 - Remove project and reimburser info from task forms
+
+### 完成内容
+- 完成任务“去除任务表单中的项目信息和报销人信息”。
+- 前端创建/编辑任务页不再展示这两项输入，也不再把它们写入请求体：
+  - [admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx) 删除“项目/课题信息”“报销人信息”表单状态、校验和提交字段，仅保留管理员标识、成员名单、费用类别与发票配置；
+  - [admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx) 删除任务详情页中的这两项展示与草稿编辑输入，保存草稿时不再提交对应字段。
+- 后端任务创建/更新改为可省略这两项旧字段：
+  - [tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py) 将 `TaskCreateInput` / `TaskUpdateInput` 的 `project_info`、`reimburser_info` 改为可选；任务发布门禁不再要求这两项非空；
+  - [repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py) 更新草稿任务时，若请求未携带旧字段则保留库中既有值，避免因前端去字段而无意覆盖历史任务数据。
+- 同步更新 API/前端测试：
+  - [test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py) 改为覆盖“创建/更新可省略旧字段、仍可正常开任务”；
+  - [test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py) 同步默认任务不再自带这两项值的导出断言；
+  - [admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx)、[admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)、[main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx) 改为断言字段已移除且请求体不再包含旧键。
+
+### 根因
+- 任务创建页和草稿编辑页仍沿用需求 V0.2 初稿，把“项目信息/报销人信息”作为显式输入和前端必填项。
+- 后端任务请求模型与发布门禁继续把这两项当成必需字段，导致前端即使移除表单，也会被请求校验或状态流转校验卡住。
+- 真正要收口的是“任务表单和任务请求协议中的旧必填约束”，而不是仅删掉两个前端输入框。
+
+### 风险与影响面
+- 本轮没有删除数据库字段，也没有改导出结构；旧任务若历史上已保存 `project_info` / `reimburser_info`，响应和导出仍会返回已有值。
+- 当前保守假设是：新建任务默认不再采集这两项数据；草稿更新请求若未携带这两项旧字段，则保留历史值，避免夜间批量把旧任务元数据静默清空。
+- 若后续产品要求彻底从导出、读模型或数据库层面删除这两项字段，应单开迁移任务，不在本轮把 schema、导出字段和历史数据清理混进来。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py`
+  - `uv run pytest tests/test_exports_api.py -k finance_draft_json`
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-task-create.test.tsx admin-task-detail.test.tsx main-flow-e2e-placeholder.test.tsx`
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 521 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 12:45 - Default all fee categories in admin task creation
 
 ### 完成内容

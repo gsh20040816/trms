@@ -38,8 +38,6 @@ class _TaskCreateBase(BaseModel):
     member_ids: list[str] = Field(min_length=1)
     fee_categories: list[str] = Field(min_length=1)
     administrator_id: str = Field(min_length=1)
-    project_info: str = Field(min_length=1)
-    reimburser_info: str = Field(min_length=1)
 
     @field_validator("member_ids", "fee_categories")
     @classmethod
@@ -73,8 +71,17 @@ class _TaskCreateBase(BaseModel):
 
 
 class TaskCreateInput(_TaskCreateBase):
+    project_info: str | None = None
+    reimburser_info: str | None = None
     invoice_title: str | None = None
     tax_number: str | None = None
+
+    @field_validator("project_info", "reimburser_info")
+    @classmethod
+    def normalize_optional_task_metadata(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
 
     @field_validator("invoice_title", "tax_number")
     @classmethod
@@ -88,6 +95,8 @@ class TaskCreateInput(_TaskCreateBase):
 
 
 class TaskCreate(_TaskCreateBase):
+    project_info: str = ""
+    reimburser_info: str = ""
     invoice_title: str = Field(min_length=1)
     tax_number: str = Field(min_length=1)
 
@@ -100,16 +109,14 @@ class TaskUpdateInput(BaseModel):
     deadline: datetime
     member_ids: list[str] = Field(min_length=1)
     fee_categories: list[str] = Field(min_length=1)
-    project_info: str = Field(min_length=1)
-    reimburser_info: str = Field(min_length=1)
+    project_info: str | None = None
+    reimburser_info: str | None = None
     invoice_title: str = Field(min_length=1)
     tax_number: str = Field(min_length=1)
 
     @field_validator(
         "competition_name",
         "competition_location",
-        "project_info",
-        "reimburser_info",
         "invoice_title",
         "tax_number",
     )
@@ -119,6 +126,13 @@ class TaskUpdateInput(BaseModel):
         if not normalized:
             raise ValueError("value must not be blank")
         return normalized
+
+    @field_validator("project_info", "reimburser_info")
+    @classmethod
+    def normalize_optional_task_metadata(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
 
     @field_validator("member_ids", "fee_categories")
     @classmethod
@@ -305,9 +319,13 @@ def resolve_task_create(
     if missing_fields:
         raise MissingTaskInvoiceConfigError(missing_fields)
 
-    data = payload.model_dump(exclude={"invoice_title", "tax_number"})
+    data = payload.model_dump(
+        exclude={"project_info", "reimburser_info", "invoice_title", "tax_number"},
+    )
     return TaskCreate(
         **data,
+        project_info=(payload.project_info or "").strip(),
+        reimburser_info=(payload.reimburser_info or "").strip(),
         invoice_title=invoice_title,
         tax_number=tax_number,
     )
@@ -333,10 +351,6 @@ def ensure_task_can_publish(task: ReimbursementTask) -> None:
         missing_fields.append("member_ids")
     if not _has_non_blank_items(task.fee_categories):
         missing_fields.append("fee_categories")
-    if not task.project_info.strip():
-        missing_fields.append("project_info")
-    if not task.reimburser_info.strip():
-        missing_fields.append("reimburser_info")
     if missing_fields:
         raise TaskPublishValidationError(missing_fields)
 
@@ -546,7 +560,7 @@ class InMemoryTaskRepository:
 
             updated = task.model_copy(
                 update={
-                    **payload.model_dump(),
+                    **payload.model_dump(exclude_none=True),
                     "updated_at": datetime.now(timezone.utc),
                 }
             )

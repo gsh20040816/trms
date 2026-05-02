@@ -188,8 +188,6 @@ export type TaskCreateInput = {
   member_ids: string[];
   fee_categories: string[];
   administrator_id: string;
-  project_info: string;
-  reimburser_info: string;
   invoice_title?: string | null;
   tax_number?: string | null;
 };
@@ -202,8 +200,6 @@ export type TaskUpdateInput = {
   deadline: ApiDateTime;
   member_ids: string[];
   fee_categories: string[];
-  project_info: string;
-  reimburser_info: string;
   invoice_title: string;
   tax_number: string;
 };

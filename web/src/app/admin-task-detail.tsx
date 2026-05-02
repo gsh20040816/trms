@@ -41,8 +41,6 @@ type TaskEditFormState = {
   deadline: string;
   memberIds: string[];
   feeCategories: ExpenseType[];
-  projectInfo: string;
-  reimburserInfo: string;
   invoiceTitle: string;
   taxNumber: string;
 };
@@ -176,8 +174,6 @@ function buildFormState(task: ReimbursementTask): TaskEditFormState {
     deadline: toDateTimeLocalValue(task.deadline),
     memberIds: [...task.member_ids],
     feeCategories: task.fee_categories as ExpenseType[],
-    projectInfo: task.project_info,
-    reimburserInfo: task.reimburser_info,
     invoiceTitle: task.invoice_title,
     taxNumber: task.tax_number,
   };
@@ -223,12 +219,6 @@ function validateForm(formState: TaskEditFormState): {
   if (formState.feeCategories.length === 0) {
     errors.feeCategories = "至少选择一个费用类别。";
   }
-  if (formState.projectInfo.trim().length === 0) {
-    errors.projectInfo = "项目/课题信息不能为空。";
-  }
-  if (formState.reimburserInfo.trim().length === 0) {
-    errors.reimburserInfo = "报销人信息不能为空。";
-  }
   if (formState.invoiceTitle.trim().length === 0) {
     errors.invoiceTitle = "发票抬头不能为空。";
   }
@@ -253,8 +243,6 @@ function validateForm(formState: TaskEditFormState): {
       deadline: new Date(formState.deadline).toISOString(),
       member_ids: normalizedMembers,
       fee_categories: formState.feeCategories,
-      project_info: formState.projectInfo.trim(),
-      reimburser_info: formState.reimburserInfo.trim(),
       invoice_title: formState.invoiceTitle.trim(),
       tax_number: formState.taxNumber.trim(),
     },
@@ -555,14 +543,6 @@ export function AdminTaskDetailPage() {
               <div>
                 <dt>任务负责人</dt>
                 <dd>{session.displayName}</dd>
-              </div>
-              <div>
-                <dt>项目/课题信息</dt>
-                <dd>{visibleTask.project_info}</dd>
-              </div>
-              <div>
-                <dt>报销人信息</dt>
-                <dd>{visibleTask.reimburser_info}</dd>
               </div>
               <div>
                 <dt>发票抬头</dt>
@@ -894,37 +874,11 @@ export function AdminTaskDetailPage() {
               <section className="admin-form-card">
                 <div className="admin-form-header">
                   <div>
-                    <p className="eyebrow">Reimbursement</p>
-                    <h3>项目与报销信息</h3>
+                    <p className="eyebrow">Invoice Config</p>
+                    <h3>发票抬头与税号</h3>
                   </div>
                 </div>
                 <div className="admin-form-grid">
-                  <TextField
-                    label="项目/课题信息"
-                    value={formState.projectInfo}
-                    onChange={(event) => {
-                      updateField("projectInfo", event.target.value);
-                    }}
-                    error={Boolean(validationErrors.projectInfo)}
-                    helperText={validationErrors.projectInfo}
-                    disabled={!isDraftEditable}
-                    multiline
-                    minRows={3}
-                    fullWidth
-                  />
-                  <TextField
-                    label="报销人信息"
-                    value={formState.reimburserInfo}
-                    onChange={(event) => {
-                      updateField("reimburserInfo", event.target.value);
-                    }}
-                    error={Boolean(validationErrors.reimburserInfo)}
-                    helperText={validationErrors.reimburserInfo}
-                    disabled={!isDraftEditable}
-                    multiline
-                    minRows={3}
-                    fullWidth
-                  />
                   <TextField
                     label="发票抬头"
                     value={formState.invoiceTitle}

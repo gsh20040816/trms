@@ -29,8 +29,6 @@ type TaskCreateFormState = {
   memberIds: string[];
   feeCategories: ExpenseType[];
   administratorId: string;
-  projectInfo: string;
-  reimburserInfo: string;
   invoiceTitle: string;
   taxNumber: string;
 };
@@ -58,8 +56,6 @@ function buildInitialFormState(administratorId: string): TaskCreateFormState {
     memberIds: [],
     feeCategories: [...DEFAULT_FEE_CATEGORIES],
     administratorId,
-    projectInfo: "",
-    reimburserInfo: "",
     invoiceTitle: "",
     taxNumber: "",
   };
@@ -113,12 +109,6 @@ function validateForm(formState: TaskCreateFormState): {
   if (formState.administratorId.trim().length === 0) {
     errors.administratorId = "管理员标识不能为空。";
   }
-  if (formState.projectInfo.trim().length === 0) {
-    errors.projectInfo = "项目/课题信息不能为空。";
-  }
-  if (formState.reimburserInfo.trim().length === 0) {
-    errors.reimburserInfo = "报销人信息不能为空。";
-  }
 
   if (Object.keys(errors).length > 0) {
     return {
@@ -138,8 +128,6 @@ function validateForm(formState: TaskCreateFormState): {
       member_ids: normalizedMembers,
       fee_categories: formState.feeCategories,
       administrator_id: formState.administratorId.trim(),
-      project_info: formState.projectInfo.trim(),
-      reimburser_info: formState.reimburserInfo.trim(),
       invoice_title: normalizeOptionalField(formState.invoiceTitle),
       tax_number: normalizeOptionalField(formState.taxNumber),
     },
@@ -492,8 +480,8 @@ export function AdminTaskCreatePage() {
         <section className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
-              <p className="eyebrow">Reimbursement</p>
-              <h2>管理员与报销信息</h2>
+              <p className="eyebrow">Administrator</p>
+              <h2>管理员信息</h2>
             </div>
           </div>
           <div className="admin-form-grid">
@@ -506,32 +494,6 @@ export function AdminTaskCreatePage() {
               }}
               error={Boolean(validationErrors.administratorId)}
               helperText={validationErrors.administratorId}
-              fullWidth
-            />
-            <TextField
-              label="项目/课题信息"
-              name="project-info"
-              value={formState.projectInfo}
-              onChange={(event) => {
-                updateField("projectInfo", event.target.value);
-              }}
-              error={Boolean(validationErrors.projectInfo)}
-              helperText={validationErrors.projectInfo}
-              multiline
-              minRows={3}
-              fullWidth
-            />
-            <TextField
-              label="报销人信息"
-              name="reimburser-info"
-              value={formState.reimburserInfo}
-              onChange={(event) => {
-                updateField("reimburserInfo", event.target.value);
-              }}
-              error={Boolean(validationErrors.reimburserInfo)}
-              helperText={validationErrors.reimburserInfo}
-              multiline
-              minRows={3}
               fullWidth
             />
           </div>

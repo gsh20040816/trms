@@ -707,8 +707,8 @@ def test_task_administrator_can_export_finance_draft_json(tmp_path):
     assert body["format"] == "json"
     assert body["competition_name"] == "ICPC Asia Regional"
     assert body["competition_location"] == "Shanghai"
-    assert body["project_info"] == "ACM competition project"
-    assert body["reimburser_info"] == "Lab reimbursement owner"
+    assert body["project_info"] == ""
+    assert body["reimburser_info"] == ""
     assert body["invoice_title"] == "同济大学"
     assert body["tax_number"] == "12100000425006117D"
     assert body["total_amount_cents"] == 32345

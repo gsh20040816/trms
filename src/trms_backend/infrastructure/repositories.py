@@ -495,8 +495,10 @@ class SqlAlchemyTaskRepository:
             row.deadline = payload.deadline
             row.member_ids = payload.member_ids
             row.fee_categories = payload.fee_categories
-            row.project_info = payload.project_info
-            row.reimburser_info = payload.reimburser_info
+            if payload.project_info is not None:
+                row.project_info = payload.project_info
+            if payload.reimburser_info is not None:
+                row.reimburser_info = payload.reimburser_info
             row.invoice_title = payload.invoice_title
             row.tax_number = payload.tax_number
             row.updated_at = datetime.now(timezone.utc)

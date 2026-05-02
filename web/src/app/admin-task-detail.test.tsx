@@ -154,8 +154,8 @@ describe("admin task detail page", () => {
 
     expect(await screen.findAllByText("全国邀请赛")).toHaveLength(2);
     expect(screen.queryByText(/任务编号/)).not.toBeInTheDocument();
-    expect(screen.getAllByText("Project A").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("张管理员").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("项目/课题信息")).not.toBeInTheDocument();
+    expect(screen.queryByText("报销人信息")).not.toBeInTheDocument();
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
     const moduleNav = screen.getByLabelText("管理员模块导航");
@@ -360,8 +360,6 @@ describe("admin task detail page", () => {
           deadline: "2026-08-10T10:00:00.000Z",
           member_ids: ["2250001", "2250002"],
           fee_categories: ["registration", "hotel"],
-          project_info: "Project After",
-          reimburser_info: "张管理员",
           invoice_title: "同济大学",
           tax_number: "91310000TEST00001",
         }));
@@ -421,14 +419,12 @@ describe("admin task detail page", () => {
     fireEvent.change(screen.getByLabelText("比赛名称"), {
       target: { value: "已更新任务" },
     });
-    fireEvent.change(screen.getByLabelText("项目/课题信息"), {
-      target: { value: "Project After" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "保存任务基础配置" }));
 
     expect(await screen.findByRole("heading", { name: "任务基础配置已更新" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("已更新任务")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Project After")).toBeInTheDocument();
+    expect(screen.queryByLabelText("项目/课题信息")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("报销人信息")).not.toBeInTheDocument();
   });
 
   it("shows task config as read-only once the task is no longer draft", async () => {
