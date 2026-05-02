@@ -1274,6 +1274,87 @@
   font-weight: 600;
 }
 
+.admin-task-summary-grid {
+  margin-top: 16px;
+}
+
+.admin-task-summary-strip {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.admin-task-summary-strip > div {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.admin-task-summary-strip > div > span {
+  color: #9a3412;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.admin-task-readiness-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.admin-task-readiness-card {
+  border-radius: 14px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.admin-task-readiness-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.admin-task-readiness-metrics {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.admin-task-readiness-metrics div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-task-readiness-metrics dt {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.admin-task-readiness-metrics dd {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.admin-task-blocker-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+}
+
+.admin-task-blocker-list li {
+  line-height: 1.5;
+}
+
 .priority-task-grid > div {
   padding: 14px 16px;
   border: 1px solid #e2e8f0;
@@ -2088,6 +2169,7 @@ select:focus {
   .feature-grid,
   .card-grid,
   .admin-dashboard-metric-grid,
+  .admin-task-readiness-groups,
   .admin-workspace-shell,
   .filter-grid,
   .admin-task-toolbar,

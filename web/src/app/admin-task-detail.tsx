@@ -87,6 +87,50 @@ const READINESS_KIND_TO_ROUTE: Partial<Record<TaskReadinessIssueKind, string>> =
   export_blocker: "exports",
 };
 
+const READINESS_GROUPS: Array<{
+  key: string;
+  title: string;
+  items: Array<{
+    label: string;
+    getValue: (readiness: TaskReadinessSummary) => number;
+  }>;
+}> = [
+  {
+    key: "recognition",
+    title: "识别与归档",
+    items: [
+      { label: "待识别", getValue: (readiness) => readiness.counts.pending_recognition_count },
+      { label: "识别失败", getValue: (readiness) => readiness.counts.failed_recognition_count },
+      { label: "待人工确认", getValue: (readiness) => readiness.counts.needs_confirmation_recognition_count },
+      { label: "待关联附件", getValue: (readiness) => readiness.counts.pending_supporting_material_linkage_count },
+    ],
+  },
+  {
+    key: "materials",
+    title: "材料与校验",
+    items: [
+      { label: "缺失材料", getValue: (readiness) => readiness.counts.missing_material_count },
+      { label: "异常校验", getValue: (readiness) => readiness.counts.blocker_validation_count },
+    ],
+  },
+  {
+    key: "confirmation",
+    title: "分摊与确认",
+    items: [
+      { label: "分摊未完成", getValue: (readiness) => readiness.counts.split_incomplete_count },
+      { label: "成员未确认", getValue: (readiness) => readiness.counts.pending_confirmation_count },
+      { label: "成员异议", getValue: (readiness) => readiness.counts.disputed_confirmation_count },
+    ],
+  },
+  {
+    key: "export",
+    title: "导出准备",
+    items: [
+      { label: "导出阻塞", getValue: (readiness) => readiness.counts.export_blocking_reason_count },
+    ],
+  },
+];
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "medium",
@@ -172,6 +216,13 @@ function buildIssueActionLabel(issue: TaskReadinessIssue) {
 function buildIssueActionHref(taskId: string, issue: TaskReadinessIssue) {
   const route = READINESS_KIND_TO_ROUTE[issue.kind];
   return route ? `/admin/tasks/${taskId}/${route}` : `/admin/tasks/${taskId}`;
+}
+
+function buildReadinessGroups(readiness: TaskReadinessSummary) {
+  return READINESS_GROUPS.map((group) => ({
+    ...group,
+    total: group.items.reduce((sum, item) => sum + item.getValue(readiness), 0),
+  }));
 }
 
 function buildFormState(task: ReimbursementTask): TaskEditFormState {
@@ -367,6 +418,7 @@ export function AdminTaskDetailPage() {
   const isForeignTask = task ? !isTaskVisibleToAdministrator(task, session.actorId) : false;
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleReadiness = state.status === "ready" && !isForeignTask ? state.readiness : null;
+  const readinessGroups = visibleReadiness ? buildReadinessGroups(visibleReadiness) : [];
   const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
   const isDraftEditable = visibleTask?.status === "draft";
   const selectedAdministratorOptions = formState
@@ -609,13 +661,13 @@ export function AdminTaskDetailPage() {
           <article className="status-card admin-task-detail-panel">
             <div className="task-card-header">
               <div>
-                <p className="task-card-id">任务详情</p>
+                <p className="task-card-id">任务摘要</p>
                 <h2>{visibleTask.competition_name}</h2>
               </div>
               <StatusBadge tone="info">{formatTaskStatus(visibleTask.status)}</StatusBadge>
             </div>
 
-            <dl className="task-detail-grid">
+            <dl className="task-detail-grid admin-task-summary-grid">
               <div>
                 <dt>比赛地点</dt>
                 <dd>{visibleTask.competition_location}</dd>
@@ -635,6 +687,14 @@ export function AdminTaskDetailPage() {
                 <dd>{formatTaskAdministratorCountLabel(visibleTask)}</dd>
               </div>
               <div>
+                <dt>参赛成员</dt>
+                <dd>{visibleTask.member_ids.length} 人</dd>
+              </div>
+              <div>
+                <dt>费用类别</dt>
+                <dd>{visibleTask.fee_categories.length} 类</dd>
+              </div>
+              <div>
                 <dt>发票抬头</dt>
                 <dd>{visibleTask.invoice_title}</dd>
               </div>
@@ -643,13 +703,28 @@ export function AdminTaskDetailPage() {
                 <dd>{visibleTask.tax_number}</dd>
               </div>
             </dl>
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务管理员列表" sx={{ mt: 2 }}>
-              {buildTaskAdministratorSearchOptions(getTaskAdministratorIds(visibleTask), administratorOptions).map((administrator) => (
-                <span key={administrator.actor_id} className="token-chip">
-                  {formatUserSearchSummary(administrator)}
-                </span>
-              ))}
-            </Stack>
+            <div className="admin-task-summary-strip">
+              <div>
+                <span>管理员名单</span>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务管理员列表" sx={{ mt: 1 }}>
+                  {buildTaskAdministratorSearchOptions(getTaskAdministratorIds(visibleTask), administratorOptions).map((administrator) => (
+                    <span key={administrator.actor_id} className="token-chip">
+                      {formatUserSearchSummary(administrator)}
+                    </span>
+                  ))}
+                </Stack>
+              </div>
+              <div>
+                <span>当前费用类别</span>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务摘要费用类别" sx={{ mt: 1 }}>
+                  {visibleTask.fee_categories.map((category) => (
+                    <span key={category} className="token-chip">
+                      {formatExpenseType(category as ExpenseType)}
+                    </span>
+                  ))}
+                </Stack>
+              </div>
+            </div>
           </article>
 
           {visibleReadiness ? (
@@ -667,52 +742,33 @@ export function AdminTaskDetailPage() {
                 <p className="field-hint">
                   第一屏先看还有哪些门禁没过；正常材料不要求管理员逐张点开确认。
                 </p>
-                <dl className="task-detail-grid" aria-label="任务就绪度统计">
-                  <div>
-                    <dt>待识别</dt>
-                    <dd>{visibleReadiness.counts.pending_recognition_count}</dd>
-                  </div>
-                  <div>
-                    <dt>识别失败</dt>
-                    <dd>{visibleReadiness.counts.failed_recognition_count}</dd>
-                  </div>
-                  <div>
-                    <dt>低置信待确认</dt>
-                    <dd>{visibleReadiness.counts.needs_confirmation_recognition_count}</dd>
-                  </div>
-                  <div>
-                    <dt>待关联附件</dt>
-                    <dd>{visibleReadiness.counts.pending_supporting_material_linkage_count}</dd>
-                  </div>
-                  <div>
-                    <dt>缺失材料</dt>
-                    <dd>{visibleReadiness.counts.missing_material_count}</dd>
-                  </div>
-                  <div>
-                    <dt>异常校验</dt>
-                    <dd>{visibleReadiness.counts.blocker_validation_count}</dd>
-                  </div>
-                  <div>
-                    <dt>分摊未完成</dt>
-                    <dd>{visibleReadiness.counts.split_incomplete_count}</dd>
-                  </div>
-                  <div>
-                    <dt>成员未确认</dt>
-                    <dd>{visibleReadiness.counts.pending_confirmation_count}</dd>
-                  </div>
-                  <div>
-                    <dt>有异议</dt>
-                    <dd>{visibleReadiness.counts.disputed_confirmation_count}</dd>
-                  </div>
-                  <div>
-                    <dt>导出阻塞原因</dt>
-                    <dd>{visibleReadiness.counts.export_blocking_reason_count}</dd>
-                  </div>
-                </dl>
+                <div className="admin-task-readiness-groups" aria-label="任务就绪度统计">
+                  {readinessGroups.map((group) => (
+                    <section key={group.key} className="admin-task-readiness-card">
+                      <div className="task-card-header">
+                        <div>
+                          <p className="task-card-id">{group.title}</p>
+                          <h3>{group.total} 项待处理</h3>
+                        </div>
+                        <StatusBadge tone={group.total > 0 ? "warning" : "success"}>
+                          {group.total > 0 ? "仍需处理" : "已通过"}
+                        </StatusBadge>
+                      </div>
+                      <dl className="admin-task-readiness-metrics">
+                        {group.items.map((item) => (
+                          <div key={item.label}>
+                            <dt>{item.label}</dt>
+                            <dd>{item.getValue(visibleReadiness)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  ))}
+                </div>
                 {visibleReadiness.export_blocking_reasons.length > 0 ? (
                   <div className="field-stack" aria-label="导出阻塞原因">
-                    <p className="field-hint">当前仍存在以下导出阻塞原因：</p>
-                    <ul className="admin-review-list">
+                    <p className="field-hint">导出前仍需先处理以下阻塞项：</p>
+                    <ul className="admin-task-blocker-list">
                       {visibleReadiness.export_blocking_reasons.map((reason) => (
                         <li key={reason}>{reason}</li>
                       ))}

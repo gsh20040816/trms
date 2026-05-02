@@ -1,5 +1,37 @@
 # WORKLOG
 
+## 2026-05-02 19:02 - Compress admin task detail into summary-first layout
+
+### 完成内容
+- 完成任务“重构管理员任务详情页”。
+- 任务基础信息已改成更紧凑的摘要视图：
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx) 顶部卡片从“任务详情”改为“任务摘要”，把比赛地点、比赛时间、截止时间、管理员数、成员数、费用类别数、发票抬头和税号统一压进紧凑网格；
+  - 管理员名单与当前费用类别改为两条摘要带，避免第一屏直接掉进大段表单。
+- 任务就绪度已按中文业务分组收口：
+  - 同文件新增“识别与归档 / 材料与校验 / 分摊与确认 / 导出准备”四组摘要卡；
+  - 每组只保留本组待处理总数和组内指标，去掉原先平铺 10 条指标带来的扫描成本。
+- 导出阻塞原因已改成明确列表：
+  - 继续保留原始阻塞文案，但展示方式改为“导出前仍需先处理以下阻塞项”的列表，而不是夹在指标网格里的散列文本。
+- 详情页测试已同步更新：
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx) 现在锁定任务摘要费用类别、中文就绪度分组和导出阻塞列表内容。
+- 样式补齐：
+  - [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 为任务摘要条、就绪度分组卡和导出阻塞列表新增专用样式。
+
+### 根因
+- 原任务详情页虽然已经有就绪度概览，但第一屏仍然把任务基础字段、就绪指标和配置表单混在一起，管理员需要自己在长页里识别“哪些是摘要、哪些是阻塞、哪些只是配置”。
+- 尤其就绪度部分原先按单指标平铺，缺少“识别 / 材料 / 分摊 / 导出”这种业务分组，扫描时很难快速定位阻塞所在阶段。
+
+### 风险与影响面
+- 本轮只重排任务详情页的摘要和就绪度展示，没有修改任务读取、状态流转、表单保存、管理员检索或权限判断逻辑。
+- 导出阻塞原因仍然直接显示后端返回文案；如果后续要把英文技术原因进一步翻译成面向管理员的业务文案，应单独处理后端读模型或前端映射，不在本轮顺手扩散。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-detail.test.tsx`
+- 已通过定向 lint：
+  - `cd web && npm run lint -- src/app/admin-task-detail.tsx src/app/admin-task-detail.test.tsx`
+- `./scripts/verify.sh` 待本轮提交前执行。
+
 ## 2026-05-02 18:56 - Rework admin home into task-driven dashboard
 
 ### 完成内容

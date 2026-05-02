@@ -179,6 +179,9 @@ describe("admin task detail page", () => {
       "/admin/tasks/TASK-ALPHA/missing-materials",
     );
     expect(screen.getByRole("heading", { name: "任务就绪度总览" })).toBeInTheDocument();
+    expect(screen.getByLabelText("任务摘要费用类别")).toHaveTextContent("参赛费");
+    expect(screen.getByLabelText("任务就绪度统计")).toHaveTextContent("识别与归档");
+    expect(screen.getByLabelText("任务就绪度统计")).toHaveTextContent("材料与校验");
     expect(screen.getByLabelText("任务就绪度统计")).toHaveTextContent("待识别");
     expect(screen.getByLabelText("导出阻塞原因")).toHaveTextContent(
       "task must be ready_to_export or completed before real exports can be generated",
