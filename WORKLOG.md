@@ -1,5 +1,43 @@
 # WORKLOG
 
+## 2026-05-02 22:00 - Split multi-role account, profile, and first-system-admin work
+
+### 完成内容
+- 完成任务“拆分多角色账号 + 个人信息管理 + 首个生产用户为系统管理员任务”，本轮只做边界确认与任务拆分，不直接改实现。
+- 已确认当前仓库并不是“完全不支持多角色”，而是“底层能力存在，但真实产品闭环不完整”：
+  - [src/trms_backend/domain/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py) 的用户模型已经同时保存 `role`（当前活跃角色）和 `roles`（可切换角色集合），并已有 `switch_active_role`；
+  - [src/trms_backend/api/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/api/auth.py) 已提供 `/api/auth/switch-role`，登录后可基于当前 session 切换活跃角色；
+  - [web/src/app/auth-store.ts](/home/gsh/workspace/TRMS/web/src/app/auth-store.ts) 和 [web/src/components/AppShell.tsx](/home/gsh/workspace/TRMS/web/src/components/AppShell.tsx) 已能保存 `availableRoles` 并在前端切换身份；
+  - 这说明“多角色登录态 / 活跃角色切换”并非从零开始，不应再作为一整个大任务和首个系统管理员初始化、个人资料页混做。
+- 已确认当前真正未闭环的缺口：
+  - 生产环境首个受控初始化入口 [src/trms_backend/api/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/api/auth.py) 的 `/api/auth/bootstrap-admin` 仍允许首个 privileged 账号直接初始化为 `admin`，与“首个生产用户为系统管理员”的新要求不一致；
+  - 当前系统管理接口 [src/trms_backend/api/system.py](/home/gsh/workspace/TRMS/src/trms_backend/api/system.py) 只覆盖系统配置和巡检，没有“把已有账号授予管理员角色”的受控管理 API；
+  - 现有多角色测试主要依赖 `/api/auth/register` 直接提交 `roles=["member","admin"]`，这更像测试夹具能力，不是可审计的产品级赋权路径；
+  - 前端还没有个人信息页面，用户无法在登录后稳定修改 `display_name` / `member_code`，目前只能靠重新注册或测试数据构造。
+- 基于上述边界，已把原大任务拆成以下独立子任务并写回 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)：
+  - 将生产环境首个受控初始化账号固定为系统管理员；
+  - 为系统管理员补齐“授予管理员角色”后端接口与审计口径；
+  - 收口多角色账号的受控赋权路径，移除公开注册对 `roles[]` 的产品级依赖；
+  - 新增个人信息查询/更新接口并落地前端个人信息页。
+
+### 根因
+- 这组需求之前之所以容易被当作“一个任务”，是因为它们都落在认证域里；但静态检查后可以确认，实际耦合层次并不相同：
+  - “首个系统管理员初始化”属于生产引导与注册口径；
+  - “授予管理员角色”属于受控赋权与审计；
+  - “多角色账号支持”当前主要缺的不是 session 切换，而是受控赋权来源；
+  - “个人信息管理”则是独立的资料读写与前端入口问题。
+- 如果继续把这些点捆在一轮里，会同时跨后端认证规则、系统管理 API、前端账户入口和文档口径，违反仓库“每轮一个最小可验证任务”的硬规则。
+
+### 风险与影响面
+- 本轮没有修改业务代码、接口行为或数据库结构，只更新任务拆分与工作记录。
+- 由于尚未实现后续子任务，当前仓库仍保留以下现实边界：
+  - 生产首个 privileged bootstrap 账号仍可初始化为 `admin`；
+  - 系统管理员仍不能通过真实管理 API 给已有账号追加 `admin` 角色；
+  - 个人资料仍缺少正式页面与更新接口。
+
+### 验证结果
+- 本轮仅修改 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md) 与 [WORKLOG.md](/home/gsh/workspace/TRMS/WORKLOG.md)，属于文档/工作记录改动；按仓库 `AGENTS.md` 规则，未运行 `./scripts/verify.sh`。
+
 ## 2026-05-02 21:40 - Reorder supporting-material invoice candidates by amount match
 
 ### 完成内容
