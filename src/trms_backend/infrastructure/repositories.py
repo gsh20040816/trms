@@ -222,6 +222,11 @@ class SqlAlchemyAuthRepository(AuthRepository):
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
 
+    def get_user_by_id(self, user_id: str) -> AuthenticatedUser | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(UserAccountRow, user_id)
+            return _authenticated_user_from_row(row) if row else None
+
     def create_user(self, data: UserCreate) -> AuthenticatedUser:
         now = datetime.now(timezone.utc)
         row = UserAccountRow(
@@ -366,6 +371,26 @@ class SqlAlchemyAuthRepository(AuthRepository):
             session_row.active_role = active_role.value
             session.add(session_row)
             return _authenticated_user_from_row(user_row, active_role=active_role)
+
+    def grant_role_to_user(
+        self,
+        *,
+        user_id: str,
+        role: UserRole,
+    ) -> tuple[AuthenticatedUser, bool] | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(UserAccountRow, user_id)
+            if row is None:
+                return None
+
+            roles = _roles_from_row(row)
+            already_assigned = role in roles
+            if not already_assigned:
+                roles.append(role)
+                row.roles = [assigned_role.value for assigned_role in roles]
+                row.updated_at = datetime.now(timezone.utc)
+                session.add(row)
+            return _authenticated_user_from_row(row), already_assigned
 
     def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
         if not roles:

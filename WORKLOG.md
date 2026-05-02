@@ -1,5 +1,66 @@
 # WORKLOG
 
+## 2026-05-02 22:24 - Add audited system-admin API for granting admin role
+
+### 完成内容
+- 完成任务“为系统管理员补齐授予管理员角色后端接口与审计口径”。
+- 后端认证仓储已补齐最小角色追加能力：
+  - [src/trms_backend/domain/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - `AuthRepository` 新增：
+    - `get_user_by_id(...)`
+    - `grant_role_to_user(...)`
+  - 具体实现直接复用现有 `user_accounts.roles` JSON 列，不新增 schema；
+  - 追加 `admin` 角色时保持 `role`（当前默认/活跃角色基线）不变，因此成员账号被追加 `admin` 后，不会被静默切成管理员活跃身份。
+- 系统管理 API 已新增真实受控赋权入口：
+  - [src/trms_backend/api/system.py](/home/gsh/workspace/TRMS/src/trms_backend/api/system.py)
+  - 新增 `PUT /api/system/users/{user_id}/roles/admin`
+  - 仅 `system_admin` 可调用；
+  - 对已具备 `admin` 角色的账号按幂等处理，返回 `already_assigned=true`，不重复插入脏数据。
+- 已接入最小审计记录：
+  - 继续复用现有 `audit_logs` 基础设施，不额外造一套角色审计表；
+  - 每次授予都会记录 `grant_user_role` 审计，至少包含：
+    - 操作者 `actor_id`
+    - 目标用户 `user_id`
+    - `granted_role=admin`
+    - `already_assigned`
+    - `request_id`
+- 已同步把 `audit_log_repository` 注入系统管理路由构建：
+  - [src/trms_backend/main.py](/home/gsh/workspace/TRMS/src/trms_backend/main.py)
+- 已补系统管理回归测试：
+  - [tests/test_system_admin_api.py](/home/gsh/workspace/TRMS/tests/test_system_admin_api.py)
+  - 覆盖：
+    - 系统管理员成功给成员账号追加 `admin`
+    - 重复授予幂等
+    - 普通管理员越权拒绝
+- 已补多角色兼容性回归确认：
+  - [tests/test_auth_api.py](/home/gsh/workspace/TRMS/tests/test_auth_api.py)
+  - 确认现有多角色登录与 `/auth/switch-role` 主路径仍保持可用，没有被本轮赋权实现破坏。
+
+### 根因
+- 当前仓库虽然已有 `roles[]` 和 `/auth/switch-role`，但真实给账号“追加管理员角色”的产品级入口不存在。
+- 结果是多角色账号主要只能靠 `/auth/register roles=["member","admin"]` 这类测试式直写方式构造，缺少：
+  - `system_admin` 权限边界；
+  - 可审计的角色授予事件；
+  - 幂等的真实后端管理接口。
+
+### 风险与影响面
+- 本轮只增加“授予 `admin` 角色”的后端能力，没有实现：
+  - 撤销角色；
+  - 任意角色通用管理；
+  - 前端系统管理页面入口。
+- 当前接口以 `user_id` 为目标标识，而不是用户名搜索选择；前端接入时仍需后续配套真实用户检索或账号管理页。
+- 角色授予后不会自动切换目标账号当前 session 的活跃角色；目标用户仍需在自己登录态下显式执行 `/auth/switch-role`。
+
+### 验证结果
+- 已通过定向系统管理测试：
+  - `uv run pytest tests/test_system_admin_api.py -k 'grant_admin_role or dashboard_returns_real_config_and_runtime_summary'`
+- 已通过多角色兼容性测试：
+  - `uv run pytest tests/test_auth_api.py -k 'login_returns_available_roles_for_multi_role_account or switch_role_updates_active_role_for_current_session'`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 557 个用例全部通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:10 - Restrict privileged bootstrap to the first system admin
 
 ### 完成内容

@@ -140,6 +140,9 @@ class RoleNotAssignedError(ValueError):
 
 
 class AuthRepository(Protocol):
+    def get_user_by_id(self, user_id: str) -> AuthenticatedUser | None:
+        raise NotImplementedError
+
     def create_user(self, data: UserCreate) -> AuthenticatedUser:
         raise NotImplementedError
 
@@ -173,6 +176,14 @@ class AuthRepository(Protocol):
         token_hash: str,
         active_role: UserRole,
     ) -> AuthenticatedUser | None:
+        raise NotImplementedError
+
+    def grant_role_to_user(
+        self,
+        *,
+        user_id: str,
+        role: UserRole,
+    ) -> tuple[AuthenticatedUser, bool] | None:
         raise NotImplementedError
 
     def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:

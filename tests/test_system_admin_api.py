@@ -2,6 +2,8 @@ from fastapi.testclient import TestClient
 
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
+from trms_backend.infrastructure.database import build_session_factory, session_scope
+from trms_backend.infrastructure.models import AuditLogRow, UserAccountRow
 
 from test_tasks_api import auth_headers, register_and_get_token
 
@@ -31,6 +33,17 @@ def system_admin_auth_headers(client: TestClient) -> dict[str, str]:
             member_code=None,
         )
     )
+
+
+def list_user_audit_logs(tmp_path, user_id: str) -> list[AuditLogRow]:
+    session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    with session_scope(session_factory) as session:
+        return (
+            session.query(AuditLogRow)
+            .filter_by(object_type="user_account", object_id=user_id)
+            .order_by(AuditLogRow.created_at)
+            .all()
+        )
 
 
 def test_system_admin_dashboard_returns_real_config_and_runtime_summary(tmp_path):
@@ -156,6 +169,91 @@ def test_system_admin_can_update_recognition_provider_config(tmp_path):
     }
 
 
+def test_system_admin_can_grant_admin_role_to_existing_user_with_audit(tmp_path):
+    client = make_client(tmp_path)
+    member_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "member1",
+            "password": "correct-password",
+            "role": "member",
+            "display_name": "王队员",
+            "actor_id": "2250001",
+            "member_code": "2250001",
+        },
+    )
+    assert member_response.status_code == 201
+    member_user = member_response.json()["user"]
+
+    response = client.put(
+        f"/api/system/users/{member_user['id']}/roles/admin",
+        headers=system_admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "admin"
+    assert body["already_assigned"] is False
+    assert body["user"]["id"] == member_user["id"]
+    assert body["user"]["username"] == "member1"
+    assert body["user"]["role"] == "member"
+    assert body["user"]["roles"] == ["member", "admin"]
+    assert body["user"]["actor_id"] == "2250001"
+    assert body["user"]["display_name"] == "王队员"
+    assert body["user"]["member_code"] == "2250001"
+
+    session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    with session_scope(session_factory) as session:
+        user_row = session.get(UserAccountRow, member_user["id"])
+        assert user_row is not None
+        assert user_row.role == "member"
+        assert user_row.roles == ["member", "admin"]
+
+    audit_logs = list_user_audit_logs(tmp_path, member_user["id"])
+    assert len(audit_logs) == 1
+    assert audit_logs[0].actor_id == "sysadmin-1"
+    assert audit_logs[0].action == "grant_user_role"
+    assert audit_logs[0].result == "succeeded"
+    assert audit_logs[0].request_id.startswith("req_")
+    assert audit_logs[0].detail == {
+        "user_id": member_user["id"],
+        "username": "member1",
+        "granted_role": "admin",
+        "already_assigned": False,
+    }
+
+
+def test_system_admin_grant_admin_role_is_idempotent(tmp_path):
+    client = make_client(tmp_path)
+    member_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "member1",
+            "password": "correct-password",
+            "role": "member",
+            "display_name": "王队员",
+            "actor_id": "2250001",
+            "member_code": "2250001",
+            "roles": ["member", "admin"],
+        },
+    )
+    assert member_response.status_code == 201
+    member_user = member_response.json()["user"]
+
+    response = client.put(
+        f"/api/system/users/{member_user['id']}/roles/admin",
+        headers=system_admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["already_assigned"] is True
+    assert response.json()["user"]["roles"] == ["member", "admin"]
+
+    audit_logs = list_user_audit_logs(tmp_path, member_user["id"])
+    assert len(audit_logs) == 1
+    assert audit_logs[0].detail["already_assigned"] is True
+
+
 def test_system_admin_dashboard_rejects_plain_admin(tmp_path):
     client = make_client(tmp_path)
     admin_headers = auth_headers(
@@ -169,6 +267,40 @@ def test_system_admin_dashboard_rejects_plain_admin(tmp_path):
     )
 
     response = client.get("/api/system/dashboard", headers=admin_headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "actor is not allowed to manage system settings"
+
+
+def test_system_admin_role_grant_rejects_plain_admin(tmp_path):
+    client = make_client(tmp_path)
+    target_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "member1",
+            "password": "correct-password",
+            "role": "member",
+            "display_name": "王队员",
+            "actor_id": "2250001",
+            "member_code": "2250001",
+        },
+    )
+    assert target_response.status_code == 201
+    target_user_id = target_response.json()["user"]["id"]
+    admin_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="admin1",
+            role="admin",
+            actor_id="admin-1",
+            member_code=None,
+        )
+    )
+
+    response = client.put(
+        f"/api/system/users/{target_user_id}/roles/admin",
+        headers=admin_headers,
+    )
 
     assert response.status_code == 403
     assert response.json()["detail"] == "actor is not allowed to manage system settings"

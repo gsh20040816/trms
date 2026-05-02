@@ -196,6 +196,7 @@ def create_app(
     app.include_router(
         build_system_router(
             auth_repository,
+            audit_log_repository,
             global_invoice_config_repository,
             system_ai_provider_config_repository,
             effective_config,

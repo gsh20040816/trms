@@ -1,13 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from trms_backend.api.request_identity import (
     RequestIdentity,
     build_authenticated_request_identity_dependency,
 )
-from trms_backend.domain.auth import AuthRepository, UserRole
+from trms_backend.api.error_responses import ensure_request_id
+from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
+from trms_backend.domain.auth import AuthRepository, AuthenticatedUser, UserRole
 from trms_backend.domain.global_invoice_config import (
     GlobalInvoiceConfig,
     GlobalInvoiceConfigRepository,
@@ -49,8 +51,15 @@ class SystemDashboardResponse(BaseModel):
     user_counts: SystemUserCountSummary
 
 
+class SystemAdminRoleGrantResponse(BaseModel):
+    user: AuthenticatedUser
+    role: UserRole
+    already_assigned: bool
+
+
 def build_system_router(
     auth_repository: AuthRepository,
+    audit_log_repository: AuditLogRepository,
     global_invoice_config_repository: GlobalInvoiceConfigRepository,
     system_ai_provider_config_repository: SystemAiProviderConfigRepository,
     runtime_config: RuntimeConfig,
@@ -139,5 +148,48 @@ def build_system_router(
             "text_llm": summarize_system_ai_provider_override(saved.text_llm),
             "vlm": summarize_system_ai_provider_override(saved.vlm),
         }
+
+    @router.put("/users/{user_id}/roles/admin")
+    def grant_admin_role(
+        user_id: str,
+        request: Request,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ) -> SystemAdminRoleGrantResponse:
+        ensure_system_admin(identity)
+        assert identity.user is not None
+
+        grant_result = auth_repository.grant_role_to_user(
+            user_id=user_id,
+            role=UserRole.ADMIN,
+        )
+        if grant_result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="user not found",
+            )
+
+        user, already_assigned = grant_result
+        audit_log_repository.create(
+            AuditLogCreate(
+                actor_id=identity.user.actor_id,
+                object_type="user_account",
+                object_id=user.id,
+                action="grant_user_role",
+                result=AuditLogResult.SUCCEEDED,
+                summary=f"granted admin role to user {user.username}",
+                detail={
+                    "user_id": user.id,
+                    "username": user.username,
+                    "granted_role": UserRole.ADMIN.value,
+                    "already_assigned": already_assigned,
+                },
+                request_id=ensure_request_id(request),
+            )
+        )
+        return SystemAdminRoleGrantResponse(
+            user=user,
+            role=UserRole.ADMIN,
+            already_assigned=already_assigned,
+        )
 
     return router
