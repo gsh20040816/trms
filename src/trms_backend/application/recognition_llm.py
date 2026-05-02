@@ -23,7 +23,7 @@ from trms_backend.domain.recognitions import (
 from trms_backend.runtime_config import LLMProviderConfig
 
 LOW_CONFIDENCE_THRESHOLD = 0.8
-PROMPT_VERSION = "trms-recognition-v5"
+PROMPT_VERSION = "trms-recognition-v6"
 _CONFIDENCE_TEXT_TO_FLOAT = {
     "high": 0.95,
     "medium": 0.7,
@@ -689,6 +689,10 @@ class OpenAiCompatibleRecognitionClient:
             parsed_content,
             known_output_fields=set(output_model.model_fields.keys()),
         )
+        normalized_parsed_content = _drop_empty_optional_output_fields(
+            normalized_parsed_content,
+            output_model=output_model,
+        )
         if (
             not allow_empty_fields
             and isinstance(normalized_parsed_content, dict)
@@ -889,6 +893,7 @@ def _build_extraction_chat_completions_payload(
             "For Chinese invoices, only extract buyer_name and tax_number when they are explicitly visible on the document.",
             "If the document only shows a date but not a complete time, keep transaction_time absent instead of inventing a time.",
             "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
+            "When a selected-schema field is absent, omit it entirely or return null; never emit an empty object or a confidence-only placeholder.",
             "For local_transport electronic invoices or e-tickets, set expense_type.value=local_transport and populate is_rideshare.value=true when that field is available in the selected schema.",
             "For local_transport electronic invoices, extract the invoice_number when it is visible; do not omit it just because the document is a platform-issued electronic ticket.",
             "For itinerary materials that describe local_transport trips, extract amount_cents and transaction_time whenever the trip record shows them, and keep expense_type.value=local_transport.",
@@ -914,6 +919,7 @@ def _build_extraction_chat_completions_payload(
                     "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible. "
                     "For amount_cents, convert RMB yuan to integer cents and ignore currency symbols or separators. "
                     "For transaction_time, use the clearest transaction or issue timestamp on the document; if only a date is present, leave the field absent. "
+                    "When a selected-schema field is absent, omit it entirely or return null; never emit an empty object or a confidence-only placeholder. "
                     "For expense_type, choose only a TRMS enum value that is directly supported by the document evidence. "
                     "For local_transport electronic invoices or e-tickets, choose expense_type='local_transport' and populate is_rideshare=true when that field is available. "
                     "For local_transport electronic invoices, extract a visible invoice_number instead of omitting it as a platform ticket identifier. "
@@ -963,6 +969,7 @@ def _build_airfare_route_chat_completions_payload(
             "Do not infer airport codes from city names, airline names, or filenames.",
             "Only populate outbound and return-leg airport code fields when the code is visible on the document.",
             "Airport code values must be uppercase three-letter IATA codes such as PVG, SHA, WUH, PEK, or PKX.",
+            "When an airport code field is absent, omit it entirely or return null; never emit an empty object or a confidence-only placeholder.",
             "Do not repeat unrelated invoice fields from earlier stages.",
         ],
     }
@@ -982,6 +989,7 @@ def _build_airfare_route_chat_completions_payload(
                     "Each populated field must be an object with 'value' and 'confidence'. "
                     "Extract only explicit three-letter IATA airport codes visible on the document. "
                     "Do not infer airport codes from city names or routes without visible codes. "
+                    "When an airport code field is absent, omit it entirely or return null; never emit an empty object or a confidence-only placeholder. "
                     "If a return trip is shown, use return_departure_airport_code and return_arrival_airport_code for the return leg."
                 ),
             },
@@ -1123,6 +1131,49 @@ def _normalize_llm_response_payload(
     if payload and set(payload.keys()).issubset(known_output_fields):
         return {"output": _normalize_output_fields(payload)}
     return payload
+
+
+def _drop_empty_optional_output_fields(
+    payload: Any,
+    *,
+    output_model: type[BaseModel],
+) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    output = payload.get("output")
+    if not isinstance(output, dict):
+        return payload
+
+    optional_field_names = {
+        field_name
+        for field_name, field_info in output_model.model_fields.items()
+        if not field_info.is_required()
+    }
+    cleaned_output: dict[str, Any] = {}
+    for field_name, field_value in output.items():
+        if field_name in optional_field_names and _is_empty_optional_output_field(field_value):
+            continue
+        cleaned_output[field_name] = field_value
+
+    return {
+        **payload,
+        "output": cleaned_output,
+    }
+
+
+def _is_empty_optional_output_field(field_value: Any) -> bool:
+    if field_value is None:
+        return True
+    if not isinstance(field_value, dict):
+        return False
+    if "value" not in field_value:
+        return True
+    value = field_value.get("value")
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
 
 
 def _normalize_output_fields(output: dict[str, Any]) -> dict[str, Any]:

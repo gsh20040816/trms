@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-05-02 15:38 - Close high-failure LLM placeholder outputs from database recognition history
+
+### 完成内容
+- 完成任务“基于数据库识别历史收口 LLM 字段高失败率样本并优化提示词/后处理”。
+- 先按当前实例数据库完成样本分类：
+  - `recognition_tasks` 当前共 28 条，27 条 `succeeded`、1 条 `failed`；
+  - 当前库中没有识别字段仍处于 `needs_confirmation` 的记录；
+  - 唯一失败样本是支付记录材料 `Screenshot_20251119-161841.支付宝.png`，失败原因为 `llm_output_invalid`；
+  - 2 条高频人工更正样本都来自同一类报名费电子发票，字段分布高度一致；其中 `amount_cents`、`buyer_name`、`tax_number`、`invoice_number`、`expense_type` 大多是“值未变、来源改为 manual”，真正有业务增量的主要是补 `corporate_transfer_reference`，以及 1 条把 `transaction_time` 从无时区日期补成 `+08:00`。
+- 确认本轮应优先修的真实高频失败类，不是“字段值普遍识别错”，而是“可选字段空占位导致整次识别失败”：
+  - 失败样本的分类与主要提取字段其实已成功返回 `amount_cents`、`transaction_time`、`location`、`expense_type`；
+  - 但 LLM 同时给 `trip_route`、`transport_mode` 返回了空对象或仅含 `confidence` 的占位结构，当前 [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py) 会把这类可选字段当成 schema 非法，直接把整次识别记为失败。
+- 已落地提示词与后处理收口：
+  - [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py) 将提示词版本提升到 `trms-recognition-v6`，在元数据提取和航旅机场码提取阶段明确要求：“字段缺失时应省略或返回 `null`，不要返回空对象或只有 `confidence` 的占位”；
+  - 同文件新增可选输出字段清洗逻辑，在进入 Pydantic 校验前移除 `value` 缺失、`value=null` 或空白字符串的可选字段占位，避免可省略字段把整次识别打成 `llm_output_invalid`。
+- 补充回归测试锁定数据库失败样本模式：
+  - [tests/test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py) 新增回归用例，覆盖“主要字段有效，但 `trip_route`/`transport_mode` 返回空对象或 confidence-only placeholder”时仍能成功识别；
+  - 同步补断言，确保提取提示词确实包含“缺失字段不要返回空对象”的约束。
+
+### 根因
+- 当前真实失败样本不是“模型没识别出支付记录关键信息”，而是“模型对可选字段使用了不稳定的空占位表达”。
+- 现有识别链把这类占位直接送入严格 schema 校验；对必填分类字段这是正确的，但对 `trip_route`、`transport_mode`、机场码这类可选字段，会把本应可忽略的噪声升级成整单失败。
+- 数据库中的人工更正样本也支持这个判断：高频人工更正并未显示出某个核心字段被系统性识别错，更多是人工确认来源、补时区或补充转账编号，因此本轮不应扩大成无边界的字段重构。
+
+### 风险与影响面
+- 本轮只收口识别提示词和 LLM 输出后处理，没有改动材料分类规则、建票逻辑、校验规则或数据库数据。
+- 当前保守假设是：对“可选字段空占位”一律丢弃，比把整次识别标失败更接近真实业务语义；若后续发现某些字段虽然缺 `value` 但仍需强制失败，应按具体字段单独起任务，而不是重新把所有可选字段恢复为全局硬失败。
+- 本轮没有直接重跑或改写数据库中的失败记录；要让现有实例里的 `Screenshot_20251119-161841.支付宝.png` 从失败转为成功，仍需要在运行实例上触发一次重新识别。
+
+### 验证结果
+- 已通过定向识别测试：
+  - `uv run pytest tests/test_recognition_llm.py -k 'ignores_empty_optional_extraction_placeholders or includes_chinese_invoice_rules_in_prompt or uses_json_object_response_format or reports_invalid_schema_details'`
+  - 5 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 541 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 15:27 - Fix incomplete recognition for invoice 333e167e-63fb-4797-a9b8-78943b110995 by preserving PDF text reading order
 
 ### 完成内容

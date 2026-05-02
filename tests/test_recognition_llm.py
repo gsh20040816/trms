@@ -287,6 +287,58 @@ def test_openai_compatible_recognition_client_uses_json_object_response_format()
     assert result.raw_response["extraction"]["attempts"] == 1
 
 
+def test_openai_compatible_recognition_client_ignores_empty_optional_extraction_placeholders():
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                build_two_stage_handler(
+                    classification_content=build_classification_output(
+                        document_family="order_screenshot",
+                        material_type="order_screenshot",
+                        expense_type_candidate="hotel",
+                        is_reimbursement_voucher=False,
+                        classification_confidence=0.95,
+                        field_confidence=0.95,
+                    ),
+                    extraction_content={
+                        "output": {
+                            "amount_cents": {
+                                "value": 308700,
+                                "confidence": 0.99,
+                            },
+                            "transaction_time": {
+                                "value": "2025-10-12T22:28:04",
+                                "confidence": 0.99,
+                            },
+                            "location": {
+                                "value": "如家商旅酒店武汉大学街道口店",
+                                "confidence": 0.98,
+                            },
+                            "expense_type": {
+                                "value": "hotel",
+                                "confidence": 0.95,
+                            },
+                            "trip_route": {},
+                            "transport_mode": {"confidence": 0.79},
+                        }
+                    },
+                )
+            ),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+
+    result = client.recognize(material=build_material(), document_input=build_document_input())
+
+    assert result.recognized_fields["material_type"].value == "order_screenshot"
+    assert result.recognized_fields["amount_cents"].value == 308700
+    assert "trip_route" not in result.recognized_fields
+    assert "transport_mode" not in result.recognized_fields
+    assert result.raw_response["extraction"]["parsed_content"]["output"]["trip_route"] is None
+    assert result.raw_response["extraction"]["parsed_content"]["output"]["transport_mode"] is None
+
+
 def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_prompt():
     captured_requests = []
     chinese_text = "电子发票 发票号码 12345678 购买方名称 同济大学 纳税人识别号 12100000425006117D 价税合计￥123.45"
@@ -391,6 +443,16 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
     assert extraction_user_prompt["stage"] == "metadata_extraction"
     assert extraction_user_prompt["classification_result"]["material_type"]["value"] == "invoice"
     assert extraction_user_prompt["selected_schema"]["name"] == "invoice"
+    assert (
+        "When a selected-schema field is absent, omit it entirely or return null; "
+        "never emit an empty object or a confidence-only placeholder."
+        in extraction_user_prompt["instructions"]
+    )
+    assert (
+        "When a selected-schema field is absent, omit it entirely or return null; "
+        "never emit an empty object or a confidence-only placeholder."
+        in extraction_system_prompt
+    )
     assert extraction_user_prompt["selected_schema"]["allowed_fields"] == [
         "invoice_number",
         "amount_cents",
