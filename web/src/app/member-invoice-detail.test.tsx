@@ -393,4 +393,40 @@ describe("MemberInvoiceDetailPage", () => {
     expect(screen.getByText("校验通过")).toBeInTheDocument();
     expect(screen.getByText("附件 1")).toBeInTheDocument();
   });
+
+  it("shows delete action for own unsubmitted invoice and deletes after confirmation", async () => {
+    const requests: Array<{ method: string; url: string }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      requests.push({ method, url });
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(buildSummary()));
+      }
+      if (url === "/api/invoices/INV-READY-001" && method === "DELETE") {
+        return Promise.resolve(jsonResponse({
+          status: "deleted",
+          invoice,
+          material: { id: "MAT-READY-001", status: "deleted" },
+        }));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    renderDetail();
+
+    expect(await screen.findByRole("button", { name: "删除未提交发票" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除未提交发票" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除发票" }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => request.method === "DELETE" && request.url === "/api/invoices/INV-READY-001")).toBe(true);
+    });
+  });
 });

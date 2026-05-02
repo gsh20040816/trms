@@ -157,6 +157,9 @@ class InvoiceRepository(Protocol):
     def get_by_material(self, material_id: str) -> InvoiceRecord | None:
         raise NotImplementedError
 
+    def delete_unsubmitted_invoice(self, invoice_id: str) -> InvoiceRecord | None:
+        raise NotImplementedError
+
     def list_by_task(self, task_id: str) -> list[InvoiceRecord]:
         raise NotImplementedError
 

@@ -17,6 +17,13 @@ from trms_backend.api.request_identity_http import resolve_required_actor_reques
 from trms_backend.api.request_task_access import TaskAccessScope, resolve_task_access_scope
 from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollector
 from trms_backend.application.invoice_split_defaults import InvoiceSplitDefaultService
+from trms_backend.application.member_invoice_deletion import (
+    MemberInvoiceDeletionActorNotAllowedError,
+    MemberInvoiceDeletionConflictError,
+    MemberInvoiceDeletionMaterialNotFoundError,
+    MemberInvoiceDeletionNotFoundError,
+    MemberInvoiceDeletionService,
+)
 from trms_backend.application.recognition_audit import record_manual_recognition_corrections_audit
 from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
@@ -150,6 +157,7 @@ def build_invoice_router(
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
     audit_log_repository: AuditLogRepository,
+    member_invoice_deletion_service: MemberInvoiceDeletionService,
     metrics_collector: MetricsCollector | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["invoices"])
@@ -564,6 +572,59 @@ def build_invoice_router(
                     detail="actor is not allowed to view invoice validations for this task",
                 )
         return {"items": validation_repository.list_by_invoice(invoice_id)}
+
+    @router.delete("/api/invoices/{invoice_id}")
+    def delete_member_unsubmitted_invoice(
+        invoice_id: str,
+        request: Request,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        invoice = invoice_repository.get(invoice_id)
+        if invoice is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invoice not found")
+
+        task = task_repository.get(invoice.task_id)
+        if task is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        material = material_repository.get(invoice.material_id)
+        if material is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="invoice material not found",
+            )
+        try:
+            result = member_invoice_deletion_service.delete_invoice(
+                task=task,
+                actor_id=identity.actor_id or "",
+                actor_role=identity.role,
+                invoice_id=invoice_id,
+                request_id=ensure_request_id(request),
+            )
+        except MemberInvoiceDeletionNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+        except MemberInvoiceDeletionMaterialNotFoundError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+        except MemberInvoiceDeletionActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except MemberInvoiceDeletionConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        return {
+            "status": "deleted",
+            "invoice": result.invoice,
+            "material": result.material,
+        }
 
     @router.put("/api/invoices/{invoice_id}/supporting-materials/{material_id}")
     def attach_supporting_material(

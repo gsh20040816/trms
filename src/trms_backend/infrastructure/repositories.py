@@ -765,6 +765,34 @@ class SqlAlchemyInvoiceRepository:
             )
             return _invoice_from_row(row) if row else None
 
+    def delete_unsubmitted_invoice(self, invoice_id: str) -> InvoiceRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(InvoiceRow, invoice_id)
+            if row is None:
+                return None
+            deleted_invoice = _invoice_from_row(row)
+            session.execute(
+                delete(ValidationResultRow).where(
+                    ValidationResultRow.target_type == "invoice",
+                    ValidationResultRow.target_id == invoice_id,
+                )
+            )
+            session.execute(
+                delete(ConfirmationRow).where(
+                    ConfirmationRow.split_id.in_(
+                        select(ExpenseSplitRow.id).where(ExpenseSplitRow.invoice_id == invoice_id)
+                    )
+                )
+            )
+            session.execute(delete(ExpenseSplitRow).where(ExpenseSplitRow.invoice_id == invoice_id))
+            session.execute(
+                delete(InvoiceSupportingMaterialLinkRow).where(
+                    InvoiceSupportingMaterialLinkRow.invoice_id == invoice_id
+                )
+            )
+            session.delete(row)
+        return deleted_invoice
+
     def list_by_task(self, task_id: str) -> list[InvoiceRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(

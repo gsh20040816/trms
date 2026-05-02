@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-05-02 21:06 - Split oversized member-invoice/role request set and implement deletion of unsubmitted member invoices
+
+### 完成内容
+- 根据仓库 `AGENTS.md` “每轮只完成一个最小可验证任务”的硬规则，先把用户本轮提出的 4 项复合需求拆进 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)：
+  - 允许成员删除未提交发票；
+  - 修复支付记录/订单截图识别混淆；
+  - 收口附件关联页候选展示与金额优先排序；
+  - 拆分多角色账号、个人信息页与生产首个系统管理员初始化任务。
+- 本轮只实现首个未阻塞子任务“允许成员删除未提交的发票”。
+- 后端新增成员专用未提交发票删除路径：
+  - [src/trms_backend/application/member_invoice_deletion.py](/home/gsh/workspace/TRMS/src/trms_backend/application/member_invoice_deletion.py)
+  - [src/trms_backend/api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py)
+  - [src/trms_backend/domain/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoices.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [src/trms_backend/main.py](/home/gsh/workspace/TRMS/src/trms_backend/main.py)
+- 当前行为已收口为：
+  - 只有成员本人，且任务仍为 `open`、发票尚未 `submitted`、材料属于本人上传、且没有已关联辅助材料时，才能删除；
+  - 删除会同步移除该发票主记录、分摊记录、确认记录、校验结果，并把原始材料标记为 `deleted`；
+  - 不改管理员现有 `deletion-mark` 接口语义，也不允许成员删除已提交发票。
+- 前端成员发票详情页已新增删除入口：
+  - [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - 仅在“本人未提交发票”场景展示“删除未提交发票”按钮；
+  - 点击后先弹确认框，再执行删除，成功后返回成员工作台。
+- 已补测试：
+  - [tests/test_invoice_member_submission_withdrawal_api.py](/home/gsh/workspace/TRMS/tests/test_invoice_member_submission_withdrawal_api.py)
+  - [web/src/app/member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+
+### 根因
+- 现有删除路径只有管理员可用，且一旦材料已形成发票，管理员删除材料接口就会因“material is referenced by an invoice”直接拒绝。
+- 成员侧虽然支持“已提交发票撤回”，但没有“未提交发票直接删除”的闭环；导致用户上传后如果识别错、或发票不再需要，只能继续保留脏草稿。
+
+### 风险与影响面
+- 本轮刻意没有实现“删除已提交发票”或“成员删除已关联辅助材料的发票”；这两类场景会牵涉管理员复核主路径和附件解绑语义，超出当前最小任务边界。
+- 删除实现采用受控级联清理：只删除当前发票自己的分摊、确认、校验与附件链接，不触碰其他发票或其他材料。
+- 与用户提出的另外 3 项需求相关的识别、多角色和附件关联页逻辑，本轮尚未实现，只完成了任务拆分记录。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_invoice_member_submission_withdrawal_api.py`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-detail.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 549 个用例全部通过；
+  - `web` 测试 117 个用例全部通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过；
+  - `eslint` 仍只保留 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 warning / error。
+
 ## 2026-05-02 20:45 - Inline invoice correction, split editing, and paper-receipt confirmation into admin review overview
 
 ### 完成内容

@@ -6,6 +6,7 @@ from trms_backend.application.material_deletion import MaterialDeletionService
 from trms_backend.application.metrics import InMemoryMetricsCollector, MetricsCollector
 from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.material_type_update import MaterialTypeUpdateService
+from trms_backend.application.member_invoice_deletion import MemberInvoiceDeletionService
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_llm import RoutedRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
@@ -120,6 +121,14 @@ def create_app(
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
+    member_invoice_deletion_service = MemberInvoiceDeletionService(
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
+        validation_repository=validation_repository,
+        audit_log_repository=audit_log_repository,
+    )
     material_submission_service = MaterialSubmissionService(
         task_repository,
         material_repository,
@@ -293,6 +302,7 @@ def create_app(
             split_repository,
             confirmation_repository,
             audit_log_repository,
+            member_invoice_deletion_service,
             app.state.metrics_collector,
         )
     )

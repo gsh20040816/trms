@@ -297,3 +297,105 @@ def test_outsider_member_cannot_withdraw_task_invoice_submissions(tmp_path):
 
     assert response.status_code == 403
     assert response.json()["detail"] == "actor is not allowed to withdraw invoice submissions for this task"
+
+
+def test_member_can_delete_own_unsubmitted_invoice_from_detail_path(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="draft.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        material_id,
+        actor_id="2250001",
+        invoice_number="INV-DRAFT-001",
+        expense_type="railway",
+    )
+    split_id = replace_invoice_splits(
+        client,
+        invoice_id,
+        actor_id="2250001",
+        member_id="2250001",
+    )
+    confirm_split(client, split_id, actor_id="2250001", member_id="2250001")
+
+    response = client.delete(
+        f"/api/invoices/{invoice_id}",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "deleted"
+    assert body["invoice"]["id"] == invoice_id
+    assert body["material"]["id"] == material_id
+    assert body["material"]["status"] == "deleted"
+
+
+def test_member_cannot_delete_submitted_invoice(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="submitted.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        material_id,
+        actor_id="2250001",
+        invoice_number="INV-SUBMITTED-001",
+        expense_type="railway",
+    )
+    split_id = replace_invoice_splits(
+        client,
+        invoice_id,
+        actor_id="2250001",
+        member_id="2250001",
+    )
+    confirm_split(client, split_id, actor_id="2250001", member_id="2250001")
+    submit_invoices(
+        client,
+        task_id,
+        actor_id="2250001",
+        invoice_ids=[invoice_id],
+    )
+
+    response = client.delete(
+        f"/api/invoices/{invoice_id}",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "submitted invoice cannot be deleted by member"
+
+
+def test_member_cannot_delete_other_members_unsubmitted_invoice(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="other.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        material_id,
+        actor_id="2250001",
+        invoice_number="INV-OTHER-001",
+        expense_type="railway",
+    )
+
+    response = client.delete(
+        f"/api/invoices/{invoice_id}",
+        headers=member_auth_headers(client, username="member2", actor_id="2250002"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "actor can only delete invoices created from own materials"

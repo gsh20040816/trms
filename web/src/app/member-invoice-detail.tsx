@@ -421,6 +421,7 @@ export function MemberInvoiceDetailPage() {
   const [splitError, setSplitError] = useState<string | null>(null);
   const [savingSplits, setSavingSplits] = useState(false);
   const [openingOriginal, setOpeningOriginal] = useState(false);
+  const [deletingInvoice, setDeletingInvoice] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -470,6 +471,12 @@ export function MemberInvoiceDetailPage() {
   const splitSummary = summarizeSplitDrafts(splitDrafts);
   const canEditInvoice = invoice?.member_submission_status !== "submitted";
   const canEditSplits = canEditInvoice;
+  const canDeleteInvoice = Boolean(
+    item
+    && invoice
+    && invoice.member_submission_status === "unsubmitted"
+    && item.material.submitter_id === session?.actorId,
+  );
 
   function updateManualField<Key extends keyof ManualInvoiceFormState>(
     key: Key,
@@ -662,6 +669,33 @@ export function MemberInvoiceDetailPage() {
     }
   }
 
+  async function handleDeleteInvoice() {
+    if (!invoice || !task || !item) {
+      return;
+    }
+    const confirmed = await confirm({
+      title: `确认删除发票 ${invoice.invoice_number}？`,
+      description: `这会删除当前未提交发票、它的金额归属和确认记录，并把原始材料 ${item.material.original_filename} 标记为已删除。删除后不能恢复。`,
+      confirmLabel: "删除发票",
+      cancelLabel: "继续保留",
+      destructive: true,
+      tone: "warning",
+    });
+    if (!confirmed) {
+      return;
+    }
+    setDeletingInvoice(true);
+    try {
+      await trmsApi.deleteInvoice(invoice.id);
+      showSuccess("未提交发票已删除。");
+      void navigate(`/member/invoices/workbench?taskId=${encodeURIComponent(task.id)}`, { replace: true });
+    } catch (error) {
+      showError(error instanceof ApiError ? error.summary.message : "删除未提交发票失败。");
+    } finally {
+      setDeletingInvoice(false);
+    }
+  }
+
   if (!session || session.role !== "member") {
     return null;
   }
@@ -746,6 +780,11 @@ export function MemberInvoiceDetailPage() {
               <Button type="button" variant="outlined" disabled={retryingRecognition} onClick={() => { void handleRecognitionRetry(); }}>
                 {retryingRecognition ? "重新识别中..." : "运行重新识别"}
               </Button>
+              {canDeleteInvoice ? (
+                <Button type="button" color="error" variant="outlined" disabled={deletingInvoice} onClick={() => { void handleDeleteInvoice(); }}>
+                  {deletingInvoice ? "删除中..." : "删除未提交发票"}
+                </Button>
+              ) : null}
             </div>
           </SectionCard>
 
