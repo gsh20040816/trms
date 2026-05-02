@@ -284,10 +284,11 @@ def _collect_blocking_reasons(
 
     if material.recognition_status is RecognitionTaskStatus.PENDING and is_invoice_material:
         reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_PENDING)
-    if (
-        material.recognition_status in {RecognitionTaskStatus.FAILED, RecognitionTaskStatus.NEEDS_CONFIRMATION}
-        or (invoice is None and is_invoice_material)
-    ):
+    if material.recognition_status is RecognitionTaskStatus.FAILED:
+        reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_REVIEW)
+    if material.recognition_status is RecognitionTaskStatus.NEEDS_CONFIRMATION and is_invoice_material:
+        reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_REVIEW)
+    if invoice is None and is_invoice_material:
         reasons.append(TaskMemberWorkbenchBlockingReason.RECOGNITION_REVIEW)
     if missing_materials:
         reasons.append(TaskMemberWorkbenchBlockingReason.MISSING_MATERIALS)

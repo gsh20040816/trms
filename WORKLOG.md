@@ -1,5 +1,52 @@
 # WORKLOG
 
+## 2026-05-02 23:15 - Stop blocking member workbench on partial recognition gaps for non-invoice materials
+
+### 完成内容
+- 完成任务“非发票材料缺少部分识别字段时不再阻塞成员工作台”。
+- 已根据 [data/10.png](/home/gsh/workspace/TRMS/data/10.png) 确认现象：
+  - 一份 `payment_record` 在识别状态为 `needs_confirmation` 时，被成员工作台错误地归进“识别失败或待确认”问题材料分组；
+  - 这会把“其他材料缺少部分识别字段”误当成提交阻塞，和当前产品要求不符。
+- 已修改 [src/trms_backend/domain/task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py)：
+  - 成员工作台阻塞规则改为区分发票材料与非发票材料；
+  - `RecognitionTaskStatus.NEEDS_CONFIRMATION` 现在只对发票材料构成 `recognition_review` 阻塞；
+  - 支付记录、比赛通知、行程单、订单截图等非发票材料即使识别有待确认字段，也不会单独进入问题材料阻塞分组；
+  - 识别失败仍保持原有阻塞语义，发票材料“未成票/待确认/失败”的主链路也没有放宽。
+- 已补后端回归测试：
+  - [tests/test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py)
+  - 新增覆盖：非发票 `needs_confirmation` 材料在成员工作台中仍为 `queue_group=ready`、`blocking_reasons=[]`。
+- 已补前端回归测试：
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - 新增覆盖：`payment_record` 且识别状态为 `needs_confirmation` 的材料仍显示在“未提交材料列表”，不会被移入“问题材料分组”。
+- 已更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录本轮实例问题收口任务。
+
+### 根因
+- 成员工作台后端原先把所有 `RecognitionTaskStatus.NEEDS_CONFIRMATION` 都统一映射为 `recognition_review` 阻塞；
+- 这对发票材料是合理的，但对支付记录、比赛通知等非发票材料过严，因为它们缺少部分识别字段并不等于无法继续提交主发票链路。
+
+### 风险与影响面
+- 本轮只放宽“非发票材料识别待确认”这一类阻塞，不放宽：
+  - 发票材料识别失败 / 待确认
+  - 必传材料缺失
+  - 附件待关联
+  - 分摊未完成
+  - 成员确认未完成
+- 这意味着非发票材料仍可在详情页继续查看和手工调整，只是不再因为部分识别字段待确认而直接卡住成员工作台主提交流程。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_task_member_workbench_api.py -k 'non_invoice_success_without_invoice_is_not_marked_as_recognition_review or non_invoice_needs_confirmation_does_not_block_submission'`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx -t "does not move non-invoice supporting materials with needs-confirmation recognition into problem groups"`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `567/567` 通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `121/121` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 23:06 - Tighten supporting-material auto-linking to recognized exact-amount uniqueness
 
 ### 完成内容

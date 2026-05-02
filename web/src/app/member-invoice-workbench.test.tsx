@@ -944,4 +944,88 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(within(summaryList).getAllByText("识别失败或待确认").length).toBeGreaterThanOrEqual(1);
     expect(within(summaryList).queryByRole("button", { name: "批量提交选中发票" })).not.toBeInTheDocument();
   });
+
+  it("does not move non-invoice supporting materials with needs-confirmation recognition into problem groups", async () => {
+    mockCommonFetch(buildWorkbenchSummary({
+      items: [
+        {
+          material: {
+            material_id: "MAT-PAYMENT-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "Screenshot_20251119-161841.支付宝.png",
+            material_status: "assigned",
+            recognition_status: "needs_confirmation",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+          },
+          invoice: null,
+          recognition: {
+            id: "REC-PAYMENT-001",
+            material_id: "MAT-PAYMENT-001",
+            status: "needs_confirmation",
+            failure: null,
+            recognized_fields: {
+              amount_cents: {
+                value: 308700,
+                source: "ai",
+                confidence: 0.76,
+                status: "needs_confirmation",
+                updated_at: "2026-04-28T10:00:00+08:00",
+              },
+            },
+            manual_corrections: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+            updated_at: "2026-04-28T10:00:00+08:00",
+          },
+          validations: [],
+          supporting_materials: [],
+          splits: [],
+          confirmations: [],
+          related_expense_details: [],
+          missing_materials: [],
+          queue_group: "ready",
+          blocking_reasons: [],
+          ready_for_submission: true,
+        },
+      ],
+      report: {
+        ...buildWorkbenchSummary().report,
+        counts: {
+          ...buildWorkbenchSummary().report.counts,
+          material_count: 1,
+          recognition_succeeded_count: 0,
+          recognition_needs_confirmation_count: 1,
+        },
+        materials: [
+          {
+            material_id: "MAT-PAYMENT-001",
+            submitter_id: "2250001",
+            material_type: "payment_record",
+            original_filename: "Screenshot_20251119-161841.支付宝.png",
+            material_status: "assigned",
+            recognition_status: "needs_confirmation",
+            recognition_failure_stage: null,
+            recognition_failure_reason: null,
+            invoice_id: null,
+            invoice_number: null,
+            validation_status: "passed",
+            validation_messages: [],
+            created_at: "2026-04-28T10:00:00+08:00",
+          },
+        ],
+      },
+    }));
+
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
+    expect(within(readySection).getByText("Screenshot_20251119-161841.支付宝.png")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "问题材料分组" })).toHaveTextContent("当前无问题材料");
+  });
 });

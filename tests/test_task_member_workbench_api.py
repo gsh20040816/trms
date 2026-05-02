@@ -414,6 +414,74 @@ def test_member_workbench_non_invoice_success_without_invoice_is_not_marked_as_r
     assert payment_item["ready_for_submission"] is True
 
 
+def test_member_workbench_non_invoice_needs_confirmation_does_not_block_submission(
+    tmp_path,
+):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    supporting_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="Screenshot_20251119-161841.支付宝.png",
+        content_type="image/png",
+    )
+    create_response = client.post(
+        f"/api/materials/{supporting_material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
+    assert create_response.status_code == 201
+    list_response = client.get(
+        f"/api/materials/{supporting_material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
+    assert list_response.status_code == 200
+    recognition_task_id = list_response.json()["items"][0]["id"]
+    update_response = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
+        json={
+            "target_status": "needs_confirmation",
+            "result": {
+                "raw_response": {"provider": "test-provider"},
+                "recognized_fields": {
+                    "material_type": {
+                        "value": "payment_record",
+                        "source": "ai",
+                        "confidence": 0.98,
+                        "status": "recognized",
+                    },
+                    "amount_cents": {
+                        "value": 308700,
+                        "source": "ai",
+                        "confidence": 0.76,
+                        "status": "needs_confirmation",
+                    },
+                },
+            },
+        },
+    )
+    assert update_response.status_code == 200
+
+    response = client.get(
+        f"/api/tasks/{task_id}/member-workbench",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    payment_item = next(
+        item
+        for item in response.json()["items"]
+        if item["material"]["material_id"] == supporting_material_id
+    )
+    assert payment_item["material"]["recognition_status"] == "needs_confirmation"
+    assert payment_item["queue_group"] == "ready"
+    assert payment_item["blocking_reasons"] == []
+    assert payment_item["ready_for_submission"] is True
+
+
 def test_member_workbench_summary_redacts_shared_attachment_details_and_recognition_raw_response(tmp_path):
     client = make_client(tmp_path)
     task_id = create_redaction_fixture(client)
