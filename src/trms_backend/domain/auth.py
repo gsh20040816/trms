@@ -71,6 +71,17 @@ class UserProfileUpdateInput(BaseModel):
         return self
 
 
+class UserPasswordChangeInput(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "UserPasswordChangeInput":
+        self.current_password = _normalize_required(self.current_password)
+        self.new_password = _normalize_required(self.new_password)
+        return self
+
+
 class UserCreate(BaseModel):
     username: str
     password_hash: str
@@ -163,6 +174,11 @@ class MemberCodeUpdateNotAllowedError(ValueError):
         super().__init__("member_code can only be updated by member accounts")
 
 
+class CurrentPasswordIncorrectError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("current password is incorrect")
+
+
 class AuthRepository(Protocol):
     def get_user_by_id(self, user_id: str) -> AuthenticatedUser | None:
         raise NotImplementedError
@@ -216,6 +232,14 @@ class AuthRepository(Protocol):
         user_id: str,
         display_name: str,
         member_code: str | None,
+    ) -> AuthenticatedUser | None:
+        raise NotImplementedError
+
+    def update_user_password(
+        self,
+        *,
+        user_id: str,
+        password_hash: str,
     ) -> AuthenticatedUser | None:
         raise NotImplementedError
 
@@ -340,6 +364,27 @@ def update_user_profile(
             if "member_code" in payload.model_fields_set
             else actor.member_code
         ),
+    )
+    if updated_user is None:
+        raise InvalidCredentialsError()
+    return updated_user
+
+
+def change_user_password(
+    repository: AuthRepository,
+    *,
+    actor: AuthenticatedUser,
+    payload: UserPasswordChangeInput,
+) -> AuthenticatedUser:
+    stored_user = repository.get_user_by_username(actor.username.lower())
+    if stored_user is None:
+        raise InvalidCredentialsError()
+    if not verify_password(payload.current_password, stored_user.password_hash):
+        raise CurrentPasswordIncorrectError()
+
+    updated_user = repository.update_user_password(
+        user_id=actor.id,
+        password_hash=hash_password(payload.new_password),
     )
     if updated_user is None:
         raise InvalidCredentialsError()

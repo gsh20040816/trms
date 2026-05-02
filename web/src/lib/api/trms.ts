@@ -52,6 +52,7 @@ import type {
   TaskUpdateInput,
   UserSearchSummary,
   UserProfileUpdatePayload,
+  UserPasswordUpdatePayload,
   ValidationResult,
 } from "./types";
 
@@ -145,6 +146,13 @@ export const trmsApi = {
 
   updateCurrentUser(payload: UserProfileUpdatePayload) {
     return apiClient.request<AuthenticatedUser>("/auth/me", {
+      method: "PUT",
+      body: payload,
+    });
+  },
+
+  updateCurrentUserPassword(payload: UserPasswordUpdatePayload) {
+    return apiClient.request<void>("/auth/me/password", {
       method: "PUT",
       body: payload,
     });

@@ -17,15 +17,18 @@ from trms_backend.domain.auth import (
     PrivilegedBootstrapAlreadyCompletedError,
     PrivilegedBootstrapDisabledError,
     PrivilegedSelfRegistrationDisabledError,
+    CurrentPasswordIncorrectError,
     MemberCodeUpdateNotAllowedError,
     RoleNotAssignedError,
     RoleSwitchInput,
     SelfServiceMultipleRolesNotAllowedError,
+    UserPasswordChangeInput,
     UserProfileUpdateInput,
     UserLoginInput,
     UserRegisterInput,
     UsernameAlreadyExistsError,
     bootstrap_privileged_user,
+    change_user_password,
     update_user_profile,
     login_user,
     register_user,
@@ -154,6 +157,33 @@ def build_auth_router(
                 detail=str(error),
                 headers={"WWW-Authenticate": "Bearer"},
             ) from error
+
+    @router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+    def update_my_password(
+        payload: UserPasswordChangeInput,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+        response: Response,
+    ):
+        assert identity.user is not None
+        try:
+            change_user_password(
+                repository,
+                actor=identity.user,
+                payload=payload,
+            )
+        except CurrentPasswordIncorrectError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except InvalidCredentialsError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(error),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from error
+        response.status_code = status.HTTP_204_NO_CONTENT
+        return None
 
     @router.post("/switch-role")
     def switch_role(

@@ -55,6 +55,9 @@ describe("AccountProfilePage", () => {
           updated_at: "2026-05-02T22:40:00Z",
         }));
       }
+      if (url === "/api/auth/me/password" && method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
 
       throw new Error(`Unhandled request ${method} ${url}`);
     });
@@ -72,6 +75,13 @@ describe("AccountProfilePage", () => {
 
     expect(await screen.findByDisplayValue("新名字")).toBeInTheDocument();
     expect(screen.getByDisplayValue("2250999")).toBeInTheDocument();
+
+    fireEvent.change(await screen.findByLabelText(/当前密码/), { target: { value: "old-password" } });
+    fireEvent.change(await screen.findByLabelText(/^新密码$/), { target: { value: "new-password-123" } });
+    fireEvent.change(await screen.findByLabelText(/^确认新密码$/), { target: { value: "new-password-123" } });
+    fireEvent.click(await screen.findByRole("button", { name: "修改密码" }));
+
+    expect(await screen.findByRole("button", { name: "修改密码" })).toBeInTheDocument();
   });
 
   it("hides member code editing for non-member accounts", async () => {
@@ -91,5 +101,30 @@ describe("AccountProfilePage", () => {
 
     expect(await screen.findByRole("heading", { name: "个人信息" })).toBeInTheDocument();
     expect(screen.queryByLabelText("学号")).not.toBeInTheDocument();
+  });
+
+  it("blocks password save when the new passwords do not match", async () => {
+    setMockSession("member", {
+      actorId: "2250001",
+      displayName: "王队员",
+      memberCode: "2250001",
+      username: "member1",
+      accessToken: "token-member",
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/profile"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "个人信息" })).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText(/当前密码/), { target: { value: "old-password" } });
+    fireEvent.change(await screen.findByLabelText(/^新密码$/), { target: { value: "new-password-123" } });
+    fireEvent.change(await screen.findByLabelText(/^确认新密码$/), { target: { value: "new-password-456" } });
+    fireEvent.click(await screen.findByRole("button", { name: "修改密码" }));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

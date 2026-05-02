@@ -409,6 +409,21 @@ class SqlAlchemyAuthRepository(AuthRepository):
             session.add(row)
             return _authenticated_user_from_row(row)
 
+    def update_user_password(
+        self,
+        *,
+        user_id: str,
+        password_hash: str,
+    ) -> AuthenticatedUser | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(UserAccountRow, user_id)
+            if row is None:
+                return None
+            row.password_hash = password_hash
+            row.updated_at = datetime.now(timezone.utc)
+            session.add(row)
+            return _authenticated_user_from_row(row)
+
     def count_users_with_roles(self, roles: tuple[UserRole, ...]) -> int:
         if not roles:
             return 0

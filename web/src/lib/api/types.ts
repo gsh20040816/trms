@@ -173,6 +173,11 @@ export type UserProfileUpdatePayload = {
   member_code?: string;
 };
 
+export type UserPasswordUpdatePayload = {
+  current_password: string;
+  new_password: string;
+};
+
 export type ReimbursementTask = {
   id: string;
   status: TaskStatus;

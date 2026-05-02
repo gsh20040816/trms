@@ -177,6 +177,62 @@ def test_profile_update_rejects_blank_display_name(tmp_path):
     assert response.status_code == 422
 
 
+def test_member_can_change_password_and_login_with_new_password(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post("/api/auth/register", json=register_payload())
+    token = register_response.json()["access_token"]
+
+    response = client.put(
+        "/api/auth/me/password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "current_password": "correct-password",
+            "new_password": "new-password-123",
+        },
+    )
+
+    assert response.status_code == 204
+
+    old_login_response = client.post(
+        "/api/auth/login",
+        json={"username": "member1", "password": "correct-password"},
+    )
+    assert_api_error(
+        old_login_response,
+        status_code=401,
+        code="unauthorized",
+        detail="invalid username or password",
+    )
+
+    new_login_response = client.post(
+        "/api/auth/login",
+        json={"username": "member1", "password": "new-password-123"},
+    )
+    assert new_login_response.status_code == 200
+
+
+def test_password_change_rejects_incorrect_current_password(tmp_path):
+    client = make_client(tmp_path)
+    register_response = client.post("/api/auth/register", json=register_payload())
+    token = register_response.json()["access_token"]
+
+    response = client.put(
+        "/api/auth/me/password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "current_password": "wrong-password",
+            "new_password": "new-password-123",
+        },
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="current password is incorrect",
+    )
+
+
 def test_request_context_returns_anonymous_identity_without_bearer_token(tmp_path):
     client = make_client(tmp_path)
 

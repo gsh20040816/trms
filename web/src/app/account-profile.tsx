@@ -22,6 +22,10 @@ export function AccountProfilePage() {
   const [displayName, setDisplayName] = useState(session?.displayName ?? "");
   const [memberCode, setMemberCode] = useState(session?.memberCode ?? "");
   const [saving, setSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
   const [loadError, setLoadError] = useState<unknown>(null);
 
   if (!session) {
@@ -47,6 +51,31 @@ export function AccountProfilePage() {
       showError(error instanceof ApiError ? error.summary.message : "个人信息保存失败。");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePasswordSave() {
+    if (newPassword !== confirmPassword) {
+      showError("两次输入的新密码不一致。");
+      return;
+    }
+
+    setLoadError(null);
+    setSavingPassword(true);
+    try {
+      await trmsApi.updateCurrentUserPassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      showSuccess("密码已更新。");
+    } catch (error) {
+      setLoadError(error);
+      showError(error instanceof ApiError ? error.summary.message : "密码修改失败。");
+    } finally {
+      setSavingPassword(false);
     }
   }
 
@@ -93,6 +122,49 @@ export function AccountProfilePage() {
         <div className="inline-actions">
           <Button type="button" variant="contained" disabled={saving} onClick={() => { void handleSave(); }}>
             {saving ? "保存中..." : "保存个人信息"}
+          </Button>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="密码修改" description="修改密码时必须先输入当前密码；用户名仍保持只读。">
+        <div className="admin-form-grid">
+          <TextField
+            label="当前密码"
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            disabled={savingPassword}
+            required
+            slotProps={{ htmlInput: { "aria-label": "当前密码" } }}
+          />
+          <TextField
+            label="新密码"
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            disabled={savingPassword}
+            helperText="至少 8 位。"
+            required
+            slotProps={{ htmlInput: { "aria-label": "新密码" } }}
+          />
+          <TextField
+            label="确认新密码"
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            disabled={savingPassword}
+            required
+            slotProps={{ htmlInput: { "aria-label": "确认新密码" } }}
+          />
+        </div>
+        <div className="inline-actions">
+          <Button
+            type="button"
+            variant="contained"
+            disabled={savingPassword}
+            onClick={() => { void handlePasswordSave(); }}
+          >
+            {savingPassword ? "修改中..." : "修改密码"}
           </Button>
         </div>
       </SectionCard>

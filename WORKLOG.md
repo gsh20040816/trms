@@ -1,5 +1,76 @@
 # WORKLOG
 
+## 2026-05-02 22:40 - Add password verification and password change to account profile
+
+### 完成内容
+- 完成任务“允许用户在个人信息页修改可维护资料并完成密码校验/修改”。
+- 后端认证域已补齐密码修改模型与校验：
+  - [src/trms_backend/domain/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/auth.py)
+  - 新增 `UserPasswordChangeInput`
+  - 新增 `CurrentPasswordIncorrectError`
+  - 新增 `change_user_password(...)`
+  - 当前规则为：
+    - 修改密码必须提供当前密码
+    - 新密码最少 8 位
+    - 当前密码校验失败时显式返回错误，不伪装成成功
+- 认证仓储已补齐密码哈希更新持久化：
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - 新增 `update_user_password(...)`
+  - 继续复用现有 PBKDF2-SHA256 哈希策略，不引入 schema 变更。
+- 后端认证 API 已新增密码修改入口：
+  - [src/trms_backend/api/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/api/auth.py)
+  - 新增 `PUT /api/auth/me/password`
+  - 仅已登录用户可调用；
+  - 成功返回 `204 No Content`；
+  - 当前密码错误返回 `403 current password is incorrect`。
+- 前端个人信息页已补齐密码修改表单：
+  - [web/src/app/account-profile.tsx](/home/gsh/workspace/TRMS/web/src/app/account-profile.tsx)
+  - 在“资料维护”之外新增“密码修改”区；
+  - 需要填写：
+    - 当前密码
+    - 新密码
+    - 确认新密码
+  - 前端本地会先拦截“两次输入的新密码不一致”；
+  - 保存成功后清空密码输入框。
+- 前端 API 与类型已同步扩展：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - 新增 `UserPasswordUpdatePayload` 和 `updateCurrentUserPassword(...)`。
+- 已补后端回归测试：
+  - [tests/test_auth_api.py](/home/gsh/workspace/TRMS/tests/test_auth_api.py)
+  - 覆盖：
+    - 成员修改密码成功后，旧密码登录失败、新密码登录成功
+    - 当前密码错误时拒绝修改
+- 已补前端回归测试：
+  - [web/src/app/account-profile.test.tsx](/home/gsh/workspace/TRMS/web/src/app/account-profile.test.tsx)
+  - 覆盖：
+    - 资料保存后仍可在同页完成密码修改
+    - 新密码与确认密码不一致时，不发起请求
+
+### 根因
+- 之前个人信息页只覆盖显示名称/学号修改，仍然缺少最基础的“当前密码校验后修改密码”闭环。
+- 这会导致账号资料维护虽然已有入口，但认证敏感操作仍必须退回重新注册或库外手工处理，产品路径不完整。
+
+### 风险与影响面
+- 本轮只补密码修改，不涉及：
+  - 用户名修改
+  - 忘记密码找回
+  - 强制登出其他会话
+  - 资料或密码修改审计日志
+- 当前修改密码成功后，不会自动吊销该用户其他历史 bearer 会话；如果后续要提高安全性，应补“密码变更后批量失效旧 session”策略。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_auth_api.py -k 'update_own_profile or profile_update or change_password or incorrect_current_password'`
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/account-profile.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `pytest` 564 个用例全部通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `120/120` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:30 - Keep admin overview metric badges on one readable line
 
 ### 完成内容
