@@ -320,9 +320,6 @@ class RecognitionPreparationService:
         material: MaterialRecord,
         recognized_fields: dict[str, RecognitionFieldResult],
     ) -> MaterialRecord:
-        if material.material_type is not MaterialType.OTHER_ATTACHMENT:
-            return material
-
         recognized_material_type = recognized_fields.get("material_type")
         if (
             recognized_material_type is None
@@ -337,6 +334,13 @@ class RecognitionPreparationService:
             return material
         if next_material_type is MaterialType.OTHER_ATTACHMENT:
             return material
+        if next_material_type is material.material_type:
+            return material
+        if not _can_auto_update_material_type(
+            current_material_type=material.material_type,
+            next_material_type=next_material_type,
+        ):
+            return material
 
         return (
             self._material_repository.update_material_type(
@@ -345,6 +349,16 @@ class RecognitionPreparationService:
             )
             or material
         )
+
+
+def _can_auto_update_material_type(
+    *,
+    current_material_type: MaterialType,
+    next_material_type: MaterialType,
+) -> bool:
+    if current_material_type is MaterialType.INVOICE or next_material_type is MaterialType.INVOICE:
+        return current_material_type is MaterialType.OTHER_ATTACHMENT
+    return True
 
     def _raise_missing_or_conflict(self, recognition_task_id: str) -> None:
         current = self._recognition_task_repository.get(recognition_task_id)

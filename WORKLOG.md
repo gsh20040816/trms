@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-05-02 21:30 - Sync recognized supporting-material type back into material records
+
+### 完成内容
+- 继续收口用户指出的真实运行实例问题：材料 [73b1a662-9b6d-414f-b3e9-a127857797cf](/home/gsh/workspace/TRMS/data/materials/7ff95606-3d70-4329-94f8-7feb20ebfa67/1f6c775c-9974-4b6c-88af-8785688045d8-Screenshot_20251119-161841.支付宝.png) 在模型已经识别为 `payment_record` 后，页面仍按 `order_screenshot` 展示。
+- 已确认根因不是“大模型仍然分错”，而是“识别结果没有回写到材料主记录”：
+  - 最新识别任务的 `recognized_fields.material_type` 已经是 `payment_record`；
+  - 但 [src/trms_backend/application/recognition_preparation.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_preparation.py) 之前只会在材料当前类型为 `other_attachment` 时自动回写类型；
+  - 因此像本例这种最初被手工/旧识别写成 `order_screenshot` 的材料，即使后续识别已经更正为 `payment_record`，`materials.material_type` 也不会更新，前端页面仍按旧类型路由和渲染。
+- 已修改自动回写逻辑：
+  - 非发票辅助材料之间允许自动收敛为更准确的类型，例如 `order_screenshot -> payment_record`；
+  - 仍保守限制 `invoice` 相关切换，不因为一次识别结果就把已有材料主记录随意改成发票。
+- 已补回归测试：
+  - [tests/test_recognition_execution_api.py](/home/gsh/workspace/TRMS/tests/test_recognition_execution_api.py)
+  - 覆盖 `order_screenshot` 材料在识别出 `payment_record` 后，任务材料列表中的主记录类型同步刷新。
+- 已对真实实例直接验证：
+  - 以材料提交人身份创建新的识别任务 `7954a816-1a30-4709-ba24-c39dcede9692`；
+  - 用当前代码版本的 worker 消费该任务；
+  - 数据库中 `materials.material_type` 已从 `order_screenshot` 更新为 `payment_record`。
+
+### 根因
+- 识别链路分成了两层事实：
+  - `recognition_tasks.recognized_fields.material_type`：识别建议；
+  - `materials.material_type`：页面和主流程当前实际使用的材料类型。
+- 旧实现只在“默认未分类 `other_attachment`”场景下才把识别建议回写到材料主记录，导致“已被错误归过类的辅助材料”无法随着后续重识别自动纠正主记录类型。
+
+### 风险与影响面
+- 本轮只放开发票外的辅助材料类型收敛，不放开发票主类型自动切换，避免把已有发票路径误改成 `invoice` 或把发票误降级。
+- 真实实例里如果页面仍显示旧类型，通常只需要前端重新拉取一次任务材料/成员工作台数据即可；后端主记录已经改对。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_recognition_execution_api.py -k 'auto_updates_default_material_type_from_recognition or auto_updates_supporting_material_type_from_recognition'`
+  - `uv run pytest tests/test_recognition_llm.py -k 'payment_record_detail_page_rules'`
+- 已通过真实实例验证：
+  - 最新识别任务 `7954a816-1a30-4709-ba24-c39dcede9692` 状态为 `succeeded`
+  - 数据库 `materials.material_type` 当前值为 `payment_record`
+
 ## 2026-05-02 21:12 - Correct payment-record / order-screenshot misclassification for ride-hailing payment proofs
 
 ### 完成内容

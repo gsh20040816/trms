@@ -828,8 +828,10 @@ def _build_classification_chat_completions_payload(
             f"material_type.value must be exactly one of: {_ALLOWED_MATERIAL_TYPE_VALUES}.",
             f"expense_type_candidate.value must be exactly one of: {_ALLOWED_EXPENSE_TYPE_VALUES}; use other when no stronger category is supported.",
             "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
+            "Treat uploaded_material_type only as a weak hint from the client UI, not as classification ground truth.",
             "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
             "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
+            "Use material_type.value=payment_record for bank or wallet payment proof pages such as 支付宝/微信账单详情、交易详情、支付成功页、付款记录, especially when the page shows signals like 支付时间, 付款方式, 订单号, 商家订单号, 收款方全称, 实付款, or 交易单号. Do not classify those payment proof pages as order_screenshot just because 商品说明 mentions a hotel, train, flight, taxi, or other purchased item.",
             "Use material_type.value=itinerary for ride-hailing or travel trip statements that explicitly present themselves as 行程单 / 电子行程单 / ITINERARY and expose trip timeline or route fields such as 行程时间, 起点, 终点, 上车时间, or 下车时间.",
             "For local_transport electronic invoices or e-tickets, classify them as invoice, set expense_type_candidate.value=local_transport, and treat them as rideshare evidence requiring a matching itinerary/order trip record.",
             "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
@@ -857,7 +859,9 @@ def _build_classification_chat_completions_payload(
                     f"expense_type_candidate.value must be exactly one of: {_ALLOWED_EXPENSE_TYPE_VALUES}; use 'other' when no stronger category is supported. "
                     "classification_confidence.value must equal the overall classification confidence in [0, 1]. "
                     "Never invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi. "
+                    "Treat uploaded_material_type only as a weak client hint, not as classification ground truth. "
                     "Map invoice subtypes to material_type.value='invoice' and platform order subtypes to material_type.value='order_screenshot'. "
+                    "Bank or wallet payment proof pages such as 支付宝/微信账单详情, 交易详情, 支付成功页, or 付款记录 must be classified as material_type.value='payment_record', especially when they show 支付时间, 付款方式, 订单号, 商家订单号, 收款方全称, 实付款, or 交易单号. Do not classify those payment proof pages as order_screenshot merely because 商品说明 mentions a hotel, train, flight, taxi, or another purchased item. "
                     "Ride-hailing or travel trip statements that explicitly present themselves as 行程单, 电子行程单, or ITINERARY and expose trip timeline or route fields such as 行程时间, 起点, 终点, 上车时间, or 下车时间 must be classified as material_type.value='itinerary', not as order_screenshot. "
                     "Local_transport electronic invoices or e-tickets must be classified as invoice, assigned expense_type_candidate.value='local_transport', and treated as rideshare evidence requiring a matching itinerary/order trip record. "
                     "Cover common mainland China reimbursement materials such as VAT electronic invoices, paper invoice scans, "

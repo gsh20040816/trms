@@ -790,6 +790,51 @@ def test_execute_recognition_task_auto_updates_default_material_type_from_recogn
     assert fake_llm.calls[0]["material_type"] == "other_attachment"
 
 
+def test_execute_recognition_task_auto_updates_supporting_material_type_from_recognition(tmp_path):
+    fake_llm = FakeRecognitionLlmClient(
+        result=RecognitionLlmExtractionResult(
+            raw_response={"provider": "fake-openai", "attempts": 1},
+            recognized_fields={
+                "material_type": RecognitionFieldResult(
+                    value="payment_record",
+                    source="ai",
+                    confidence=0.98,
+                ),
+            },
+        )
+    )
+    client = make_client(
+        tmp_path,
+        runtime_config=make_llm_runtime_config(tmp_path),
+        recognition_llm_client=fake_llm,
+    )
+    task_id = create_task(client)
+    material_id = upload_material(
+        client,
+        task_id,
+        filename="payment-proof.png",
+        content=b"fake-image-content",
+        content_type="image/png",
+        material_type="order_screenshot",
+    )
+    recognition_task_id = latest_recognition_task_id(client, material_id)
+
+    response = client.post(
+        f"/api/recognition-tasks/{recognition_task_id}/execute",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["recognized_fields"]["material_type"]["value"] == "payment_record"
+    listed_materials = client.get(
+        f"/api/tasks/{task_id}/materials",
+        headers=admin_auth_headers(client),
+    )
+    assert listed_materials.status_code == 200
+    assert listed_materials.json()["items"][0]["material_type"] == "payment_record"
+    assert fake_llm.calls[0]["material_type"] == "order_screenshot"
+
+
 def test_execute_recognition_task_uses_system_level_text_provider_override_without_restart(tmp_path, monkeypatch):
     runtime_config = load_runtime_config(
         env={

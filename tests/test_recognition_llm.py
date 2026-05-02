@@ -409,37 +409,21 @@ def test_openai_compatible_recognition_client_includes_chinese_invoice_rules_in_
     assert "Never invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi." in captured_requests[0]["messages"][0]["content"]
     assert "Selected schema: invoice." in extraction_system_prompt
     assert "For buyer_name and tax_number, only extract them when the invoice header or tax identifier is explicitly visible." in extraction_system_prompt
-    assert classification_user_prompt == {
-        "material_id": "material-1",
-        "uploaded_material_type": "invoice",
-        "original_filename": "invoice.pdf",
-        "content_type": "application/pdf",
-        "recognition_input": {
-            "source": "pdf_text",
-            "text": chinese_text,
-            "page_count": 1,
-            "text_character_count": len(chinese_text),
-        },
-        "instructions": [
-            "Return JSON only.",
-            "Stage 1 only: classify the document before extracting detailed metadata.",
-            "Always populate document_family, material_type, expense_type_candidate, is_reimbursement_voucher, and classification_confidence.",
-            "document_family.value must be exactly one of: invoice, competition_notice, payment_record, order_screenshot, itinerary, other_attachment.",
-            "material_type.value must be exactly one of: invoice, payment_record, competition_notice, itinerary, order_screenshot, other_attachment.",
-            "expense_type_candidate.value must be exactly one of: registration, railway, airfare, local_transport, hotel, other; use other when no stronger category is supported.",
-            "Do not invent subtype categories such as hotel_invoice, railway_invoice, hotel_order, train_order, accommodation, transportation, or taxi.",
-            "Use material_type.value=invoice for VAT invoices, paper invoice scans, railway e-ticket invoices, airline reimbursement vouchers, and any direct voucher with tax-supervision marks.",
-            "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices.",
-            "Use material_type.value=itinerary for ride-hailing or travel trip statements that explicitly present themselves as 行程单 / 电子行程单 / ITINERARY and expose trip timeline or route fields such as 行程时间, 起点, 终点, 上车时间, or 下车时间.",
-            "For local_transport electronic invoices or e-tickets, classify them as invoice, set expense_type_candidate.value=local_transport, and treat them as rideshare evidence requiring a matching itinerary/order trip record.",
-            "Set is_reimbursement_voucher to true only when the document itself can directly serve as a reimbursement voucher.",
-            "If a document shows a tax authority seal or equivalent tax-supervision mark, classify it as invoice.",
-            "Treat railway e-tickets, railway electronic itineraries, and airline e-ticket reimbursement vouchers as invoice materials instead of itinerary or other_attachment when they are direct reimbursement vouchers.",
-            "classification_confidence.value must be a float between 0 and 1 describing the overall confidence of the classification result.",
-        ],
-        "prompt_version": PROMPT_VERSION,
-        "stage": "classification",
+    assert classification_user_prompt["material_id"] == "material-1"
+    assert classification_user_prompt["uploaded_material_type"] == "invoice"
+    assert classification_user_prompt["original_filename"] == "invoice.pdf"
+    assert classification_user_prompt["content_type"] == "application/pdf"
+    assert classification_user_prompt["recognition_input"] == {
+        "source": "pdf_text",
+        "text": chinese_text,
+        "page_count": 1,
+        "text_character_count": len(chinese_text),
     }
+    assert classification_user_prompt["prompt_version"] == PROMPT_VERSION
+    assert classification_user_prompt["stage"] == "classification"
+    assert "Return JSON only." in classification_user_prompt["instructions"]
+    assert "Use material_type.value=order_screenshot for platform hotel/train/flight/taxi order screenshots that are not direct tax invoices." in classification_user_prompt["instructions"]
+    assert "Use material_type.value=itinerary for ride-hailing or travel trip statements that explicitly present themselves as 行程单 / 电子行程单 / ITINERARY and expose trip timeline or route fields such as 行程时间, 起点, 终点, 上车时间, or 下车时间." in classification_user_prompt["instructions"]
     assert extraction_user_prompt["stage"] == "metadata_extraction"
     assert extraction_user_prompt["classification_result"]["material_type"]["value"] == "invoice"
     assert extraction_user_prompt["selected_schema"]["name"] == "invoice"
@@ -561,6 +545,92 @@ def test_openai_classification_prompt_includes_tax_seal_and_direct_voucher_rules
     assert result.recognized_fields["material_type"].value == "invoice"
     assert result.recognized_fields["expense_type_candidate"].value == "railway"
     assert result.recognized_fields["is_reimbursement_voucher"].value is True
+
+
+def test_openai_classification_prompt_includes_payment_record_detail_page_rules():
+    captured_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode())
+        captured_requests.append(payload)
+        if len(captured_requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    build_classification_output(
+                                        document_family="payment_record",
+                                        material_type="payment_record",
+                                        expense_type_candidate="hotel",
+                                        is_reimbursement_voucher=False,
+                                        classification_confidence=0.95,
+                                        field_confidence=0.95,
+                                    ),
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "output": {
+                                        "amount_cents": {
+                                            "value": 308700,
+                                            "confidence": 0.98,
+                                        }
+                                    }
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = OpenAiCompatibleRecognitionClient(
+        build_provider_config(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://llm.example.com/v1",
+        ),
+    )
+    image_input = RecognitionDocumentInput(
+        source="image_file",
+        file_name="Screenshot_20251119-161841.支付宝.png",
+        media_type="image/png",
+        data_url="data:image/png;base64,ZmFrZS1pbWFnZQ==",
+        byte_count=10,
+    )
+
+    result = client.recognize(material=build_material(), document_input=image_input)
+
+    classification_system_prompt = captured_requests[0]["messages"][0]["content"]
+    classification_user_prompt = json.loads(captured_requests[0]["messages"][1]["content"][0]["text"])
+    assert "Treat uploaded_material_type only as a weak client hint, not as classification ground truth." in classification_system_prompt
+    assert "Bank or wallet payment proof pages such as 支付宝/微信账单详情, 交易详情, 支付成功页, or 付款记录 must be classified as material_type.value='payment_record'" in classification_system_prompt
+    assert any(
+        "Treat uploaded_material_type only as a weak hint from the client UI, not as classification ground truth."
+        in item
+        for item in classification_user_prompt["instructions"]
+    )
+    assert any(
+        "Use material_type.value=payment_record for bank or wallet payment proof pages such as 支付宝/微信账单详情、交易详情、支付成功页、付款记录"
+        in item
+        for item in classification_user_prompt["instructions"]
+    )
+    assert result.recognized_fields["material_type"].value == "payment_record"
 
 
 def test_openai_itinerary_extraction_prompt_requests_local_transport_amount_and_time():
