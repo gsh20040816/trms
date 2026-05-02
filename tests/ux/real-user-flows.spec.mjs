@@ -565,8 +565,6 @@ test.describe.serial("TRMS 真实主流程 UX 验收", () => {
     await page.locator("input[name='deadline']").fill("2026-05-10T18:00");
     await addMemberTag(page, "高胜寒");
     await addMemberTag(page, "刘诗奇");
-    await page.locator("label:has-text('参赛费')").click();
-    await page.locator("label:has-text('市内交通')").click();
     await page.locator("textarea[name='project-info']").fill("ICPC/CCPC 报销 UX 上传验收");
     await page.locator("textarea[name='reimburser-info']").fill("同济 ACM 实验室");
     await page.locator("input[name='invoice-title']").fill("同济大学");

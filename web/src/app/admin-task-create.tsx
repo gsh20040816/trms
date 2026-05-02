@@ -46,6 +46,8 @@ const FEE_CATEGORY_OPTIONS: Array<{ value: ExpenseType; label: string }> = [
   { value: "other", label: "其他" },
 ];
 
+const DEFAULT_FEE_CATEGORIES: ExpenseType[] = FEE_CATEGORY_OPTIONS.map((option) => option.value);
+
 function buildInitialFormState(administratorId: string): TaskCreateFormState {
   return {
     competitionName: "",
@@ -54,7 +56,7 @@ function buildInitialFormState(administratorId: string): TaskCreateFormState {
     competitionEndDate: "",
     deadline: "",
     memberIds: [],
-    feeCategories: [],
+    feeCategories: [...DEFAULT_FEE_CATEGORIES],
     administratorId,
     projectInfo: "",
     reimburserInfo: "",

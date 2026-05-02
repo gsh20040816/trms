@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-05-02 12:45 - Default all fee categories in admin task creation
+
+### 完成内容
+- 完成任务“管理员创建任务时默认全选发票类型”。
+- 调整管理员创建任务页默认表单状态：
+  - [admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx) 新增默认费用类别集合，首次打开创建页时 `feeCategories` 直接初始化为全部费用类型；
+  - 保持现有复选框交互不变，管理员仍可手动取消任意类别，不改动任务详情编辑页的既有回填逻辑。
+- 同步更新相关前端测试和流程夹具：
+  - [admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx) 断言六个费用类别首次渲染即为选中，并补充“默认全选后仍可手动取消”的交互测试；
+  - 同时更新创建成功用例，校验提交请求会带上默认全选的费用类别集合；
+  - [main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx) 与 [real-user-flows.spec.mjs](/home/gsh/workspace/TRMS/tests/ux/real-user-flows.spec.mjs) 去掉旧的“点击一下即选中费用类别”操作，避免在新默认态下反向取消。
+
+### 根因
+- 创建页初始表单状态把 `feeCategories` 设为空数组，导致管理员每次新建任务都必须手动补点至少一个费用类别。
+- 这与当前产品要求“创建任务时默认全选发票类型”不一致；问题本质是创建页默认态错误，而不是后端校验或编辑页回填逻辑有问题。
+
+### 风险与影响面
+- 本轮只修改创建页首次打开时的默认值和对应前端测试，没有改动后端任务模型、任务详情编辑页保存逻辑或费用类别校验规则。
+- 当前保守假设是：仅“新建任务”需要默认全选，已存在任务仍应以服务端返回的真实 `fee_categories` 为准。该假设已体现在本轮实现中，避免把编辑页错误重置为全选。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- admin-task-create.test.tsx`
+  - `cd web && npm test -- main-flow-e2e-placeholder.test.tsx`
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 522 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 12:37 - Gate admin task navigation until a task context exists
 
 ### 完成内容

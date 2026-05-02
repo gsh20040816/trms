@@ -83,7 +83,6 @@ async function fillRequiredTaskForm() {
     target: { value: "2026-11-10T18:00" },
   });
   await addMember("2250", "张三 / member1 / 2250001");
-  fireEvent.click(screen.getByLabelText("火车票"));
   fireEvent.change(screen.getByLabelText("项目/课题信息"), {
     target: { value: "TRMS E2E placeholder" },
   });

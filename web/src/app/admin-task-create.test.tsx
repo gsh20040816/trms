@@ -58,7 +58,6 @@ async function fillRequiredTaskForm() {
     target: { value: "2026-12-01T10:00" },
   });
   await selectMember("2250", "张三 / member1 / 2250001");
-  fireEvent.click(screen.getByLabelText("参赛费"));
   fireEvent.change(screen.getByLabelText("项目/课题信息"), {
     target: { value: "ACM competition project" },
   });
@@ -164,6 +163,12 @@ describe("admin task create page", () => {
     expect(screen.getByText("输入后会实时向后端检索候选成员。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("输入成员姓名、用户名或学号检索")).toBeInTheDocument();
     expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");
+    expect(screen.getByLabelText("参赛费")).toBeChecked();
+    expect(screen.getByLabelText("火车票")).toBeChecked();
+    expect(screen.getByLabelText("航空费")).toBeChecked();
+    expect(screen.getByLabelText("市内交通")).toBeChecked();
+    expect(screen.getByLabelText("住宿费")).toBeChecked();
+    expect(screen.getByLabelText("其他")).toBeChecked();
 
     await fillRequiredTaskForm();
     fireEvent.change(screen.getByLabelText("发票抬头"), {
@@ -183,10 +188,34 @@ describe("admin task create page", () => {
     const requestBody = JSON.parse((postCall?.[1]?.body as string) ?? "{}") as Record<string, unknown>;
     expect(requestBody.competition_name).toBe("ICPC 区域赛");
     expect(requestBody.member_ids).toEqual(["member-actor-1"]);
-    expect(requestBody.fee_categories).toEqual(["registration"]);
+    expect(requestBody.fee_categories).toEqual([
+      "registration",
+      "railway",
+      "airfare",
+      "local_transport",
+      "hotel",
+      "other",
+    ]);
     expect(requestBody.administrator_id).toBe("admin-1");
     expect(requestBody.invoice_title).toBe("同济大学");
     expect(requestBody.tax_number).toBe("12100000425006117D");
+  });
+
+  it("defaults all fee categories to checked and still allows manual deselection", () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      throw new Error("fetch should not be called in checkbox state test");
+    });
+
+    renderAdminCreateRoute();
+
+    const railwayCheckbox = screen.getByLabelText("火车票");
+    const hotelCheckbox = screen.getByLabelText("住宿费");
+    expect(railwayCheckbox).toBeChecked();
+    expect(hotelCheckbox).toBeChecked();
+
+    fireEvent.click(railwayCheckbox);
+    expect(railwayCheckbox).not.toBeChecked();
+    expect(hotelCheckbox).toBeChecked();
   });
 
   it("blocks submit when the form contains invalid dates or blank member rows", async () => {
@@ -211,7 +240,6 @@ describe("admin task create page", () => {
     fireEvent.change(screen.getByLabelText("提交截止时间"), {
       target: { value: "2026-12-01T10:00" },
     });
-    fireEvent.click(screen.getByLabelText("参赛费"));
     fireEvent.change(screen.getByLabelText("项目/课题信息"), {
       target: { value: "ACM competition project" },
     });
