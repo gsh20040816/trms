@@ -317,6 +317,16 @@
   gap: 20px;
 }
 
+.admin-task-detail-save-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.admin-task-detail-save-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
 .task-card-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

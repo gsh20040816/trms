@@ -1141,13 +1141,17 @@ export function AdminTaskDetailPage() {
                 </div>
               </section>
 
-              <section className="admin-form-card admin-form-footer">
+              <section className="admin-form-card admin-form-footer admin-task-detail-save-footer">
                 <div>
                   <p className="eyebrow">保存</p>
                   <h3>更新草稿任务配置</h3>
                   <p>保存会覆盖当前草稿任务的基础信息，但不会改变状态。</p>
                 </div>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <Stack
+                  className="admin-task-detail-save-actions"
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1.5}
+                >
                   <Button component={RouterLink} to="/admin" variant="outlined" color="inherit">
                     返回任务列表
                   </Button>

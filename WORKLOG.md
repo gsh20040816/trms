@@ -1,5 +1,35 @@
 # WORKLOG
 
+## 2026-05-02 22:54 - Move task-detail save buttons onto the next line
+
+### 完成内容
+- 完成任务“调整管理员任务详情页保存区按钮换行布局”。
+- 已修改 [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)：
+  - 为任务详情页底部“保存”区域增加独立布局类；
+  - 保留“返回任务列表”“保存任务基础配置”两个按钮的原有语义和顺序，只调整它们所在操作区的摆放位置。
+- 已修改 [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)：
+  - 让任务详情页保存区改为纵向布局；
+  - 让按钮操作区占满整行并右对齐；
+  - 结果是两个按钮整体落到说明文案下一行，不再在右上角被挤压成截图中的窄圆形布局。
+- 已更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录本轮最小 UI 修复任务。
+
+### 根因
+- 任务详情页保存区复用了通用 `admin-form-footer` 的横向 `space-between` 布局；
+- 当左侧标题和说明文案较长时，右侧按钮区会被压缩到极窄宽度，导致两个按钮文字纵向折行，形成截图里的异常 UI。
+
+### 风险与影响面
+- 本轮只调整管理员任务详情页保存区的局部布局，不改按钮文案、提交行为、表单保存逻辑或其他页面的 footer 样式。
+- 当前使用页面级附加类覆盖通用 footer 布局，避免影响创建任务页和其他已有表单页。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-detail.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `120/120` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:50 - Fix missing frontend search request in system user role management
 
 ### 完成内容
