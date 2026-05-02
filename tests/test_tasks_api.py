@@ -644,6 +644,58 @@ def test_task_queries_require_bearer_and_enforce_scope(tmp_path):
         )
 
 
+def test_secondary_administrator_can_manage_task_routes(tmp_path):
+    client = make_client(tmp_path)
+    secondary_admin_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="admin2",
+            role="admin",
+            actor_id="admin-2",
+            member_code=None,
+        )
+    )
+    task = create_task(
+        client,
+        payload=valid_task_payload() | {"administrator_ids": ["admin-1", "admin-2"]},
+    )
+
+    list_response = client.get("/api/tasks", headers=secondary_admin_headers)
+    assert list_response.status_code == 200
+    assert [item["id"] for item in list_response.json()] == [task["id"]]
+
+    update_members_response = client.put(
+        f"/api/tasks/{task['id']}/members",
+        json={"member_ids": ["2250001", "2250002"]},
+        headers=secondary_admin_headers,
+    )
+    assert update_members_response.status_code == 200
+    assert [item["member_id"] for item in update_members_response.json()["items"]] == [
+        "2250001",
+        "2250002",
+    ]
+
+    update_task_response = client.put(
+        f"/api/tasks/{task['id']}",
+        json=valid_task_update_payload(
+            member_ids=["2250001", "2250002"],
+            administrator_id="admin-1",
+            administrator_ids=["admin-1", "admin-2"],
+        ),
+        headers=secondary_admin_headers,
+    )
+    assert update_task_response.status_code == 200
+    assert update_task_response.json()["administrator_ids"] == ["admin-1", "admin-2"]
+
+    status_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=secondary_admin_headers,
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "open"
+
+
 def test_administrator_can_record_and_list_material_reminders(tmp_path):
     client = make_client(tmp_path)
     task = create_task(client)

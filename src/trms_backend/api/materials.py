@@ -75,6 +75,7 @@ from trms_backend.domain.tasks import (
     TaskSubmissionDeadlinePassedError,
     TaskSubmitterNotMemberError,
     ensure_task_has_member,
+    is_task_administrator,
 )
 
 
@@ -421,7 +422,7 @@ def build_material_router(
                 request_id=request_id,
             )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        if task.administrator_id != administrator_id:
+        if not is_task_administrator(task, actor_id=administrator_id):
             _record_material_claim_audit(
                 audit_log_repository,
                 actor_id=administrator_id,
@@ -432,7 +433,7 @@ def build_material_router(
                 summary=f"reject unauthorized claim for material {material_id}",
                 detail={
                     "failure_reason": "administrator is not allowed to claim materials for this task",
-                    "task_administrator_id": task.administrator_id,
+                    "task_administrator_ids": task.administrator_ids,
                 },
                 request_id=request_id,
             )

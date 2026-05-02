@@ -14,7 +14,7 @@ from trms_backend.domain.invoice_validation import (
 )
 from trms_backend.domain.invoices import ExpenseType, InvoiceRecord, ValidationResult, ValidationStatus
 from trms_backend.domain.materials import MaterialRecord, MaterialType
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import ReimbursementTask, is_task_administrator
 
 _MISSING_MATERIAL_RULE_TO_TYPE = {
     PAYMENT_RECORD_REQUIRED_RULE_CODE: MaterialType.PAYMENT_RECORD,
@@ -133,7 +133,7 @@ def build_visible_missing_material_list(
         validations_by_invoice_id=validations_by_invoice_id,
     )
 
-    if normalized_actor_id == task.administrator_id:
+    if is_task_administrator(task, actor_id=normalized_actor_id):
         return VisibleMissingMaterialList(
             task_id=task.id,
             actor_id=normalized_actor_id,

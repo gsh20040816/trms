@@ -9,7 +9,11 @@ from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationSt
 from trms_backend.domain.expense_details import ExpenseDetailInvoiceSnapshot
 from trms_backend.domain.invoices import InvoiceRecord
 from trms_backend.domain.splits import ExpenseSplitRecord
-from trms_backend.domain.tasks import ReimbursementTask, has_task_submission_deadline_passed
+from trms_backend.domain.tasks import (
+    ReimbursementTask,
+    ensure_task_administrator,
+    has_task_submission_deadline_passed,
+)
 
 
 class OverdueConfirmationActorNotAllowedError(ValueError):
@@ -54,9 +58,11 @@ def build_overdue_confirmation_list(
     confirmations_by_split_id: dict[str, ConfirmationRecord],
     now: datetime | None = None,
 ) -> OverdueConfirmationList:
-    normalized_administrator_id = administrator_id.strip()
-    if normalized_administrator_id != task.administrator_id:
-        raise OverdueConfirmationActorNotAllowedError()
+    normalized_administrator_id = ensure_task_administrator(
+        task,
+        actor_id=administrator_id,
+        error_type=OverdueConfirmationActorNotAllowedError,
+    )
 
     is_overdue = has_task_submission_deadline_passed(task, now=now)
     if not is_overdue:

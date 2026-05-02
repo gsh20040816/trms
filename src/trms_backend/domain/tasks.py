@@ -262,6 +262,23 @@ class ReimbursementTask(BaseModel):
     updated_at: datetime
 
 
+def is_task_administrator(task: ReimbursementTask, *, actor_id: str) -> bool:
+    normalized_actor_id = actor_id.strip()
+    return normalized_actor_id in task.administrator_ids
+
+
+def ensure_task_administrator(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    error_type: type[Exception] = PermissionError,
+) -> str:
+    normalized_actor_id = actor_id.strip()
+    if is_task_administrator(task, actor_id=normalized_actor_id):
+        return normalized_actor_id
+    raise error_type()
+
+
 class TaskMemberSummary(BaseModel):
     member_id: str
     username: str | None = None

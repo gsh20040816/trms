@@ -15,7 +15,7 @@ from trms_backend.domain.invoices import InvoiceRecord, ValidationResult
 from trms_backend.domain.materials import MaterialRecord
 from trms_backend.domain.missing_materials import aggregate_task_missing_materials
 from trms_backend.domain.splits import ExpenseSplitRecord
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import ReimbursementTask, ensure_task_administrator
 
 
 class AutomaticReminderTaskStatus(StrEnum):
@@ -104,10 +104,11 @@ def ensure_task_automatic_reminder_administrator(
     *,
     actor_id: str,
 ) -> str:
-    normalized_actor_id = actor_id.strip()
-    if normalized_actor_id != task.administrator_id:
-        raise AutomaticReminderTaskActorNotAllowedError()
-    return normalized_actor_id
+    return ensure_task_administrator(
+        task,
+        actor_id=actor_id,
+        error_type=AutomaticReminderTaskActorNotAllowedError,
+    )
 
 
 def generate_task_automatic_reminder_tasks(

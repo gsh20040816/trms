@@ -53,6 +53,7 @@ from trms_backend.domain.tasks import (
     TaskStatus,
     ensure_task_accepts_member_submission,
     ensure_task_allows_expense_type,
+    is_task_administrator,
 )
 
 
@@ -278,7 +279,7 @@ def build_invoice_router(
             ensure_manual_invoice_entry_actor_allowed(
                 actor_id=manual_entry.actor_id,
                 submitter_id=material.submitter_id,
-                administrator_id=task.administrator_id,
+                administrator_ids=task.administrator_ids,
             )
         except InvoiceManualEntryActorNotAllowedError as error:
             raise HTTPException(
@@ -296,7 +297,7 @@ def build_invoice_router(
         if (
             existing_invoice is not None
             and existing_invoice.member_submission_status is InvoiceMemberSubmissionStatus.SUBMITTED
-            and manual_entry.actor_id != task.administrator_id
+            and not is_task_administrator(task, actor_id=manual_entry.actor_id)
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

@@ -230,9 +230,9 @@ def ensure_manual_invoice_entry_actor_allowed(
     *,
     actor_id: str,
     submitter_id: str | None,
-    administrator_id: str,
+    administrator_ids: list[str],
 ) -> None:
-    if actor_id == administrator_id:
+    if actor_id in administrator_ids:
         return
     if submitter_id is not None and actor_id == submitter_id:
         return

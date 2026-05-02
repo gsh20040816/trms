@@ -17,7 +17,7 @@ from trms_backend.domain.invoices import ExpenseType, InvoiceRecord, ValidationR
 from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.missing_materials import aggregate_task_missing_materials
 from trms_backend.domain.splits import ExpenseSplitRecord
-from trms_backend.domain.tasks import ReimbursementTask, TaskStatus
+from trms_backend.domain.tasks import ReimbursementTask, TaskStatus, ensure_task_administrator
 
 
 class ExportArtifactKind(StrEnum):
@@ -451,10 +451,11 @@ def ensure_task_export_administrator(
     *,
     actor_id: str,
 ) -> str:
-    normalized_actor_id = actor_id.strip()
-    if normalized_actor_id != task.administrator_id:
-        raise TaskExportActorNotAllowedError()
-    return normalized_actor_id
+    return ensure_task_administrator(
+        task,
+        actor_id=actor_id,
+        error_type=TaskExportActorNotAllowedError,
+    )
 
 
 def create_task_export_job(

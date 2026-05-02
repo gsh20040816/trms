@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationStatus
 from trms_backend.domain.invoices import ExpenseType, InvoiceRecord
 from trms_backend.domain.splits import ExpenseSplitRecord
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import ReimbursementTask, is_task_administrator
 
 
 class ExpenseDetailScope(StrEnum):
@@ -70,7 +70,7 @@ def resolve_expense_detail_scope(
     actor_id: str,
 ) -> ExpenseDetailScope:
     normalized_actor_id = actor_id.strip()
-    if normalized_actor_id == task.administrator_id:
+    if is_task_administrator(task, actor_id=normalized_actor_id):
         return ExpenseDetailScope.TASK
     if normalized_actor_id in task.member_ids:
         return ExpenseDetailScope.MEMBER

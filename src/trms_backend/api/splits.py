@@ -26,6 +26,7 @@ from trms_backend.domain.splits import (
     ensure_split_actor_allowed,
 )
 from trms_backend.domain.tasks import TaskRepository
+from trms_backend.domain.tasks import is_task_administrator
 
 
 class ExpenseSplitReplaceRequest(BaseModel):
@@ -91,7 +92,7 @@ def build_split_router(
                 detail=str(error),
             ) from error
         if (
-            replace_payload.actor_id != task.administrator_id
+            not is_task_administrator(task, actor_id=replace_payload.actor_id)
             and invoice.member_submission_status is InvoiceMemberSubmissionStatus.SUBMITTED
         ):
             raise HTTPException(
@@ -102,7 +103,7 @@ def build_split_router(
             ensure_split_actor_allowed(
                 actor_id=replace_payload.actor_id,
                 submitter_id=material.submitter_id,
-                administrator_id=task.administrator_id,
+                administrator_ids=set(task.administrator_ids),
                 existing_member_ids={
                     split.member_id for split in split_repository.list_by_invoice(invoice_id)
                 },

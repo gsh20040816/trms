@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 
 from trms_backend.api.request_identity import RequestIdentity
 from trms_backend.domain.auth import UserRole
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import ReimbursementTask, is_task_administrator
 
 
 class TaskAccessScope(StrEnum):
@@ -25,9 +25,9 @@ def resolve_task_access_scope(
         return TaskAccessScope.ANONYMOUS
 
     actor_id = identity.actor_id
-    if (
-        actor_id == task.administrator_id
-        and identity.role in {UserRole.ADMIN, UserRole.SYSTEM_ADMIN}
+    if identity.role in {UserRole.ADMIN, UserRole.SYSTEM_ADMIN} and is_task_administrator(
+        task,
+        actor_id=actor_id,
     ):
         return TaskAccessScope.ADMINISTRATOR
     if identity.role is UserRole.MEMBER and actor_id in task.member_ids:

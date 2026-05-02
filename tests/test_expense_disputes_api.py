@@ -13,6 +13,7 @@ from test_tasks_api import (
     auth_headers,
     create_task as create_admin_task,
     register_and_get_token,
+    valid_task_payload,
 )
 
 
@@ -175,6 +176,76 @@ def test_non_administrator_cannot_list_expense_disputes(tmp_path):
     assert response.json()["detail"] == (
         "actor is not allowed to view or resolve expense disputes for this task"
     )
+
+
+def test_secondary_task_administrator_can_list_and_resolve_expense_disputes(tmp_path):
+    client = make_client(tmp_path)
+    secondary_admin_token = register_and_get_token(
+        client,
+        username="admin2",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    task_id = create_admin_task(
+        client,
+        payload={
+            **valid_task_payload(),
+            "administrator_ids": ["admin-1", "admin-2"],
+        },
+    )["id"]
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert response.status_code == 200
+    material_id = upload_invoice_material(client, task_id)
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload(),
+    )
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 6000, "note": "self paid"},
+                {"member_id": "2250002", "amount_cents": 6345, "note": "team shared"},
+            ],
+        },
+    )
+    assert response.status_code == 200
+    split_id = {item["member_id"]: item["id"] for item in response.json()["items"]}["2250002"]
+    response = client.put(
+        f"/api/splits/{split_id}/confirmation",
+        json={
+            "actor_id": "2250002",
+            "member_id": "2250002",
+            "status": "disputed",
+            "dispute_reason": "shared amount should be lower",
+        },
+    )
+    assert response.status_code == 200
+    move_task_to_reviewing(client, task_id)
+
+    list_response = client.get(
+        f"/api/tasks/{task_id}/expense-disputes",
+        params={"actor_id": "admin-2"},
+        headers=auth_headers(secondary_admin_token),
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["administrator_id"] == "admin-2"
+
+    resolve_response = client.post(
+        f"/api/tasks/{task_id}/expense-disputes/{split_id}/resolve",
+        json={"administrator_id": "admin-2"},
+        headers=auth_headers(secondary_admin_token),
+    )
+    assert resolve_response.status_code == 200
+    assert resolve_response.json()["status"] == "pending"
 
 
 def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(tmp_path):

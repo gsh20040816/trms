@@ -70,11 +70,11 @@ def ensure_split_actor_allowed(
     *,
     actor_id: str,
     submitter_id: str | None,
-    administrator_id: str,
+    administrator_ids: set[str],
     existing_member_ids: set[str],
     target_member_ids: set[str],
 ) -> None:
-    if actor_id == administrator_id:
+    if actor_id in administrator_ids:
         return
     if submitter_id is not None and actor_id == submitter_id:
         return

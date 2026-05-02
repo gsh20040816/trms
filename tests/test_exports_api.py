@@ -218,6 +218,29 @@ def test_task_administrator_can_get_export_capabilities_when_task_is_ready(tmp_p
     assert body["current_task_status"] == "ready_to_export"
     assert body["export_allowed"] is True
     assert body["blocking_reasons"] == []
+
+
+def test_secondary_task_administrator_can_get_export_capabilities(tmp_path):
+    client = make_client(tmp_path)
+    secondary_admin_token = register_and_get_token(
+        client,
+        username="admin2",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    task_id = create_task_with_overrides(client, administrator_ids=["admin-1", "admin-2"])
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+
+    response = client.get(
+        f"/api/tasks/{task_id}/exports/capabilities",
+        params={"actor_id": "admin-2"},
+        headers=auth_headers(secondary_admin_token),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["administrator_id"] == "admin-2"
     assert body["execution_mode"] == "async_worker"
     assert body["note"] == "当前导出会通过后台任务生成，并在成功后保留可下载产物。"
     supported_by_kind = {item["kind"]: item for item in body["supported_exports"]}

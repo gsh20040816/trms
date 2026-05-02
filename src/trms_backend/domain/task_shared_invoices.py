@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from trms_backend.domain.invoices import ExpenseType, InvoiceRecord, ValidationResult, ValidationStatus
 from trms_backend.domain.materials import MaterialRecord, MaterialType
 from trms_backend.domain.splits import ExpenseSplitRecord
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import ReimbursementTask, is_task_administrator
 
 
 class TaskSharedInvoiceActorNotAllowedError(ValueError):
@@ -71,7 +71,7 @@ def build_task_shared_invoice_report(
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
 ) -> TaskSharedInvoiceReport:
     normalized_actor_id = actor_id.strip()
-    if normalized_actor_id != task.administrator_id and normalized_actor_id not in task.member_ids:
+    if not is_task_administrator(task, actor_id=normalized_actor_id) and normalized_actor_id not in task.member_ids:
         raise TaskSharedInvoiceActorNotAllowedError()
 
     items: list[TaskSharedInvoiceItem] = []

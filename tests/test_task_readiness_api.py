@@ -9,6 +9,7 @@ from test_tasks_api import (
     auth_headers,
     create_task,
     register_and_get_token,
+    valid_task_payload,
     valid_invoice_payload,
 )
 
@@ -462,3 +463,30 @@ def test_non_administrator_cannot_get_task_readiness(tmp_path):
 
     assert response.status_code == 403
     assert response.json()["detail"] == "actor is not allowed to view task readiness for this task"
+
+
+def test_secondary_administrator_can_get_task_readiness(tmp_path):
+    client = make_client(tmp_path)
+    secondary_admin_token = register_and_get_token(
+        client,
+        username="admin2",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    task_id = create_open_task_with_payload(
+        client,
+        {
+            **valid_task_payload(),
+            "administrator_ids": ["admin-1", "admin-2"],
+        },
+    )
+
+    response = client.get(
+        f"/api/tasks/{task_id}/readiness",
+        params={"actor_id": "admin-2"},
+        headers=auth_headers(secondary_admin_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["administrator_id"] == "admin-2"

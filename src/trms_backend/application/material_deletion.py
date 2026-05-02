@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from trms_backend.domain.invoices import InvoiceRepository
 from trms_backend.domain.materials import MaterialRecord, MaterialRepository, MaterialStatus
-from trms_backend.domain.tasks import TaskRepository
+from trms_backend.domain.tasks import TaskRepository, is_task_administrator
 
 
 class MaterialDeletionNotFoundError(LookupError):
@@ -54,7 +54,7 @@ class MaterialDeletionService:
         task = self._task_repository.get(material.task_id)
         if task is None:
             raise MaterialDeletionTaskNotFoundError(material.task_id)
-        if actor_id != task.administrator_id:
+        if not is_task_administrator(task, actor_id=actor_id):
             raise MaterialDeletionActorNotAllowedError()
 
         if self._invoice_repository.get_by_material(material.id) is not None:

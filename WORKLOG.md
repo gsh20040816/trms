@@ -1,5 +1,43 @@
 # WORKLOG
 
+## 2026-05-02 13:27 - Switch task authorization and admin task listings to administrator sets
+
+### 完成内容
+- 完成任务“将任务访问控制和管理员任务列表切换为按管理员集合授权”。
+- 后端统一收口“是否为该任务管理员”的真值来源，不再只认单个 `administrator_id`：
+  - [src/trms_backend/domain/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py) 新增 `is_task_administrator(...)` 与通用 `ensure_task_administrator(...)`，把管理员集合判断集中到领域层；
+  - [src/trms_backend/api/request_task_access.py](/home/gsh/workspace/TRMS/src/trms_backend/api/request_task_access.py)、[src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py) 将任务访问控制、管理员任务列表、任务成员维护、任务更新和状态流转切到 `administrator_ids` 集合授权；
+  - [src/trms_backend/domain/material_reminders.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/automatic_reminders.py)、[src/trms_backend/domain/task_review_summary.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_review_summary.py)、[src/trms_backend/domain/task_readiness.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_readiness.py)、[src/trms_backend/domain/expense_disputes.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/expense_disputes.py)、[src/trms_backend/domain/overdue_confirmations.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/overdue_confirmations.py)、[src/trms_backend/domain/exports.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/exports.py)、[src/trms_backend/domain/missing_materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/missing_materials.py)、[src/trms_backend/domain/expense_details.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/expense_details.py)、[src/trms_backend/domain/task_shared_invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_shared_invoices.py) 等管理员主路径同步改为集合判断，避免次管理员“能看到任务但无法复核/导出/提醒”的假授权状态；
+  - [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)、[src/trms_backend/application/material_deletion.py](/home/gsh/workspace/TRMS/src/trms_backend/application/material_deletion.py) 补齐待归属材料认领与材料删除的多管理员授权；
+  - [src/trms_backend/domain/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoices.py)、[src/trms_backend/domain/splits.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/splits.py)、[src/trms_backend/api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py)、[src/trms_backend/api/splits.py](/home/gsh/workspace/TRMS/src/trms_backend/api/splits.py) 将“已提交发票/分摊仅管理员可改”的门禁扩展到全部任务管理员，而非仅主管理员。
+- 补充多管理员权限回归测试：
+  - [tests/test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py) 覆盖次管理员可列出、更新成员、更新任务与变更任务状态；
+  - [tests/test_web_bearer_request_identity_api.py](/home/gsh/workspace/TRMS/tests/test_web_bearer_request_identity_api.py) 覆盖 bearer 身份下次管理员的任务管理与复核主路径放行，以及非任务管理员继续拒绝；
+  - [tests/test_task_readiness_api.py](/home/gsh/workspace/TRMS/tests/test_task_readiness_api.py)、[tests/test_expense_disputes_api.py](/home/gsh/workspace/TRMS/tests/test_expense_disputes_api.py)、[tests/test_overdue_confirmations_api.py](/home/gsh/workspace/TRMS/tests/test_overdue_confirmations_api.py)、[tests/test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py) 覆盖次管理员的 readiness、争议处理、超期确认和导出能力查询。
+
+### 根因
+- 上一轮虽然已经把 `administrator_ids` 写入任务模型、仓储和迁移，但后端大部分授权链路仍直接比较 `task.administrator_id`。
+- 这会造成“数据层支持多个管理员，但只有列表首项能实际行权”的半完成状态：次管理员即使能被保存下来，也会在任务列表、任务详情、复核、导出、提醒、材料认领、已提交发票修改和分摊修改等主路径上被误判为越权。
+- 因此本轮必须把“任务管理员真值”统一收口，并将相关管理员 API 一起切到集合授权，才能形成可验证的闭环。
+
+### 风险与影响面
+- 本轮没有改动前端任务详情页、多管理员展示文案或管理员选择交互；这些仍留给后续两个拆分任务处理。
+- 当前保守兼容策略保持不变：`administrator_id` 继续表示主管理员并用于旧前端/旧展示兼容，`administrator_ids` 表示完整管理员集合；授权判断以 `administrator_ids` 为准。
+- 本轮未扩大成员可见性边界，成员权限仍只按 `member_ids` 与现有成员主路径过滤；用户新增的“同任务成员互看已上传发票”需求不在本轮处理范围。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py tests/test_web_bearer_request_identity_api.py tests/test_task_readiness_api.py tests/test_expense_disputes_api.py tests/test_overdue_confirmations_api.py tests/test_exports_api.py`
+  - 101 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 531 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 13:18 - Add multi-administrator task storage with compatibility fields
 
 ### 完成内容

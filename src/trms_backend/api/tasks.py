@@ -101,6 +101,7 @@ from trms_backend.domain.tasks import (
     close_expired_open_tasks,
     ensure_task_can_enter_ready_to_export,
     ensure_task_can_publish,
+    is_task_administrator,
     resolve_task_create,
 )
 
@@ -243,7 +244,7 @@ def build_task_router(
             return [
                 enrich_task_member_summaries(task)
                 for task in repository.list()
-                if task.administrator_id == identity.actor_id
+                if is_task_administrator(task, actor_id=identity.actor_id)
             ]
         return []
 
@@ -1094,7 +1095,7 @@ def build_task_router(
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        if identity.actor_id != task.administrator_id:
+        if identity.actor_id is None or not is_task_administrator(task, actor_id=identity.actor_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="actor is not allowed to manage task members for this task",
@@ -1118,7 +1119,7 @@ def build_task_router(
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        if identity.actor_id != task.administrator_id:
+        if identity.actor_id is None or not is_task_administrator(task, actor_id=identity.actor_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="actor is not allowed to update this task",
@@ -1142,7 +1143,7 @@ def build_task_router(
         task = repository.get(task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
-        if identity.actor_id != task.administrator_id:
+        if identity.actor_id is None or not is_task_administrator(task, actor_id=identity.actor_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="actor is not allowed to manage task status for this task",

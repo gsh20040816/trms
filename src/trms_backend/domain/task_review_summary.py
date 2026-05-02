@@ -7,7 +7,7 @@ from trms_backend.domain.invoices import InvoiceRecord, ValidationResult, Valida
 from trms_backend.domain.materials import MaterialRecord
 from trms_backend.domain.recognitions import RecognitionTaskRecord, RecognitionTaskStatus
 from trms_backend.domain.splits import ExpenseSplitRecord
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import ReimbursementTask, ensure_task_administrator
 
 
 class TaskReviewSummaryActorNotAllowedError(ValueError):
@@ -74,9 +74,11 @@ def build_task_review_summary(
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
     confirmations_by_split_id: dict[str, ConfirmationRecord],
 ) -> TaskReviewSummary:
-    normalized_administrator_id = administrator_id.strip()
-    if normalized_administrator_id != task.administrator_id:
-        raise TaskReviewSummaryActorNotAllowedError()
+    normalized_administrator_id = ensure_task_administrator(
+        task,
+        actor_id=administrator_id,
+        error_type=TaskReviewSummaryActorNotAllowedError,
+    )
 
     material_items = [
         TaskReviewSummaryMaterialItem(

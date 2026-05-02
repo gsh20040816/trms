@@ -8,7 +8,10 @@ from trms_backend.domain.confirmations import ConfirmationRecord, ConfirmationSt
 from trms_backend.domain.expense_details import ExpenseDetailInvoiceSnapshot
 from trms_backend.domain.invoices import InvoiceRecord
 from trms_backend.domain.splits import ExpenseSplitRecord
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import (
+    ReimbursementTask,
+    ensure_task_administrator as ensure_domain_task_administrator,
+)
 
 
 class ExpenseDisputeActorNotAllowedError(ValueError):
@@ -40,10 +43,11 @@ class ExpenseDisputeList(BaseModel):
 
 
 def ensure_task_administrator(task: ReimbursementTask, *, actor_id: str) -> str:
-    normalized_actor_id = actor_id.strip()
-    if normalized_actor_id != task.administrator_id:
-        raise ExpenseDisputeActorNotAllowedError()
-    return normalized_actor_id
+    return ensure_domain_task_administrator(
+        task,
+        actor_id=actor_id,
+        error_type=ExpenseDisputeActorNotAllowedError,
+    )
 
 
 def build_expense_dispute_list(

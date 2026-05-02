@@ -187,3 +187,67 @@ def test_non_administrator_cannot_list_task_overdue_confirmations(tmp_path):
     assert response.json()["detail"] == (
         "actor is not allowed to view overdue confirmations for this task"
     )
+
+
+def test_secondary_task_administrator_can_list_overdue_confirmations(tmp_path):
+    client = make_client(tmp_path)
+    secondary_admin_token = register_and_get_token(
+        client,
+        username="admin2",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    task_id = create_task(
+        client,
+        payload={
+            "competition_name": "ICPC Asia Regional",
+            "competition_location": "Shanghai",
+            "competition_start_date": "2026-11-01",
+            "competition_end_date": "2026-11-03",
+            "deadline": "2026-12-01T00:00:00Z",
+            "member_ids": ["2250001", "2250002", "2250003"],
+            "fee_categories": ["registration", "railway", "hotel"],
+            "administrator_id": "admin-1",
+            "administrator_ids": ["admin-1", "admin-2"],
+            "invoice_title": "同济大学",
+            "tax_number": "12100000425006117D",
+        },
+    )["id"]
+    response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert response.status_code == 200
+    material_id = upload_invoice_material(client, task_id)
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload(),
+    )
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+    response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 4000, "note": "leader share"},
+                {"member_id": "2250002", "amount_cents": 4000, "note": "missing confirmation"},
+            ],
+        },
+    )
+    assert response.status_code == 200
+    update_task_row(
+        tmp_path,
+        task_id,
+        deadline=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    list_response = client.get(
+        f"/api/tasks/{task_id}/overdue-confirmations",
+        params={"actor_id": "admin-2"},
+        headers=auth_headers(secondary_admin_token),
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["administrator_id"] == "admin-2"

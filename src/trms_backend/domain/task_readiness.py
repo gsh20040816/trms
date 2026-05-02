@@ -18,7 +18,7 @@ from trms_backend.domain.task_supporting_material_linkage import (
     PendingSupportingMaterialLinkageItem,
     build_task_supporting_material_linkage_report,
 )
-from trms_backend.domain.tasks import ReimbursementTask
+from trms_backend.domain.tasks import ReimbursementTask, ensure_task_administrator
 
 
 class TaskReadinessActorNotAllowedError(ValueError):
@@ -85,9 +85,11 @@ def build_task_readiness_summary(
     confirmations_by_split_id: dict[str, ConfirmationRecord],
     linked_invoice_ids_by_material_id: dict[str, list[str]],
 ) -> TaskReadinessSummary:
-    normalized_administrator_id = administrator_id.strip()
-    if normalized_administrator_id != task.administrator_id:
-        raise TaskReadinessActorNotAllowedError()
+    normalized_administrator_id = ensure_task_administrator(
+        task,
+        actor_id=administrator_id,
+        error_type=TaskReadinessActorNotAllowedError,
+    )
 
     materials_by_id = {material.id: material for material in materials}
     pending_linkage_report = build_task_supporting_material_linkage_report(

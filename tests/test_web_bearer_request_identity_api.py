@@ -328,6 +328,105 @@ def test_admin_bearer_task_management_routes_bind_to_owned_tasks(tmp_path):
     assert anonymous_status_response.json()["detail"] == "invalid or missing bearer token"
 
 
+def test_secondary_admin_bearer_can_access_multi_admin_task_management_routes(tmp_path):
+    client = make_client(tmp_path)
+    secondary_admin_token = register_and_get_token(
+        client,
+        username="admin2",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    outsider_admin_token = register_and_get_token(
+        client,
+        username="admin3",
+        role="admin",
+        actor_id="admin-3",
+        member_code=None,
+    )
+    task = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"administrator_ids": ["admin-1", "admin-2"]},
+    )
+    task_id = task["id"]
+
+    own_list_response = client.get(
+        "/api/tasks",
+        headers=auth_headers(secondary_admin_token),
+    )
+    assert own_list_response.status_code == 200
+    assert [item["id"] for item in own_list_response.json()] == [task_id]
+
+    own_task_response = client.get(
+        f"/api/tasks/{task_id}",
+        headers=auth_headers(secondary_admin_token),
+    )
+    assert own_task_response.status_code == 200
+    assert own_task_response.json()["administrator_ids"] == ["admin-1", "admin-2"]
+
+    own_members_response = client.put(
+        f"/api/tasks/{task_id}/members",
+        headers=auth_headers(secondary_admin_token),
+        json={"member_ids": ["2250001", "2250002"]},
+    )
+    assert own_members_response.status_code == 200
+
+    own_status_response = client.patch(
+        f"/api/tasks/{task_id}/status",
+        headers=auth_headers(secondary_admin_token),
+        json={"target_status": "open"},
+    )
+    assert own_status_response.status_code == 200
+
+    outsider_task_response = client.get(
+        f"/api/tasks/{task_id}",
+        headers=auth_headers(outsider_admin_token),
+    )
+    assert outsider_task_response.status_code == 403
+    assert outsider_task_response.json()["detail"] == "actor is not allowed to view this task"
+
+
+def test_secondary_admin_bearer_can_access_multi_admin_review_routes(tmp_path):
+    client = make_client(tmp_path)
+    secondary_admin_token = register_and_get_token(
+        client,
+        username="admin2-review",
+        role="admin",
+        actor_id="admin-2",
+        member_code=None,
+    )
+    task = create_admin_task(
+        client,
+        payload=valid_task_payload() | {"administrator_ids": ["admin-1", "admin-2"]},
+    )
+    task_id = task["id"]
+
+    summary_response = client.get(
+        f"/api/tasks/{task_id}/review-summary",
+        headers=auth_headers(secondary_admin_token),
+    )
+    assert summary_response.status_code == 200
+    assert summary_response.json()["administrator_id"] == "admin-2"
+
+    readiness_response = client.get(
+        f"/api/tasks/{task_id}/readiness",
+        headers=auth_headers(secondary_admin_token),
+    )
+    assert readiness_response.status_code == 200
+    assert readiness_response.json()["administrator_id"] == "admin-2"
+
+    reminder_response = client.post(
+        f"/api/tasks/{task_id}/material-reminders",
+        headers=auth_headers(secondary_admin_token),
+        json={
+            "member_id": "2250002",
+            "content": "请补交支付记录",
+        },
+    )
+    assert reminder_response.status_code == 201
+    assert reminder_response.json()["administrator_id"] == "admin-2"
+
+
 def test_admin_bearer_review_routes_reject_anonymous_or_unrelated_admin(tmp_path):
     client = make_client(tmp_path)
     register_and_get_token(

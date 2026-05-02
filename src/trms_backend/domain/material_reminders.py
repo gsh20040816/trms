@@ -7,7 +7,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-from trms_backend.domain.tasks import ReimbursementTask, ensure_task_has_member
+from trms_backend.domain.tasks import (
+    ReimbursementTask,
+    ensure_task_administrator,
+    ensure_task_has_member,
+)
 
 
 class MaterialReminderCreate(BaseModel):
@@ -50,10 +54,11 @@ def ensure_task_material_reminder_administrator(
     *,
     actor_id: str,
 ) -> str:
-    normalized_actor_id = actor_id.strip()
-    if normalized_actor_id != task.administrator_id:
-        raise TaskMaterialReminderActorNotAllowedError()
-    return normalized_actor_id
+    return ensure_task_administrator(
+        task,
+        actor_id=actor_id,
+        error_type=TaskMaterialReminderActorNotAllowedError,
+    )
 
 
 def create_task_material_reminder(
