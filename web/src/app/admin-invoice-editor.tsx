@@ -5,13 +5,15 @@ import AccordionDetails from "@mui/material/AccordionDetails";
 import AccordionSummary from "@mui/material/AccordionSummary";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { StatusBadge } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -427,19 +429,6 @@ function countPendingValidations(validations: ValidationResult[]) {
   return validations.filter((item) => item.status === "pending").length;
 }
 
-function buildInvoiceSummaryValidation(validations: ValidationResult[], hasInvoice: boolean) {
-  if (!hasInvoice) {
-    return { label: "待补录校验", tone: "warning" as const };
-  }
-  if (countFailedValidations(validations) > 0) {
-    return { label: "校验失败", tone: "warning" as const };
-  }
-  if (countPendingValidations(validations) > 0) {
-    return { label: "校验待确认", tone: "warning" as const };
-  }
-  return { label: "校验通过", tone: "success" as const };
-}
-
 function buildMaterialStatusHint(item: InvoiceMaterialItem, task: ReimbursementTask | null) {
   const memberSummaryMap = buildTaskMemberSummaryMap(task?.member_summaries);
   const invoice = item.invoiceItem?.invoice ?? null;
@@ -453,6 +442,57 @@ function buildMaterialStatusHint(item: InvoiceMaterialItem, task: ReimbursementT
 
 function formatActorDisplay(value: string | null | undefined) {
   return value && value.trim().length > 0 ? value : "尚未确认";
+}
+
+function getInvoiceMaterialDisplayNumber(item: InvoiceMaterialItem) {
+  const displayNumber = item.invoiceItem?.invoice.invoice_number
+    ?? getRecognitionFieldTextValue(item.materialItem.latest_recognition ?? null, "invoice_number");
+  return (
+    displayNumber && displayNumber.trim().length > 0
+      ? displayNumber
+      : "待补录"
+  );
+}
+
+function getInvoiceMaterialDisplayAmount(item: InvoiceMaterialItem) {
+  const invoiceAmount = item.invoiceItem?.invoice.amount_cents;
+  if (typeof invoiceAmount === "number") {
+    return formatInvoiceAmountFromCents(invoiceAmount);
+  }
+  const recognitionAmount = getRecognitionFieldValue(
+    item.materialItem.latest_recognition ?? null,
+    "amount_cents",
+  );
+  return formatInvoiceAmountFromCents(
+    typeof recognitionAmount?.value === "number" ? recognitionAmount.value : null,
+  );
+}
+
+function getInvoiceMaterialDisplayExpenseType(item: InvoiceMaterialItem) {
+  const invoiceExpenseType = item.invoiceItem?.invoice.expense_type;
+  if (invoiceExpenseType) {
+    return formatExpenseType(invoiceExpenseType);
+  }
+  const recognitionExpenseType = getRecognitionFieldTextValue(
+    item.materialItem.latest_recognition ?? null,
+    "expense_type",
+  );
+  return recognitionExpenseType ? formatExpenseType(recognitionExpenseType) : "待确认";
+}
+
+function getInvoiceMaterialValidationSummary(item: InvoiceMaterialItem) {
+  const invoice = item.invoiceItem?.invoice ?? null;
+  const validations = item.invoiceItem?.validations ?? [];
+  if (!invoice) {
+    return { label: "待补录", tone: "warning" as const };
+  }
+  if (countFailedValidations(validations) > 0) {
+    return { label: "否", tone: "warning" as const };
+  }
+  if (countPendingValidations(validations) > 0) {
+    return { label: "待确认", tone: "warning" as const };
+  }
+  return { label: "是", tone: "success" as const };
 }
 
 function findSelectedItem(items: InvoiceMaterialItem[], materialId: string) {
@@ -668,6 +708,17 @@ export function AdminInvoiceEditorPage() {
     );
   }
 
+  function selectMaterial(item: InvoiceMaterialItem) {
+    if (!visibleTask) {
+      return;
+    }
+    setSelectedMaterialId(item.materialItem.material.id);
+    setFormState(buildInitialFormState(item, visibleTask));
+    setFormErrors({});
+    setSubmitError(null);
+    setSaveFeedback(null);
+  }
+
   function updateField<Key extends keyof InvoiceEditorFormState>(
     key: Key,
     value: InvoiceEditorFormState[Key],
@@ -805,7 +856,7 @@ export function AdminInvoiceEditorPage() {
               <div className="admin-form-header">
                 <div>
                   <p className="eyebrow">发票材料</p>
-                  <h2>待录入或可更正的发票材料</h2>
+                  <h2>选择要查看的发票材料</h2>
                 </div>
                 <StatusBadge tone="info">{invoiceMaterialItems.length} 份发票材料</StatusBadge>
               </div>
@@ -815,43 +866,97 @@ export function AdminInvoiceEditorPage() {
                   当前任务还没有 `invoice` 类型材料，暂时没有可录入的发票。
                 </p>
               ) : (
-                <ul className="invoice-material-list" aria-label="发票材料列表">
-                  {invoiceMaterialItems.map((item) => {
-                    const material = item.materialItem.material;
-                    const invoice = item.invoiceItem?.invoice ?? null;
-                    const validations = item.invoiceItem?.validations ?? [];
-                    const isSelected = material.id === selectedMaterialId;
-                    return (
-                      <li key={material.id}>
-                        <InvoiceSummaryRow
-                          filename={material.original_filename}
-                          invoiceNumber={invoice?.invoice_number ?? null}
-                          amountLabel={formatInvoiceAmountFromCents(invoice?.amount_cents ?? null)}
-                          validationLabel={buildInvoiceSummaryValidation(validations, invoice !== null).label}
-                          validationTone={buildInvoiceSummaryValidation(validations, invoice !== null).tone}
-                          supportingMaterialCount={item.invoiceItem?.supporting_material_ids.length ?? 0}
-                          statusHint={buildMaterialStatusHint(item, visibleTask)}
-                          trailingContent={(
-                            <StatusBadge tone={invoice ? "success" : "warning"}>
-                              {invoice ? "已存在发票记录" : "待录入"}
-                            </StatusBadge>
-                          )}
-                          selected={isSelected}
-                          action={{
-                            ariaLabel: `发票材料 ${material.original_filename} ${invoice?.invoice_number ?? "待补录票号"}`,
-                            onClick: () => {
-                              setSelectedMaterialId(material.id);
-                              setFormState(buildInitialFormState(item, visibleTask));
-                              setFormErrors({});
-                              setSubmitError(null);
-                              setSaveFeedback(null);
-                            },
-                          }}
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="invoice-editor-select-panel">
+                  <FormControl fullWidth>
+                    <InputLabel id="admin-invoice-material-select-label">目标发票材料</InputLabel>
+                    <Select
+                      labelId="admin-invoice-material-select-label"
+                      label="目标发票材料"
+                      aria-label="目标发票材料"
+                      value={selectedMaterialId}
+                      onChange={(event) => {
+                        const nextItem = findSelectedItem(
+                          invoiceMaterialItems,
+                          String(event.target.value),
+                        );
+                        if (nextItem) {
+                          selectMaterial(nextItem);
+                        }
+                      }}
+                      renderValue={(value) => {
+                        const currentItem = findSelectedItem(
+                          invoiceMaterialItems,
+                          String(value),
+                        );
+                        if (!currentItem) {
+                          return "请选择发票材料";
+                        }
+                        const validationSummary = getInvoiceMaterialValidationSummary(currentItem);
+                        return (
+                          <span className="invoice-editor-select-value">
+                            <span className="invoice-editor-select-value-title">
+                              <strong title={getInvoiceMaterialDisplayNumber(currentItem)}>
+                                发票号：{getInvoiceMaterialDisplayNumber(currentItem)}
+                              </strong>
+                              <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${validationSummary.tone}`}>
+                                校验通过：{validationSummary.label}
+                              </span>
+                            </span>
+                            <span title={currentItem.materialItem.material.original_filename}>
+                              文件：{currentItem.materialItem.material.original_filename}
+                            </span>
+                            <span>
+                              类型：{getInvoiceMaterialDisplayExpenseType(currentItem)}；金额：{getInvoiceMaterialDisplayAmount(currentItem)}
+                            </span>
+                          </span>
+                        );
+                      }}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            maxHeight: 420,
+                            width: "min(520px, calc(100vw - 32px))",
+                          },
+                        },
+                        MenuListProps: {
+                          "aria-label": "发票材料下拉选项",
+                        },
+                      }}
+                    >
+                      {invoiceMaterialItems.map((item) => {
+                        const material = item.materialItem.material;
+                        const validationSummary = getInvoiceMaterialValidationSummary(item);
+                        return (
+                          <MenuItem key={material.id} value={material.id} className="invoice-editor-select-option">
+                            <span className="invoice-editor-select-option-content">
+                              <span className="invoice-editor-select-option-title">
+                                <strong title={getInvoiceMaterialDisplayNumber(item)}>
+                                  发票号：{getInvoiceMaterialDisplayNumber(item)}
+                                </strong>
+                                <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${validationSummary.tone}`}>
+                                  校验通过：{validationSummary.label}
+                                </span>
+                              </span>
+                              <span className="invoice-editor-select-option-grid">
+                                <span title={material.original_filename}>
+                                  原始文件名：{material.original_filename}
+                                </span>
+                                <span>类型：{getInvoiceMaterialDisplayExpenseType(item)}</span>
+                                <span>金额：{getInvoiceMaterialDisplayAmount(item)}</span>
+                                <span title={buildMaterialStatusHint(item, visibleTask)}>
+                                  {buildMaterialStatusHint(item, visibleTask)}
+                                </span>
+                              </span>
+                            </span>
+                          </MenuItem>
+                        );
+                      })}
+                    </Select>
+                  </FormControl>
+                  <p className="field-hint">
+                    下拉列表高度已受控；展开后可在列表内滚动查看每张发票的摘要，再在右侧完成预览、校验和更正。
+                  </p>
+                </div>
               )}
             </article>
 

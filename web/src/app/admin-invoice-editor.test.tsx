@@ -292,7 +292,7 @@ describe("admin invoice editor page", () => {
     });
   });
 
-  it("renders invoice material list, recognition field sources, and pending hints", async () => {
+  it("renders invoice selector summary, dropdown details, and recognition hints", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
       const url = resolveRequestUrl(input);
 
@@ -321,12 +321,24 @@ describe("admin invoice editor page", () => {
     expect(screen.getByDisplayValue("AI-INV-001")).toBeInTheDocument();
     expect(screen.getByDisplayValue("123.45")).toBeInTheDocument();
 
-    const materialList = within(screen.getByLabelText("发票材料列表"));
-    expect(materialList.getByText("invoice.pdf")).toBeInTheDocument();
-    expect(materialList.getByText("票号 待补录")).toBeInTheDocument();
-    expect(materialList.getByText("待录入")).toBeInTheDocument();
+    const materialSelector = screen.getByRole("combobox", { name: "目标发票材料" });
+    expect(materialSelector).toHaveTextContent("发票号：AI-INV-001");
+    expect(materialSelector).toHaveTextContent("文件：invoice.pdf");
+    expect(materialSelector).toHaveTextContent("类型：火车票；金额：￥123.45");
+    expect(materialSelector).toHaveTextContent("校验通过：待补录");
 
-    const detailTabs = within(screen.getByRole("tablist", { name: "发票详情标签页" }));
+    act(() => {
+      fireEvent.mouseDown(materialSelector);
+    });
+    expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
+    expect(screen.getByText("类型：火车票")).toBeInTheDocument();
+    expect(screen.getByText("金额：￥123.45")).toBeInTheDocument();
+    expect(screen.getAllByText("校验通过：待补录").length).toBeGreaterThan(0);
+    act(() => {
+      fireEvent.click(screen.getByRole("option", { name: /发票号：AI-INV-001/ }));
+    });
+
+    const detailTabs = within(await screen.findByRole("tablist", { name: "发票详情标签页" }));
     act(() => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "识别字段" }));
     });

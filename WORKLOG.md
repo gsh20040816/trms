@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-05-02 19:54 - Turn admin invoice picker into a real dropdown with internal scrolling
+
+### 完成内容
+- 完成任务“把管理员发票查看页左侧改成受控下拉发票选择”。
+- [web/src/app/admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx) 已把左侧原本直接铺开的发票材料列表改成真正的 MUI 下拉选择：
+  - 默认只展示当前选中的发票摘要；
+  - 点击后才展开候选列表；
+  - 下拉层通过 `MenuProps.PaperProps.sx.maxHeight` 控制最大高度，候选内容在下拉层内部滚动，而不是把左侧区域继续拉成长列表。
+- 下拉项摘要口径已收口为管理员筛选最需要的信息：
+  - 发票号；
+  - 原始文件名；
+  - 类型；
+  - 金额；
+  - 是否校验通过。
+- 为了避免“未保存发票还只能看到一堆待补录”的无效摘要，本轮对左侧候选摘要做了识别结果兜底：
+  - 尚未形成正式发票记录时，发票号、金额和类型会优先回退展示最近识别建议；
+  - “是否校验通过”仍保持真实口径，未建票时显示“待补录”，不伪装成已通过。
+- [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 新增下拉摘要与候选项样式，限制候选网格在窄屏下收口为单列，避免移动端横向挤压。
+- [web/src/app/admin-invoice-editor.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.test.tsx) 已更新：
+  - 校验左侧显示为 `combobox` 样式的下拉摘要；
+  - 校验展开后能看到“原始文件名 / 类型 / 金额 / 校验通过”候选信息；
+  - 保持右侧识别字段、校验异常和保存逻辑测试继续通过。
+
+### 根因
+- 管理员发票查看页此前沿用了“左侧长列表 + 右侧详情”的展开模式，但在发票数量较多时，左侧会不断拉长，筛选效率下降。
+- 用户要求并不是简单把列表换个样式，而是要“默认折叠、点击展开、下拉内部滚动”的受控选择器；之前的实现不满足这一交互边界。
+
+### 风险与影响面
+- 本轮只改管理员发票查看页的左侧选择交互，没有改右侧预览、识别审计、校验异常和保存 API。
+- 本轮对“类型”的展示采用费用类型口径：优先展示正式发票 `expense_type`，没有正式发票时回退最近识别建议；如果后续产品想把这里改成“材料类型”或“发票类别”，需要再单独明确字段语义。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-invoice-editor.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `web` 全量测试 `116/116` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过；
+  - `eslint` 仍报告 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未改动该文件，且脚本最终未因此失败。
+
 ## 2026-05-02 19:32 - Scope verify.sh by changed files and skip repo-wide validation for docs-only rounds
 
 ### 完成内容
