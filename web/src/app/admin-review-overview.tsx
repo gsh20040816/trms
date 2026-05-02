@@ -292,9 +292,15 @@ function isPreviewableContentType(contentType: string | null) {
   return contentType === "application/pdf" || Boolean(contentType?.startsWith("image/"));
 }
 
-function describeRecognitionFieldValue(value: unknown, fieldName?: string) {
+function describeRecognitionFieldValue(
+  value: unknown,
+  fieldName?: string,
+  materialType?: TaskReviewSummaryMaterialItem["material"]["material_type"],
+) {
   if (fieldName === "amount_cents") {
-    return typeof value === "number" ? formatInvoiceAmountFromCents(value) : formatInvoiceAmountFromCents(null);
+    return typeof value === "number"
+      ? formatInvoiceAmountFromCents(value)
+      : formatInvoiceAmountFromCents(null, materialType === "invoice" ? "未识别金额/待补录" : "未识别金额");
   }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
@@ -875,7 +881,11 @@ export function AdminReviewOverviewPage() {
                                 <article key={fieldName} className="recognition-field-card">
                                   <h4>{formatFieldLabel(fieldName)}</h4>
                                   <p className="recognition-field-value">
-                                    {describeRecognitionFieldValue(field.value, fieldName)}
+                                    {describeRecognitionFieldValue(
+                                      field.value,
+                                      fieldName,
+                                      selectedMaterial.material_type,
+                                    )}
                                   </p>
                                   <dl className="task-meta-grid admin-review-detail-field-grid">
                                     <div>

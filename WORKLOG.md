@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-05-02 15:20 - Fix non-invoice pending/failure presentation in member and admin views
+
+### 完成内容
+- 完成任务“收口非发票识别失败/待确认展示，避免错误显示票号和金额待补录”。
+- 成员工作台中的问题材料摘要不再把非发票材料伪装成“待补录发票”：
+  - [web/src/components/invoice-summary-row.tsx](/home/gsh/workspace/TRMS/web/src/components/invoice-summary-row.tsx) 新增可选首行标签能力，允许摘要行在保留现有发票展示样式的同时，为非发票材料输出独立标签；
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx) 对识别失败/待确认队列按材料类型分流摘要文案：非发票材料首行改为材料类型，不再显示“票号 待补录”；若识别结果已抽到 `amount_cents`，直接展示识别金额；仅真正的发票材料仍保留“金额待补录/待补录票号”口径。
+- 管理员复核详情中的识别字段金额占位文案已按材料类型收口：
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx) 在识别字段详情里区分发票与非发票材料；发票缺金额时仍显示“未识别金额/待补录”，非发票缺金额时改为“未识别金额”，避免把支付记录、行程单等辅助材料误表述成待补录发票。
+- 补充前端回归测试：
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx) 新增非发票问题材料摘要回归，覆盖“显示材料类型 + 显示已识别金额 + 不出现票号待补录”；
+  - [web/src/app/admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx) 新增管理员复核页非发票金额缺失占位文案回归，并同步更新成员工作台非发票跳转按钮的可访问名称断言。
+
+### 根因
+- 成员工作台的问题材料分组直接复用了发票摘要组件，但组件默认首行永远生成“票号 ...”，金额也优先从发票记录读取；当支付记录、比赛通知、行程单或订单截图进入该分组时，就会被错误渲染成“票号待补录 / 金额待补录”。
+- 管理员复核详情里的识别字段金额展示也复用了发票金额格式化占位文案，导致非发票材料在金额尚未抽取时仍显示发票口径的“待补录”提示。
+
+### 风险与影响面
+- 本轮只收口前端展示文案和摘要取值逻辑，没有修改后端识别、建票、归属或权限判断。
+- 当前保守假设是：非发票问题材料在摘要首行只需要展示材料类型即可帮助用户判断入口，不额外新增“辅助材料编号”之类的新标识体系；若后续产品希望在摘要层继续细分“支付记录待归属”“行程单待核对”等更强语义，应单独起任务。
+- 发票相关页面、发票人工录入页和共享发票列表仍保持现有发票口径，避免把本轮展示收口扩散成无关 UI 重写。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx src/app/admin-review-overview.test.tsx`
+  - 2 个测试文件、14 个用例通过。
+- 已实际运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - pytest 539 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍保留 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍保留既有 `--localstorage-file` warning，Vite 仍保留既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 15:12 - Fix supporting material linkage entry flow and move linkage editing into material detail page
 
 ### 完成内容

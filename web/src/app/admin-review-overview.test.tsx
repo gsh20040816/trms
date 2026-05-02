@@ -662,6 +662,139 @@ describe("AdminReviewOverviewPage", () => {
     expect(detailPanel.getByText("未识别金额/待补录")).toBeInTheDocument();
   });
 
+  it("uses non-invoice wording when supporting material amount is still missing", async () => {
+    setMockSession("admin");
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-REVIEW") {
+        return Promise.resolve(jsonResponse({
+          id: "TASK-REVIEW",
+          status: "reviewing",
+          competition_name: "ICPC 复核任务",
+          competition_location: "上海",
+          competition_start_date: "2026-05-01",
+          competition_end_date: "2026-05-03",
+          deadline: "2026-05-10T18:00:00+08:00",
+          member_ids: ["2250001"],
+          fee_categories: ["registration"],
+          administrator_id: "admin-1",
+          project_info: "ACM 竞赛项目",
+          reimburser_info: "张管理员",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+          created_at: "2026-04-20T09:00:00+08:00",
+          updated_at: "2026-04-25T10:00:00+08:00",
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-REVIEW/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-REVIEW",
+          administrator_id: "admin-1",
+          counts: {
+            material_count: 1,
+            pending_assignment_material_count: 0,
+            invoice_count: 0,
+            validation_count: 0,
+            blocker_failed_validation_count: 0,
+            split_count: 0,
+            confirmed_split_count: 0,
+            pending_confirmation_count: 0,
+            disputed_confirmation_count: 0,
+            missing_confirmation_count: 0,
+            pending_recognition_count: 0,
+            failed_recognition_count: 0,
+            needs_confirmation_recognition_count: 1,
+          },
+          materials: [
+            {
+              material: {
+                id: "MAT-PAY-001",
+                status: "assigned",
+                task_id: "TASK-REVIEW",
+                submitter_id: "2250001",
+                task_id_hint: null,
+                submitter_id_hint: null,
+                channel: "web",
+                material_type: "payment_record",
+                storage_key: "TASK-REVIEW/pay.png",
+                original_filename: "pay.png",
+                content_type: "image/png",
+                size_bytes: 2048,
+                sha256: "e".repeat(64),
+                duplicate_of: null,
+                claimed_by: null,
+                claimed_at: null,
+                created_at: "2026-04-28T09:00:00+08:00",
+              },
+              latest_recognition: {
+                id: "REC-PAY-001",
+                material_id: "MAT-PAY-001",
+                status: "needs_confirmation",
+                is_final_fact: false,
+                failure: null,
+                raw_response: { provider: "placeholder-ai" },
+                recognized_fields: {
+                  amount_cents: {
+                    value: null,
+                    source: "ocr",
+                    confidence: 0.2,
+                    status: "needs_confirmation",
+                    updated_at: "2026-04-28T09:05:00+08:00",
+                  },
+                },
+                manual_corrections: [],
+                created_at: "2026-04-28T09:01:00+08:00",
+                updated_at: "2026-04-28T09:05:00+08:00",
+              },
+              invoice_id: null,
+              supporting_invoice_ids: [],
+            },
+          ],
+          pending_assignment_materials: [],
+          invoices: [],
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-REVIEW/overdue-confirmations?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-REVIEW",
+          administrator_id: "admin-1",
+          confirmation_deadline: "2026-05-10T18:00:00+08:00",
+          is_overdue: false,
+          total_overdue_members: 0,
+          overdue_member_ids: [],
+        }));
+      }
+
+      if (url === "/api/materials/MAT-PAY-001/content") {
+        return Promise.resolve(binaryResponse("png-binary", {
+          headers: {
+            "Content-Type": "image/png",
+            "Content-Disposition": 'inline; filename="pay.png"',
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in non-invoice amount placeholder test: ${url}`);
+    });
+
+    renderReviewRoute();
+
+    const detailPanel = within(await screen.findByLabelText("当前材料详情"));
+    const detailTabs = within(detailPanel.getByRole("tablist", { name: "当前材料详情标签页" }));
+
+    await act(async () => {
+      fireEvent.click(detailTabs.getByRole("tab", { name: "识别字段" }));
+      await Promise.resolve();
+    });
+
+    expect(detailPanel.getByText("未识别金额")).toBeInTheDocument();
+    expect(detailPanel.queryByText("未识别金额/待补录")).not.toBeInTheDocument();
+  });
+
   it("blocks member access through the existing protected admin route", async () => {
     setMockSession("member");
 

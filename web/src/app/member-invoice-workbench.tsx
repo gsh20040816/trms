@@ -616,6 +616,36 @@ function describeWorkbenchInvoice(item: WorkbenchInvoiceItem) {
   return item.invoice?.invoice_number ?? item.material.original_filename;
 }
 
+function getRecognitionAmountCents(item: WorkbenchInvoiceItem) {
+  const amountField = item.recognition?.recognized_fields.amount_cents;
+  return typeof amountField?.value === "number" ? amountField.value : null;
+}
+
+function buildWorkbenchQueuePrimaryLabel(item: WorkbenchInvoiceItem) {
+  if (item.material.material_type === "invoice") {
+    return null;
+  }
+  return formatMaterialType(item.material.material_type);
+}
+
+function buildWorkbenchQueueAmountLabel(item: WorkbenchInvoiceItem) {
+  if (item.invoice) {
+    return formatCurrencyFromCents(item.invoice.amount_cents);
+  }
+  const recognizedAmountCents = getRecognitionAmountCents(item);
+  if (recognizedAmountCents !== null) {
+    return formatCurrencyFromCents(recognizedAmountCents);
+  }
+  return item.material.material_type === "invoice" ? "金额待补录" : "未识别金额";
+}
+
+function buildWorkbenchQueueActionAriaLabel(item: WorkbenchInvoiceItem, contextLabel: string) {
+  if (item.material.material_type !== "invoice") {
+    return `${contextLabel} ${formatMaterialType(item.material.material_type)} ${item.material.original_filename}`;
+  }
+  return `${contextLabel} ${item.material.original_filename} ${item.invoice?.invoice_number ?? "待补录票号"}`;
+}
+
 function buildInvoiceBatchFeedbackMessage(feedback: InvoiceBatchActionFeedback) {
   const succeededCount = feedback.items.length;
   const failedCount = feedback.failures.length;
@@ -1797,7 +1827,8 @@ export function MemberInvoiceWorkbenchPage() {
         <InvoiceSummaryRow
           filename={item.material.original_filename}
           invoiceNumber={item.invoice?.invoice_number ?? null}
-          amountLabel={item.invoice ? formatCurrencyFromCents(item.invoice.amount_cents) : "金额待补录"}
+          primaryLabel={buildWorkbenchQueuePrimaryLabel(item)}
+          amountLabel={buildWorkbenchQueueAmountLabel(item)}
           validationLabel={validationSummary.label}
           validationTone={validationSummary.tone}
           supportingMaterialCount={item.supportingMaterials.length}
@@ -1816,7 +1847,7 @@ export function MemberInvoiceWorkbenchPage() {
             },
           } : null}
           action={{
-            ariaLabel: `${contextLabel} ${item.material.original_filename} ${item.invoice?.invoice_number ?? "待补录票号"}`,
+            ariaLabel: buildWorkbenchQueueActionAriaLabel(item, contextLabel),
             onClick: () => {
               handleInvoiceDetailAction(item);
             },

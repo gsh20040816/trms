@@ -9,6 +9,7 @@ type InvoiceSummaryRowTone = "success" | "warning" | "neutral";
 type InvoiceSummaryRowProps = {
   filename: string;
   invoiceNumber: string | null;
+  primaryLabel?: string | null;
   amountLabel: string;
   validationLabel: string;
   validationTone: InvoiceSummaryRowTone;
@@ -33,6 +34,7 @@ type InvoiceSummaryRowProps = {
 export function InvoiceSummaryRow({
   filename,
   invoiceNumber,
+  primaryLabel = null,
   amountLabel,
   validationLabel,
   validationTone,
@@ -53,7 +55,7 @@ export function InvoiceSummaryRow({
   const summaryButtonClassName = highlight
     ? "invoice-summary-row-button invoice-summary-row-button-warning"
     : "invoice-summary-row-button";
-  const invoiceNumberLabel = `票号 ${invoiceNumber ?? "待补录"}`;
+  const headlineLabel = primaryLabel ?? `票号 ${invoiceNumber ?? "待补录"}`;
 
   return (
     <div className={summaryRowClassName}>
@@ -77,8 +79,8 @@ export function InvoiceSummaryRow({
           onClick={action.onClick}
         >
           <span className="invoice-summary-lines">
-            <span className="invoice-summary-line invoice-summary-number" title={invoiceNumberLabel}>
-              {invoiceNumberLabel}
+            <span className="invoice-summary-line invoice-summary-number" title={headlineLabel}>
+              {headlineLabel}
             </span>
             <span className="invoice-summary-line invoice-summary-file" title={filename}>
               {filename}
@@ -104,8 +106,8 @@ export function InvoiceSummaryRow({
       ) : (
         <div className={`${summaryButtonClassName} invoice-summary-row-static`}>
           <span className="invoice-summary-lines">
-            <span className="invoice-summary-line invoice-summary-number" title={invoiceNumberLabel}>
-              {invoiceNumberLabel}
+            <span className="invoice-summary-line invoice-summary-number" title={headlineLabel}>
+              {headlineLabel}
             </span>
             <span className="invoice-summary-line invoice-summary-file" title={filename}>
               {filename}
