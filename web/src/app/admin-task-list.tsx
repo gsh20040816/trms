@@ -1,10 +1,15 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
-import { EmptyState, PageHeader, SectionCard, StatCard, StatusBadge, TaskTable } from "../components/dashboard";
+import { EmptyState, PageHeader, SectionCard, StatusBadge, TaskTable } from "../components/dashboard";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -58,6 +63,18 @@ function buildMaterialGapCount(reviewSummary: TaskReviewSummary) {
     + Number(reviewSummary.counts.blocker_failed_validation_count ?? 0);
 }
 
+function buildAnomalyCount(reviewSummary: TaskReviewSummary, overdueSummary: OverdueConfirmationList) {
+  const materialGapCount = buildMaterialGapCount(reviewSummary);
+  const outstandingCount = buildOutstandingConfirmationCount(reviewSummary);
+  const overdueCount = Number(overdueSummary.total_overdue_members ?? 0);
+  return materialGapCount
+    + outstandingCount
+    + overdueCount
+    + reviewSummary.counts.disputed_confirmation_count
+    + reviewSummary.counts.failed_recognition_count
+    + reviewSummary.counts.needs_confirmation_recognition_count;
+}
+
 function buildPriorityScore(reviewSummary: TaskReviewSummary, overdueSummary: OverdueConfirmationList) {
   const overdueMemberCount = Number(overdueSummary.total_overdue_members ?? 0);
   return reviewSummary.counts.blocker_failed_validation_count * 100
@@ -105,6 +122,73 @@ function buildStatusTone(task: ReimbursementTask, reviewSummary: TaskReviewSumma
     return "success" as const;
   }
   return "info" as const;
+}
+
+function buildPriorityHighlights(reviewSummary: TaskReviewSummary, overdueSummary: OverdueConfirmationList) {
+  const items: string[] = [];
+  const materialGapCount = buildMaterialGapCount(reviewSummary);
+  const overdueCount = Number(overdueSummary.total_overdue_members ?? 0);
+  if (materialGapCount > 0) {
+    items.push(`${materialGapCount} 项材料或校验待补齐`);
+  }
+  if (reviewSummary.counts.failed_recognition_count > 0) {
+    items.push(`${reviewSummary.counts.failed_recognition_count} 份材料识别失败`);
+  }
+  if (reviewSummary.counts.needs_confirmation_recognition_count > 0) {
+    items.push(`${reviewSummary.counts.needs_confirmation_recognition_count} 份材料待人工确认`);
+  }
+  if (reviewSummary.counts.disputed_confirmation_count > 0) {
+    items.push(`${reviewSummary.counts.disputed_confirmation_count} 条费用存在成员异议`);
+  }
+  if (buildOutstandingConfirmationCount(reviewSummary) > 0) {
+    items.push(`${buildOutstandingConfirmationCount(reviewSummary)} 条费用待成员确认`);
+  }
+  if (overdueCount > 0) {
+    items.push(`${overdueCount} 名成员已逾期未确认`);
+  }
+  return items.slice(0, 3);
+}
+
+function buildMetricCards(allItems: AdminTaskDigest[]) {
+  return [
+    {
+      key: "draft",
+      label: "草稿待完善",
+      value: allItems.filter(({ task }) => task.status === "draft").length,
+      hint: "补齐成员与费用后再发布",
+      tone: "neutral" as const,
+    },
+    {
+      key: "collecting",
+      label: "收集中",
+      value: allItems.filter(({ task }) => task.status === "open").length,
+      hint: "成员仍可继续上传材料",
+      tone: "info" as const,
+    },
+    {
+      key: "reviewing",
+      label: "待复核",
+      value: allItems.filter(({ task }) => task.status === "closed" || task.status === "reviewing").length,
+      hint: "优先清理异常与待确认",
+      tone: "warning" as const,
+    },
+    {
+      key: "attention",
+      label: "需催办",
+      value: allItems.filter(({ reviewSummary, overdueSummary }) =>
+        buildPriorityScore(reviewSummary, overdueSummary) > 0,
+      ).length,
+      hint: "存在缺件、异议或逾期",
+      tone: "danger" as const,
+    },
+    {
+      key: "ready",
+      label: "可导出",
+      value: allItems.filter(({ task }) => task.status === "ready_to_export").length,
+      hint: "可直接进入导出整理",
+      tone: "success" as const,
+    },
+  ];
 }
 
 export function AdminTaskListPage() {
@@ -188,15 +272,7 @@ export function AdminTaskListPage() {
     return left.task.deadline.localeCompare(right.task.deadline);
   });
 
-  const dashboardStats = {
-    draftCount: allItems.filter(({ task }) => task.status === "draft").length,
-    collectingCount: allItems.filter(({ task }) => task.status === "open").length,
-    reviewingCount: allItems.filter(({ task }) => task.status === "closed" || task.status === "reviewing").length,
-    attentionCount: allItems.filter(({ reviewSummary, overdueSummary }) =>
-      buildPriorityScore(reviewSummary, overdueSummary) > 0,
-    ).length,
-    readyToExportCount: allItems.filter(({ task }) => task.status === "ready_to_export").length,
-  };
+  const metricCards = buildMetricCards(allItems);
   const topPriorityItem = sortedFilteredItems[0] ?? null;
   const overallTopPriorityItem = [...allItems].sort((left, right) => {
     const rightScore = buildPriorityScore(right.reviewSummary, right.overdueSummary);
@@ -215,7 +291,7 @@ export function AdminTaskListPage() {
         <PageHeader
           eyebrow="管理员工作台"
           title="任务管理"
-          description="查看当前所有报销任务的状态，优先处理需要关注的事项。"
+          description="先看哪一个任务最该推进，再顺着首页把缺件、确认和导出准备度处理完。"
           meta={`当前身份：${session.displayName}`}
           actions={(
             <div className="page-actions">
@@ -227,66 +303,97 @@ export function AdminTaskListPage() {
         />
       )}
     >
-      <section className="stat-grid" aria-label="管理员任务概览">
-        <StatCard label="创建中任务" value={dashboardStats.draftCount} description="仍需补齐成员、费用类别或基础信息后再发布。" />
-        <StatCard label="收集中任务" value={dashboardStats.collectingCount} description="成员仍可提交材料，优先盯缺失项和截止时间。" />
-        <StatCard label="审核中任务" value={dashboardStats.reviewingCount} description="已截止或正在复核，适合集中处理异常与确认。" />
-        <StatCard label="需要优先处理" value={dashboardStats.attentionCount} description="存在缺失材料、待确认费用或逾期事项。" />
-        <StatCard label="可导出任务" value={dashboardStats.readyToExportCount} description="条件已满足，可直接整理导出材料。" />
+      <section className="admin-dashboard-metric-grid" aria-label="管理员任务概览">
+        {metricCards.map((metric) => (
+          <Card key={metric.key} component="article" variant="outlined" className="admin-dashboard-metric-card">
+            <CardContent>
+              <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="overline" color="text.secondary">
+                    {metric.label}
+                  </Typography>
+                  <Typography component="strong" variant="h5" sx={{ display: "block", fontWeight: 700, lineHeight: 1.1 }}>
+                    {metric.value}
+                  </Typography>
+                </Box>
+                <StatusBadge tone={metric.tone}>{metric.hint}</StatusBadge>
+              </Stack>
+            </CardContent>
+          </Card>
+        ))}
       </section>
 
       {highlightedItem ? (
         <SectionCard
-          title="当前优先推进任务"
-          description="首页优先给出当前最紧急的任务阶段、异常数量和建议入口。"
+          title="建议优先处理的任务"
+          description="先把这一项推进到下一个稳定阶段，再回头处理其他任务。"
           action={(
             <StatusBadge tone={buildStatusTone(highlightedItem.task, highlightedItem.reviewSummary, highlightedItem.overdueSummary)}>
               {describeAdminTaskStage(highlightedItem.task.status).label}
             </StatusBadge>
           )}
         >
-          <div className="priority-task-grid">
-            <div>
-              <dt>任务</dt>
-              <dd>{highlightedItem.task.competition_name}</dd>
+          <div className="admin-dashboard-priority-layout">
+            <div className="admin-dashboard-priority-main">
+              <p className="eyebrow">下一步建议</p>
+              <h3>{highlightedItem.task.competition_name}</h3>
+              <p className="admin-dashboard-priority-summary">
+                {highlightedItem.task.competition_location} · {formatTaskAdministratorCountLabel(highlightedItem.task)}
+                · 截止 {formatDateTime(highlightedItem.task.deadline)}
+              </p>
+              <p className="admin-dashboard-priority-description">
+                {buildTaskAction(highlightedItem.task, highlightedItem.reviewSummary, highlightedItem.overdueSummary)}
+                前，先处理当前最明显的阻塞项。
+              </p>
+              <div className="page-actions">
+                <Button
+                  component={RouterLink}
+                  variant="contained"
+                  to={buildTaskActionPath(highlightedItem.task, highlightedItem.reviewSummary, highlightedItem.overdueSummary)}
+                >
+                  进入当前优先任务
+                </Button>
+                <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${highlightedItem.task.id}`}>
+                  查看任务详情
+                </Button>
+              </div>
             </div>
-            <div>
-              <dt>异常数量</dt>
-              <dd>
-                {buildMaterialGapCount(highlightedItem.reviewSummary)
-                  + highlightedItem.reviewSummary.counts.disputed_confirmation_count
-                  + highlightedItem.reviewSummary.counts.failed_recognition_count
-                  + highlightedItem.reviewSummary.counts.needs_confirmation_recognition_count}
-              </dd>
+            <div className="priority-task-grid">
+              <div>
+                <dt>当前阶段</dt>
+                <dd>{describeAdminTaskStage(highlightedItem.task.status).label}</dd>
+              </div>
+              <div>
+                <dt>待处理数量</dt>
+                <dd>{buildAnomalyCount(highlightedItem.reviewSummary, highlightedItem.overdueSummary)}</dd>
+              </div>
+              <div>
+                <dt>下一步动作</dt>
+                <dd>{buildTaskAction(highlightedItem.task, highlightedItem.reviewSummary, highlightedItem.overdueSummary)}</dd>
+              </div>
             </div>
-            <div>
-              <dt>下一步动作</dt>
-              <dd>{buildTaskAction(highlightedItem.task, highlightedItem.reviewSummary, highlightedItem.overdueSummary)}</dd>
-            </div>
-          </div>
-          <div className="page-actions">
-            <Button
-              component={RouterLink}
-              variant="contained"
-              to={buildTaskActionPath(highlightedItem.task, highlightedItem.reviewSummary, highlightedItem.overdueSummary)}
-            >
-              进入当前优先任务
-            </Button>
-            <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${highlightedItem.task.id}`}>
-              查看任务详情
-            </Button>
+            <ul className="admin-dashboard-priority-list" aria-label="当前优先任务提醒">
+              {buildPriorityHighlights(highlightedItem.reviewSummary, highlightedItem.overdueSummary).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
           </div>
         </SectionCard>
       ) : null}
 
-      <SectionCard title="筛选任务" description="通过任务名称和状态快速定位要处理的事项。">
-        <div className="filter-grid">
+      <SectionCard
+        title="筛选任务"
+        description="先搜任务名，再按状态缩小范围。"
+        action={<StatusBadge tone="info">共 {sortedFilteredItems.length} 条</StatusBadge>}
+      >
+        <div className="admin-task-toolbar">
           <TextField
             label="搜索任务"
             aria-label="基础搜索"
             type="search"
             value={searchQuery}
             placeholder="输入任务名称"
+            size="small"
             onChange={(event) => {
               setSearchQuery(event.target.value);
             }}
@@ -296,6 +403,7 @@ export function AdminTaskListPage() {
             label="任务状态"
             aria-label="状态筛选"
             value={statusFilter}
+            size="small"
             onChange={(event) => {
               setStatusFilter(event.target.value as TaskStatusFilter);
             }}
@@ -338,56 +446,49 @@ export function AdminTaskListPage() {
       {state.status === "ready" && sortedFilteredItems.length > 0 ? (
         <SectionCard
           title="任务列表"
-          description="任务列表是当前页面的主工作区，优先处理临近截止且存在风险的任务。"
-          action={<StatusBadge tone="info">共 {sortedFilteredItems.length} 条</StatusBadge>}
+          description="先处理临近截止、卡点最多的任务；不需要来回跳多个页面。"
         >
           <TaskTable
             caption="管理员待处理任务"
             header={(
               <tr>
-                <th>任务名称</th>
-                <th>当前阶段</th>
-                <th>状态</th>
+                <th>任务</th>
+                <th>当前卡点</th>
                 <th>截止时间</th>
-                <th>异常数量</th>
-                <th>下一步动作</th>
+                <th>处理动作</th>
               </tr>
             )}
           >
             {sortedFilteredItems.map(({ task, reviewSummary, overdueSummary }) => {
-              const materialGapCount = buildMaterialGapCount(reviewSummary);
-              const outstandingCount = buildOutstandingConfirmationCount(reviewSummary);
               const overdueCount = Number(overdueSummary.total_overdue_members ?? 0);
               const stage = describeAdminTaskStage(task.status);
-              const anomalyCount = materialGapCount
-                + outstandingCount
-                + overdueCount
-                + reviewSummary.counts.disputed_confirmation_count
-                + reviewSummary.counts.failed_recognition_count
-                + reviewSummary.counts.needs_confirmation_recognition_count;
+              const anomalyCount = buildAnomalyCount(reviewSummary, overdueSummary);
               return (
-                <tr key={task.id}>
+                <tr key={task.id} className="admin-task-list-row">
                   <td>
                     <div className="table-primary">
                       <strong>{task.competition_name}</strong>
                       <span>
                         {task.competition_location} · {formatTaskAdministratorCountLabel(task)}
                       </span>
+                      <div className="admin-task-row-badges">
+                        <StatusBadge tone={buildStatusTone(task, reviewSummary, overdueSummary)}>
+                          {formatTaskStatus(task.status)}
+                        </StatusBadge>
+                        <StatusBadge tone="info">{stage.label}</StatusBadge>
+                      </div>
                     </div>
                   </td>
-                  <td>{stage.label}</td>
                   <td>
-                    <StatusBadge tone={buildStatusTone(task, reviewSummary, overdueSummary)}>
-                      {formatTaskStatus(task.status)}
-                    </StatusBadge>
+                    <div className="table-primary">
+                      <strong>{anomalyCount} 项待处理</strong>
+                      <span>{buildPriorityHighlights(reviewSummary, overdueSummary)[0] ?? "当前没有突出阻塞项"}</span>
+                      {overdueCount > 0 ? <span className="table-subnote">其中逾期 {overdueCount} 人</span> : null}
+                    </div>
                   </td>
                   <td>{formatDateTime(task.deadline)}</td>
                   <td>
-                    {anomalyCount}
-                    {overdueCount > 0 ? <span className="table-subnote">，逾期 {overdueCount}</span> : null}
-                  </td>
-                  <td>
-                    <div className="table-actions">
+                    <div className="table-actions admin-task-row-actions">
                       <Button
                         component={RouterLink}
                         variant="contained"
@@ -396,7 +497,7 @@ export function AdminTaskListPage() {
                       >
                         {buildTaskAction(task, reviewSummary, overdueSummary)}
                       </Button>
-                      <Button component={RouterLink} variant="outlined" size="small" to={`/admin/tasks/${task.id}`}>
+                      <Button component={RouterLink} variant="text" size="small" to={`/admin/tasks/${task.id}`}>
                         查看详情
                       </Button>
                     </div>

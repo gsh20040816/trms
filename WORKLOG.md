@@ -1,5 +1,37 @@
 # WORKLOG
 
+## 2026-05-02 18:56 - Rework admin home into task-driven dashboard
+
+### 完成内容
+- 完成任务“重构管理员首页为任务驱动仪表板”。
+- 管理员首页摘要卡已改为更紧凑的任务指标排布：
+  - [web/src/app/admin-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.tsx) 不再复用大块说明型统计卡，而是收口为 5 个紧凑指标：草稿待完善、收集中、待复核、需催办、可导出；
+  - 每张卡只保留数量和一句动作导向提示，避免首页第一屏被长描述占满。
+- “优先任务推荐区”已改成更直接的待办式推荐：
+  - 同文件把“当前优先推进任务”重写为“建议优先处理的任务”，强调下一步动作、当前阶段、待处理数量和高优先提醒；
+  - [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css) 新增浅暖色推荐区和短标签提醒样式，使首页第一屏更接近成员端那种“先告诉你该做什么”的视觉组织方式。
+- 筛选区和任务列表已同步压缩：
+  - 搜索框与状态下拉改为更紧凑的内联工具条；
+  - 任务列表表头从 6 列压成 4 列，把状态和阶段并入任务摘要，把异常汇总改成“当前卡点”列，减少横向分散；
+  - 操作列收口为“主动作 + 查看详情”两档，保持首页只承担任务分流。
+- 前端测试已更新：
+  - [web/src/app/admin-task-list.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-list.test.tsx) 现在锁定新的推荐区标题、提醒列表、筛选和列表渲染。
+
+### 根因
+- 原首页虽然已经能列出任务，但信息组织仍偏“页面总览”，而不是“管理员现在该先推进哪个任务”。
+- 统计卡说明过长、筛选区与列表区层级接近、表格列数偏多，导致首页第一屏难以快速判断下一步动作。
+
+### 风险与影响面
+- 本轮只重排管理员首页读模型的前端展示，没有改动任务读取接口、排序逻辑、权限边界或任务详情页路由。
+- 当前推荐区仍基于现有 review summary 和 overdue confirmation 数据拼装；如果后续要把首页推荐进一步下沉为后端聚合读模型，应另开任务，不要在前端继续堆更多推导。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-list.test.tsx`
+- 已通过定向 lint：
+  - `cd web && npm run lint -- src/app/admin-task-list.tsx src/app/admin-task-list.test.tsx`
+- `./scripts/verify.sh` 待本轮提交前执行。
+
 ## 2026-05-02 18:47 - Simplify admin workspace shell and unify business copy
 
 ### 完成内容

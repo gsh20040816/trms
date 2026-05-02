@@ -171,11 +171,12 @@ describe("admin task list page", () => {
     expect(within(moduleNav).getByText("创建任务").closest("a")).toHaveAttribute("href", "/admin/tasks/new");
     expect(within(moduleNav).queryByText("任务管理")).not.toBeInTheDocument();
     expect(within(moduleNav).queryByText("材料审核")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "当前优先推进任务" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "建议优先处理的任务" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "进入当前优先任务" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/missing-materials",
     );
+    expect(screen.getByLabelText("当前优先任务提醒")).toHaveTextContent("项材料或校验待补齐");
     expect(screen.getAllByText("全国邀请赛").length).toBeGreaterThan(0);
     expect(screen.getAllByText("区域赛报销").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "补材料" })).toBeInTheDocument();

@@ -1227,6 +1227,53 @@
   gap: 16px;
 }
 
+.admin-dashboard-priority-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-dashboard-priority-main {
+  padding: 20px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 45%, #ffffff 100%);
+  border: 1px solid #fdba74;
+}
+
+.admin-dashboard-priority-main h3 {
+  margin: 4px 0 6px;
+  font-size: 1.35rem;
+  color: #7c2d12;
+}
+
+.admin-dashboard-priority-summary,
+.admin-dashboard-priority-description {
+  margin: 0;
+  color: #7c2d12;
+}
+
+.admin-dashboard-priority-description {
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+.admin-dashboard-priority-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-dashboard-priority-list li {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 .priority-task-grid > div {
   padding: 14px 16px;
   border: 1px solid #e2e8f0;
@@ -1492,6 +1539,7 @@
 
 .filter-grid,
 .admin-form-grid,
+.admin-task-toolbar,
 .task-detail-layout,
 .invoice-editor-layout,
 .split-editor-layout,
@@ -1507,6 +1555,25 @@
 .filter-grid,
 .admin-form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-task-toolbar {
+  grid-template-columns: minmax(0, 1.6fr) minmax(180px, 0.8fr);
+  align-items: center;
+}
+
+.admin-dashboard-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-dashboard-metric-card .MuiCardContent-root {
+  padding: 14px 16px;
+}
+
+.admin-dashboard-metric-card .MuiCardContent-root:last-child {
+  padding-bottom: 14px;
 }
 
 .task-detail-layout {
@@ -1686,6 +1753,20 @@ select:focus {
 .table-subnote {
   color: #64748b;
   font-size: 0.84rem;
+}
+
+.admin-task-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-task-list-row td {
+  vertical-align: top;
+}
+
+.admin-task-row-actions {
+  justify-content: flex-start;
 }
 
 .token-list,
@@ -2006,8 +2087,10 @@ select:focus {
   .stat-grid,
   .feature-grid,
   .card-grid,
+  .admin-dashboard-metric-grid,
   .admin-workspace-shell,
   .filter-grid,
+  .admin-task-toolbar,
   .admin-form-grid,
   .task-detail-layout,
   .invoice-editor-layout,
