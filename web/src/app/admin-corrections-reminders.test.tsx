@@ -285,6 +285,23 @@ describe("AdminCorrectionsRemindersPage", () => {
       "href",
       "/admin/tasks/TASK-REVIEW/splits?invoiceId=INV-001",
     );
+    const recognitionSelector = screen.getByRole("combobox", { name: "待确认发票材料" });
+    expect(recognitionSelector).toHaveTextContent("发票号：INV-001");
+    expect(recognitionSelector).toHaveTextContent("文件：invoice.pdf");
+    expect(recognitionSelector).toHaveTextContent("类型：发票；金额：待识别");
+    await act(async () => {
+      fireEvent.mouseDown(recognitionSelector);
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /invoice\.pdf/i }));
+      await Promise.resolve();
+    });
+    const recognitionCard = within(screen.getByLabelText("当前待确认发票材料"));
+    expect(recognitionCard.getByText("invoice.pdf")).toBeInTheDocument();
+    expect(recognitionCard.getByText("更正识别字段与金额")).toBeInTheDocument();
+
     const invoiceSelector = screen.getByRole("combobox", { name: "待更正发票" });
     expect(invoiceSelector).toHaveTextContent("发票号：INV-001");
     expect(invoiceSelector).toHaveTextContent("文件：invoice.pdf");

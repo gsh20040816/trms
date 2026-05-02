@@ -197,10 +197,32 @@ function buildInvoiceCorrectionSelectorStatus(item: InvoiceCorrectionAction) {
   return { label: "是", tone: "success" as const };
 }
 
+function pickSelectedRecognitionCorrectionId(
+  actions: RecognitionCorrectionAction[],
+  currentMaterialId: string,
+) {
+  const visibleIds = new Set(actions.map((item) => item.materialId));
+  if (currentMaterialId && visibleIds.has(currentMaterialId)) {
+    return currentMaterialId;
+  }
+  return actions[0]?.materialId ?? "";
+}
+
+function buildRecognitionCorrectionSelectorStatus(item: RecognitionCorrectionAction) {
+  if (item.recognitionStatus === "failed") {
+    return { label: "否", tone: "warning" as const };
+  }
+  if (item.recognitionStatus === "needs_confirmation" || item.invoiceId === null) {
+    return { label: "待确认", tone: "warning" as const };
+  }
+  return { label: "是", tone: "success" as const };
+}
+
 export function AdminCorrectionsRemindersPage() {
   const session = useAuthSession();
   const { taskId } = useParams<{ taskId: string }>();
   const [pageState, setPageState] = useState<CorrectionReminderPageState>({ status: "loading" });
+  const [preferredRecognitionActionId, setPreferredRecognitionActionId] = useState("");
   const [preferredInvoiceActionId, setPreferredInvoiceActionId] = useState("");
   const [memberId, setMemberId] = useState("");
   const [content, setContent] = useState("");
@@ -277,6 +299,13 @@ export function AdminCorrectionsRemindersPage() {
     ),
     [pageState],
   );
+  const selectedRecognitionActionId = pickSelectedRecognitionCorrectionId(
+    recognitionActions,
+    preferredRecognitionActionId,
+  );
+  const selectedRecognitionAction = recognitionActions.find(
+    (item) => item.materialId === selectedRecognitionActionId,
+  ) ?? null;
   const selectedInvoiceActionId = pickSelectedInvoiceCorrectionId(invoiceActions, preferredInvoiceActionId);
   const selectedInvoiceAction = invoiceActions.find((item) => item.invoiceId === selectedInvoiceActionId) ?? null;
 
@@ -410,61 +439,138 @@ export function AdminCorrectionsRemindersPage() {
             <div className="admin-review-subsection">
               <h4>识别字段待确认或待补录材料</h4>
               {recognitionActions.length > 0 ? (
-                <ul className="admin-review-record-list" aria-label="识别字段更正列表">
-                  {recognitionActions.map((item) => (
-                    <li key={item.materialId} className="admin-review-record-card">
+                <div className="invoice-editor-select-panel">
+                  <FormControl fullWidth>
+                    <InputLabel id="admin-recognition-correction-select-label">待确认发票材料</InputLabel>
+                    <Select
+                      labelId="admin-recognition-correction-select-label"
+                      label="待确认发票材料"
+                      aria-label="待确认发票材料"
+                      value={selectedRecognitionActionId}
+                      onChange={(event) => {
+                        setPreferredRecognitionActionId(String(event.target.value));
+                      }}
+                      renderValue={(value) => {
+                        const currentItem = recognitionActions.find(
+                          (item) => item.materialId === String(value),
+                        );
+                        if (!currentItem) {
+                          return "请选择待确认材料";
+                        }
+                        const selectorStatus = buildRecognitionCorrectionSelectorStatus(currentItem);
+                        return (
+                          <span className="invoice-editor-select-value">
+                            <span className="invoice-editor-select-value-title">
+                              <strong title={currentItem.invoiceNumber ?? "未形成发票"}>
+                                发票号：{currentItem.invoiceNumber ?? "未形成发票"}
+                              </strong>
+                              <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                                校验通过：{selectorStatus.label}
+                              </span>
+                            </span>
+                            <span title={currentItem.filename}>文件：{currentItem.filename}</span>
+                            <span>
+                              类型：发票；金额：待识别
+                            </span>
+                          </span>
+                        );
+                      }}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            maxHeight: 420,
+                            width: "min(560px, calc(100vw - 32px))",
+                          },
+                        },
+                        MenuListProps: {
+                          "aria-label": "待确认发票材料下拉选项",
+                        },
+                      }}
+                    >
+                      {recognitionActions.map((item) => {
+                        const selectorStatus = buildRecognitionCorrectionSelectorStatus(item);
+                        return (
+                          <MenuItem key={item.materialId} value={item.materialId} className="invoice-editor-select-option">
+                            <span className="invoice-editor-select-option-content">
+                              <span className="invoice-editor-select-option-title">
+                                <strong title={item.invoiceNumber ?? "未形成发票"}>
+                                  发票号：{item.invoiceNumber ?? "未形成发票"}
+                                </strong>
+                                <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
+                                  校验通过：{selectorStatus.label}
+                                </span>
+                              </span>
+                              <span className="invoice-editor-select-option-grid">
+                                <span title={item.filename}>原始文件名：{item.filename}</span>
+                                <span>类型：发票</span>
+                                <span>金额：待识别</span>
+                                <span title={item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析提交人"}>
+                                  提交人 {item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析"}
+                                </span>
+                              </span>
+                            </span>
+                          </MenuItem>
+                        );
+                      })}
+                    </Select>
+                  </FormControl>
+                  <p className="field-hint">
+                    点击下拉框后再展开待确认发票材料；展开层内部滚动查看候选项，不再把左侧整列拉成长列表。
+                  </p>
+                  {selectedRecognitionAction ? (
+                    <div className="admin-review-record-card" aria-label="当前待确认发票材料">
                       <InvoiceSummaryRow
-                        filename={item.filename}
-                        invoiceNumber={item.invoiceNumber}
+                        filename={selectedRecognitionAction.filename}
+                        invoiceNumber={selectedRecognitionAction.invoiceNumber}
                         primaryLabel="待确认发票材料"
-                        amountLabel={item.invoiceNumber ? `票号 ${item.invoiceNumber}` : "尚未形成发票"}
-                        validationLabel={item.recognitionStatus === "failed" ? "识别失败" : "待人工确认"}
+                        amountLabel={selectedRecognitionAction.invoiceNumber ? `票号 ${selectedRecognitionAction.invoiceNumber}` : "尚未形成发票"}
+                        validationLabel={selectedRecognitionAction.recognitionStatus === "failed" ? "识别失败" : "待人工确认"}
                         validationTone="warning"
                         supportingMaterialCount={0}
-                        statusHint={item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析提交人"}
+                        statusHint={selectedRecognitionAction.submitterId ? formatTaskMemberLabel(selectedRecognitionAction.submitterId, memberSummaryMap) : "未解析提交人"}
                         trailingContent={(
-                          <StatusBadge tone={item.recognitionStatus === "failed" ? "danger" : "warning"}>
-                            {formatRecognitionStatus(item.recognitionStatus)}
+                          <StatusBadge tone={selectedRecognitionAction.recognitionStatus === "failed" ? "danger" : "warning"}>
+                            {formatRecognitionStatus(selectedRecognitionAction.recognitionStatus)}
                           </StatusBadge>
                         )}
                       />
                       <div className="admin-review-inline-metadata">
-                        <span className="token-chip">提交人 {item.submitterId ? formatTaskMemberLabel(item.submitterId, memberSummaryMap) : "未解析"}</span>
+                        <span className="token-chip">提交人 {selectedRecognitionAction.submitterId ? formatTaskMemberLabel(selectedRecognitionAction.submitterId, memberSummaryMap) : "未解析"}</span>
                         <span className="token-chip">
-                          低置信度字段 {item.lowConfidenceFieldNames.length} 个
+                          低置信度字段 {selectedRecognitionAction.lowConfidenceFieldNames.length} 个
                         </span>
                       </div>
                       <div className="task-meta-grid admin-review-meta-grid">
                         <div>
                           <dt>已录入发票</dt>
-                          <dd>{item.invoiceNumber ?? "未录入"}</dd>
+                          <dd>{selectedRecognitionAction.invoiceNumber ?? "未录入"}</dd>
                         </div>
                         <div>
                           <dt>上传时间</dt>
-                          <dd>{formatDateTime(item.createdAt)}</dd>
+                          <dd>{formatDateTime(selectedRecognitionAction.createdAt)}</dd>
                         </div>
                       </div>
-                      {item.lowConfidenceFieldNames.length > 0 ? (
+                      {selectedRecognitionAction.lowConfidenceFieldNames.length > 0 ? (
                         <p className="field-hint">
-                          待确认字段：{item.lowConfidenceFieldNames.join("、")}
+                          待确认字段：{selectedRecognitionAction.lowConfidenceFieldNames.join("、")}
                         </p>
                       ) : null}
-                      {item.failureReason ? (
-                        <p className="field-hint">识别失败原因：{item.failureReason}</p>
+                      {selectedRecognitionAction.failureReason ? (
+                        <p className="field-hint">识别失败原因：{selectedRecognitionAction.failureReason}</p>
                       ) : null}
                       <div className="inline-actions">
                         <Button
                           component={RouterLink}
                           variant="contained"
                           size="small"
-                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(item.materialId)}`}
+                          to={`/admin/tasks/${taskId}/invoices?materialId=${encodeURIComponent(selectedRecognitionAction.materialId)}`}
                         >
                           更正识别字段与金额
                         </Button>
                       </div>
-                    </li>
-                  ))}
-                </ul>
+                    </div>
+                  ) : null}
+                </div>
               ) : (
                 <p className="field-hint">当前复核摘要下没有需要人工确认识别字段的发票材料。</p>
               )}
