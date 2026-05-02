@@ -155,21 +155,21 @@ function buildMetricCards(allItems: AdminTaskDigest[]) {
       key: "draft",
       label: "草稿待完善",
       value: allItems.filter(({ task }) => task.status === "draft").length,
-      hint: "补齐成员与费用后再发布",
+      hint: "先补齐再发布",
       tone: "neutral" as const,
     },
     {
       key: "collecting",
       label: "收集中",
       value: allItems.filter(({ task }) => task.status === "open").length,
-      hint: "成员仍可继续上传材料",
+      hint: "成员继续上传",
       tone: "info" as const,
     },
     {
       key: "reviewing",
       label: "待复核",
       value: allItems.filter(({ task }) => task.status === "closed" || task.status === "reviewing").length,
-      hint: "优先清理异常与待确认",
+      hint: "优先清异常",
       tone: "warning" as const,
     },
     {
@@ -178,14 +178,14 @@ function buildMetricCards(allItems: AdminTaskDigest[]) {
       value: allItems.filter(({ reviewSummary, overdueSummary }) =>
         buildPriorityScore(reviewSummary, overdueSummary) > 0,
       ).length,
-      hint: "存在缺件、异议或逾期",
+      hint: "缺件或逾期",
       tone: "danger" as const,
     },
     {
       key: "ready",
       label: "可导出",
       value: allItems.filter(({ task }) => task.status === "ready_to_export").length,
-      hint: "可直接进入导出整理",
+      hint: "直接整理导出",
       tone: "success" as const,
     },
   ];
@@ -307,16 +307,30 @@ export function AdminTaskListPage() {
         {metricCards.map((metric) => (
           <Card key={metric.key} component="article" variant="outlined" className="admin-dashboard-metric-card">
             <CardContent>
-              <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
-                <Box sx={{ minWidth: 0 }}>
+              <Stack spacing={1.5}>
+                <Stack spacing={0.75} alignItems="flex-start">
                   <Typography variant="overline" color="text.secondary">
                     {metric.label}
                   </Typography>
+                  <Box
+                    sx={{
+                      maxWidth: "100%",
+                      "& .MuiChip-root": {
+                        maxWidth: "100%",
+                      },
+                      "& .MuiChip-label": {
+                        whiteSpace: "nowrap",
+                      },
+                    }}
+                  >
+                    <StatusBadge tone={metric.tone}>{metric.hint}</StatusBadge>
+                  </Box>
+                </Stack>
+                <Box>
                   <Typography component="strong" variant="h5" sx={{ display: "block", fontWeight: 700, lineHeight: 1.1 }}>
                     {metric.value}
                   </Typography>
                 </Box>
-                <StatusBadge tone={metric.tone}>{metric.hint}</StatusBadge>
               </Stack>
             </CardContent>
           </Card>
