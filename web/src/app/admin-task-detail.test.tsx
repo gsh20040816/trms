@@ -187,6 +187,9 @@ describe("admin task detail page", () => {
       "task must be ready_to_export or completed before real exports can be generated",
     );
     const readinessQueue = screen.getByLabelText("异常优先队列");
+    expect(within(readinessQueue).getByText("3 类待处理问题")).toBeInTheDocument();
+    expect(within(readinessQueue).queryByText("导出阻塞原因")).not.toBeInTheDocument();
+    expect(within(readinessQueue).queryByRole("link", { name: "查看导出阻塞" })).not.toBeInTheDocument();
     expect(within(readinessQueue).getByRole("link", { name: "进入材料审核" })).toHaveAttribute(
       "href",
       "/admin/tasks/TASK-ALPHA/review",
@@ -352,6 +355,9 @@ describe("admin task detail page", () => {
     expect(statusUpdateRequestCount).toBe(1);
     expect(screen.getByRole("button", { name: "切换为草稿" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为已截止" })).toBeInTheDocument();
+    expect(screen.getByLabelText("异常优先队列")).toHaveTextContent(
+      "当前没有待处理异常；导出阶段门禁请看上方“导出阻塞原因”。",
+    );
   });
 
   it("allows saving draft task basic configuration", async () => {

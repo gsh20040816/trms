@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-05-02 22:56 - Remove export blockers from priority queue and relax issue action layout
+
+### 完成内容
+- 完成任务“移除异常优先队列中的导出阻塞项并修正异常卡片按钮布局”。
+- 已修改 [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)：
+  - 新增任务详情页异常优先队列的可见 issue 过滤逻辑；
+  - `export_blocker` 继续保留在上方“导出阻塞原因”区域展示，但不再计入“异常优先队列”的数量和列表；
+  - 当异常队列为空但仍存在导出门禁时，空态文案改为提示管理员查看上方“导出阻塞原因”，避免“可直接导出”的误导；
+  - 异常卡片的动作区改为纵向堆叠，避免按钮被右侧示例问题文案压窄。
+- 已修改 [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)：
+  - 为任务详情页异常卡片动作区增加局部布局类，让按钮和示例问题按上下结构展示。
+- 已修改 [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)：
+  - 断言异常优先队列只剩 3 类真实异常；
+  - 断言“导出阻塞原因”和“查看导出阻塞”不再出现在异常队列中；
+  - 断言“仅剩导出门禁”场景下，异常队列空态文案改为引导查看上方导出阻塞区。
+- 已更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录本轮最小修复任务。
+
+### 根因
+- 任务详情页把后端 `export_blocking_reasons` 同时当成：
+  - 任务就绪度里的导出门禁；
+  - 异常优先队列里的待处理异常。
+- 这导致同一信息重复展示，并把“任务尚未进入可导出阶段”这种流程门禁误归进“异常处理”语义。
+- 同时，异常卡片动作区采用横向排列；当按钮和“示例问题”并列时，按钮会被说明文本挤压，形成截图中的窄圆形按钮。
+
+### 风险与影响面
+- 本轮只调整管理员任务详情页的异常展示分组和局部布局，不改后端 readiness 接口结构，也不影响导出页本身的阻塞说明。
+- 当前仍保留后端返回的 `export_blocker` issue，只是在此页面显式过滤；若后续别的页面也复用这类 issue，需要按同样语义决定是否显示。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-detail.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `120/120` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:54 - Move task-detail save buttons onto the next line
 
 ### 完成内容

@@ -225,6 +225,10 @@ function buildReadinessGroups(readiness: TaskReadinessSummary) {
   }));
 }
 
+function buildVisiblePriorityIssues(readiness: TaskReadinessSummary) {
+  return readiness.issues.filter((issue) => issue.kind !== "export_blocker");
+}
+
 function buildFormState(task: ReimbursementTask): TaskEditFormState {
   return {
     competitionName: task.competition_name,
@@ -419,6 +423,7 @@ export function AdminTaskDetailPage() {
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleReadiness = state.status === "ready" && !isForeignTask ? state.readiness : null;
   const readinessGroups = visibleReadiness ? buildReadinessGroups(visibleReadiness) : [];
+  const visiblePriorityIssues = visibleReadiness ? buildVisiblePriorityIssues(visibleReadiness) : [];
   const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
   const isDraftEditable = visibleTask?.status === "draft";
   const selectedAdministratorOptions = formState
@@ -785,17 +790,19 @@ export function AdminTaskDetailPage() {
                     <p className="eyebrow">优先处理</p>
                     <h2>异常优先队列</h2>
                   </div>
-                  <StatusBadge tone={visibleReadiness.issues.length > 0 ? "warning" : "success"}>
-                    {visibleReadiness.issues.length > 0 ? `${visibleReadiness.issues.length} 类待处理问题` : "全部通过"}
+                  <StatusBadge tone={visiblePriorityIssues.length > 0 ? "warning" : "success"}>
+                    {visiblePriorityIssues.length > 0 ? `${visiblePriorityIssues.length} 类待处理问题` : "全部通过"}
                   </StatusBadge>
                 </div>
-                {visibleReadiness.issues.length === 0 ? (
+                {visiblePriorityIssues.length === 0 ? (
                   <p className="field-hint">
-                    当前没有待处理异常，管理员可以直接进入导出页生成最新材料包。
+                    {visibleReadiness.export_blocking_reasons.length > 0
+                      ? "当前没有待处理异常；导出阶段门禁请看上方“导出阻塞原因”。"
+                      : "当前没有待处理异常，管理员可以直接进入导出页生成最新材料包。"}
                   </p>
                 ) : (
                   <div className="page-stack">
-                    {visibleReadiness.issues.map((issue) => (
+                    {visiblePriorityIssues.map((issue) => (
                       <section key={issue.kind} className="admin-form-card">
                         <div className="task-card-header">
                           <div>
@@ -811,7 +818,7 @@ export function AdminTaskDetailPage() {
                           </StatusBadge>
                         </div>
                         <p className="field-hint">{buildIssueDescription(issue)}</p>
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                        <Stack className="admin-task-detail-issue-actions" spacing={1.5}>
                           <Button
                             component={RouterLink}
                             variant="contained"
