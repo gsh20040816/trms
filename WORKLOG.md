@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-02 11:49 - Simplify registration by removing actor id input
+
+### 完成内容
+- 完成任务“注册时去除身份编号，仅在成员注册时显示学号”。
+- 前端注册页 [auth.tsx](/home/gsh/workspace/TRMS/web/src/app/auth.tsx) 调整为更小表单：
+  - 删除普通注册流程里的“身份编号”输入；
+  - 成员注册时保留“学号”输入；
+  - 选择管理员或系统管理员后，不再渲染“学号”输入；
+  - 普通注册提交时不再从页面收集 `actor_id`，成员以外角色也不会再提交 `member_code`。
+- 同步更新前端测试 [App.test.tsx](/home/gsh/workspace/TRMS/web/src/app/App.test.tsx)：
+  - 原管理员注册路径不再填写“身份编号”；
+  - 新增“成员/管理员切换时学号字段显示与隐藏”的显式断言。
+
+### 根因
+- 当前注册表单同时暴露“身份编号”和“学号”，对普通用户来说信息重复且难以区分。
+- 后端注册逻辑本身已经允许 `actor_id` 缺省并回退到用户名，因此前端继续要求手填“身份编号”并不是必要约束。
+- 真正需要保留的成员专有业务字段是学号，而不是让所有角色都看到一组与自己无关的标识输入。
+
+### 风险与影响面
+- 本轮只简化普通注册 UI，没有改后端注册协议，也没有改开发快捷入口注入 `actor_id` 的调试能力。
+- 由于前端不再显式传 `actor_id`，普通注册账号会回到后端既有默认行为：未提供时以用户名作为 `actor_id`。
+- 如果后续产品要求管理员/系统管理员注册时仍需单独配置业务编号，应单独补受控字段，而不是恢复当前这类面对所有用户的通用输入。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- App.test.tsx`
+  - 1 个测试文件、11 个用例通过。
+- 仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic 升降级验证通过；
+  - pytest 520 个用例通过，存在 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+  - Web 前端 `npm run lint`、`npm test`、`npm run build` 通过；ESLint 仍有 2 条既有 `react-hooks/exhaustive-deps` warning，Vitest 仍有既有 `--localstorage-file` 路径 warning，Vite 仍有既有 chunk size warning；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 02:02 - Replace raw member IDs with username, display name, and student ID
 
 ### 完成内容

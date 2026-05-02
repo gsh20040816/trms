@@ -80,7 +80,6 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("member");
   const [displayName, setDisplayName] = useState("");
-  const [actorId, setActorId] = useState("");
   const [memberCode, setMemberCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [devEntrySubmittingRole, setDevEntrySubmittingRole] = useState<UserRole | null>(null);
@@ -104,8 +103,7 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
             password,
             role,
             displayName,
-            actorId,
-            memberCode,
+            memberCode: role === "member" ? memberCode : undefined,
           });
         const targetRoleRoute = getRoleRouteOrThrow(nextSession.role);
         showSuccess(mode === "login" ? "登录成功" : "注册并登录成功");
@@ -280,23 +278,16 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
                     onChange={(event) => setDisplayName(event.target.value)}
                     fullWidth
                   />
-                  <TextField
-                    label="身份编号"
-                    name="actor_id"
-                    placeholder={role === "member" ? "成员学号，例如 2250001" : "管理编号，例如 admin-1"}
-                    value={actorId}
-                    onChange={(event) => setActorId(event.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label="学号"
-                    name="member_code"
-                    placeholder="仅成员账号需要，例如 2250001"
-                    value={memberCode}
-                    onChange={(event) => setMemberCode(event.target.value)}
-                    disabled={role !== "member"}
-                    fullWidth
-                  />
+                  {role === "member" ? (
+                    <TextField
+                      label="学号"
+                      name="member_code"
+                      placeholder="例如 2250001"
+                      value={memberCode}
+                      onChange={(event) => setMemberCode(event.target.value)}
+                      fullWidth
+                    />
+                  ) : null}
                 </>
               ) : null}
               {formErrorMessage ? (

@@ -100,7 +100,7 @@ describe("web app account auth", () => {
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "角色" }));
     fireEvent.click(screen.getByRole("option", { name: "管理员" }));
     fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "张管理员" } });
-    fireEvent.change(screen.getByLabelText("身份编号"), { target: { value: "admin-1" } });
+    expect(screen.queryByLabelText("学号")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "注册并登录" }));
 
     expect(await screen.findByRole("heading", { name: "按任务推进处理当前工作" })).toBeInTheDocument();
@@ -292,6 +292,26 @@ describe("web app account auth", () => {
     expect(
       screen.getByText("当前环境仅开放成员自注册；管理员与系统管理员账号必须通过受控初始化或后续邀请/审批流程创建。"),
     ).toBeInTheDocument();
+  });
+
+  it("shows student id only for member registration", () => {
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/login"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+
+    expect(screen.getByLabelText("学号")).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "角色" }));
+    fireEvent.click(screen.getByRole("option", { name: "管理员" }));
+    expect(screen.queryByLabelText("学号")).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "角色" }));
+    fireEvent.click(screen.getByRole("option", { name: "成员" }));
+    expect(screen.getByLabelText("学号")).toBeInTheDocument();
   });
 
   it("shows a role mismatch placeholder for the wrong logged-in role", () => {
