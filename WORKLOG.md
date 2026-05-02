@@ -1,5 +1,35 @@
 # WORKLOG
 
+## 2026-05-02 23:00 - Move paper-invoice creation button below helper text
+
+### 完成内容
+- 完成任务“调整成员工作台纸质发票录入按钮换行布局”。
+- 已修改 [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 为“手动录入纸质发票”区域的底部操作区增加局部布局类；
+  - 保留原有说明文案和“新增纸质发票”按钮语义，只调整按钮与说明文案的排版关系。
+- 已修改 [web/src/styles.css](/home/gsh/workspace/TRMS/web/src/styles.css)：
+  - 让纸质发票录入 footer 改为纵向布局；
+  - 让“新增纸质发票”按钮独立落到下一行并保持右对齐；
+  - 避免截图中按钮被长说明文案挤压成窄圆形。
+- 已更新 [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)，记录本轮最小 UI 修复任务。
+
+### 根因
+- 成员工作台纸质发票录入区复用了通用 `admin-form-footer` 横向布局；
+- 由于左侧帮助文案较长，右侧按钮可用宽度被压缩，导致“新增纸质发票”按钮发生难看的折行。
+
+### 风险与影响面
+- 本轮只调整成员工作台纸质发票录入区的局部布局，不改纸质发票创建接口、表单字段、校验或跳转逻辑。
+- 当前使用局部类覆盖，不影响成员工作台其他 footer 区域和管理员页面。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx -t "allows members to create a paper invoice from the workbench"`
+- 已运行 `./scripts/verify.sh`：
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `120/120` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 22:56 - Remove export blockers from priority queue and relax issue action layout
 
 ### 完成内容

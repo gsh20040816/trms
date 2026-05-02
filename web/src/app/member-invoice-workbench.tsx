@@ -2315,11 +2315,16 @@ export function MemberInvoiceWorkbenchPage() {
                       </TextField>
                     </div>
                     {paperInvoiceError ? <p className="field-error field-error-block">{paperInvoiceError}</p> : null}
-                    <div className="admin-form-footer">
+                    <div className="admin-form-footer member-paper-invoice-footer">
                       <p className="field-hint">
                         录入后会自动生成“全额归属本人”的默认分摊；纸质票号占位和任务抬头税号由系统生成，后续仍可进入单票页调整。
                       </p>
-                      <Button type="submit" variant="contained" disabled={isCreatingPaperInvoice || selectedTask.status !== "open"}>
+                      <Button
+                        className="member-paper-invoice-submit"
+                        type="submit"
+                        variant="contained"
+                        disabled={isCreatingPaperInvoice || selectedTask.status !== "open"}
+                      >
                         {isCreatingPaperInvoice ? "正在创建纸质发票..." : "新增纸质发票"}
                       </Button>
                     </div>

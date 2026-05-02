@@ -331,6 +331,15 @@
   align-items: flex-start;
 }
 
+.member-paper-invoice-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.member-paper-invoice-submit {
+  align-self: flex-end;
+}
+
 .task-card-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
