@@ -89,6 +89,14 @@ type PendingAction = {
   label: string;
 };
 
+type WorkbenchPendingStateSummary = {
+  recognitionPendingCount: number;
+  recognitionReviewCount: number;
+  missingMaterialCount: number;
+  validationIssueCount: number;
+  pendingConfirmationCount: number;
+};
+
 type InvoiceQueueGroupKey =
   | "ready"
   | "recognition_pending"
@@ -337,58 +345,61 @@ function getRecognitionFailure(item: WorkbenchInvoiceItem): RecognitionFailureDe
   return null;
 }
 
-function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStatusReport): PendingAction[] {
+function summarizePendingActions(
+  task: ReimbursementTask,
+  pendingStateSummary: WorkbenchPendingStateSummary,
+): PendingAction[] {
   const actions: PendingAction[] = [];
 
-  if (report.counts.recognition_pending_count > 0) {
+  if (pendingStateSummary.recognitionPendingCount > 0) {
     actions.push({
       id: "recognition-pending",
       title: "等待系统完成识别",
-      detail: `当前有 ${report.counts.recognition_pending_count} 份材料仍在识别排队或尚未执行；在结果出来前，分摊与确认不会自然闭合。`,
+      detail: `当前有 ${pendingStateSummary.recognitionPendingCount} 份材料仍在识别排队或尚未执行；在结果出来前，分摊与确认不会自然闭合。`,
       to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices"),
       tone: "info",
       label: "查看当前状态",
     });
   }
 
-  if (report.counts.recognition_failed_count > 0 || report.counts.recognition_needs_confirmation_count > 0) {
+  if (pendingStateSummary.recognitionReviewCount > 0) {
     actions.push({
       id: "recognition",
       title: "先核对识别结果",
-      detail: `当前有 ${report.counts.recognition_failed_count + report.counts.recognition_needs_confirmation_count} 份材料仍需人工确认或补录。`,
+      detail: `当前有 ${pendingStateSummary.recognitionReviewCount} 份材料仍需人工确认或补录。`,
       to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices"),
       tone: "warning",
       label: "定位到对应发票",
     });
   }
 
-  if (report.counts.missing_material_count > 0) {
+  if (pendingStateSummary.missingMaterialCount > 0) {
     actions.push({
       id: "missing-materials",
       title: "补齐必传材料",
-      detail: `当前有 ${report.counts.missing_material_count} 条缺失材料提示，会影响后续复核。`,
+      detail: `当前有 ${pendingStateSummary.missingMaterialCount} 条缺失材料提示，会影响后续复核。`,
       to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-upload"),
       tone: "danger",
       label: "去上传区补材料",
     });
   }
 
-  if (report.counts.validation_failed_count > 0 || report.counts.validation_pending_count > 0) {
+  if (pendingStateSummary.validationIssueCount > 0) {
     actions.push({
       id: "validations",
       title: "处理异常校验",
-      detail: `当前有 ${report.counts.validation_failed_count} 条失败校验、${report.counts.validation_pending_count} 条待确认校验。`,
+      detail: `当前有 ${pendingStateSummary.validationIssueCount} 条失败或待确认校验。`,
       to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-invoices"),
       tone: "warning",
       label: "查看异常原因",
     });
   }
 
-  if (report.counts.pending_confirmation_count > 0 || report.counts.missing_confirmation_count > 0) {
+  if (pendingStateSummary.pendingConfirmationCount > 0) {
     actions.push({
       id: "confirmations",
       title: "确认本人费用",
-      detail: `当前有 ${report.counts.pending_confirmation_count + report.counts.missing_confirmation_count} 条费用还未完成确认。`,
+      detail: `当前有 ${pendingStateSummary.pendingConfirmationCount} 条费用还未完成确认。`,
       to: buildWorkbenchTaskAnchor(task.id, "#member-workbench-status"),
       tone: "info",
       label: "去确认区处理",
@@ -411,10 +422,10 @@ function summarizePendingActions(task: ReimbursementTask, report: TaskMemberStat
 
 function summarizePendingActionsWithLinkage(
   task: ReimbursementTask,
-  report: TaskMemberStatusReport,
+  pendingStateSummary: WorkbenchPendingStateSummary,
   pendingSupportingMaterialLinkageItems: PendingSupportingMaterialLinkageItem[],
 ) {
-  const actions = summarizePendingActions(task, report);
+  const actions = summarizePendingActions(task, pendingStateSummary);
   if (pendingSupportingMaterialLinkageItems.length > 0) {
     actions.unshift({
       id: "supporting-material-linkage",
@@ -516,7 +527,11 @@ function buildWorkbenchItems(
     });
 }
 
-function buildSummaryStats(task: ReimbursementTask, report: TaskMemberStatusReport) {
+function buildSummaryStats(
+  task: ReimbursementTask,
+  report: TaskMemberStatusReport,
+  pendingStateSummary: WorkbenchPendingStateSummary,
+) {
   return [
     {
       label: "本人材料",
@@ -526,14 +541,11 @@ function buildSummaryStats(task: ReimbursementTask, report: TaskMemberStatusRepo
     {
       label: "待处理事项",
       value: (
-        report.counts.recognition_pending_count
-        + report.counts.recognition_failed_count
-        + report.counts.recognition_needs_confirmation_count
-        + report.counts.validation_failed_count
-        + report.counts.validation_pending_count
-        + report.counts.missing_material_count
-        + report.counts.pending_confirmation_count
-        + report.counts.missing_confirmation_count
+        pendingStateSummary.recognitionPendingCount
+        + pendingStateSummary.recognitionReviewCount
+        + pendingStateSummary.validationIssueCount
+        + pendingStateSummary.missingMaterialCount
+        + pendingStateSummary.pendingConfirmationCount
       ),
       description: "包括识别排队、人工确认、校验异常、缺失材料和待确认费用。",
     },
@@ -1446,8 +1458,6 @@ export function MemberInvoiceWorkbenchPage() {
       ? paperInvoiceFormState
       : buildInitialPaperInvoiceFormState(selectedTask)
   );
-
-  const summaryStats = workbenchState.status === "ready" ? buildSummaryStats(workbenchState.task, workbenchState.report) : [];
   const pendingSupportingMaterialLinkageItems = useMemo(
     () => (
       workbenchState.status === "ready"
@@ -1460,10 +1470,55 @@ export function MemberInvoiceWorkbenchPage() {
     () => pendingSupportingMaterialLinkageItems.filter(isVisiblePendingSupportingMaterialLinkageItem),
     [pendingSupportingMaterialLinkageItems],
   );
+  const pendingStateSummary = useMemo<WorkbenchPendingStateSummary>(() => {
+    if (workbenchState.status !== "ready") {
+      return {
+        recognitionPendingCount: 0,
+        recognitionReviewCount: 0,
+        missingMaterialCount: 0,
+        validationIssueCount: 0,
+        pendingConfirmationCount: 0,
+      };
+    }
+    let recognitionPendingCount = 0;
+    let recognitionReviewCount = 0;
+    let missingMaterialCount = 0;
+    let validationIssueCount = 0;
+    let pendingConfirmationCount = 0;
+    for (const item of workbenchState.items) {
+      const queueGroup = deriveInvoiceQueueGroupKey(item);
+      if (queueGroup === "recognition_pending") {
+        recognitionPendingCount += 1;
+      }
+      if (queueGroup === "recognition_review") {
+        recognitionReviewCount += 1;
+      }
+      missingMaterialCount += item.missingMaterials.length;
+      validationIssueCount += item.validations.filter(
+        (validation) => (
+          !MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code)
+          && (validation.status === "failed" || validation.status === "pending")
+        ),
+      ).length;
+      pendingConfirmationCount += item.confirmations.filter(
+        (confirmation) => confirmation.status === "pending",
+      ).length;
+    }
+    return {
+      recognitionPendingCount,
+      recognitionReviewCount,
+      missingMaterialCount,
+      validationIssueCount,
+      pendingConfirmationCount,
+    };
+  }, [workbenchState]);
+  const summaryStats = workbenchState.status === "ready"
+    ? buildSummaryStats(workbenchState.task, workbenchState.report, pendingStateSummary)
+    : [];
   const pendingActions = workbenchState.status === "ready"
     ? summarizePendingActionsWithLinkage(
       workbenchState.task,
-      workbenchState.report,
+      pendingStateSummary,
       visiblePendingSupportingMaterialLinkageItems,
     )
     : [];

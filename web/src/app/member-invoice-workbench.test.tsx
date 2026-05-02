@@ -1027,5 +1027,7 @@ describe("MemberInvoiceWorkbenchPage", () => {
     const readySection = await screen.findByRole("region", { name: "未提交材料列表" });
     expect(within(readySection).getByText("Screenshot_20251119-161841.支付宝.png")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "问题材料分组" })).toHaveTextContent("当前无问题材料");
+    expect(screen.getByText("当前无明显异常")).toBeInTheDocument();
+    expect(screen.queryByText("先核对识别结果")).not.toBeInTheDocument();
   });
 });

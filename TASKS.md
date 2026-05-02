@@ -18,6 +18,12 @@
 
 ## 临时任务 - 2026-05-01 新一轮产品反馈收口
 
+- [x] 收口成员工作状态摘要，避免把非发票待确认误显示为仍待处理
+  - Done when:
+    - 非发票辅助材料即使识别状态为 `needs_confirmation`，只要工作台分组已判定为 `ready`，成员工作状态页不再继续显示“先核对识别结果”
+    - 成员工作台顶部“待处理事项”统计与左侧“工作状态”导航摘要改为使用当前工作台真实分组口径，而不是旧 `report.counts` 混合口径
+    - 前端测试覆盖“非发票 `needs_confirmation` 仍在就绪区时，工作状态显示当前无明显异常”
+
 - [x] 让成员材料详情按识别类型进入独立前端页面
   - Done when:
     - 成员点击 `payment_record`、`competition_notice`、`itinerary`、`order_screenshot`、`other_attachment` 材料时，不再进入发票特有页面

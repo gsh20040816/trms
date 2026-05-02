@@ -1,5 +1,42 @@
 # WORKLOG
 
+## 2026-05-02 23:45 - Stop member workbench status summary from flagging non-invoice confirmation as pending
+
+### 完成内容
+- 完成任务“收口成员工作状态摘要，避免把非发票待确认误显示为仍待处理”。
+- 已修改 [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)：
+  - 成员工作台“需要你处理的事项”不再直接读取 `report.counts.recognition_needs_confirmation_count`；
+  - 改为基于当前工作台真实 `queueGroup`、可见缺失材料、可见校验异常和待确认费用条目，重新聚合 `pendingStateSummary`；
+  - 因此像 `payment_record` 这类“识别待确认但已判定为 `queueGroup=ready`”的非发票材料，不会再把工作状态摘要误报成“1 项仍待处理”；
+  - 顶部统计卡的“待处理事项”和左侧导航“工作状态”说明也同步改为使用同一套工作台口径，避免同页自相矛盾。
+- 已补前端回归测试 [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)：
+  - 新增断言：非发票 `needs_confirmation` 但仍位于就绪区时，页面显示“当前无明显异常”，且不再出现“先核对识别结果”。
+
+### 根因
+- 之前“非发票 `needs_confirmation` 不阻塞提交”的修复只收口了工作台分组和主提交流程；
+- 但成员工作台顶部“待处理事项”和左侧“工作状态”摘要仍直接读取旧的 `report.counts`：
+  - `recognition_needs_confirmation_count`
+  - `validation_*_count`
+- 这套旧计数没有区分“发票待确认”与“非发票待确认但已允许继续”的新口径；
+- 结果是列表区已经显示“当前无问题材料”，工作状态摘要却仍提示“1 项仍待处理”，形成前后矛盾。
+
+### 风险与影响面
+- 本轮只收口成员工作台前端摘要与统计口径，不改后端 `TaskMemberStatusReport` 数据结构；
+- 这意味着其他仍直接依赖 `report.counts` 的旧页面若存在相同语义错位，需要后续逐页检查；
+- 当前成员工作台已经统一改为按真实 `queueGroup` 与可见异常条目统计，符合现有“只列出真正需要成员处理的事项”产品目标。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx src/app/member-invoice-workbench-aggregate.test.tsx src/app/member-invoice-workbench-layout.test.tsx src/app/member-invoice-workbench-submission.test.tsx`
+- 已通过定向前端构建：
+  - `cd web && npm run build`
+- 已运行 `./scripts/verify.sh`：
+  - 当前按改动范围只执行了 Web 相关校验；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error；
+  - `web` 测试 `123/123` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-02 23:40 - Make invoice attachments clickable and editable from material detail
 
 ### 完成内容
