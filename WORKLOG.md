@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-05-02 19:32 - Scope verify.sh by changed files and skip repo-wide validation for docs-only rounds
+
+### 完成内容
+- 完成任务“优化仓库验证脚本并补充文档改动免验证规则”。
+- [scripts/verify.sh](/home/gsh/workspace/TRMS/scripts/verify.sh) 已收口为“按改动范围选择校验集”：
+  - 默认会读取当前 git 工作树中的已跟踪改动与未跟踪文件；
+  - 若只改了文档文件，会直接输出“仅检测到文档改动，跳过仓库级验证”并成功退出；
+  - 若只改 `web/`、`src/`、`deploy/`、`scripts/*.sh` 等局部范围，则只运行对应的相关校验，而不是无条件串行跑完整仓库。
+- 同一脚本已补充独立检查项并行执行能力：
+  - Python、Web、部署、Shell 等独立套件在需要同时执行时会并行跑，再统一汇总输出结果；
+  - `pytest` 已从 Python 编译/迁移步骤里拆出为独立任务，前端 `npm test` 也已从 Web lint/build 中拆出，因此两者在同一轮需要执行时会直接并行启动；
+  - 两类测试各自内部也会显式使用 worker 并行：`pytest` 通过 `pytest-xdist` 以 `--dist loadfile` 并行，前端 `npm test` 会显式传入 `--maxWorkers`，并默认与 `pytest` 平分可用 CPU，避免两边同时抢满整机；
+  - Shell 路径新增 `bash -n` 自检，`shellcheck` 存在时也会自动利用。
+- [AGENTS.md](/home/gsh/workspace/TRMS/AGENTS.md) 的验证规则已同步更新：
+  - 只有本轮包含代码、脚本、配置或测试改动时才强制执行 `./scripts/verify.sh`；
+  - 若本轮仅修改 `docs/`、`README.md`、`AGENTS.md`、`TASKS.md`、`WORKLOG.md`、`BLOCKERS.md` 等文档/工作记录文件，可跳过仓库级验证；
+  - 一旦文档改动和代码改动混在同一轮，仍然必须执行验证。
+- [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md) 已补入并完成对应的最小验证任务，保证本轮工作与仓库任务约束一致。
+- [pyproject.toml](/home/gsh/workspace/TRMS/pyproject.toml) 和 [uv.lock](/home/gsh/workspace/TRMS/uv.lock) 已补入 `pytest-xdist` 开发依赖，确保 `pytest` 内部并行有明确实现，而不是停留在脚本层面的空参数。
+
+### 根因
+- 旧版 `scripts/verify.sh` 不区分改动范围，默认串行执行 Python 编译、Alembic、pytest、Web lint/test/build、Docker Compose 配置和 `git diff --check`。
+- 这会导致两类低效：
+  - 只改前端或只改后端时，仍然被迫等待无关子系统的完整验证；
+  - 只改文档或工作记录时，依然触发整仓库验证，和“只验证相关改动”的项目原则冲突。
+
+### 风险与影响面
+- 当前按路径推导校验集，属于保守启发式而不是语义级依赖分析；遇到无法识别的改动路径时，脚本会回退到完整验证，优先保证正确性。
+- 本轮没有改变任何业务代码、测试语义或构建命令本身，只调整“何时跑哪些检查”和运行方式。
+- `pytest-xdist` 会改变 pytest 的执行模型；本轮通过实际全量回归确认当前测试集在 `--dist loadfile` 并行模式下可稳定通过。
+
+### 验证结果
+- 已通过脚本分流验证：
+  - `./scripts/verify.sh --files README.md`
+  - 结果：正确识别为文档-only 改动并跳过仓库级验证。
+- 已通过脚本主路径验证：
+  - `./scripts/verify.sh --files scripts/verify.sh pyproject.toml web/package.json`
+  - 结果：
+    - Shell 自检通过；
+    - `pytest` 以 `xdist` 8 worker 并行运行，546 个用例通过，保留 3 条既有 `HTTP_422_UNPROCESSABLE_ENTITY` DeprecationWarning；
+    - Web `npm run lint` 通过，仍保留 2 条既有 `react-hooks/exhaustive-deps` warning；
+    - Web `npm test -- --maxWorkers=8` 通过，28 个测试文件、116 个用例通过，仍保留既有 `--localstorage-file` warning；
+    - Web `npm run build` 通过，仍保留既有 Vite chunk size warning；
+    - `git diff --check` 通过。
+- 已通过当前真实改动集验证：
+  - `./scripts/verify.sh`
+  - 结果：按真实改动范围自动收口到 Shell + Python 路径；`pytest` 以 8 worker 并行运行，546 个用例通过，`git diff --check` 通过。
+
 ## 2026-05-02 19:13 - Highlight split and export primary actions
 
 ### 完成内容
