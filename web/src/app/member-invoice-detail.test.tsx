@@ -450,6 +450,66 @@ describe("MemberInvoiceDetailPage", () => {
     });
   });
 
+  it("deletes the underlying material when the invoice-style route has no invoice entity yet", async () => {
+    const requests: Array<{ method: string; url: string }> = [];
+    const summary = buildSummary();
+    const firstItem = summary.items[0];
+    if (!firstItem) {
+      throw new Error("expected buildSummary to create an invoice workbench item");
+    }
+    summary.items[0] = {
+      ...firstItem,
+      material: {
+        ...firstItem.material,
+        material_id: "MAT-NO-INVOICE-001",
+        invoice_id: null,
+        invoice_number: null,
+        original_filename: "competition-notice.pdf",
+      },
+      invoice: null,
+      splits: [],
+      confirmations: [],
+      related_expense_details: [],
+    };
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      requests.push({ method, url });
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(summary));
+      }
+      if (url === "/api/materials/MAT-NO-INVOICE-001" && method === "DELETE") {
+        return Promise.resolve(jsonResponse({
+          status: "deleted",
+          item: { id: "MAT-NO-INVOICE-001", status: "deleted" },
+        }));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/member/materials/MAT-NO-INVOICE-001/invoice?taskId=TASK-OPEN"],
+    });
+    act(() => {
+      render(<RouterProvider router={router} />);
+    });
+
+    expect(await screen.findByRole("button", { name: "删除当前材料" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除当前材料" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除材料" }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => request.method === "DELETE" && request.url === "/api/materials/MAT-NO-INVOICE-001")).toBe(true);
+    });
+  });
+
   it("renders supporting materials as clickable cards linking to the material page", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);

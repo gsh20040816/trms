@@ -12,6 +12,15 @@
     - 已修正数据库中 `telegram-photo-AQADPBFrG6HduVd-.jpg` 被误落为 `invoice` 的历史记录，并补齐其支付记录关联
     - 相关测试和仓库级验证通过
 
+## 临时任务 - 2026-05-03 成员发票详情页误分类材料删除收口
+
+- [x] 让成员在发票详情路径下也能删除尚未形成发票实体的误分类材料
+  - Done when:
+    - `member/materials/:materialId/invoice` 路径下，若当前条目只有材料、尚未生成 `invoice` 实体，页面仍提供删除入口
+    - 删除动作会走成员已有的材料删除接口，而不是错误地要求 `invoice.id`
+    - 正常“删除未提交发票”路径保持不回归
+    - 相关前端测试和仓库级验证通过
+
 ## 临时任务 - 2026-05-03 Telegram Bot 与 CLI 共享任务切换提交流程
 
 - [x] 补齐 Telegram Bot 绑定、任务切换、直接上传，并让 CLI / Telegram 共享同一套提交语义

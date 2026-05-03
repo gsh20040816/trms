@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-05-03 20:43 - Allow deleting misclassified materials from member invoice detail route
+
+### 完成内容
+- 完成任务“让成员在发票详情路径下也能删除尚未形成发票实体的误分类材料”。
+- 已修正成员发票详情页删除逻辑：
+  - [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - 当页面上存在真实 `invoice` 实体时，继续走原有 `DELETE /api/invoices/{invoice_id}`；
+  - 当路径是 `member/materials/:materialId/invoice` 且当前条目只有材料、尚未生成发票实体时，现改为走 `DELETE /api/materials/{material_id}`；
+  - 删除按钮文案会按场景显示为“删除未提交发票”或“删除当前材料”。
+- 已补前端回归测试：
+  - [web/src/app/member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+  - 覆盖：
+    - 正常未提交发票删除仍走 `/api/invoices/...`
+    - 误分类材料从 `/member/materials/:materialId/invoice` 进入时，会改走 `/api/materials/...`
+
+### 根因
+- 当前成员发票详情页把删除入口和删除动作都绑定在“必须存在 `invoice.id`”这个前提上。
+- 但实际存在一类材料：初始上传时被标成 `invoice`，因此路由进入了 `/member/materials/:materialId/invoice`，随后识别结果表明它其实是比赛通知/支付记录等非发票材料，且系统并未生成 `invoices` 表记录。
+- 对这类“有材料、无发票实体”的条目，页面仍显示发票处理界面，但删除按钮被隐藏，导致成员既不能删，也不能从当前页直接退出这个错误状态。
+
+### 风险与影响面
+- 本轮只修改前端详情页的删除分流逻辑，不改变后端权限规则。
+- 真正存在 `invoice` 实体的未提交发票，仍继续走专用的发票删除接口，分摊、确认和校验记录的清理语义不变。
+- 没有发票实体的误分类条目，现回落到已有材料删除接口；这与成员在普通材料详情页的删除语义保持一致。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-detail.test.tsx`
+  - `7/7` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error；
+  - `web` 测试 `129/129` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 20:50 - Default Telegram uploads to other_attachment before recognition typing
 
 ### 完成内容

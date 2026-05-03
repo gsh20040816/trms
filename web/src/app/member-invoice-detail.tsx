@@ -475,11 +475,12 @@ export function MemberInvoiceDetailPage() {
   const splitSummary = summarizeSplitDrafts(splitDrafts);
   const canEditInvoice = invoice?.member_submission_status !== "submitted";
   const canEditSplits = canEditInvoice;
-  const canDeleteInvoice = Boolean(
+  const canDeleteCurrentItem = Boolean(
     item
-    && invoice
-    && invoice.member_submission_status === "unsubmitted"
     && item.material.submitter_id === session?.actorId,
+  ) && (
+    !invoice
+    || invoice.member_submission_status === "unsubmitted"
   );
 
   function updateManualField<Key extends keyof ManualInvoiceFormState>(
@@ -673,14 +674,19 @@ export function MemberInvoiceDetailPage() {
     }
   }
 
-  async function handleDeleteInvoice() {
-    if (!invoice || !task || !item) {
+  async function handleDeleteCurrentItem() {
+    if (!task || !item) {
       return;
     }
+    const isDeletingInvoice = Boolean(invoice);
     const confirmed = await confirm({
-      title: `确认删除发票 ${invoice.invoice_number}？`,
-      description: `这会删除当前未提交发票、它的金额归属和确认记录，并把原始材料 ${item.material.original_filename} 标记为已删除。删除后不能恢复。`,
-      confirmLabel: "删除发票",
+      title: isDeletingInvoice
+        ? `确认删除发票 ${invoice?.invoice_number}？`
+        : `确认删除材料 ${item.material.original_filename}？`,
+      description: isDeletingInvoice
+        ? `这会删除当前未提交发票、它的金额归属和确认记录，并把原始材料 ${item.material.original_filename} 标记为已删除。删除后不能恢复。`
+        : "这会删除当前未提交材料；若它已关联到未提交发票，系统会一并移除这些未提交关联。删除后不能恢复。",
+      confirmLabel: isDeletingInvoice ? "删除发票" : "删除材料",
       cancelLabel: "继续保留",
       destructive: true,
       tone: "warning",
@@ -690,11 +696,16 @@ export function MemberInvoiceDetailPage() {
     }
     setDeletingInvoice(true);
     try {
-      await trmsApi.deleteInvoice(invoice.id);
-      showSuccess("未提交发票已删除。");
+      if (invoice) {
+        await trmsApi.deleteInvoice(invoice.id);
+        showSuccess("未提交发票已删除。");
+      } else {
+        await trmsApi.deleteMaterial(item.material.material_id);
+        showSuccess("未提交材料已删除。");
+      }
       void navigate(`/member/invoices/workbench?taskId=${encodeURIComponent(task.id)}`, { replace: true });
     } catch (error) {
-      showError(error instanceof ApiError ? error.summary.message : "删除未提交发票失败。");
+      showError(error instanceof ApiError ? error.summary.message : (invoice ? "删除未提交发票失败。" : "删除材料失败。"));
     } finally {
       setDeletingInvoice(false);
     }
@@ -784,9 +795,9 @@ export function MemberInvoiceDetailPage() {
               <Button type="button" variant="outlined" disabled={retryingRecognition} onClick={() => { void handleRecognitionRetry(); }}>
                 {retryingRecognition ? "重新识别中..." : "重新识别材料"}
               </Button>
-              {canDeleteInvoice ? (
-                <Button type="button" color="error" variant="outlined" disabled={deletingInvoice} onClick={() => { void handleDeleteInvoice(); }}>
-                  {deletingInvoice ? "删除中..." : "删除未提交发票"}
+              {canDeleteCurrentItem ? (
+                <Button type="button" color="error" variant="outlined" disabled={deletingInvoice} onClick={() => { void handleDeleteCurrentItem(); }}>
+                  {deletingInvoice ? "删除中..." : (invoice ? "删除未提交发票" : "删除当前材料")}
                 </Button>
               ) : null}
             </div>
