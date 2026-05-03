@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-04 01:45 - Add production start/stop wrapper for Compose baseline
+
+### 完成内容
+- 完成任务“提供基于当前 Docker Compose 基线的生产环境启动/停止脚本”。
+- 已新增统一生产启停脚本：
+  - [scripts/trms-prod.sh](/home/gsh/workspace/TRMS/scripts/trms-prod.sh)
+  - 提供 `start`、`stop`、`down`、`status`、`logs` 五个命令；
+  - `start` 会按当前部署文档既定顺序依次执行：
+    - `up -d postgres redis minio`
+    - `up minio-init`
+    - `run --rm migrate`
+    - `up -d api worker web`
+  - 脚本默认读取根目录 `.env` 与 [deploy/docker-compose.yml](/home/gsh/workspace/TRMS/deploy/docker-compose.yml)，并要求 `TRMS_ENV=production`，避免误用开发环境配置。
+- 已同步更新说明文档：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md)
+  - 文档现改为优先使用 `./scripts/trms-prod.sh start|stop|status|logs|down`，同时保留等价手工 `docker compose` 命令。
+
+### 根因
+- 当前仓库虽然已经具备完整的生产 Compose 基线，但启动、迁移、状态检查和停止命令仍分散在 README 与部署文档中，实际运维时容易漏掉 `minio-init` 或 `migrate`。
+- 生产入口配置问题排查也表明，部署阶段需要一个稳定、低歧义的统一入口，而不是每次人工拼装多条 Compose 命令。
+
+### 风险与影响面
+- 本轮没有改动 Compose 拓扑，只是把现有文档里的生产启动顺序脚本化，因此不会改变服务依赖关系。
+- `stop` 仅执行 `docker compose stop`，保留容器和卷；若需要移除容器与网络，应显式执行 `down`。
+- 脚本当前按仓库默认基线始终拉起 `minio` / `minio-init`；即使部署方选择 `TRMS_STORAGE_BACKEND=local`，只要仍沿用现有 Compose 基线，这两个服务依旧属于默认启动集合。
+
+### 验证结果
+- 已运行：
+  - `bash -n scripts/trms-prod.sh`
+  - `TRMS_PROD_ENV_FILE=.env.example ./scripts/trms-prod.sh --help`
+- 已运行 `./scripts/verify.sh`：
+  - Shell 语法检查通过；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-04 01:20 - Remove Compose reverse proxy and switch baseline to external Caddy ingress
 
 ### 完成内容

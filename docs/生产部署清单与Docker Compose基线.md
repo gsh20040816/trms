@@ -50,6 +50,36 @@ cp .env.example .env
 
 首次部署建议按以下顺序执行：
 
+优先使用仓库提供的统一脚本：
+
+```bash
+./scripts/trms-prod.sh start
+```
+
+该脚本会依次执行：
+
+- 启动 `postgres`、`redis`、`minio`
+- 运行 `minio-init`
+- 执行 `migrate`
+- 启动 `api`、`worker`、`web`
+
+如需查看状态、日志或停止服务，可使用：
+
+```bash
+./scripts/trms-prod.sh status
+./scripts/trms-prod.sh logs
+./scripts/trms-prod.sh stop
+./scripts/trms-prod.sh down
+```
+
+补充约束：
+
+- 脚本默认读取仓库根目录 `.env` 与 `deploy/docker-compose.yml`
+- 脚本会校验 `TRMS_ENV=production`，避免误把开发配置当成生产基线执行
+- 若需覆盖路径，可设置 `TRMS_PROD_ENV_FILE` 或 `TRMS_PROD_COMPOSE_FILE`
+
+若需要手工分步执行，等价命令如下：
+
 ```bash
 docker compose --env-file .env -f deploy/docker-compose.yml up -d postgres redis minio
 docker compose --env-file .env -f deploy/docker-compose.yml up minio-init
@@ -144,6 +174,12 @@ curl -X POST http://127.0.0.1:${TRMS_API_PORT:-9876}/api/auth/bootstrap-admin \
 ## 回滚与重建
 
 仅在确认可接受停机和数据影响时执行：
+
+```bash
+./scripts/trms-prod.sh down
+```
+
+等价手工命令：
 
 ```bash
 docker compose --env-file .env -f deploy/docker-compose.yml down

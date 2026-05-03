@@ -11,6 +11,15 @@
     - `.env.example` 与部署文档同步改为“由宿主机反向代理统一接入”的基线
     - 仓库级验证通过
 
+## 临时任务 - 2026-05-04 增加生产环境统一启停脚本
+
+- [x] 提供基于当前 Docker Compose 基线的生产环境启动/停止脚本
+  - Done when:
+    - 仓库新增统一生产启停脚本，封装当前生产 Compose 基线的启动和停止流程
+    - 脚本会校验 `.env` / `TRMS_ENV=production`，避免误用开发配置
+    - README 与生产部署文档同步改为优先使用该脚本
+    - 仓库级验证通过
+
 ## 临时任务 - 2026-05-04 Docker Compose 本地材料目录宿主持久化
 
 - [x] 让 Docker Compose 在 local 存储模式下持久化 `MATERIAL_STORAGE_DIR`
