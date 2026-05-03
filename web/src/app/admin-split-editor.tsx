@@ -11,7 +11,7 @@ import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { InvoiceSummaryRow } from "../components/invoice-summary-row";
 import { TaskMemberAutocomplete } from "../components/task-member-autocomplete";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
-import { PageHeader, StatusBadge } from "../components/dashboard";
+import { PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationStatus,
@@ -346,11 +346,11 @@ export function AdminSplitEditorPage() {
           />
         )}
       >
-        <section className="status-card">
+        <SurfaceCard component="section" className="status-card">
           <p className="eyebrow">任务缺失</p>
           <h2>任务标识缺失</h2>
           <p>当前路由未提供任务编号，无法进入费用分摊编辑页。</p>
-        </section>
+        </SurfaceCard>
       </AdminWorkspaceShell>
     );
   }
@@ -537,27 +537,27 @@ export function AdminSplitEditorPage() {
     >
 
       {pageState.status === "loading" ? (
-        <section className="status-card admin-task-detail-panel">
+        <SurfaceCard component="section" className="status-card admin-task-detail-panel">
           <p className="eyebrow">费用分摊</p>
           <h2>正在加载分摊编辑上下文</h2>
           <p>正在读取任务信息、发票列表、当前分摊和确认状态，请稍候。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {pageState.status === "error" ? <ApiErrorNotice error={pageState.error} /> : null}
       {submitError ? <ApiErrorNotice error={submitError} /> : null}
 
       {pageState.status === "ready" && isForeignTask ? (
-        <section className="status-card admin-task-detail-panel">
+        <SurfaceCard component="section" className="status-card admin-task-detail-panel">
           <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
           <p>你当前没有处理该任务的权限，如需访问请联系对应负责人。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {visibleTask && visibleSummary ? (
         <section className="split-editor-layout">
-          <article className="status-card admin-task-detail-panel split-editor-list-panel">
+          <SurfaceCard component="article" className="status-card admin-task-detail-panel split-editor-list-panel">
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">发票列表</p>
@@ -660,10 +660,10 @@ export function AdminSplitEditorPage() {
                 <p className="field-hint">候选发票会在展开层中滚动显示，方便持续对照右侧分摊信息。</p>
               </div>
             )}
-          </article>
+          </SurfaceCard>
 
           {selectedInvoiceItem && selectedInvoice ? (
-            <article className="status-card admin-form-card split-editor-form-panel">
+            <SurfaceCard component="article" className="status-card admin-form-card split-editor-form-panel">
               <div className="admin-form-header">
                 <div>
                   <p className="eyebrow">当前发票</p>
@@ -861,7 +861,7 @@ export function AdminSplitEditorPage() {
                   ) : (
                     <ul className="admin-review-record-list" aria-label="当前分摊确认状态">
                       {selectedInvoiceItem.invoiceItem.splits.map(({ split, confirmation }) => (
-                        <li key={split.id} className="admin-review-record-card">
+                        <SurfaceCard key={split.id} component="li" className="admin-review-record-card">
                           <div className="task-card-header">
                             <strong>
                               {formatTaskMemberLabel(split.member_id, memberSummaryMap)} · {formatCurrencyFromCents(split.amount_cents)}
@@ -882,7 +882,7 @@ export function AdminSplitEditorPage() {
                           {confirmation?.dispute_reason ? (
                             <span>异议原因：{confirmation.dispute_reason}</span>
                           ) : null}
-                        </li>
+                        </SurfaceCard>
                       ))}
                     </ul>
                   )}
@@ -897,7 +897,7 @@ export function AdminSplitEditorPage() {
                   </Button>
                 </div>
               </form>
-            </article>
+            </SurfaceCard>
           ) : null}
         </section>
       ) : null}

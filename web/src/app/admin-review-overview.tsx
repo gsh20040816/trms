@@ -14,7 +14,7 @@ import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { TaskMemberAutocomplete } from "../components/task-member-autocomplete";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { InvoiceSummaryRow } from "../components/invoice-summary-row";
-import { PageHeader, StatusBadge } from "../components/dashboard";
+import { MetadataChip, PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ConfirmationRecord,
@@ -898,11 +898,11 @@ export function AdminReviewOverviewPage() {
           />
         )}
       >
-        <section className="status-card">
+        <SurfaceCard component="section" className="status-card">
           <p className="eyebrow">复核总览</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
-        </section>
+        </SurfaceCard>
       </AdminWorkspaceShell>
     );
   }
@@ -1178,26 +1178,26 @@ export function AdminReviewOverviewPage() {
       )}
     >
       {state.status === "loading" ? (
-        <section className="status-card admin-review-panel">
+        <SurfaceCard component="section" className="status-card admin-review-panel">
           <p className="eyebrow">加载中</p>
           <h2>正在加载复核总览</h2>
           <p>正在读取任务详情、复核摘要和逾期确认信息，请稍候。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {state.status === "error" ? <ApiErrorNotice error={state.error} /> : null}
 
       {state.status === "ready" && isForeignTask ? (
-        <section className="status-card admin-review-panel">
+        <SurfaceCard component="section" className="status-card admin-review-panel">
           <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
           <p>你当前没有查看该任务的权限，如需访问请联系对应负责人。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {visibleTask && visibleSummary && visibleOverdueSummary ? (
         <>
-          <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
             <div className="task-card-header">
               <div>
                 <p className="task-card-id">材料审核</p>
@@ -1237,9 +1237,9 @@ export function AdminReviewOverviewPage() {
                 <dd>{visibleOverdueSummary.total_overdue_members}</dd>
               </div>
             </div>
-          </section>
+          </SurfaceCard>
 
-          <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">审核风险</p>
@@ -1266,9 +1266,12 @@ export function AdminReviewOverviewPage() {
                 <h4>当前未完成确认成员</h4>
                 <ul className="token-list" aria-label="未完成确认成员">
                   {outstandingMemberIds.map((memberId) => (
-                    <li key={memberId} className="token-chip">
-                      {formatTaskMemberLabel(memberId, memberSummaryMap)}
-                    </li>
+                    <MetadataChip
+                      key={memberId}
+                      component="li"
+                      className="token-chip"
+                      label={formatTaskMemberLabel(memberId, memberSummaryMap)}
+                    />
                   ))}
                 </ul>
               </div>
@@ -1278,9 +1281,12 @@ export function AdminReviewOverviewPage() {
                 <h4>已逾期未确认成员</h4>
                 <ul className="token-list" aria-label="逾期未确认成员">
                   {visibleOverdueSummary.overdue_member_ids.map((memberId) => (
-                    <li key={memberId} className="token-chip">
-                      {formatTaskMemberLabel(memberId, memberSummaryMap)}
-                    </li>
+                    <MetadataChip
+                      key={memberId}
+                      component="li"
+                      className="token-chip"
+                      label={formatTaskMemberLabel(memberId, memberSummaryMap)}
+                    />
                   ))}
                 </ul>
               </div>
@@ -1301,9 +1307,9 @@ export function AdminReviewOverviewPage() {
                 </ul>
               </div>
             ) : null}
-          </section>
+          </SurfaceCard>
 
-          <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">待归属</p>
@@ -1329,8 +1335,8 @@ export function AdminReviewOverviewPage() {
                       trailingContent={<StatusBadge tone="danger">待归属</StatusBadge>}
                     />
                     <div className="admin-review-inline-metadata">
-                      <span className="token-chip">{formatMaterialType(material.material_type)}</span>
-                      <span className="token-chip">{formatSubmissionChannel(material.channel)}</span>
+                      <MetadataChip component="span" className="token-chip" label={formatMaterialType(material.material_type)} />
+                      <MetadataChip component="span" className="token-chip" label={formatSubmissionChannel(material.channel)} />
                     </div>
                     <div className="task-meta-grid admin-review-meta-grid">
                       <div>
@@ -1344,10 +1350,10 @@ export function AdminReviewOverviewPage() {
             ) : (
               <p className="field-hint">当前任务提示下没有待归属材料。</p>
             )}
-          </section>
+          </SurfaceCard>
 
           <section className="admin-review-workspace">
-            <article className="status-card admin-task-detail-panel admin-review-list-panel">
+            <SurfaceCard component="article" className="status-card admin-task-detail-panel admin-review-list-panel">
               <div className="admin-form-header">
                 <div>
                   <p className="eyebrow">材料列表</p>
@@ -1465,9 +1471,9 @@ export function AdminReviewOverviewPage() {
               ) : (
                 <p className="field-hint">当前任务还没有已归档材料。</p>
               )}
-            </article>
+            </SurfaceCard>
 
-            <article className="status-card admin-form-card admin-review-detail-panel" aria-label="当前材料详情">
+            <SurfaceCard component="article" className="status-card admin-form-card admin-review-detail-panel" aria-label="当前材料详情">
               {selectedMaterial ? (
                 <>
                   <div className="admin-form-header">
@@ -1491,11 +1497,11 @@ export function AdminReviewOverviewPage() {
                   </div>
 
                   <div className="admin-review-inline-metadata">
-                    <span className="token-chip">{formatMaterialType(selectedMaterial.material_type)}</span>
-                    <span className="token-chip">{formatSubmissionChannel(selectedMaterial.channel)}</span>
-                    <span className="token-chip">{formatTaskMemberLabel(selectedMaterial.submitter_id, memberSummaryMap)}</span>
+                    <MetadataChip component="span" className="token-chip" label={formatMaterialType(selectedMaterial.material_type)} />
+                    <MetadataChip component="span" className="token-chip" label={formatSubmissionChannel(selectedMaterial.channel)} />
+                    <MetadataChip component="span" className="token-chip" label={formatTaskMemberLabel(selectedMaterial.submitter_id, memberSummaryMap)} />
                     {selectedInvoice ? (
-                      <span className="token-chip">{formatExpenseType(selectedInvoice.invoice.expense_type)}</span>
+                      <MetadataChip component="span" className="token-chip" label={formatExpenseType(selectedInvoice.invoice.expense_type)} />
                     ) : null}
                   </div>
 
@@ -2204,7 +2210,7 @@ export function AdminReviewOverviewPage() {
                   <p className="field-hint">当前任务还没有已归档材料，暂时无法进入列表-详情联动复核。</p>
                 </>
               )}
-            </article>
+            </SurfaceCard>
           </section>
         </>
       ) : null}

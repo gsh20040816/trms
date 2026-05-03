@@ -1,5 +1,56 @@
 # WORKLOG
 
+## 2026-05-03 14:58 - Review remaining non-Material-3 frontend components and migrate them to M3 wrappers
+
+### 完成内容
+- 完成任务“review 当前前端仍未切换到 Material 3 的部件并统一修正”。
+- 新增共享 M3 包装层：
+  - [web/src/components/dashboard.tsx](/home/gsh/workspace/TRMS/web/src/components/dashboard.tsx)
+    - 新增 `SurfaceCard`，统一承接原先仍在直接使用 `<section>/<article>` 的摘要卡、工作卡和记录卡；
+    - 新增 `MetadataChip`，统一承接旧 `token-chip` 这类标签展示。
+  - [web/src/components/invoice-summary-row.tsx](/home/gsh/workspace/TRMS/web/src/components/invoice-summary-row.tsx)
+    - 发票摘要行从原生 `<button>` 改为基于 MUI `ButtonBase + Card + Typography` 的 Material 3 结构。
+- 已把以下前端页面中残留的旧卡片/伪按钮切到 M3 组件：
+  - [web/src/app/admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx)
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)
+  - [web/src/app/admin-invoice-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-invoice-editor.tsx)
+  - [web/src/app/admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx)
+  - [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)
+  - [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)
+  - [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)
+  - [web/src/app/member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx)
+  - [web/src/app/member-expense-confirmation.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.tsx)
+  - [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  - [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)
+- 本轮重点替换了三类残留：
+  - 原生 `<button>` 和仅靠 CSS 假装成按钮的 `<Link className="button ...">`；
+  - 仍直接使用 `<section>/<article className="status-card/task-card">` 作为主要卡片部件的页面；
+  - 仍直接使用旧 `token-chip` / `status-chip` 呈现业务标签的摘要区域。
+
+### 根因
+- 仓库虽然已经引入 MUI v7 和 Material 3 主题，但前端仍处于“半迁移”状态：
+  - 主路径里还有若干原生按钮和伪按钮链接；
+  - 多个管理员/成员页面仍直接把旧 `section/article + styles.css` 作为主要卡片部件；
+  - 发票摘要行与附件入口仍保留自造交互容器，没有走 MUI 的 `Card/ButtonBase/Chip`。
+- 这与 [docs/Material3前端落地方案评估.md](/home/gsh/workspace/TRMS/docs/Material3%E5%89%8D%E7%AB%AF%E8%90%BD%E5%9C%B0%E6%96%B9%E6%A1%88%E8%AF%84%E4%BC%B0.md) 中“逐步移除旧 `styles.css` 自造部件、统一切到 MUI v7 Material 3 组件”的方向不一致，也会让同站点交互语义继续混杂。
+
+### 风险与影响面
+- 本轮只收口前端部件实现，不改接口契约、业务状态机、权限规则或后端逻辑。
+- 为避免无边界扩散，保留了部分旧类名作为布局/测试兼容层，但它们承载的主要 UI 部件已经切换到 MUI `Card`、`Button`、`ButtonBase`、`Chip`、`CardActionArea`。
+- `task-missing-materials.tsx` 仍保留两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增新的 lint error。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-create.test.tsx src/app/admin-task-detail.test.tsx src/app/admin-review-overview.test.tsx src/app/admin-split-editor.test.tsx src/app/admin-corrections-reminders.test.tsx src/app/admin-export-tasks.test.tsx src/app/member-material-status.test.tsx src/app/member-expense-confirmation.test.tsx src/app/member-invoice-detail.test.tsx src/app/member-invoice-workbench.test.tsx src/app/system-admin-dashboard.test.tsx src/app/task-missing-materials.test.tsx`
+  - `54/54` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning；
+  - `web` 测试 `123/123` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 14:28 - Soften unfriendly frontend copy across member and admin flows
 
 ### 完成内容

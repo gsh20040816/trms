@@ -14,7 +14,7 @@ import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
-import { PageHeader, StatusBadge } from "../components/dashboard";
+import { MetadataChip, PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExpenseType,
@@ -430,11 +430,11 @@ export function AdminTaskDetailPage() {
           />
         )}
       >
-        <section className="status-card">
+        <SurfaceCard component="section" className="status-card">
           <p className="eyebrow">任务详情</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
-        </section>
+        </SurfaceCard>
       </AdminWorkspaceShell>
     );
   }
@@ -657,11 +657,11 @@ export function AdminTaskDetailPage() {
       )}
     >
       {state.status === "loading" ? (
-        <section className="status-card admin-task-detail-panel">
+        <SurfaceCard component="section" className="status-card admin-task-detail-panel">
           <p className="eyebrow">加载中</p>
           <h2>正在加载任务详情</h2>
           <p>正在读取任务基础配置和当前状态，请稍候。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {state.status === "error" ? <ApiErrorNotice error={state.error} /> : null}
@@ -669,24 +669,24 @@ export function AdminTaskDetailPage() {
       {statusUpdateError ? <ApiErrorNotice error={statusUpdateError} /> : null}
 
       {saveNotice ? (
-        <section className="status-card admin-task-detail-panel">
+        <SurfaceCard component="section" className="status-card admin-task-detail-panel">
           <p className="eyebrow">保存完成</p>
           <h2>任务基础配置已更新</h2>
           <p>{saveNotice}</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {state.status === "ready" && isForeignTask ? (
-        <section className="status-card admin-task-detail-panel">
+        <SurfaceCard component="section" className="status-card admin-task-detail-panel">
           <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
           <p>你当前没有处理该任务的权限，如需访问请联系对应负责人。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {visibleTask && formState ? (
         <section className="task-detail-layout">
-          <article className="status-card admin-task-detail-panel">
+          <SurfaceCard component="article" className="status-card admin-task-detail-panel">
             <div className="task-card-header">
               <div>
                 <p className="task-card-id">任务摘要</p>
@@ -736,9 +736,12 @@ export function AdminTaskDetailPage() {
                 <span>管理员名单</span>
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务管理员列表" sx={{ mt: 1 }}>
                   {buildTaskAdministratorSearchOptions(getTaskAdministratorIds(visibleTask), administratorOptions).map((administrator) => (
-                    <span key={administrator.actor_id} className="token-chip">
-                      {formatUserSearchSummary(administrator)}
-                    </span>
+                    <MetadataChip
+                      key={administrator.actor_id}
+                      component="span"
+                      className="token-chip"
+                      label={formatUserSearchSummary(administrator)}
+                    />
                   ))}
                 </Stack>
               </div>
@@ -746,18 +749,21 @@ export function AdminTaskDetailPage() {
                 <span>当前费用类别</span>
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务摘要费用类别" sx={{ mt: 1 }}>
                   {visibleTask.fee_categories.map((category) => (
-                    <span key={category} className="token-chip">
-                      {formatExpenseType(category as ExpenseType)}
-                    </span>
+                    <MetadataChip
+                      key={category}
+                      component="span"
+                      className="token-chip"
+                      label={formatExpenseType(category as ExpenseType)}
+                    />
                   ))}
                 </Stack>
               </div>
             </div>
-          </article>
+          </SurfaceCard>
 
           {visibleReadiness ? (
             <>
-              <article className="status-card admin-task-detail-panel">
+              <SurfaceCard component="article" className="status-card admin-task-detail-panel">
                 <div className="admin-form-header">
                   <div>
                     <p className="eyebrow">就绪度</p>
@@ -814,9 +820,9 @@ export function AdminTaskDetailPage() {
                 ) : (
                   <p className="field-hint">当前任务已满足导出边界，可以进入导出页生成材料包。</p>
                 )}
-              </article>
+              </SurfaceCard>
 
-              <article className="status-card admin-task-detail-panel" aria-label="异常优先队列">
+              <SurfaceCard component="article" className="status-card admin-task-detail-panel" aria-label="异常优先队列">
                 <div className="admin-form-header">
                   <div>
                     <p className="eyebrow">优先处理</p>
@@ -871,11 +877,11 @@ export function AdminTaskDetailPage() {
                     ))}
                   </div>
                 )}
-              </article>
+              </SurfaceCard>
             </>
           ) : null}
 
-          <article className="status-card admin-form-card">
+          <SurfaceCard component="article" className="status-card admin-form-card">
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">任务配置</p>
@@ -1025,9 +1031,12 @@ export function AdminTaskDetailPage() {
 
                   <ul className="token-list" aria-label="任务成员名单">
                     {formState.memberIds.map((memberId) => (
-                      <li key={memberId} className="token-chip">
-                        {formatTaskMemberLabel(memberId, memberSummaryMap)}
-                      </li>
+                      <MetadataChip
+                        key={memberId}
+                        component="li"
+                        className="token-chip"
+                        label={formatTaskMemberLabel(memberId, memberSummaryMap)}
+                      />
                     ))}
                   </ul>
 
@@ -1141,9 +1150,12 @@ export function AdminTaskDetailPage() {
 
                   <ul className="token-list" aria-label="任务费用类别">
                     {formState.feeCategories.map((category) => (
-                      <li key={category} className="token-chip">
-                        {formatExpenseType(category)}
-                      </li>
+                      <MetadataChip
+                        key={category}
+                        component="li"
+                        className="token-chip"
+                        label={formatExpenseType(category)}
+                      />
                     ))}
                   </ul>
                 </Stack>
@@ -1202,9 +1214,9 @@ export function AdminTaskDetailPage() {
                 </Stack>
               </section>
             </form>
-          </article>
+          </SurfaceCard>
 
-          <article className="status-card admin-task-detail-panel">
+          <SurfaceCard component="article" className="status-card admin-task-detail-panel">
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">状态操作</p>
@@ -1240,7 +1252,7 @@ export function AdminTaskDetailPage() {
                 当前任务已经没有可继续推进的下一步操作，可返回任务列表查看其他事项。
               </p>
             )}
-          </article>
+          </SurfaceCard>
         </section>
       ) : null}
     </AdminWorkspaceShell>

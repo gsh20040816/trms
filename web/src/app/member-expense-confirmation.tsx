@@ -13,6 +13,7 @@ import {
   SectionCard,
   StatCard,
   StatusBadge,
+  SurfaceCard,
 } from "../components/dashboard";
 import { useSnackbar } from "../components/use-snackbar";
 import { ApiError } from "../lib/api/client";
@@ -499,7 +500,7 @@ export function MemberExpenseConfirmationPage() {
             const isStale = staleSplitId === item.detail.split_id;
 
             return (
-              <article key={item.detail.split_id} className="status-card member-confirmation-card">
+              <SurfaceCard key={item.detail.split_id} component="article" className="status-card member-confirmation-card">
                 <div className="member-status-section-header">
                   <div>
                     <p className="task-card-id">费用明细 {item.detail.split_id}</p>
@@ -655,7 +656,7 @@ export function MemberExpenseConfirmationPage() {
                     </p>
                   ) : null}
                 </section>
-              </article>
+              </SurfaceCard>
             );
           })}
         </section>

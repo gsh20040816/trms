@@ -461,9 +461,9 @@ export function SystemAdminDashboardPage() {
           meta={`当前系统管理员：${session.displayName}`}
           actions={(
             <div className="page-actions">
-              <Link className="button button-secondary" to="/">
+              <Button component={Link} to="/" variant="outlined" color="inherit">
                 返回总览
-              </Link>
+              </Button>
             </div>
           )}
         />

@@ -13,6 +13,7 @@ import {
   SectionCard,
   StatCard,
   StatusBadge,
+  SurfaceCard,
 } from "../components/dashboard";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
@@ -874,7 +875,7 @@ export function MemberMaterialStatusPage() {
             const isSelected = selectedItem?.material.id === item.material.id;
 
             return (
-              <article key={item.material.id} className="task-card member-status-card">
+              <SurfaceCard key={item.material.id} component="article" className="task-card member-status-card">
                 <div className="task-card-header">
                   <div>
                     <p className="task-card-id">材料编号 {item.material.id}</p>
@@ -927,7 +928,7 @@ export function MemberMaterialStatusPage() {
                     </Button>
                   </div>
                 </section>
-              </article>
+              </SurfaceCard>
             );
           })}
         </section>
@@ -944,7 +945,7 @@ export function MemberMaterialStatusPage() {
           );
 
           return (
-            <article className="task-card member-status-card" aria-label="当前材料详情">
+            <SurfaceCard component="article" className="task-card member-status-card" aria-label="当前材料详情">
               <div className="task-card-header">
                 <div>
                   <p className="task-card-id">当前材料详情 / 材料编号 {item.material.id}</p>
@@ -1183,7 +1184,7 @@ export function MemberMaterialStatusPage() {
                   <p className="task-healthy-note">当前材料关联的发票没有命中可直接归类为“缺失材料”的失败规则。</p>
                 )}
               </section>
-            </article>
+            </SurfaceCard>
           );
         })()
       ) : null}

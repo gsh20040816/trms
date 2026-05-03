@@ -3,6 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardActionArea from "@mui/material/CardActionArea";
+import CardContent from "@mui/material/CardContent";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 
@@ -912,24 +915,27 @@ export function MemberInvoiceDetailPage() {
               <ul className="invoice-material-list" aria-label="当前已关联附件列表">
                 {item.supporting_materials.map((material) => (
                   <li key={material.id}>
-                    <button
-                      type="button"
-                      className="invoice-material-button"
-                      onClick={() => { void navigate(buildMaterialDetailPath(currentTaskId, material.id)); }}
-                    >
-                      <p className="task-card-id">附件材料 {material.id}</p>
-                      <h3>{formatMaterialType(material.material_type)} / {material.original_filename}</h3>
-                      <dl className="task-detail-grid invoice-editor-summary-grid">
-                        <div>
-                          <dt>材料类型</dt>
-                          <dd>{formatMaterialType(material.material_type)}</dd>
-                        </div>
-                        <div>
-                          <dt>上传时间</dt>
-                          <dd>{formatDateTime(material.created_at)}</dd>
-                        </div>
-                      </dl>
-                    </button>
+                    <Card variant="outlined">
+                      <CardActionArea
+                        className="invoice-material-button"
+                        onClick={() => { void navigate(buildMaterialDetailPath(currentTaskId, material.id)); }}
+                      >
+                        <CardContent>
+                          <p className="task-card-id">附件材料 {material.id}</p>
+                          <h3>{formatMaterialType(material.material_type)} / {material.original_filename}</h3>
+                          <dl className="task-detail-grid invoice-editor-summary-grid">
+                            <div>
+                              <dt>材料类型</dt>
+                              <dd>{formatMaterialType(material.material_type)}</dd>
+                            </div>
+                            <div>
+                              <dt>上传时间</dt>
+                              <dd>{formatDateTime(material.created_at)}</dd>
+                            </div>
+                          </dl>
+                        </CardContent>
+                      </CardActionArea>
+                    </Card>
                   </li>
                 ))}
               </ul>

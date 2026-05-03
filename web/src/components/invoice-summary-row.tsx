@@ -1,8 +1,12 @@
 import type { ReactNode } from "react";
 
+import Box from "@mui/material/Box";
+import ButtonBase from "@mui/material/ButtonBase";
 import Checkbox from "@mui/material/Checkbox";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 
-import { StatusBadge } from "./dashboard";
+import { StatusBadge, SurfaceCard } from "./dashboard";
 
 type InvoiceSummaryRowTone = "success" | "warning" | "neutral";
 
@@ -58,9 +62,9 @@ export function InvoiceSummaryRow({
   const headlineLabel = primaryLabel ?? `票号 ${invoiceNumber ?? "待补录"}`;
 
   return (
-    <div className={summaryRowClassName}>
+    <SurfaceCard className={summaryRowClassName}>
       {selection ? (
-        <div className="invoice-summary-selection">
+        <Box className="invoice-summary-selection">
           <Checkbox
             checked={selection.checked}
             disabled={selection.disabled}
@@ -69,68 +73,70 @@ export function InvoiceSummaryRow({
             }}
             inputProps={{ "aria-label": selection.ariaLabel }}
           />
-        </div>
+        </Box>
       ) : null}
       {action ? (
-        <button
-          type="button"
+        <ButtonBase
+          component="button"
           className={summaryButtonClassName}
           aria-label={action.ariaLabel}
           onClick={action.onClick}
+          disabled={false}
+          focusRipple
         >
-          <span className="invoice-summary-lines">
-            <span className="invoice-summary-line invoice-summary-number" title={headlineLabel}>
+          <Stack className="invoice-summary-lines">
+            <Typography className="invoice-summary-line invoice-summary-number" title={headlineLabel} component="span">
               {headlineLabel}
-            </span>
-            <span className="invoice-summary-line invoice-summary-file" title={filename}>
+            </Typography>
+            <Typography className="invoice-summary-line invoice-summary-file" title={filename} component="span">
               {filename}
-            </span>
-            <span className="invoice-summary-line invoice-summary-meta">
-              <span title={amountLabel}>{amountLabel}</span>
-              <span className={`invoice-summary-validation invoice-summary-validation-${validationTone}`}>
+            </Typography>
+            <Box className="invoice-summary-line invoice-summary-meta">
+              <Typography component="span" title={amountLabel}>{amountLabel}</Typography>
+              <Typography component="span" className={`invoice-summary-validation invoice-summary-validation-${validationTone}`}>
                 {validationLabel}
-              </span>
-              <span>附件 {supportingMaterialCount}</span>
-            </span>
-          </span>
-          <span className="invoice-summary-side">
+              </Typography>
+              <Typography component="span">附件 {supportingMaterialCount}</Typography>
+            </Box>
+          </Stack>
+          <Box className="invoice-summary-side">
             {statusHint ? (
-              <span className="invoice-summary-hint" title={statusHint}>
+              <Typography component="span" className="invoice-summary-hint" title={statusHint}>
                 {statusHint}
-              </span>
+              </Typography>
             ) : null}
             {trailingContent}
             {emphasisLabel ? <StatusBadge tone="warning">{emphasisLabel}</StatusBadge> : null}
-          </span>
-        </button>
+          </Box>
+        </ButtonBase>
       ) : (
-        <div className={`${summaryButtonClassName} invoice-summary-row-static`}>
-          <span className="invoice-summary-lines">
-            <span className="invoice-summary-line invoice-summary-number" title={headlineLabel}>
+        <Box className={`${summaryButtonClassName} invoice-summary-row-static`}>
+          <Stack className="invoice-summary-lines">
+            <Typography className="invoice-summary-line invoice-summary-number" title={headlineLabel} component="span">
               {headlineLabel}
-            </span>
-            <span className="invoice-summary-line invoice-summary-file" title={filename}>
+            </Typography>
+            <Typography className="invoice-summary-line invoice-summary-file" title={filename} component="span">
               {filename}
-            </span>
-            <span className="invoice-summary-line invoice-summary-meta">
-              <span title={amountLabel}>{amountLabel}</span>
-              <span className={`invoice-summary-validation invoice-summary-validation-${validationTone}`}>
+            </Typography>
+            <Box className="invoice-summary-line invoice-summary-meta">
+              <Typography component="span" title={amountLabel}>{amountLabel}</Typography>
+              <Typography component="span" className={`invoice-summary-validation invoice-summary-validation-${validationTone}`}>
                 {validationLabel}
-              </span>
-              <span>附件 {supportingMaterialCount}</span>
-            </span>
-          </span>
-          <span className="invoice-summary-side">
+              </Typography>
+              <Typography component="span">附件 {supportingMaterialCount}</Typography>
+            </Box>
+          </Stack>
+          <Box className="invoice-summary-side">
             {statusHint ? (
-              <span className="invoice-summary-hint" title={statusHint}>
+              <Typography component="span" className="invoice-summary-hint" title={statusHint}>
                 {statusHint}
-              </span>
+              </Typography>
             ) : null}
             {trailingContent}
             {emphasisLabel ? <StatusBadge tone="warning">{emphasisLabel}</StatusBadge> : null}
-          </span>
-        </div>
+          </Box>
+        </Box>
       )}
-    </div>
+    </SurfaceCard>
   );
 }

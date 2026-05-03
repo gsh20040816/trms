@@ -20,6 +20,7 @@ import {
   SectionCard,
   StatCard,
   StatusBadge,
+  SurfaceCard,
 } from "../components/dashboard";
 import { useSnackbar } from "../components/use-snackbar";
 import { trmsApi } from "../lib/api/trms";
@@ -2738,8 +2739,9 @@ export function MemberInvoiceWorkbenchPage() {
             {workbenchState.status === "ready" && activeTab === "status" && missingMaterials.length > 0 ? (
               <section id="member-workbench-missing-materials" className="member-status-list" aria-label="工作台缺失材料列表">
                 {missingMaterials.map((missingMaterial) => (
-              <article
+              <SurfaceCard
                 key={`${missingMaterial.invoice_id}:${missingMaterial.required_material_type}:${missingMaterial.source_rule_code}`}
+                component="article"
                 className="task-card member-status-card"
               >
                 <div className="member-status-section-header">
@@ -2780,7 +2782,7 @@ export function MemberInvoiceWorkbenchPage() {
                     查看对应发票上下文
                   </Button>
                 </div>
-              </article>
+              </SurfaceCard>
                 ))}
               </section>
             ) : null}

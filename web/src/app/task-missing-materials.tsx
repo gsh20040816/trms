@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import Button from "@mui/material/Button";
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
@@ -6,7 +7,7 @@ import Select from "@mui/material/Select";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { EmptyState, PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge } from "../components/dashboard";
+import { EmptyState, PageHeader, RoleWorkspace, SectionCard, StatCard, StatusBadge, SurfaceCard } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   MissingMaterialItem,
@@ -161,15 +162,13 @@ function MissingMaterialGroupList({
   return (
     <section className="admin-review-record-list" aria-label="缺失材料分组列表">
       {groups.map((group) => (
-        <article key={group.key} className="admin-review-record-card">
+        <SurfaceCard key={group.key} component="article" className="admin-review-record-card">
           <div className="task-card-header">
             <div>
               <p className="task-card-id">{group.subtitle}</p>
               <h3>{group.title}</h3>
             </div>
-            <span className="status-chip member-status-chip-pending">
-              {group.items.length} 条缺失项
-            </span>
+            <StatusBadge tone="warning">{group.items.length} 条缺失项</StatusBadge>
           </div>
 
           <ul className="admin-review-list" aria-label={`${group.title} 缺失材料列表`}>
@@ -186,7 +185,7 @@ function MissingMaterialGroupList({
               </li>
             ))}
           </ul>
-        </article>
+        </SurfaceCard>
       ))}
     </section>
   );
@@ -260,11 +259,11 @@ export function AdminMissingMaterialsPage() {
           />
         )}
       >
-        <section className="status-card">
+        <SurfaceCard component="section" className="status-card">
           <p className="eyebrow">缺失材料</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
-        </section>
+        </SurfaceCard>
       </AdminWorkspaceShell>
     );
   }
@@ -287,9 +286,9 @@ export function AdminMissingMaterialsPage() {
           description="这里集中查看当前任务里仍需补充的材料，并按成员、发票或费用类型整理查看。"
           actions={(
             <div className="page-actions">
-              <Link className="button button-secondary" to={`/admin/tasks/${taskId}`}>
+              <Button component={Link} variant="outlined" color="inherit" to={`/admin/tasks/${taskId}`}>
                 返回任务详情
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -297,34 +296,32 @@ export function AdminMissingMaterialsPage() {
     >
 
       {state.status === "loading" ? (
-        <section className="status-card admin-review-panel">
+        <SurfaceCard component="section" className="status-card admin-review-panel">
           <p className="eyebrow">加载中</p>
           <h2>正在加载缺失材料清单</h2>
           <p>正在读取任务详情和缺失材料聚合结果，请稍候。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {state.status === "error" ? <ApiErrorNotice error={state.error} /> : null}
 
       {state.status === "ready" && isForeignTask ? (
-        <section className="status-card admin-review-panel">
+        <SurfaceCard component="section" className="status-card admin-review-panel">
           <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
           <p>你当前没有查看该任务的权限，如需访问请联系对应负责人。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {visibleTask && visibleList ? (
         <>
-          <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
             <div className="task-card-header">
               <div>
                 <p className="task-card-id">任务编号 {visibleTask.id}</p>
                 <h2>{visibleTask.competition_name}</h2>
               </div>
-              <span className={`status-chip task-status-chip task-status-${visibleTask.status}`}>
-                {formatTaskStatus(visibleTask.status)}
-              </span>
+              <StatusBadge tone="info">{formatTaskStatus(visibleTask.status)}</StatusBadge>
             </div>
             <div className="admin-review-summary-grid">
               <div>
@@ -352,15 +349,15 @@ export function AdminMissingMaterialsPage() {
                 <dd>{summary?.expenseTypeCount ?? 0}</dd>
               </div>
             </div>
-          </section>
+          </SurfaceCard>
 
-          <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
             <div className="admin-form-header">
               <div>
                 <p className="eyebrow">查看方式</p>
                 <h2>切换查看维度</h2>
               </div>
-              <span className="status-chip">{GROUP_MODE_LABELS[groupMode]}</span>
+              <StatusBadge tone="info">{GROUP_MODE_LABELS[groupMode]}</StatusBadge>
             </div>
             <div className="admin-form-grid">
               <div className="field-stack">
@@ -383,14 +380,14 @@ export function AdminMissingMaterialsPage() {
                 <span className="field-hint">当前页用于梳理待补材料；如需提醒成员或更正数据，请回到对应工作页继续处理。</span>
               </div>
             </div>
-          </section>
+          </SurfaceCard>
 
           {visibleList.items.length === 0 ? (
-            <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
               <p className="eyebrow">当前状态良好</p>
               <h2>当前任务没有缺失材料</h2>
               <p>当前没有发现需要补充的材料，可以继续推进其他复核事项。</p>
-            </section>
+          </SurfaceCard>
           ) : (
             <MissingMaterialGroupList groups={readyGroups} memberSummaries={adminTaskMemberSummaries} />
           )}
@@ -536,12 +533,14 @@ export function MemberMissingMaterialsPage() {
           meta={`当前成员：${formatUserIdentityLabel(session)}`}
           actions={(
             <div className="page-actions">
-              <Link
-                className="button button-secondary"
+              <Button
+                component={Link}
+                variant="outlined"
+                color="inherit"
                 to={selectedTask ? `/member/invoices/workbench?taskId=${encodeURIComponent(selectedTask.id)}` : "/member/invoices/workbench"}
               >
                 返回当前任务工作台
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -604,16 +603,18 @@ export function MemberMissingMaterialsPage() {
             <div className="field-stack">
               <span>相关入口</span>
               <div className="inline-actions">
-                <Link className="route-link route-link-secondary" to="/member">
+                <Button component={Link} variant="outlined" color="inherit" to="/member">
                   返回成员任务列表
-                </Link>
+                </Button>
                 {selectedTask?.status === "open" ? (
-                  <Link
-                    className="route-link route-link-secondary"
+                  <Button
+                    component={Link}
+                    variant="outlined"
+                    color="inherit"
                     to={`/member/materials/upload?taskId=${encodeURIComponent(selectedTask.id)}`}
                   >
                     去补充材料
-                  </Link>
+                  </Button>
                 ) : null}
               </div>
             </div>

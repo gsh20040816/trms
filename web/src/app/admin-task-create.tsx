@@ -13,7 +13,7 @@ import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { UserSearchCandidatePicker } from "../components/UserSearchCandidatePicker";
-import { PageHeader } from "../components/dashboard";
+import { PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
 import { useAuthSession } from "./auth-store";
 import { trmsApi } from "../lib/api/trms";
 import type { ExpenseType, TaskCreateInput, UserSearchSummary } from "../lib/api/types";
@@ -350,9 +350,9 @@ export function AdminTaskCreatePage() {
           description="填写比赛信息、成员名单、费用类别和报销基础信息后，即可创建新的报销任务。"
           actions={(
             <div className="page-actions">
-              <Link className="button button-secondary" to="/admin">
+              <Button component={Link} to="/admin" variant="outlined" color="inherit">
                 返回任务列表
-              </Link>
+              </Button>
             </div>
           )}
         />
@@ -368,13 +368,13 @@ export function AdminTaskCreatePage() {
         }}
         noValidate
       >
-        <section className="status-card admin-form-card">
+        <SurfaceCard component="section" className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
               <p className="eyebrow">比赛信息</p>
               <h2>比赛与时间信息</h2>
             </div>
-            <span className="status-chip">创建后默认状态为草稿</span>
+            <StatusBadge tone="warning">创建后默认状态为草稿</StatusBadge>
           </div>
           <div className="admin-form-grid">
             <TextField
@@ -439,9 +439,9 @@ export function AdminTaskCreatePage() {
               slotProps={{ inputLabel: { shrink: true } }}
             />
           </div>
-        </section>
+        </SurfaceCard>
 
-        <section className="status-card admin-form-card">
+        <SurfaceCard component="section" className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
               <p className="eyebrow">成员名单</p>
@@ -508,9 +508,9 @@ export function AdminTaskCreatePage() {
               </FormHelperText>
             </FormControl>
           </Stack>
-        </section>
+        </SurfaceCard>
 
-        <section className="status-card admin-form-card">
+        <SurfaceCard component="section" className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
               <p className="eyebrow">管理员</p>
@@ -557,9 +557,9 @@ export function AdminTaskCreatePage() {
               ))}
             </Stack>
           </Stack>
-        </section>
+        </SurfaceCard>
 
-        <section className="status-card admin-form-card">
+        <SurfaceCard component="section" className="status-card admin-form-card">
           <div className="admin-form-header">
             <div>
               <p className="eyebrow">发票信息</p>
@@ -590,9 +590,9 @@ export function AdminTaskCreatePage() {
               fullWidth
             />
           </div>
-        </section>
+        </SurfaceCard>
 
-        <section className="status-card admin-form-card admin-form-footer">
+        <SurfaceCard component="section" className="status-card admin-form-card admin-form-footer">
           <div>
             <p className="eyebrow">提交</p>
             <h2>提交创建请求</h2>
@@ -606,7 +606,7 @@ export function AdminTaskCreatePage() {
               {isSubmitting ? "正在创建..." : "创建草稿任务"}
             </Button>
           </Stack>
-        </section>
+        </SurfaceCard>
       </form>
     </AdminWorkspaceShell>
   );

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
-import Card from "@mui/material/Card";
+import Card, { type CardProps } from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip, { type ChipProps } from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
@@ -53,6 +53,14 @@ type TaskTableProps = {
   children: ReactNode;
 };
 
+type SurfaceCardProps = CardProps & {
+  children: ReactNode;
+};
+
+type MetadataChipProps = Omit<ChipProps, "label"> & {
+  label: ReactNode;
+};
+
 const TONE_CHIP_COLOR: Record<BadgeTone, ChipProps["color"]> = {
   neutral: "default",
   info: "info",
@@ -77,6 +85,30 @@ export function StatusBadge({
       variant={variant}
       label={children}
       sx={{ fontWeight: 700 }}
+    />
+  );
+}
+
+export function SurfaceCard({ children, variant = "outlined", ...props }: SurfaceCardProps) {
+  return (
+    <Card variant={variant} {...props}>
+      {children}
+    </Card>
+  );
+}
+
+export function MetadataChip({
+  label,
+  size = "small",
+  variant = "outlined",
+  ...props
+}: MetadataChipProps) {
+  return (
+    <Chip
+      size={size}
+      variant={variant}
+      label={label}
+      {...props}
     />
   );
 }

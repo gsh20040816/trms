@@ -5,7 +5,7 @@ import Button from "@mui/material/Button";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
-import { PageHeader, StatusBadge } from "../components/dashboard";
+import { PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExportArtifactFormat,
@@ -359,11 +359,11 @@ export function AdminExportTasksPage() {
           />
         )}
       >
-        <section className="status-card">
+        <SurfaceCard component="section" className="status-card">
           <p className="eyebrow">导出任务</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
-        </section>
+        </SurfaceCard>
       </AdminWorkspaceShell>
     );
   }
@@ -516,11 +516,11 @@ export function AdminExportTasksPage() {
     >
 
       {pageState.status === "loading" ? (
-        <section className="status-card admin-review-panel">
+        <SurfaceCard component="section" className="status-card admin-review-panel">
           <p className="eyebrow">导出任务</p>
           <h2>正在加载导出准备情况</h2>
           <p>正在读取任务信息、导出能力和既有导出记录，请稍候。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {pageState.status === "error" ? <ApiErrorNotice error={pageState.error} /> : null}
@@ -528,7 +528,7 @@ export function AdminExportTasksPage() {
 
       {pageState.status === "ready" ? (
         <>
-          <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
             <div className="task-card-header">
               <div>
                 <p className="task-card-id">导出打印</p>
@@ -646,9 +646,10 @@ export function AdminExportTasksPage() {
             ) : null}
 
             {actionFeedback ? <p className="confirmation-feedback">{actionFeedback}</p> : null}
-          </section>
+          </SurfaceCard>
 
-          <section
+          <SurfaceCard
+            component="section"
             id="advanced-export-options"
             className="status-card admin-review-panel"
             aria-label="高级单项导出"
@@ -675,7 +676,7 @@ export function AdminExportTasksPage() {
               const isPreviewing = activePreviewKind === capability.kind;
 
               return (
-                <article key={capability.kind} className="admin-review-record-card export-capability-card">
+                <SurfaceCard key={capability.kind} component="article" className="admin-review-record-card export-capability-card">
                   <div className="task-card-header">
                     <div>
                       <p className="task-card-id">
@@ -732,18 +733,18 @@ export function AdminExportTasksPage() {
                       </span>
                     )}
                   </div>
-                </article>
+                </SurfaceCard>
               );
                 })}
             </div>
-          </section>
+          </SurfaceCard>
 
           {previewState.status === "loading" ? (
-            <section className="status-card admin-review-panel export-preview-panel">
+            <SurfaceCard component="section" className="status-card admin-review-panel export-preview-panel">
               <p className="eyebrow">预览加载中</p>
               <h2>{previewState.title}</h2>
               <p>正在准备当前预览内容，请稍候。</p>
-            </section>
+            </SurfaceCard>
           ) : null}
 
           {previewState.status === "error" ? (
@@ -753,15 +754,15 @@ export function AdminExportTasksPage() {
           ) : null}
 
           {previewState.status === "ready" ? (
-            <section className="status-card admin-review-panel export-preview-panel">
+            <SurfaceCard component="section" className="status-card admin-review-panel export-preview-panel">
               <p className="eyebrow">预览</p>
               <h2>{previewState.title}</h2>
               <p>{previewState.note}</p>
               <pre className="export-preview-content">{previewState.content}</pre>
-            </section>
+            </SurfaceCard>
           ) : null}
 
-          <section className="status-card admin-review-panel">
+          <SurfaceCard component="section" className="status-card admin-review-panel">
             <div className="task-card-header">
               <div>
                 <p className="task-card-id">导出任务</p>
@@ -777,7 +778,7 @@ export function AdminExportTasksPage() {
             ) : (
               <div className="admin-review-record-list" aria-label="导出任务历史列表">
                 {pageState.jobs.map((job) => (
-                  <article key={job.id} className="admin-review-record-card">
+                  <SurfaceCard key={job.id} component="article" className="admin-review-record-card">
                     <div className="task-card-header">
                       <div>
                         <p className="task-card-id">
@@ -839,11 +840,11 @@ export function AdminExportTasksPage() {
                     ) : (
                       <p className="field-hint">当前任务尚无可下载产物；生成成功后会在这里显示下载入口。</p>
                     )}
-                  </article>
+                  </SurfaceCard>
                 ))}
               </div>
             )}
-          </section>
+          </SurfaceCard>
         </>
       ) : null}
     </AdminWorkspaceShell>

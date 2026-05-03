@@ -14,7 +14,7 @@ import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
-import { StatusBadge } from "../components/dashboard";
+import { StatusBadge, SurfaceCard } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
   ExpenseType,
@@ -699,11 +699,11 @@ export function AdminInvoiceEditorPage() {
   if (!taskId) {
     return (
       <div className="page-stack">
-        <section className="status-card">
+        <SurfaceCard component="section" className="status-card">
           <p className="eyebrow">发票补录</p>
           <h2>任务标识缺失</h2>
           <p>暂时无法读取该任务，请从任务列表重新进入。</p>
-        </section>
+        </SurfaceCard>
       </div>
     );
   }
@@ -817,7 +817,7 @@ export function AdminInvoiceEditorPage() {
 
   return (
     <div className="page-stack">
-      <section className="status-card admin-task-detail-hero">
+      <SurfaceCard component="section" className="status-card admin-task-detail-hero">
         <p className="eyebrow">发票补录与更正</p>
         <h2>发票人工录入与更正</h2>
         <p>
@@ -828,31 +828,31 @@ export function AdminInvoiceEditorPage() {
             返回任务详情
           </Button>
         </div>
-      </section>
+      </SurfaceCard>
 
       {pageState.status === "loading" ? (
-        <section className="status-card admin-task-detail-panel">
+        <SurfaceCard component="section" className="status-card admin-task-detail-panel">
           <p className="eyebrow">发票补录</p>
           <h2>正在加载发票录入上下文</h2>
           <p>正在读取任务信息、发票材料和识别/校验摘要，请稍候。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {pageState.status === "error" ? <ApiErrorNotice error={pageState.error} /> : null}
       {submitError ? <ApiErrorNotice error={submitError} /> : null}
 
       {pageState.status === "ready" && isForeignTask ? (
-        <section className="status-card admin-task-detail-panel">
+        <SurfaceCard component="section" className="status-card admin-task-detail-panel">
           <p className="eyebrow">访问范围</p>
           <h2>当前任务不属于此管理员</h2>
           <p>你当前没有处理该任务的权限，如需访问请联系对应负责人。</p>
-        </section>
+        </SurfaceCard>
       ) : null}
 
       {visibleTask && visibleSummary ? (
         <>
           <section className="invoice-editor-layout">
-            <article className="status-card admin-task-detail-panel invoice-editor-list-panel">
+            <SurfaceCard component="article" className="status-card admin-task-detail-panel invoice-editor-list-panel">
               <div className="admin-form-header">
                 <div>
                   <p className="eyebrow">发票材料</p>
@@ -958,10 +958,10 @@ export function AdminInvoiceEditorPage() {
                   </p>
                 </div>
               )}
-            </article>
+            </SurfaceCard>
 
             {selectedItem && formState ? (
-              <article className="status-card admin-form-card invoice-editor-form-panel">
+              <SurfaceCard component="article" className="status-card admin-form-card invoice-editor-form-panel">
                 <div className="admin-form-header">
                   <div>
                     <p className="eyebrow">当前材料</p>
@@ -1503,7 +1503,7 @@ export function AdminInvoiceEditorPage() {
                     </form>
                   </>
                 ) : null}
-              </article>
+              </SurfaceCard>
             ) : null}
           </section>
         </>
