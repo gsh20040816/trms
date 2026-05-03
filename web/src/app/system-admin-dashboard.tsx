@@ -39,6 +39,14 @@ type ConfigFormErrors = {
   taxNumber?: string;
 };
 
+type RegistrationPolicyFormState = {
+  allowedEmailHosts: string;
+};
+
+type RegistrationPolicyFormErrors = {
+  allowedEmailHosts?: string;
+};
+
 type RecognitionProviderFormState = {
   textBaseUrl: string;
   textModel: string;
@@ -82,6 +90,12 @@ function buildRecognitionProviderFormState(dashboard: SystemDashboard): Recognit
   };
 }
 
+function buildRegistrationPolicyFormState(dashboard: SystemDashboard): RegistrationPolicyFormState {
+  return {
+    allowedEmailHosts: dashboard.registration_policy.allowed_email_hosts.join("\n"),
+  };
+}
+
 function validateConfigForm(formState: ConfigFormState) {
   const errors: ConfigFormErrors = {};
   if (formState.invoiceTitle.trim().length === 0) {
@@ -91,6 +105,23 @@ function validateConfigForm(formState: ConfigFormState) {
     errors.taxNumber = "税号不能为空。";
   }
   return errors;
+}
+
+function normalizeRegistrationHosts(rawValue: string) {
+  return rawValue
+    .split(/[\n,]+/)
+    .map((item) => item.trim().replace(/^@+/, "").toLowerCase())
+    .filter((item) => item.length > 0);
+}
+
+function validateRegistrationPolicyForm(formState: RegistrationPolicyFormState) {
+  const hosts = normalizeRegistrationHosts(formState.allowedEmailHosts);
+  if (hosts.some((host) => !host.includes(".") || host.includes("@") || /\s/.test(host))) {
+    return {
+      allowedEmailHosts: "每行或每个逗号分隔项都必须是合法邮箱 host，例如 tongji.edu.cn。",
+    } satisfies RegistrationPolicyFormErrors;
+  }
+  return {} satisfies RegistrationPolicyFormErrors;
 }
 
 function parseOptionalNumber(
@@ -186,6 +217,11 @@ export function SystemAdminDashboardPage() {
     taxNumber: "",
   });
   const [formErrors, setFormErrors] = useState<ConfigFormErrors>({});
+  const [registrationPolicyFormState, setRegistrationPolicyFormState] = useState<RegistrationPolicyFormState>({
+    allowedEmailHosts: "",
+  });
+  const [registrationPolicyFormErrors, setRegistrationPolicyFormErrors] = useState<RegistrationPolicyFormErrors>({});
+  const [isSavingRegistrationPolicy, setIsSavingRegistrationPolicy] = useState(false);
   const [recognitionProviderFormState, setRecognitionProviderFormState] = useState<RecognitionProviderFormState>({
     textBaseUrl: "",
     textModel: "",
@@ -229,6 +265,8 @@ export function SystemAdminDashboardPage() {
         }
         setState({ status: "ready", dashboard });
         setFormState(buildConfigFormState(dashboard));
+        setRegistrationPolicyFormState(buildRegistrationPolicyFormState(dashboard));
+        setRegistrationPolicyFormErrors({});
         setRecognitionProviderFormState(buildRecognitionProviderFormState(dashboard));
         setRecognitionProviderFormErrors({});
       } catch (error) {
@@ -261,6 +299,8 @@ export function SystemAdminDashboardPage() {
   const dashboard = state.status === "ready" ? state.dashboard : null;
   const validationErrors = validateConfigForm(formState);
   const hasValidationErrors = Object.keys(validationErrors).length > 0;
+  const registrationPolicyValidationErrors = validateRegistrationPolicyForm(registrationPolicyFormState);
+  const hasRegistrationPolicyValidationErrors = Object.keys(registrationPolicyValidationErrors).length > 0;
   const recognitionProviderValidationErrors = validateRecognitionProviderForm(recognitionProviderFormState);
   const hasRecognitionProviderValidationErrors = Object.keys(recognitionProviderValidationErrors).length > 0;
   const browserTimeZone = resolveBrowserTimeZone();
@@ -355,6 +395,42 @@ export function SystemAdminDashboardPage() {
       showError("保存识别 Provider 系统配置失败");
     } finally {
       setIsSavingRecognitionProviders(false);
+    }
+  }
+
+  async function handleRegistrationPolicySave() {
+    const nextErrors = validateRegistrationPolicyForm(registrationPolicyFormState);
+    setRegistrationPolicyFormErrors(nextErrors);
+    setSaveError(null);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    setIsSavingRegistrationPolicy(true);
+    try {
+      const savedPolicy = await trmsApi.updateRegistrationPolicy({
+        allowed_email_hosts: normalizeRegistrationHosts(registrationPolicyFormState.allowedEmailHosts),
+      });
+      setState((current) => (
+        current.status === "ready"
+          ? {
+            status: "ready",
+            dashboard: {
+              ...current.dashboard,
+              registration_policy: savedPolicy,
+            },
+          }
+          : current
+      ));
+      setRegistrationPolicyFormState({
+        allowedEmailHosts: savedPolicy.allowed_email_hosts.join("\n"),
+      });
+      showSuccess("已保存注册邮箱 host 白名单");
+    } catch (error) {
+      setSaveError(error);
+      showError("保存注册邮箱 host 白名单失败");
+    } finally {
+      setIsSavingRegistrationPolicy(false);
     }
   }
 
@@ -600,6 +676,67 @@ export function SystemAdminDashboardPage() {
                       </CardContent>
                     </Card>
                   ) : null}
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                  <Box>
+                    <Typography variant="overline" color="text.secondary">
+                      Registration Policy
+                    </Typography>
+                    <Typography variant="h5" sx={{ mt: 0.5 }}>
+                      注册邮箱 host 白名单
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      生产环境下，自助注册只能使用这里允许的邮箱 host，并且必须先完成邮箱验证码验证。默认空列表表示不允许任何用户自助注册。
+                    </Typography>
+                  </Box>
+                  {renderBooleanChip(
+                    dashboard.registration_policy.allowed_email_hosts.length > 0,
+                    `已允许 ${dashboard.registration_policy.allowed_email_hosts.length} 个 host`,
+                    "当前禁止自助注册",
+                  )}
+                </Stack>
+
+                <TextField
+                  label="允许注册的邮箱 host"
+                  value={registrationPolicyFormState.allowedEmailHosts}
+                  onChange={(event) => {
+                    setRegistrationPolicyFormState({
+                      allowedEmailHosts: event.target.value,
+                    });
+                    setRegistrationPolicyFormErrors({
+                      allowedEmailHosts: undefined,
+                    });
+                  }}
+                  error={Boolean(registrationPolicyFormErrors.allowedEmailHosts)}
+                  helperText={registrationPolicyFormErrors.allowedEmailHosts ?? "每行一个 host，或用逗号分隔；输入 tongji.edu.cn 即允许 *@tongji.edu.cn。"}
+                  placeholder={"tongji.edu.cn\nacm.tongji.edu.cn"}
+                  multiline
+                  minRows={4}
+                  fullWidth
+                  sx={{ mt: 3 }}
+                />
+
+                {hasRegistrationPolicyValidationErrors ? (
+                  <Alert severity="warning" sx={{ mt: 2 }}>
+                    请先修正邮箱 host 格式，再保存注册策略。
+                  </Alert>
+                ) : null}
+
+                <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}>
+                  <Button
+                    variant="contained"
+                    onClick={() => {
+                      void handleRegistrationPolicySave();
+                    }}
+                    disabled={isSavingRegistrationPolicy}
+                  >
+                    {isSavingRegistrationPolicy ? "保存中..." : "保存注册策略"}
+                  </Button>
                 </Stack>
               </CardContent>
             </Card>

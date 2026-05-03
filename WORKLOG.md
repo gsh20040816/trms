@@ -1,5 +1,67 @@
 # WORKLOG
 
+## 2026-05-04 03:25 - Add production registration email host allowlist and verification flow
+
+### 完成内容
+- 完成任务“为生产环境增加可配置的注册邮箱 host 白名单、注册验证码和自动邮箱绑定”。
+- 已为生产环境注册策略新增系统级持久化配置与验证码闭环：
+  - [src/trms_backend/domain/registration_policy.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/registration_policy.py)
+  - [src/trms_backend/application/self_service_registration.py](/home/gsh/workspace/TRMS/src/trms_backend/application/self_service_registration.py)
+  - [src/trms_backend/api/auth.py](/home/gsh/workspace/TRMS/src/trms_backend/api/auth.py)
+  - [src/trms_backend/api/system.py](/home/gsh/workspace/TRMS/src/trms_backend/api/system.py)
+  - [src/trms_backend/infrastructure/models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [alembic/versions/20260504_01_registration_policy_and_verifications.py](/home/gsh/workspace/TRMS/alembic/versions/20260504_01_registration_policy_and_verifications.py)
+- 现在 `TRMS_ENV=production` 下：
+  - 系统管理员可通过 `/api/system/registration-policy` 和系统管理页维护允许注册的邮箱 host 列表；
+  - 默认空 allowlist 表示不允许任何用户自助注册；
+  - 注册邮箱必须先通过 `/api/auth/registration-verification-code` 验证；
+  - 自助注册成功后，注册邮箱会自动写入系统邮箱绑定。
+- 首个系统管理员初始化路径保持为受控 bootstrap：
+  - `POST /api/auth/bootstrap-admin` 仍只用于创建首个 `system_admin`；
+  - 不受“生产默认禁止自助注册”策略阻塞。
+- 已同步前端注册页与系统管理页：
+  - [web/src/app/auth.tsx](/home/gsh/workspace/TRMS/web/src/app/auth.tsx)
+  - [web/src/app/auth-store.ts](/home/gsh/workspace/TRMS/web/src/app/auth-store.ts)
+  - [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - 注册页新增邮箱与验证码交互；
+  - 系统管理页新增“注册邮箱 host 白名单”配置区。
+- 已同步测试与文档：
+  - [tests/test_auth_api.py](/home/gsh/workspace/TRMS/tests/test_auth_api.py)
+  - [tests/test_system_admin_api.py](/home/gsh/workspace/TRMS/tests/test_system_admin_api.py)
+  - [tests/test_security_regressions.py](/home/gsh/workspace/TRMS/tests/test_security_regressions.py)
+  - [tests/test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py)
+  - [web/src/app/App.test.tsx](/home/gsh/workspace/TRMS/web/src/app/App.test.tsx)
+  - [web/src/app/system-admin-dashboard.test.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.test.tsx)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/%E7%94%9F%E4%BA%A7%E9%83%A8%E7%BD%B2%E6%B8%85%E5%8D%95%E4%B8%8EDocker%20Compose%E5%9F%BA%E7%BA%BF.md)
+
+### 根因
+- 现有注册链路只有“用户名 + 密码 + 角色”，既没有邮箱验证，也没有生产环境允许注册邮箱域的收口能力。
+- 现有邮箱验证码能力只覆盖“已登录成员补绑邮箱”，不能用于“注册前证明邮箱归属”。
+- 生产环境首个系统管理员初始化和普通成员自助注册原本共用过于宽松的入口边界，缺少“受控 bootstrap + 后续 allowlist 开闸”的闭环。
+
+### 风险与影响面
+- 新的邮箱 host allowlist 只在 `TRMS_ENV=production` 下强制执行；开发与测试环境仍可保留无验证码的旧自助注册路径，避免本地联调必须依赖 SMTP。
+- 生产环境如果未先配置注册邮箱 host 白名单，普通用户注册会被显式拒绝；这是本轮刻意收紧的默认安全基线。
+- `./scripts/verify.sh` 中前端 lint 仍存在 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_auth_api.py tests/test_system_admin_api.py tests/test_security_regressions.py`
+  - `41/41` 通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/App.test.tsx src/app/system-admin-dashboard.test.tsx`
+  - `14/14` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `631/631` 通过；
+  - Web `lint/test/build` 通过，其中 lint 仍只有既有两条 warning；
+  - `git diff --check` 通过。
+
 ## 2026-05-04 01:45 - Add production start/stop wrapper for Compose baseline
 
 ### 完成内容

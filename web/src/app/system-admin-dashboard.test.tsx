@@ -61,6 +61,9 @@ describe("system admin dashboard page", () => {
             invoice_title: "同济大学 ACM 实验室",
             tax_number: "91310000TEST00001",
           },
+          registration_policy: {
+            allowed_email_hosts: [],
+          },
           system_ai_provider_config: {
             text_llm: {
               base_url: "https://text.example.com/v1",
@@ -107,6 +110,15 @@ describe("system admin dashboard page", () => {
         return Promise.resolve(jsonResponse({
           invoice_title: "同济大学",
           tax_number: "12100000425006117D",
+        }));
+      }
+
+      if (url === "/api/system/registration-policy" && init?.method === "PUT") {
+        expect(init.body).toBe(JSON.stringify({
+          allowed_email_hosts: ["tongji.edu.cn", "acm.tongji.edu.cn"],
+        }));
+        return Promise.resolve(jsonResponse({
+          allowed_email_hosts: ["tongji.edu.cn", "acm.tongji.edu.cn"],
         }));
       }
 
@@ -189,6 +201,7 @@ describe("system admin dashboard page", () => {
     expect(screen.getByText("http://127.0.0.1:9876/api")).toBeInTheDocument();
     expect(screen.getAllByText("Asia/Shanghai")).toHaveLength(2);
     expect(screen.getByDisplayValue("https://text.example.com/v1")).toBeInTheDocument();
+    expect(screen.getByText("当前禁止自助注册")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("发票抬头"), { target: { value: "同济大学" } });
     fireEvent.change(screen.getByLabelText("税号"), { target: { value: "12100000425006117D" } });
@@ -196,6 +209,14 @@ describe("system admin dashboard page", () => {
 
     expect(await screen.findByDisplayValue("同济大学")).toBeInTheDocument();
     expect(screen.getByDisplayValue("12100000425006117D")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("允许注册的邮箱 host"), {
+      target: { value: "tongji.edu.cn\nacm.tongji.edu.cn" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存注册策略" }));
+
+    expect(await screen.findByText("已允许 2 个 host")).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/tongji\.edu\.cn/)).toBeInTheDocument();
 
     fireEvent.change(screen.getAllByLabelText("API Key")[0]!, { target: { value: "sk-updated-text" } });
     fireEvent.change(screen.getAllByLabelText("Base URL")[1]!, { target: { value: "https://vlm.example.com/v1" } });

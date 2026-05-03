@@ -86,6 +86,10 @@ export type GlobalInvoiceConfig = {
   tax_number: string;
 };
 
+export type RegistrationPolicy = {
+  allowed_email_hosts: string[];
+};
+
 export type RuntimeSummary = {
   environment: string;
   public_api_base_url: string;
@@ -144,6 +148,7 @@ export type SystemUserRoleSummary = {
 export type SystemDashboard = {
   service_health: string;
   global_invoice_config: GlobalInvoiceConfig | null;
+  registration_policy: RegistrationPolicy;
   system_ai_provider_config: {
     text_llm: SystemAiProviderConfigSummary;
     vlm: SystemAiProviderConfigSummary;
@@ -156,9 +161,20 @@ export type RegisterPayload = {
   username: string;
   password: string;
   role: UserRole;
+  email?: string | null;
+  email_verification_code?: string | null;
   display_name?: string | null;
   actor_id?: string | null;
   member_code?: string | null;
+};
+
+export type RegistrationVerificationCodePayload = {
+  email: string;
+};
+
+export type RegistrationVerificationDispatch = {
+  email: string;
+  expires_at: ApiDateTime;
 };
 
 export type LoginPayload = {

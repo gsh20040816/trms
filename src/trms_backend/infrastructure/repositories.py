@@ -103,6 +103,10 @@ from trms_backend.domain.recognitions import (
     RecognitionResultPayload,
     RecognitionTaskStatus,
 )
+from trms_backend.domain.registration_policy import (
+    RegistrationPolicy,
+    RegistrationPolicyRepository,
+)
 from trms_backend.domain.splits import ExpenseSplitItem, ExpenseSplitRecord, ExpenseSplitRepository
 from trms_backend.domain.tasks import (
     ReimbursementTask,
@@ -140,6 +144,7 @@ from trms_backend.infrastructure.models import (
     InvoiceSupportingMaterialLinkRow,
     MaterialReminderRow,
     MaterialRow,
+    RegistrationPolicyRow,
     RecognitionTaskRow,
     SystemAiProviderConfigRow,
     TaskRow,
@@ -244,6 +249,35 @@ class SqlAlchemySystemAiProviderConfigRepository(SystemAiProviderConfigRepositor
                 row.updated_at = now
             session.add(row)
         return _system_ai_provider_config_from_row(row)
+
+
+class SqlAlchemyRegistrationPolicyRepository(RegistrationPolicyRepository):
+    _default_id = "default"
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def get(self) -> RegistrationPolicy | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(RegistrationPolicyRow, self._default_id)
+            return _registration_policy_from_row(row) if row else None
+
+    def set(self, policy: RegistrationPolicy) -> RegistrationPolicy:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            row = session.get(RegistrationPolicyRow, self._default_id)
+            if row is None:
+                row = RegistrationPolicyRow(
+                    id=self._default_id,
+                    allowed_email_hosts=list(policy.allowed_email_hosts),
+                    created_at=now,
+                    updated_at=now,
+                )
+            else:
+                row.allowed_email_hosts = list(policy.allowed_email_hosts)
+                row.updated_at = now
+            session.add(row)
+        return _registration_policy_from_row(row)
 
 
 class SqlAlchemyAuthRepository(AuthRepository):
@@ -1934,6 +1968,14 @@ def _system_ai_provider_config_from_row(
             max_retries=row.vlm_max_retries,
             api_key=row.vlm_api_key,
         ),
+    )
+
+
+def _registration_policy_from_row(
+    row: RegistrationPolicyRow,
+) -> RegistrationPolicy:
+    return RegistrationPolicy(
+        allowed_email_hosts=list(row.allowed_email_hosts or []),
     )
 
 

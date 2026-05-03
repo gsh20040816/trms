@@ -170,6 +170,8 @@ curl -X POST http://127.0.0.1:${TRMS_API_PORT:-9876}/api/auth/bootstrap-admin \
 1. 该入口只允许创建首个 `system_admin`。
 2. 一旦库中已经存在任一高权限账号，该接口会显式拒绝再次使用。
 3. `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER` 在生产模板中默认是 `false`，不要改成 `true` 作为长期方案。
+4. 首个 `system_admin` 登录后，需要立即进入 `/system` 配置“注册邮箱 host 白名单”；在此之前，生产环境默认不允许任何用户自助注册。
+5. 成员自助注册时，需要先通过 `POST /api/auth/registration-verification-code` 获取邮箱验证码，再携带邮箱和验证码调用 `POST /api/auth/register`；注册成功后，该邮箱会自动绑定到系统邮箱。
 
 ## 回滚与重建
 

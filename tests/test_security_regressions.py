@@ -211,6 +211,9 @@ def test_security_regression_enforces_production_registration_policy(tmp_path):
             member_code="MEM-002",
         ),
     )
-
-    assert member_register.status_code == 201
-    assert member_register.json()["user"]["role"] == "member"
+    assert_api_error(
+        member_register,
+        status_code=400,
+        code="bad_request",
+        detail="registration email is required in production",
+    )

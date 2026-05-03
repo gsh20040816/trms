@@ -36,6 +36,9 @@ import type {
   TaskSupportingMaterialLinkageReport,
   RecognitionTaskExecuteResponse,
   RecognitionTaskList,
+  RegistrationPolicy,
+  RegistrationVerificationCodePayload,
+  RegistrationVerificationDispatch,
   RegisterPayload,
   ReimbursementTask,
   RoleSwitchPayload,
@@ -136,6 +139,16 @@ export const trmsApi = {
     });
   },
 
+  requestRegistrationVerificationCode(payload: RegistrationVerificationCodePayload) {
+    return apiClient.request<ApiItemResponse<RegistrationVerificationDispatch>>(
+      "/auth/registration-verification-code",
+      {
+        method: "POST",
+        body: payload,
+      },
+    );
+  },
+
   login(payload: LoginPayload) {
     return apiClient.request<AuthSessionResponse>("/auth/login", {
       method: "POST",
@@ -233,6 +246,13 @@ export const trmsApi = {
 
   updateGlobalInvoiceConfig(payload: GlobalInvoiceConfig) {
     return apiClient.request<GlobalInvoiceConfig>("/system/global-invoice-config", {
+      method: "PUT",
+      body: payload,
+    });
+  },
+
+  updateRegistrationPolicy(payload: RegistrationPolicy) {
+    return apiClient.request<RegistrationPolicy>("/system/registration-policy", {
       method: "PUT",
       body: payload,
     });

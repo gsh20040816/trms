@@ -1,6 +1,9 @@
+import re
+
 from alembic import command
 from fastapi.testclient import TestClient
 
+from trms_backend.application.outbound_email import OutboundEmailMessage
 from trms_backend.infrastructure.database import (
     build_alembic_config,
     build_session_factory,
@@ -13,12 +16,36 @@ from trms_backend.runtime_config import load_runtime_config
 from api_error_assertions import assert_api_error
 
 
-def make_client(tmp_path, runtime_config=None):
+class RecordingOutboundEmailSender:
+    def __init__(self) -> None:
+        self.messages: list[OutboundEmailMessage] = []
+
+    def send(self, message: OutboundEmailMessage) -> None:
+        self.messages.append(message)
+
+
+def extract_latest_code(sender: RecordingOutboundEmailSender) -> str:
+    assert sender.messages
+    match = re.search(r"验证码：(\d{6})", sender.messages[-1].text_body)
+    assert match is not None
+    return match.group(1)
+
+
+def make_client(tmp_path, runtime_config=None, outbound_email_sender=None):
     if runtime_config is not None and runtime_config.environment == "production":
         command.upgrade(build_alembic_config(runtime_config.database_url), "head")
     if runtime_config is not None:
-        return TestClient(create_app(runtime_config=runtime_config))
+        return TestClient(
+            create_app(
+                runtime_config=runtime_config,
+                outbound_email_sender=outbound_email_sender,
+            )
+        )
     return TestClient(create_app(f"sqlite:///{tmp_path}/test.db"))
+
+
+def auth_headers(access_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {access_token}"}
 
 
 def make_production_runtime_config(tmp_path, **overrides):
@@ -91,6 +118,160 @@ def test_register_rejects_duplicate_username(tmp_path):
         code="conflict",
         detail="username already exists: member1",
     )
+
+
+def test_registration_verification_code_requires_configured_outbound_email(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/auth/registration-verification-code",
+        json={"email": "member1@tongji.edu.cn"},
+    )
+
+    assert_api_error(
+        response,
+        status_code=503,
+        code="http_error",
+        detail="outbound email is not configured",
+    )
+
+
+def test_production_registration_defaults_to_blocked_without_allowed_email_hosts(tmp_path):
+    sender = RecordingOutboundEmailSender()
+    client = make_client(
+        tmp_path,
+        runtime_config=make_production_runtime_config(
+            tmp_path,
+            TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN="bootstrap-secret",
+            TRMS_SMTP_HOST="smtp.example.com",
+            TRMS_SMTP_PORT="587",
+            TRMS_SMTP_FROM_ADDRESS="noreply@example.com",
+        ),
+        outbound_email_sender=sender,
+    )
+
+    verification_response = client.post(
+        "/api/auth/registration-verification-code",
+        json={"email": "member1@tongji.edu.cn"},
+    )
+    assert_api_error(
+        verification_response,
+        status_code=403,
+        code="forbidden",
+        detail="self-service registration is not allowed for email host 'tongji.edu.cn'",
+    )
+
+    register_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            email="member1@tongji.edu.cn",
+            email_verification_code="123456",
+        ),
+    )
+    assert_api_error(
+        register_response,
+        status_code=403,
+        code="forbidden",
+        detail="self-service registration is not allowed for email host 'tongji.edu.cn'",
+    )
+
+
+def test_production_registration_requires_verified_email_and_binds_it_after_success(tmp_path):
+    sender = RecordingOutboundEmailSender()
+    client = make_client(
+        tmp_path,
+        runtime_config=make_production_runtime_config(
+            tmp_path,
+            TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN="bootstrap-secret",
+            TRMS_SMTP_HOST="smtp.example.com",
+            TRMS_SMTP_PORT="587",
+            TRMS_SMTP_FROM_ADDRESS="noreply@example.com",
+        ),
+        outbound_email_sender=sender,
+    )
+
+    bootstrap_response = client.post(
+        "/api/auth/bootstrap-admin",
+        headers={"X-TRMS-Bootstrap-Token": "bootstrap-secret"},
+        json=register_payload(
+            username="sysadmin1",
+            role="system_admin",
+            display_name="赵系统管理员",
+            actor_id="sysadmin-1",
+            member_code=None,
+        ),
+    )
+    assert bootstrap_response.status_code == 201
+    sysadmin_token = bootstrap_response.json()["access_token"]
+
+    save_policy_response = client.put(
+        "/api/system/registration-policy",
+        headers=auth_headers(sysadmin_token),
+        json={"allowed_email_hosts": ["tongji.edu.cn"]},
+    )
+    assert save_policy_response.status_code == 200
+    assert save_policy_response.json() == {"allowed_email_hosts": ["tongji.edu.cn"]}
+
+    missing_email_response = client.post(
+        "/api/auth/register",
+        json=register_payload(username="member-missing-email"),
+    )
+    assert_api_error(
+        missing_email_response,
+        status_code=400,
+        code="bad_request",
+        detail="registration email is required in production",
+    )
+
+    request_code_response = client.post(
+        "/api/auth/registration-verification-code",
+        json={"email": "member1@tongji.edu.cn"},
+    )
+    assert request_code_response.status_code == 202
+    assert request_code_response.json()["item"]["email"] == "member1@tongji.edu.cn"
+
+    invalid_code_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            username="member-invalid-code",
+            actor_id="2250099",
+            member_code="MEM-099",
+            email="member1@tongji.edu.cn",
+            email_verification_code="000000",
+        ),
+    )
+    assert_api_error(
+        invalid_code_response,
+        status_code=422,
+        code="validation_error",
+        detail="registration email verification code is invalid",
+    )
+
+    register_response = client.post(
+        "/api/auth/register",
+        json=register_payload(
+            email="member1@tongji.edu.cn",
+            email_verification_code=extract_latest_code(sender),
+        ),
+    )
+    assert register_response.status_code == 201
+    body = register_response.json()
+    assert body["user"]["role"] == "member"
+
+    email_bindings_response = client.get(
+        "/api/email-bindings",
+        headers=auth_headers(body["access_token"]),
+    )
+    assert email_bindings_response.status_code == 200
+    assert email_bindings_response.json()["items"] == [
+        {
+          "id": email_bindings_response.json()["items"][0]["id"],
+          "member_id": "2250001",
+          "email": "member1@tongji.edu.cn",
+          "created_at": email_bindings_response.json()["items"][0]["created_at"],
+          "updated_at": email_bindings_response.json()["items"][0]["updated_at"],
+        }
+    ]
 
 
 def test_login_returns_new_session_and_me_resolves_token(tmp_path):
@@ -331,14 +512,17 @@ def test_production_register_rejects_admin_self_registration(tmp_path):
     )
 
 
-def test_production_register_still_allows_member_self_registration(tmp_path):
+def test_production_register_requires_email_verification_for_member_self_registration(tmp_path):
     client = make_client(tmp_path, runtime_config=make_production_runtime_config(tmp_path))
 
     response = client.post("/api/auth/register", json=register_payload())
 
-    assert response.status_code == 201
-    assert response.json()["user"]["role"] == "member"
-    assert response.json()["user"]["roles"] == ["member"]
+    assert_api_error(
+        response,
+        status_code=400,
+        code="bad_request",
+        detail="registration email is required in production",
+    )
 
 
 def test_bootstrap_admin_creates_privileged_account_and_records_audit_source(tmp_path):

@@ -71,6 +71,9 @@ def test_system_admin_dashboard_returns_real_config_and_runtime_summary(tmp_path
             "invoice_title": "同济大学",
             "tax_number": "12100000425006117D",
         },
+        "registration_policy": {
+            "allowed_email_hosts": [],
+        },
         "system_ai_provider_config": {
             "text_llm": {
                 "base_url": None,
@@ -106,6 +109,23 @@ def test_system_admin_dashboard_returns_real_config_and_runtime_summary(tmp_path
             "admin": 0,
             "system_admin": 1,
         },
+    }
+
+
+def test_system_admin_can_update_registration_policy(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.put(
+        "/api/system/registration-policy",
+        json={
+            "allowed_email_hosts": ["tongji.edu.cn", "@acm.tongji.edu.cn", "tongji.edu.cn"],
+        },
+        headers=system_admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "allowed_email_hosts": ["tongji.edu.cn", "acm.tongji.edu.cn"],
     }
 
 

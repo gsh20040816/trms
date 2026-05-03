@@ -10,6 +10,8 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field, model_validator
 
+from trms_backend.domain.email_bindings import normalize_email_address
+
 
 PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
 PASSWORD_HASH_ITERATIONS = 260_000
@@ -33,6 +35,8 @@ class UserRegisterInput(BaseModel):
     password: str = Field(min_length=8, max_length=256)
     role: UserRole
     roles: list[UserRole] | None = None
+    email: str | None = Field(default=None, max_length=320)
+    email_verification_code: str | None = Field(default=None, max_length=32)
     display_name: str | None = Field(default=None, max_length=128)
     actor_id: str | None = Field(default=None, max_length=128)
     member_code: str | None = Field(default=None, max_length=128)
@@ -41,6 +45,12 @@ class UserRegisterInput(BaseModel):
     def normalize_fields(self) -> "UserRegisterInput":
         self.username = _normalize_required(self.username)
         self.roles = _normalize_roles(self.roles, self.role)
+        self.email = (
+            normalize_email_address(self.email)
+            if self.email is not None and self.email.strip()
+            else None
+        )
+        self.email_verification_code = _normalize_optional(self.email_verification_code)
         self.display_name = _normalize_optional(self.display_name)
         self.actor_id = _normalize_optional(self.actor_id)
         self.member_code = _normalize_optional(self.member_code)
@@ -253,17 +263,10 @@ def register_user(
     *,
     allow_privileged_self_registration: bool = True,
 ) -> AuthSession:
-    requested_roles = _normalize_roles(payload.roles, payload.role)
-    if not allow_privileged_self_registration:
-        privileged_role = next((role for role in requested_roles if _is_privileged_role(role)), None)
-        if privileged_role is not None:
-            raise PrivilegedSelfRegistrationDisabledError(privileged_role)
-    if any(role is not payload.role for role in requested_roles):
-        raise SelfServiceMultipleRolesNotAllowedError()
     user = repository.create_user(
-        _build_user_create(
+        prepare_self_service_user_create(
             payload,
-            registration_source=UserRegistrationSource.SELF_SERVICE,
+            allow_privileged_self_registration=allow_privileged_self_registration,
         )
     )
     return _create_auth_session(repository, user)
@@ -432,6 +435,24 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def hash_token(access_token: str) -> str:
     return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
+
+
+def prepare_self_service_user_create(
+    payload: UserRegisterInput,
+    *,
+    allow_privileged_self_registration: bool = True,
+) -> UserCreate:
+    requested_roles = _normalize_roles(payload.roles, payload.role)
+    if not allow_privileged_self_registration:
+        privileged_role = next((role for role in requested_roles if _is_privileged_role(role)), None)
+        if privileged_role is not None:
+            raise PrivilegedSelfRegistrationDisabledError(privileged_role)
+    if any(role is not payload.role for role in requested_roles):
+        raise SelfServiceMultipleRolesNotAllowedError()
+    return _build_user_create(
+        payload,
+        registration_source=UserRegistrationSource.SELF_SERVICE,
+    )
 
 
 def _create_auth_session(repository: AuthRepository, user: AuthenticatedUser) -> AuthSession:

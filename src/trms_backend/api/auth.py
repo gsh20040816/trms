@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from pydantic import BaseModel, Field
 
 from trms_backend.api.request_identity import (
     RequestIdentity,
@@ -31,16 +32,29 @@ from trms_backend.domain.auth import (
     change_user_password,
     update_user_profile,
     login_user,
-    register_user,
     revoke_access_token,
     switch_active_role,
 )
+from trms_backend.application.self_service_registration import (
+    OutboundEmailNotConfiguredError,
+    RegistrationEmailHostNotAllowedError,
+    RegistrationEmailRequiredError,
+    RegistrationEmailVerificationCodeExpiredError,
+    RegistrationEmailVerificationCodeInvalidError,
+    RegistrationEmailVerificationCodeRequiredError,
+    SelfServiceRegistrationService,
+)
+from trms_backend.domain.email_bindings import EmailAccountBindingConflictError
+
+
+class RegistrationVerificationCodeRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
 
 
 def build_auth_router(
     repository: AuthRepository,
     *,
-    allow_privileged_self_registration: bool,
+    self_service_registration_service: SelfServiceRegistrationService,
     bootstrap_admin_token: str | None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -50,11 +64,7 @@ def build_auth_router(
     @router.post("/register", status_code=status.HTTP_201_CREATED)
     def register(payload: UserRegisterInput):
         try:
-            return register_user(
-                repository,
-                payload,
-                allow_privileged_self_registration=allow_privileged_self_registration,
-            )
+            return self_service_registration_service.register(payload)
         except UsernameAlreadyExistsError as error:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -70,6 +80,59 @@ def build_auth_router(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(error),
             ) from error
+        except RegistrationEmailRequiredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+        except RegistrationEmailVerificationCodeRequiredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+        except RegistrationEmailVerificationCodeInvalidError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from error
+        except RegistrationEmailVerificationCodeExpiredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        except RegistrationEmailHostNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except EmailAccountBindingConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+
+    @router.post("/registration-verification-code", status_code=status.HTTP_202_ACCEPTED)
+    def send_registration_verification_code(payload: RegistrationVerificationCodeRequest):
+        try:
+            dispatch_result = self_service_registration_service.send_verification_code(
+                email=payload.email,
+            )
+        except OutboundEmailNotConfiguredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(error),
+            ) from error
+        except RegistrationEmailHostNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except EmailAccountBindingConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        return {"item": dispatch_result}
 
     @router.post("/bootstrap-admin", status_code=status.HTTP_201_CREATED)
     def bootstrap_admin(

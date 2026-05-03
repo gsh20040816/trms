@@ -419,6 +419,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8100/api
 后端提供最小账号 API：
 
 - `POST /api/auth/register`
+- `POST /api/auth/registration-verification-code`
 - `POST /api/auth/bootstrap-admin`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
@@ -429,10 +430,17 @@ VITE_API_BASE_URL=http://127.0.0.1:8100/api
 生产注册策略边界：
 
 - 默认只有 `member` 允许通过 `POST /api/auth/register` 自注册。
+- `POST /api/auth/registration-verification-code` 用于发送注册邮箱验证码；生产环境下只会向系统管理员允许的邮箱 host 发送验证码。
 - `POST /api/auth/register` 只接受单角色自注册；像 `roles=["member","admin"]` 这样的多角色直写仅保留给历史测试夹具，不再视为真实产品赋权路径。
 - `TRMS_ENV=production` 时，`admin` 和 `system_admin` 角色的自注册默认关闭；只有显式设置 `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER=true` 才会重新开放，主要用于受控调试环境。
+- `TRMS_ENV=production` 时，自助注册必须同时满足：
+  - 注册邮箱 host 已被系统管理员加入 allowlist；
+  - 先通过邮箱验证码验证；
+  - 注册成功后，该邮箱会自动写入系统邮箱绑定。
+- 生产环境下注册邮箱 host allowlist 默认是空列表，因此系统初始化后不会有任何用户能直接自助注册；必须先由首个 `system_admin` 登录系统管理页配置 allowlist。
 - 生产环境初始化首个高权限账号时，可为后端配置 `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`，再调用 `POST /api/auth/bootstrap-admin` 并在请求头携带 `X-TRMS-Bootstrap-Token`。
 - `bootstrap-admin` 入口现在只允许创建首个 `system_admin` 账号；一旦库里已经存在任一高权限账号，该入口会显式拒绝再次使用，后续邀请/审批流程仍待单独实现。
+- 首个 `system_admin` 创建完成后，应立即进入 `/system` 设置“注册邮箱 host 白名单”，再通知成员使用邮箱验证码完成自助注册。
 - 需要把已有账号追加为管理员时，应由 `system_admin` 调用 `PUT /api/system/users/{user_id}/roles/admin`；多角色账号的真实来源应走该受控接口，而不是公开注册时直接提交多角色数组。
 - 用户表会记录账号创建来源，区分 `self_service` 与 `bootstrap_token`，作为最小审计边界。
 

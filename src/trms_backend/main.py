@@ -13,6 +13,7 @@ from trms_backend.application.recognition_llm import OpenAiCompatibleRecognition
 from trms_backend.application.recognition_llm import RoutedRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
+from trms_backend.application.self_service_registration import SelfServiceRegistrationService
 from trms_backend.application.task_material_upload import TaskMaterialUploadService
 from trms_backend.application.telegram_binding_oauth import TelegramBindingOauthService
 from trms_backend.application.telegram_bot import TelegramBotWorkflowService
@@ -54,6 +55,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyGlobalInvoiceConfigRepository,
     SqlAlchemyMaterialReminderRepository,
     SqlAlchemyMaterialRepository,
+    SqlAlchemyRegistrationPolicyRepository,
     SqlAlchemyRecognitionTaskRepository,
     SqlAlchemySystemAiProviderConfigRepository,
     SqlAlchemyTaskRepository,
@@ -104,6 +106,7 @@ def create_app(
         allow_schema_bootstrap=config.environment != "production",
     )
     global_invoice_config_repository = SqlAlchemyGlobalInvoiceConfigRepository(session_factory)
+    registration_policy_repository = SqlAlchemyRegistrationPolicyRepository(session_factory)
     system_ai_provider_config_repository = SqlAlchemySystemAiProviderConfigRepository(session_factory)
     auth_repository = SqlAlchemyAuthRepository(session_factory)
     if global_invoice_config is not None:
@@ -216,6 +219,13 @@ def create_app(
         email_binding_verification_repository,
         resolved_outbound_email_sender,
     )
+    self_service_registration_service = SelfServiceRegistrationService(
+        session_factory,
+        registration_policy_repository,
+        resolved_outbound_email_sender,
+        environment=effective_config.environment,
+        allow_privileged_self_registration=effective_config.auth.allow_admin_self_register,
+    )
     telegram_binding_oauth_service = TelegramBindingOauthService(
         telegram_binding_authorization_repository,
         telegram_account_binding_repository,
@@ -263,7 +273,7 @@ def create_app(
     app.include_router(
         build_auth_router(
             auth_repository,
-            allow_privileged_self_registration=config.auth.allow_admin_self_register,
+            self_service_registration_service=self_service_registration_service,
             bootstrap_admin_token=(
                 config.auth.bootstrap_admin_token.get_secret_value()
                 if config.auth.bootstrap_admin_token is not None
@@ -276,6 +286,7 @@ def create_app(
             auth_repository,
             audit_log_repository,
             global_invoice_config_repository,
+            registration_policy_repository,
             system_ai_provider_config_repository,
             effective_config,
         )

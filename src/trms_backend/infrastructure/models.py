@@ -34,6 +34,15 @@ class SystemAiProviderConfigRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class RegistrationPolicyRow(Base):
+    __tablename__ = "registration_policies"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    allowed_email_hosts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class UserAccountRow(Base):
     __tablename__ = "user_accounts"
 
@@ -178,6 +187,20 @@ class EmailBindingVerificationRow(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RegistrationEmailVerificationRow(Base):
+    __tablename__ = "registration_email_verifications"
+    __table_args__ = (
+        Index("ix_registration_email_verification_email", "email", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

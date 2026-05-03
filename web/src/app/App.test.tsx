@@ -109,6 +109,44 @@ describe("web app account auth", () => {
     ).toBeInTheDocument();
   });
 
+  it("requests a registration verification code for the entered email", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/auth/registration-verification-code") {
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBe(JSON.stringify({
+          email: "member1@tongji.edu.cn",
+        }));
+        return Promise.resolve(new Response(JSON.stringify({
+          item: {
+            email: "member1@tongji.edu.cn",
+            expires_at: "2026-05-04T03:40:00Z",
+          },
+        }), {
+          status: 202,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in auth test: ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/login"],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    fireEvent.change(screen.getByLabelText("注册邮箱"), { target: { value: "member1@tongji.edu.cn" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送验证码" }));
+
+    expect(await screen.findByText("验证码已发送到 member1@tongji.edu.cn")).toBeInTheDocument();
+  });
+
   it("creates a real dev member session on first entry", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request) => {
       const url = resolveRequestUrl(input);

@@ -14,6 +14,10 @@ from trms_backend.domain.global_invoice_config import (
     GlobalInvoiceConfig,
     GlobalInvoiceConfigRepository,
 )
+from trms_backend.domain.registration_policy import (
+    RegistrationPolicy,
+    RegistrationPolicyRepository,
+)
 from trms_backend.domain.system_ai_provider_config import (
     SystemAiProviderConfigPatch,
     SystemAiProviderConfigRepository,
@@ -47,6 +51,7 @@ class SystemUserCountSummary(BaseModel):
 class SystemDashboardResponse(BaseModel):
     service_health: str = Field(default="ok")
     global_invoice_config: GlobalInvoiceConfig | None = None
+    registration_policy: RegistrationPolicy
     system_ai_provider_config: dict[str, SystemAiProviderConfigSummary]
     runtime: RuntimeSummaryResponse
     user_counts: SystemUserCountSummary
@@ -82,6 +87,7 @@ def build_system_router(
     auth_repository: AuthRepository,
     audit_log_repository: AuditLogRepository,
     global_invoice_config_repository: GlobalInvoiceConfigRepository,
+    registration_policy_repository: RegistrationPolicyRepository,
     system_ai_provider_config_repository: SystemAiProviderConfigRepository,
     runtime_config: RuntimeConfig,
 ) -> APIRouter:
@@ -105,6 +111,7 @@ def build_system_router(
         )
         return SystemDashboardResponse(
             global_invoice_config=global_invoice_config_repository.get(),
+            registration_policy=registration_policy_repository.get() or RegistrationPolicy(),
             system_ai_provider_config={
                 "text_llm": summarize_system_ai_provider_override(
                     (
@@ -158,6 +165,14 @@ def build_system_router(
     ) -> GlobalInvoiceConfig:
         ensure_system_admin(identity)
         return global_invoice_config_repository.set(payload)
+
+    @router.put("/registration-policy")
+    def update_registration_policy(
+        payload: RegistrationPolicy,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ) -> RegistrationPolicy:
+        ensure_system_admin(identity)
+        return registration_policy_repository.set(payload)
 
     @router.put("/recognition-provider-config")
     def update_recognition_provider_config(

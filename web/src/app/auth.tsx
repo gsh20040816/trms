@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 
 import { useSnackbar } from "../components/use-snackbar";
 import { ApiError } from "../lib/api/client";
+import { trmsApi } from "../lib/api/trms";
 import { formatUserIdentityLabel } from "../lib/ui-text";
 import { summarizeUnknownError } from "../lib/api/errors";
 import {
@@ -79,9 +80,12 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("member");
+  const [email, setEmail] = useState("");
+  const [emailVerificationCode, setEmailVerificationCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [memberCode, setMemberCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingVerificationCode, setIsSendingVerificationCode] = useState(false);
   const [devEntrySubmittingRole, setDevEntrySubmittingRole] = useState<UserRole | null>(null);
   const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
   const nextPath = normalizeNextPath(searchParams.get("next"));
@@ -102,6 +106,8 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
             username,
             password,
             role,
+            email,
+            emailVerificationCode,
             displayName,
             memberCode: role === "member" ? memberCode : undefined,
           });
@@ -158,6 +164,30 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
         setDevEntrySubmittingRole(null);
       }
     })();
+  }
+
+  function handleSendRegistrationVerificationCode() {
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      const message = "请先填写注册邮箱。";
+      setFormErrorMessage(message);
+      showError(message);
+      return;
+    }
+    setFormErrorMessage(null);
+    setIsSendingVerificationCode(true);
+    void trmsApi.requestRegistrationVerificationCode({ email: normalizedEmail })
+      .then((response) => {
+        showSuccess(`验证码已发送到 ${response.item.email}`);
+      })
+      .catch((error: unknown) => {
+        const message = describeError(error);
+        setFormErrorMessage(message);
+        showError(message);
+      })
+      .finally(() => {
+        setIsSendingVerificationCode(false);
+      });
   }
 
   function handleSwitchRole(targetRole: UserRole) {
@@ -271,6 +301,34 @@ export function MockLoginPage({ uiConfig = resolveAuthUiConfig() }: { uiConfig?:
                       当前环境仅开放成员自注册；管理员与系统管理员账号必须通过受控初始化或后续邀请/审批流程创建。
                     </Alert>
                   )}
+                  <TextField
+                    label="注册邮箱"
+                    name="email"
+                    type="email"
+                    placeholder="例如 name@tongji.edu.cn"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    helperText="生产环境注册需要先验证允许 host 的邮箱；开发环境可按需留空。"
+                    fullWidth
+                  />
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
+                    <TextField
+                      label="邮箱验证码"
+                      name="email_verification_code"
+                      value={emailVerificationCode}
+                      onChange={(event) => setEmailVerificationCode(event.target.value)}
+                      helperText="收到验证码后再提交注册。"
+                      fullWidth
+                    />
+                    <Button
+                      variant="outlined"
+                      onClick={handleSendRegistrationVerificationCode}
+                      disabled={isSendingVerificationCode}
+                      sx={{ minWidth: 148, mt: { sm: 0.5 } }}
+                    >
+                      {isSendingVerificationCode ? "发送中..." : "发送验证码"}
+                    </Button>
+                  </Stack>
                   <TextField
                     label="显示名称"
                     name="display_name"

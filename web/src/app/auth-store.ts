@@ -226,6 +226,8 @@ export async function registerWithPassword(payload: {
   username: string;
   password: string;
   role: UserRole;
+  email?: string;
+  emailVerificationCode?: string;
   displayName?: string;
   actorId?: string;
   memberCode?: string;
@@ -234,6 +236,8 @@ export async function registerWithPassword(payload: {
     username: payload.username,
     password: payload.password,
     role: payload.role,
+    email: payload.email || null,
+    email_verification_code: payload.emailVerificationCode || null,
     display_name: payload.displayName || null,
     actor_id: payload.actorId || null,
     member_code: payload.memberCode || null,
