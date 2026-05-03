@@ -6,6 +6,10 @@ import type {
   AuthSessionResponse,
   ConfirmationRecord,
   ConfirmationSubmit,
+  EmailBindingRecord,
+  EmailBindingVerificationCodePayload,
+  EmailBindingVerificationDispatch,
+  EmailBindingVerifyPayload,
   ExpenseDetailList,
   ExpenseSplitRecord,
   ExpenseSplitReplace,
@@ -155,6 +159,27 @@ export const trmsApi = {
   updateCurrentUserPassword(payload: UserPasswordUpdatePayload) {
     return apiClient.request<void>("/auth/me/password", {
       method: "PUT",
+      body: payload,
+    });
+  },
+
+  listEmailBindings() {
+    return apiClient.request<ApiListResponse<EmailBindingRecord>>("/email-bindings");
+  },
+
+  requestEmailBindingVerificationCode(payload: EmailBindingVerificationCodePayload) {
+    return apiClient.request<ApiItemResponse<EmailBindingVerificationDispatch>>(
+      "/email-bindings/verification-code",
+      {
+        method: "POST",
+        body: payload,
+      },
+    );
+  },
+
+  verifyEmailBinding(payload: EmailBindingVerifyPayload) {
+    return apiClient.request<ApiItemResponse<EmailBindingRecord>>("/email-bindings/verify", {
+      method: "POST",
       body: payload,
     });
   },

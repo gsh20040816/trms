@@ -209,6 +209,7 @@ const sharedThemeOptions: ThemeOptions = {
     MuiChip: {
       styleOverrides: {
         root: { borderRadius: 8, fontWeight: 600 },
+        label: { color: "inherit" },
       },
     },
     MuiTooltip: {

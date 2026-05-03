@@ -180,6 +180,28 @@ export type UserPasswordUpdatePayload = {
   new_password: string;
 };
 
+export type EmailBindingRecord = {
+  id: string;
+  member_id: string;
+  email: string;
+  created_at: ApiDateTime;
+  updated_at: ApiDateTime;
+};
+
+export type EmailBindingVerificationCodePayload = {
+  email: string;
+};
+
+export type EmailBindingVerificationDispatch = {
+  email: string;
+  expires_at: ApiDateTime;
+};
+
+export type EmailBindingVerifyPayload = {
+  email: string;
+  code: string;
+};
+
 export type ReimbursementTask = {
   id: string;
   status: TaskStatus;

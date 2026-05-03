@@ -17183,6 +17183,49 @@
 ### 后续建议
 - 下一轮按顺序处理 `TASKS.md` 中“增加基础指标边界”，优先为上传、识别、校验和导出建立最小指标抽象，不要直接引入重量级监控组件。
 
+## 2026-05-03 - Add profile email binding entry and fix chip label contrast
+
+### 完成内容
+- 在个人信息页新增成员可见的“绑定邮箱”区块：
+  - 页面会读取并展示当前成员已绑定邮箱列表；
+  - 成员可填写邮箱、发送验证码，再输入验证码完成绑定；
+  - 页面文案明确支持绑定多个邮箱，新绑定邮箱会追加到列表，不覆盖已有邮箱。
+- 在前端 API 层补齐邮箱绑定接口封装：
+  - `GET /api/email-bindings`
+  - `POST /api/email-bindings/verification-code`
+  - `POST /api/email-bindings/verify`
+- 修复截图 `data/13.png`、`data/14.png` 暴露的状态标签可读性问题：
+  - 在主题层让 `MuiChip` 的 label 颜色继承 Chip 自身颜色；
+  - 同步加固项目封装的 `StatusBadge` 和 `MetadataChip`，避免外层 `span` 灰色样式覆盖填充标签文字。
+- 补充个人信息页前端测试，覆盖成员入口展示、非成员隐藏、已有绑定邮箱展示、新增邮箱绑定和“多邮箱不覆盖”。
+- 将 `TASKS.md` 中“补齐个人信息页成员邮箱绑定入口并修复状态标签文字颜色”标记为已完成。
+
+### 根因
+- 后端已经具备邮箱验证码绑定 API，但前端个人信息页没有对应入口，成员无法自助完成邮件发件地址绑定。
+- 标签文字变灰的直接原因是若干列表区域对普通 `span` 设置了灰色文本；MUI `Chip` 的 label 也落在 `span` 上，导致填充色标签内文字继承了外层灰色而不是 Chip 的对比色。
+
+### 修改文件
+- `web/src/app/account-profile.tsx`
+- `web/src/app/account-profile.test.tsx`
+- `web/src/lib/api/trms.ts`
+- `web/src/lib/api/types.ts`
+- `web/src/components/dashboard.tsx`
+- `web/src/theme/m3-theme.ts`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 已验证
+- `cd web && npm test -- account-profile.test.tsx`
+- `cd web && npm run lint`
+- `cd web && npm run build`
+- `./scripts/verify.sh`
+  - 按改动范围运行 Web `npm run lint`、`npm test`、`npm run build` 和 `git diff --check`，验证通过。
+
+### 说明
+- 本轮只补成员侧绑定入口，不新增解绑能力；后端当前也只暴露列表、发送验证码和验证绑定接口。
+- 邮箱验证码发送仍依赖后端 SMTP 配置；未配置 SMTP 时接口会按后端现有语义返回错误，前端会展示 API 错误。
+- `npm run lint` 仍有 `task-missing-materials.tsx` 的既有 hook dependency warning，不是本轮新增错误。
+
 ## 2026-04-28 19:51 - Execute backup and object-storage restore drill
 
 ### 完成内容

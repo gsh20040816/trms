@@ -84,7 +84,12 @@ export function StatusBadge({
       color={color}
       variant={variant}
       label={children}
-      sx={{ fontWeight: 700 }}
+      sx={{
+        fontWeight: 700,
+        "& .MuiChip-label": {
+          color: "inherit",
+        },
+      }}
     />
   );
 }
@@ -101,6 +106,7 @@ export function MetadataChip({
   label,
   size = "small",
   variant = "outlined",
+  sx,
   ...props
 }: MetadataChipProps) {
   return (
@@ -108,6 +114,12 @@ export function MetadataChip({
       size={size}
       variant={variant}
       label={label}
+      sx={{
+        "& .MuiChip-label": {
+          color: "inherit",
+        },
+        ...sx,
+      }}
       {...props}
     />
   );
