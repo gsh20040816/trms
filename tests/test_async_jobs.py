@@ -16,7 +16,10 @@ from trms_backend.application.outbound_email import OutboundEmailMessage
 import trms_backend.application.recognition_async_jobs as recognition_async_jobs
 from trms_backend.application.async_jobs import AsyncJobWorker, AsyncJobWorkerModeError
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
-from trms_backend.application.recognition_preparation import RecognitionTaskExecutionConflictError
+from trms_backend.application.recognition_preparation import (
+    RecognitionPreparationService,
+    RecognitionTaskExecutionConflictError,
+)
 from trms_backend.domain.audit_logs import InMemoryAuditLogRepository
 from trms_backend.domain.email_bindings import (
     EmailAccountBindingUpsert,
@@ -806,6 +809,99 @@ def test_email_inbox_import_processor_expands_nested_eml_attachment(tmp_path):
     assert sender.messages[-1].subject == "TRMS 邮件材料已收到"
 
 
+def test_email_inbox_import_processor_normalizes_octet_stream_pdf_attachment(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    task = task_repository.create(
+        TaskCreate(
+            competition_name="ICPC Mail Task",
+            competition_location="Shanghai",
+            competition_start_date=datetime(2026, 11, 1, tzinfo=timezone.utc).date(),
+            competition_end_date=datetime(2026, 11, 3, tzinfo=timezone.utc).date(),
+            deadline=datetime.now(timezone.utc) + timedelta(days=7),
+            email_submission_key="icpc-mail-task",
+            member_ids=["2250001"],
+            fee_categories=["registration"],
+            administrator_id="admin-1",
+            administrator_ids=["admin-1"],
+            project_info="",
+            reimburser_info="",
+            invoice_title="同济大学",
+            tax_number="91310000TEST00001",
+        )
+    )
+    task_repository.update_status(task.id, TaskStatus.OPEN)
+    material_repository = InMemoryMaterialRepository()
+    recognition_task_repository = InMemoryRecognitionTaskRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    material_storage = LocalMaterialFileStorage(tmp_path / "materials")
+    inbox_storage = LocalMaterialFileStorage(tmp_path / "emails")
+    binding_repository = InMemoryEmailAccountBindingRepository()
+    binding_repository.upsert(
+        EmailAccountBindingUpsert(member_id="2250001", email="bound@tongji.edu.cn")
+    )
+    email_material_submission_service = EmailMaterialSubmissionService(
+        material_submission_service=MaterialSubmissionService(
+            task_repository,
+            material_repository,
+            material_storage,
+            recognition_task_repository,
+            audit_repository,
+        ),
+        task_repository=task_repository,
+        submission_identity_resolver=EmailSubmissionIdentityResolver(binding_repository),
+    )
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    raw_email = (
+        b"From: bound@tongji.edu.cn\r\n"
+        b"Subject: <icpc-mail-task>Fw: package\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
+        b"--BOUNDARY\r\n"
+        b"Content-Type: application/octet-stream\r\n"
+        b"Content-Disposition: attachment; filename=\"hotel-invoice.pdf\"\r\n\r\n"
+        b"fake-pdf-content\r\n"
+        b"--BOUNDARY--\r\n"
+    )
+    stored_raw = inbox_storage.save(
+        task_id="_email_inbox",
+        original_filename="5.eml",
+        content_type="message/rfc822",
+        content=raw_email,
+    )
+    record = inbox_repository.create(
+        EmailInboxRecordCreate(
+            mailbox_uid="5",
+            message_id="<e@example.edu>",
+            sender_email="bound@tongji.edu.cn",
+            subject="<icpc-mail-task>Fw: package",
+            raw_storage_key=stored_raw.storage_key,
+            received_at=datetime.now(timezone.utc),
+            status=EmailInboxRecordStatus.READY_FOR_IMPORT,
+            result_code="ready_for_import",
+            resolved_member_id="2250001",
+            submitted_task_key="icpc-mail-task",
+            resolved_task_id=task.id,
+        )
+    )
+    sender = RecordingOutboundEmailSender()
+    processor = EmailInboxImportProcessor(
+        email_inbox_record_repository=inbox_repository,
+        raw_email_storage=inbox_storage,
+        email_material_submission_service=email_material_submission_service,
+        outbound_email_sender=sender,
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 1
+    updated = inbox_repository.get(record.id)
+    assert updated is not None
+    assert updated.status == EmailInboxRecordStatus.IMPORTED
+    materials = material_repository.list_by_task(task.id)
+    assert len(materials) == 1
+    assert materials[0].original_filename == "hotel-invoice.pdf"
+    assert materials[0].content_type == "application/pdf"
+
+
 def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
     config = load_runtime_config(
         env={},
@@ -968,6 +1064,37 @@ def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(mon
         "failed_rule_counts": {},
         "pending_rule_counts": {},
     }
+
+
+def test_recognition_preparation_service_raise_missing_or_conflict_uses_repository_state():
+    now = datetime.now(timezone.utc)
+
+    class FakeRecognitionTaskRepository:
+        def get(self, recognition_task_id: str):
+            return RecognitionTaskRecord(
+                id=recognition_task_id,
+                material_id="material-1",
+                status=RecognitionTaskStatus.SUCCEEDED,
+                created_at=now,
+                updated_at=now,
+            )
+
+    service = RecognitionPreparationService(
+        material_repository=object(),
+        material_file_storage=object(),
+        recognition_task_repository=FakeRecognitionTaskRepository(),
+        audit_log_repository=object(),
+        llm_capability=object(),
+        recognition_llm_client=None,
+    )
+
+    try:
+        service._raise_missing_or_conflict("recognition-1")
+    except RecognitionTaskExecutionConflictError as error:
+        assert error.recognition_task_id == "recognition-1"
+        assert error.status is RecognitionTaskStatus.SUCCEEDED
+    else:  # pragma: no cover
+        raise AssertionError("expected conflict error from repository state")
 
 
 def test_recognition_async_processor_uses_worker_threads_for_batch_uploads(monkeypatch):

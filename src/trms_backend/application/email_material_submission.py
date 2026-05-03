@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from email import policy
 from email.parser import BytesParser
+import mimetypes
 import re
 from dataclasses import dataclass
 
@@ -217,10 +218,14 @@ def extract_email_attachments(message) -> list[SubmittedMaterialFile]:
         filename = part.get_filename()
         if filename is None:
             continue
+        content_type = normalize_email_attachment_content_type(
+            filename=filename,
+            content_type=part.get_content_type(),
+        )
         attachments.append(
             SubmittedMaterialFile(
                 original_filename=filename,
-                content_type=part.get_content_type(),
+                content_type=content_type,
                 content=part.get_payload(decode=True) or b"",
             )
         )
@@ -233,7 +238,8 @@ def expand_email_package_files(
     expanded_files: list[SubmittedMaterialFile] = []
     failures: list[MaterialUploadFailure] = []
     for file in files:
-        nested_files, nested_failures = _expand_single_email_package_file(file)
+        normalized_file = _normalize_email_submitted_file(file)
+        nested_files, nested_failures = _expand_single_email_package_file(normalized_file)
         expanded_files.extend(nested_files)
         failures.extend(nested_failures)
     return expanded_files, failures
@@ -274,6 +280,39 @@ def _is_email_package_file(file: SubmittedMaterialFile) -> bool:
         normalized_content_type == EMAIL_PACKAGE_CONTENT_TYPE
         or normalized_filename.endswith(".eml")
     )
+
+
+def _normalize_email_submitted_file(file: SubmittedMaterialFile) -> SubmittedMaterialFile:
+    normalized_content_type = normalize_email_attachment_content_type(
+        filename=file.original_filename,
+        content_type=file.content_type,
+    )
+    if normalized_content_type == file.content_type:
+        return file
+    return SubmittedMaterialFile(
+        original_filename=file.original_filename,
+        content_type=normalized_content_type,
+        content=file.content,
+    )
+
+
+def normalize_email_attachment_content_type(
+    *,
+    filename: str | None,
+    content_type: str | None,
+) -> str | None:
+    normalized_content_type = (content_type or "").split(";", maxsplit=1)[0].strip().lower() or None
+    if normalized_content_type not in {None, "", "application/octet-stream"}:
+        return normalized_content_type
+
+    normalized_filename = (filename or "").strip()
+    if not normalized_filename:
+        return normalized_content_type
+
+    guessed_content_type = mimetypes.guess_type(normalized_filename)[0]
+    if guessed_content_type is None:
+        return normalized_content_type
+    return guessed_content_type.lower()
 
 
 def _normalize_sender_email(value: str) -> str:

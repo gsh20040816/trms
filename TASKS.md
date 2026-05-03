@@ -2,6 +2,16 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-03 邮件附件 octet-stream PDF 兼容与历史补导
+
+- [x] 兼容邮件附件错误标注为 octet-stream 的 PDF，并修复历史漏导
+  - Done when:
+    - 邮件渠道解析附件时，若文件名可明确识别为 `.pdf/.zip/.png/.jpg/.jpeg/.webp/.eml`，不会因为 `application/octet-stream` 被误拒
+    - 邮件 worker 导入原始邮件和 `.eml` 邮件包时，都能复用同一套 MIME 归一化逻辑
+    - 普通 `/api/tasks/{task_id}/materials` 上传仍继续拒绝 `message/rfc822`
+    - 已定位出历史漏导根因，并补导 `<ccny2026>` 转发邮件里当时漏掉的支持类型 PDF
+    - 相关测试和仓库级验证通过
+
 ## 临时任务 - 2026-05-03 邮件渠道 eml 解包导入
 
 - [x] 仅在邮件渠道支持 eml 邮件包，并把其中附件作为真正材料上传

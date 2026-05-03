@@ -1,5 +1,59 @@
 # WORKLOG
 
+## 2026-05-03 20:18 - Normalize octet-stream email attachments by filename and backfill missing PDFs
+
+### 完成内容
+- 完成任务“兼容邮件附件错误标注为 octet-stream 的 PDF，并修复历史漏导”。
+- 已定位本次历史漏导的直接根因：
+  - `email_inbox_records` 中你列出的原始高德/华住/`dzfp...` 邮件本体，最早一层大多被记成 `ignored_unbound_sender`，因为 worker 看到的是供应商发件人地址，而不是已绑定成员邮箱；
+  - 真正进入任务链路的是后续那封 [mailbox_uid=1691416093] 的 `<ccny2026>` 转发邮件；
+  - 这封转发邮件本身不是 `.eml` 套 `.eml`，而是直接带了 20 个附件；
+  - 其中高德的 8 个 PDF 本来就标成 `application/pdf`，所以成功导入；
+  - 华住和 `dzfp...` 的 4 个 PDF 虽然文件名是 `.pdf`，但邮件头把它们标成了 `application/octet-stream`，因此被旧逻辑误判成不支持内容类型，导致该收件记录停在 `partially_imported`。
+- 已修复邮件渠道的附件 MIME 归一化：
+  - [src/trms_backend/application/email_material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_material_submission.py)
+  - 邮件渠道现在会在两处按文件名推断真实类型：
+    - 直接提交到 `/api/email/materials` 的附件；
+    - 原始邮件或 `.eml` 邮件包中解出的内部附件；
+  - 当附件头是 `application/octet-stream` 或缺失时，若文件名能明确识别为 `.pdf/.zip/.png/.jpg/.jpeg/.webp/.eml`，系统会先归一化成对应 MIME，再走统一上传校验。
+- 已把该归一化逻辑同时覆盖到 worker 收件导入路径：
+  - [src/trms_backend/application/email_inbox_polling.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_inbox_polling.py)
+  - 这样 IMAP 轮询导入原始邮件、以及 `.eml` 邮件包的嵌套附件时，不会再因为供应商把 PDF 头写成 `application/octet-stream` 而漏导。
+- 已顺手修复一个本轮补导时撞出的 worker 崩溃缺陷：
+  - [src/trms_backend/application/recognition_preparation.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_preparation.py)
+  - `_raise_missing_or_conflict` 之前因缩进错误没有真正挂在 `RecognitionPreparationService` 上，导致识别状态竞争时 worker 可能直接抛 `AttributeError` 退出；
+  - 现已改回类方法，并补回归测试。
+- 已实际补导历史漏掉的 4 个支持类型 PDF：
+  - `dzfp_26412000001480328236_同济大学_20260427122041.pdf`
+  - `dzfp_26412000001458616501_同济大学_20260424210315.pdf`
+  - `结账单20260424.pdf`
+  - `dzfp_26332000003287833936_同济大学_20260422102858.pdf`
+  - 补导方式是基于当前修好的邮件导入逻辑，对那封 `<ccny2026>` 原始转发邮件只补“当前任务中不存在且按文件名可归一化为支持类型”的附件，避免制造重复材料。
+- 已确认补导后的识别结果：
+  - 三个 `dzfp...pdf` 识别状态为 `succeeded`，材料类型已更新为 `invoice`；
+  - `结账单20260424.pdf` 识别状态为 `succeeded`，材料类型为 `other_attachment`；
+  - `uv run python -m trms_backend worker --once` 现可正常完成，不再因识别冲突路径崩溃。
+
+### 根因
+- 原始供应商邮件被直接轮询时，发件人不是成员绑定邮箱，所以系统按设计会记为 `ignored_unbound_sender`。
+- 真正应该导入的是后续由成员邮箱发出的 `<ccny2026>` 转发邮件。
+- 这封转发邮件里的部分 PDF 附件头部被供应商错误标成 `application/octet-stream`，而旧逻辑只按 MIME 头做白名单校验，不按文件名补判，导致“明明是 PDF 的发票附件”被当成不支持类型丢弃。
+
+### 风险与影响面
+- 这次 MIME 归一化只在邮件渠道生效，不会放宽普通 Web / CLI / Telegram 上传边界。
+- `.ofd`、`.xml` 这类当前统一材料链路本来就不支持的附件仍会继续失败；本轮只修复“支持类型的真实 PDF/图片/zip 因错误 MIME 头被误拒”的问题。
+- 本轮对历史任务做了真实补导，涉及本地数据库和材料存储内容变更；这些是业务数据修复，不属于 git 提交内容。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_email_materials_api.py tests/test_async_jobs.py tests/test_materials_api.py`
+  - `75/75` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `609/609` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 19:42 - Unpack eml files only within email submission channel
 
 ### 完成内容

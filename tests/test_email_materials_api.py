@@ -464,6 +464,29 @@ def test_email_material_submission_expands_uploaded_eml_package_into_inner_attac
     assert payload["items"][0]["material_type"] == "other_attachment"
 
 
+def test_email_material_submission_normalizes_octet_stream_pdf_by_filename(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id, task_key = create_open_task_with_mail_key(client)
+
+    response = client.post(
+        "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"<{task_key}>Fw: package",
+        },
+        files={"files": ("invoice.pdf", b"pdf-bytes", "application/octet-stream")},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["items"][0]["task_id"] == task_id
+    assert payload["items"][0]["original_filename"] == "invoice.pdf"
+    assert payload["items"][0]["content_type"] == "application/pdf"
+
+
 def test_email_material_submission_reports_uploaded_eml_without_importable_attachments(tmp_path):
     client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
     _task_id, task_key = create_open_task_with_mail_key(client)
@@ -500,3 +523,29 @@ def test_email_material_submission_reports_uploaded_eml_without_importable_attac
             }
         ],
     }
+
+
+def test_email_material_submission_expands_eml_with_octet_stream_pdf_attachment(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id, task_key = create_open_task_with_mail_key(client)
+    eml_bytes = build_email_package_bytes(
+        attachments=[("hotel-invoice.pdf", b"inner-pdf", "application/octet-stream")]
+    )
+
+    response = client.post(
+        "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"<{task_key}>Fw: package",
+        },
+        files={"files": ("forwarded.eml", eml_bytes, "message/rfc822")},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["items"][0]["task_id"] == task_id
+    assert payload["items"][0]["original_filename"] == "hotel-invoice.pdf"
+    assert payload["items"][0]["content_type"] == "application/pdf"

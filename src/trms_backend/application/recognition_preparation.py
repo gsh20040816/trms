@@ -350,6 +350,12 @@ class RecognitionPreparationService:
             or material
         )
 
+    def _raise_missing_or_conflict(self, recognition_task_id: str) -> None:
+        current = self._recognition_task_repository.get(recognition_task_id)
+        if current is None:
+            raise RecognitionTaskExecutionNotFoundError(recognition_task_id)
+        raise RecognitionTaskExecutionConflictError(recognition_task_id, current.status)
+
 
 def _can_auto_update_material_type(
     *,
@@ -359,12 +365,6 @@ def _can_auto_update_material_type(
     if current_material_type is MaterialType.INVOICE or next_material_type is MaterialType.INVOICE:
         return current_material_type is MaterialType.OTHER_ATTACHMENT
     return True
-
-    def _raise_missing_or_conflict(self, recognition_task_id: str) -> None:
-        current = self._recognition_task_repository.get(recognition_task_id)
-        if current is None:
-            raise RecognitionTaskExecutionNotFoundError(recognition_task_id)
-        raise RecognitionTaskExecutionConflictError(recognition_task_id, current.status)
 
 
 def build_recognition_document_input(
