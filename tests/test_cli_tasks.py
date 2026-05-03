@@ -22,18 +22,21 @@ def test_tasks_command_lists_open_tasks_from_stored_session(monkeypatch, tmp_pat
         return 200, [
             {
                 "id": "task-open",
+                "submission_key": "task-open-key",
                 "competition_name": "ICPC Asia Regional",
                 "status": "open",
                 "deadline": future_deadline,
             },
             {
                 "id": "task-closed",
+                "submission_key": "task-closed-key",
                 "competition_name": "CCPC Final",
                 "status": "closed",
                 "deadline": future_deadline,
             },
             {
                 "id": "task-expired",
+                "submission_key": "task-expired-key",
                 "competition_name": "XCPC Invitational",
                 "status": "open",
                 "deadline": "2020-01-01T00:00:00Z",
@@ -50,8 +53,10 @@ def test_tasks_command_lists_open_tasks_from_stored_session(monkeypatch, tmp_pat
     assert seen["headers"] == build_cli_request_headers(access_token="access-token")
     assert captured.err == ""
     assert captured.out == (
-        "task_id\tcompetition_name\tstatus\tdeadline\n"
-        f"task-open\tICPC Asia Regional\topen\t{future_deadline}\n"
+        "submission_key\ttask_id\tstatus\tdeadline\tcompetition_name\n"
+        f"task-open-key\ttask-open\topen\t{future_deadline}\tICPC Asia Regional\n"
+        f"task-closed-key\ttask-closed\tclosed\t{future_deadline}\tCCPC Final\n"
+        "task-expired-key\ttask-expired\topen\t2020-01-01T00:00:00Z\tXCPC Invitational\n"
     )
 
 
@@ -71,6 +76,7 @@ def test_tasks_command_reports_json(monkeypatch, tmp_path, capsys):
         return 200, [
             {
                 "id": "task-001",
+                "submission_key": "icpc-asia",
                 "competition_name": "ICPC Asia Regional",
                 "status": "open",
                 "deadline": "2099-12-31T23:59:59Z",
@@ -95,11 +101,14 @@ def test_tasks_command_reports_json(monkeypatch, tmp_path, capsys):
             "items": [
                 {
                     "id": "task-001",
+                    "submission_key": "icpc-asia",
                     "competition_name": "ICPC Asia Regional",
                     "status": "open",
                     "deadline": "2099-12-31T23:59:59Z",
                 }
             ],
+            "current_task_id": None,
+            "current_task_submission_key": None,
         },
     }
 
@@ -145,4 +154,37 @@ def test_tasks_command_reports_no_visible_tasks(monkeypatch, tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == 0
     assert captured.err == ""
-    assert captured.out == "No current submission tasks.\n"
+    assert captured.out == "No visible reimbursement tasks.\n"
+
+
+def test_task_command_selects_current_task_by_submission_key(monkeypatch, tmp_path, capsys):
+    config_dir = tmp_path / "config"
+    monkeypatch.setenv("TRMS_CLI_CONFIG_DIR", str(config_dir))
+    save_token_session(
+        base_url="http://127.0.0.1:8000",
+        member_id="2250002",
+        access_token="stored-access-token",
+        refresh_token="stored-refresh-token",
+    )
+
+    def fake_fetch_json(url: str, *, headers=None):
+        assert url == "http://127.0.0.1:8000/api/tasks?member_id=2250002"
+        assert headers == build_cli_request_headers(access_token="stored-access-token")
+        return 200, [
+            {
+                "id": "task-001",
+                "submission_key": "icpc-asia",
+                "competition_name": "ICPC Asia Regional",
+                "status": "open",
+                "deadline": "2099-12-31T23:59:59Z",
+            }
+        ]
+
+    monkeypatch.setattr("trms_cli.cli.fetch_json", fake_fetch_json)
+
+    exit_code = main(["task", "icpc-asia", "--json"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+    assert json.loads(captured.out)["data"]["submission_key"] == "icpc-asia"

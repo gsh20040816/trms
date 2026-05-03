@@ -7,6 +7,12 @@ from trms_backend.api.request_identity import (
     RequestIdentity,
     build_authenticated_request_identity_dependency,
 )
+from trms_backend.application.telegram_binding_oauth import (
+    TelegramBindingAuthorizationConsumedError,
+    TelegramBindingAuthorizationExpiredError,
+    TelegramBindingAuthorizationInvalidError,
+    TelegramBindingOauthService,
+)
 from trms_backend.domain.auth import AuthRepository, UserRole
 from trms_backend.domain.telegram_bindings import (
     TelegramAccountBindingConflictError,
@@ -24,6 +30,7 @@ class TelegramAccountBindingRequest(BaseModel):
 def build_telegram_binding_router(
     auth_repository: AuthRepository,
     binding_repository: TelegramAccountBindingRepository,
+    binding_oauth_service: TelegramBindingOauthService,
 ) -> APIRouter:
     router = APIRouter(tags=["telegram-bindings"])
     submission_identity_resolver = TelegramSubmissionIdentityResolver(binding_repository)
@@ -37,6 +44,14 @@ def build_telegram_binding_router(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="actor is not allowed to manage telegram account bindings",
             )
+
+    def ensure_member_binding_role(identity: RequestIdentity) -> str:
+        if identity.user is None or UserRole.MEMBER not in identity.user.roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to bind telegram account",
+            )
+        return identity.user.actor_id
 
     @router.put("/api/telegram-bindings/{telegram_user_id}")
     def upsert_telegram_account_binding(
@@ -81,5 +96,48 @@ def build_telegram_binding_router(
     ):
         ensure_telegram_binding_management_role(identity)
         return {"item": submission_identity_resolver.resolve(telegram_user_id)}
+
+    @router.get("/api/telegram-bindings/oauth/{token}")
+    def get_telegram_binding_oauth_status(token: str):
+        try:
+            return {"item": binding_oauth_service.get_authorization_view(token=token)}
+        except TelegramBindingAuthorizationInvalidError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+
+    @router.post("/api/telegram-bindings/oauth/{token}/confirm")
+    def confirm_telegram_binding_oauth(
+        token: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        member_id = ensure_member_binding_role(identity)
+        try:
+            binding = binding_oauth_service.confirm_authorization(
+                token=token,
+                member_id=member_id,
+            )
+        except TelegramBindingAuthorizationInvalidError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+        except TelegramBindingAuthorizationExpiredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        except TelegramBindingAuthorizationConsumedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        except TelegramAccountBindingConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        return {"item": binding}
 
     return router

@@ -34,6 +34,8 @@ def test_login_command_stores_tokens_without_printing_secrets(monkeypatch, tmp_p
             "member_id": member_id,
             "access_token": access_token,
             "refresh_token": refresh_token,
+            "current_task_id": None,
+            "current_task_submission_key": None,
         }
 
     if os.name != "nt":

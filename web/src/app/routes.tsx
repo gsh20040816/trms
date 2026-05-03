@@ -19,6 +19,7 @@ import { LegacyMemberWorkbenchRedirect } from "./legacy-member-workbench-redirec
 import { HomePage, NotFoundPage, RootLayout } from "./pages";
 import { findRoleRouteByRole, roleRoutes, type UserRole } from "./role-routes";
 import { SystemAdminDashboardPage } from "./system-admin-dashboard";
+import { TelegramBindingPage } from "./telegram-binding";
 
 function getRoleRouteOrThrow(role: UserRole) {
   const roleRoute = findRoleRouteByRole(role);
@@ -43,6 +44,10 @@ export const routes: RouteObject[] = [
       {
         path: "login",
         element: <MockLoginPage />,
+      },
+      {
+        path: "telegram/bind",
+        element: <TelegramBindingPage />,
       },
       {
         path: "profile",

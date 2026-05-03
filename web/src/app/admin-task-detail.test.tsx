@@ -456,7 +456,7 @@ describe("admin task detail page", () => {
     fireEvent.change(screen.getByLabelText("比赛名称"), {
       target: { value: "已更新任务" },
     });
-    fireEvent.change(screen.getByLabelText("邮件提交标识"), {
+    fireEvent.change(screen.getByLabelText("任务提交标识"), {
       target: { value: "updated-mail-key" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存任务基础配置" }));

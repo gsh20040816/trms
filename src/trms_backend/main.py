@@ -13,6 +13,10 @@ from trms_backend.application.recognition_llm import OpenAiCompatibleRecognition
 from trms_backend.application.recognition_llm import RoutedRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
+from trms_backend.application.task_material_upload import TaskMaterialUploadService
+from trms_backend.application.telegram_binding_oauth import TelegramBindingOauthService
+from trms_backend.application.telegram_bot import TelegramBotWorkflowService
+from trms_backend.application.telegram_bot_aiogram import AiogramTelegramWebhookProcessor
 from trms_backend.application.telegram_material_submission import (
     TelegramMaterialSubmissionService,
 )
@@ -29,6 +33,7 @@ from trms_backend.api.materials import build_material_router
 from trms_backend.api.recognitions import build_recognition_router
 from trms_backend.api.splits import build_split_router
 from trms_backend.api.system import build_system_router
+from trms_backend.api.telegram_bot import build_telegram_bot_router
 from trms_backend.api.telegram_materials import build_telegram_material_router
 from trms_backend.api.tasks import build_task_router
 from trms_backend.api.telegram_bindings import build_telegram_binding_router
@@ -53,6 +58,8 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemySystemAiProviderConfigRepository,
     SqlAlchemyTaskRepository,
     SqlAlchemyTelegramAccountBindingRepository,
+    SqlAlchemyTelegramBindingAuthorizationRepository,
+    SqlAlchemyTelegramTaskContextRepository,
     SqlAlchemyValidationRepository,
 )
 from trms_backend.infrastructure.storage import build_material_file_storage
@@ -76,6 +83,7 @@ def create_app(
     recognition_llm_client: OpenAiCompatibleRecognitionClient | None = None,
     metrics_collector: MetricsCollector | None = None,
     outbound_email_sender: OutboundEmailSender | None = None,
+    telegram_webhook_processor: AiogramTelegramWebhookProcessor | None = None,
 ) -> FastAPI:
     config = runtime_config or load_runtime_config(database_url=database_url)
     install_request_id_log_record_factory()
@@ -126,6 +134,10 @@ def create_app(
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
     telegram_account_binding_repository = SqlAlchemyTelegramAccountBindingRepository(session_factory)
+    telegram_binding_authorization_repository = SqlAlchemyTelegramBindingAuthorizationRepository(
+        session_factory
+    )
+    telegram_task_context_repository = SqlAlchemyTelegramTaskContextRepository(session_factory)
     email_account_binding_repository = SqlAlchemyEmailAccountBindingRepository(session_factory)
     email_binding_verification_repository = SqlAlchemyEmailBindingVerificationRepository(
         session_factory
@@ -175,6 +187,23 @@ def create_app(
         recognition_llm_client,
         app.state.metrics_collector,
     )
+    task_material_upload_service = TaskMaterialUploadService(
+        task_repository=task_repository,
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        validation_repository=validation_repository,
+        recognition_task_repository=recognition_task_repository,
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
+        material_submission_service=material_submission_service,
+        recognition_preparation_service=recognition_preparation_service,
+        audit_log_repository=audit_log_repository,
+        async_job_mode=effective_config.async_jobs.mode,
+        metrics_collector=app.state.metrics_collector,
+        recognition_provider_configured_resolver=lambda: (
+            resolve_effective_runtime_config().llm_provider is not None
+        ),
+    )
     email_material_submission_service = EmailMaterialSubmissionService(
         material_submission_service,
         task_repository,
@@ -187,10 +216,29 @@ def create_app(
         email_binding_verification_repository,
         resolved_outbound_email_sender,
     )
+    telegram_binding_oauth_service = TelegramBindingOauthService(
+        telegram_binding_authorization_repository,
+        telegram_account_binding_repository,
+    )
+    app.state.telegram_binding_oauth_service = telegram_binding_oauth_service
     telegram_material_submission_service = TelegramMaterialSubmissionService(
         telegram_account_binding_repository,
         material_submission_service,
     )
+    telegram_bot_workflow_service = TelegramBotWorkflowService(
+        public_web_base_url=effective_config.public_web_base_url,
+        binding_oauth_service=telegram_binding_oauth_service,
+        binding_repository=telegram_account_binding_repository,
+        task_repository=task_repository,
+        task_context_repository=telegram_task_context_repository,
+        task_material_upload_service=task_material_upload_service,
+    )
+    resolved_telegram_webhook_processor = telegram_webhook_processor
+    if resolved_telegram_webhook_processor is None and effective_config.telegram_bot is not None:
+        resolved_telegram_webhook_processor = AiogramTelegramWebhookProcessor(
+            bot_token=effective_config.telegram_bot.token.get_secret_value(),
+            workflow_service=telegram_bot_workflow_service,
+        )
 
     @app.middleware("http")
     async def enforce_cli_compatibility(request: Request, call_next):
@@ -282,6 +330,25 @@ def create_app(
             recognition_provider_configured_resolver=lambda: (
                 resolve_effective_runtime_config().llm_provider is not None
             ),
+            task_material_upload_service=task_material_upload_service,
+        )
+    )
+    app.include_router(
+        build_telegram_bot_router(
+            (
+                lambda payload, request_id: resolved_telegram_webhook_processor.process_update(
+                    payload,
+                    request_id=request_id,
+                )
+            )
+            if resolved_telegram_webhook_processor is not None
+            else None,
+            webhook_secret=(
+                effective_config.telegram_bot.webhook_secret.get_secret_value()
+                if effective_config.telegram_bot is not None
+                and effective_config.telegram_bot.webhook_secret is not None
+                else None
+            ),
         )
     )
     app.include_router(
@@ -362,6 +429,7 @@ def create_app(
         build_telegram_binding_router(
             auth_repository,
             telegram_account_binding_repository,
+            telegram_binding_oauth_service,
         )
     )
     app.include_router(
@@ -370,6 +438,12 @@ def create_app(
             email_binding_service,
         )
     )
+
+    @app.on_event("shutdown")
+    async def shutdown_telegram_bot() -> None:
+        if resolved_telegram_webhook_processor is not None:
+            await resolved_telegram_webhook_processor.close()
+
     return app
 
 

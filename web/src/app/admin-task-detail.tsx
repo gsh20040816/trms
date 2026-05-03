@@ -300,11 +300,11 @@ function validateForm(formState: TaskEditFormState): {
     errors.deadline = "请选择提交截止时间。";
   }
   if (normalizedEmailSubmissionKey.length === 0) {
-    errors.emailSubmissionKey = "请填写邮件提交标识。";
+    errors.emailSubmissionKey = "请填写任务提交标识。";
   } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedEmailSubmissionKey)) {
-    errors.emailSubmissionKey = "邮件提交标识只能包含小写字母、数字和单个连字符。";
+    errors.emailSubmissionKey = "任务提交标识只能包含小写字母、数字和单个连字符。";
   } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(normalizedEmailSubmissionKey)) {
-    errors.emailSubmissionKey = "邮件提交标识不能直接使用 UUID。";
+    errors.emailSubmissionKey = "任务提交标识不能直接使用 UUID。";
   }
 
   const normalizedMembers = formState.memberIds.map((memberId) => memberId.trim());
@@ -340,7 +340,7 @@ function validateForm(formState: TaskEditFormState): {
       competition_start_date: formState.competitionStartDate,
       competition_end_date: formState.competitionEndDate,
       deadline: new Date(formState.deadline).toISOString(),
-      email_submission_key: normalizedEmailSubmissionKey,
+      submission_key: normalizedEmailSubmissionKey,
       member_ids: normalizedMembers,
       fee_categories: formState.feeCategories,
       invoice_title: formState.invoiceTitle.trim(),
@@ -760,8 +760,8 @@ export function AdminTaskDetailPage() {
                 <dd>{formatDateTime(visibleTask.deadline)}</dd>
               </div>
               <div>
-                <dt>邮件提交标识</dt>
-                <dd>{visibleTask.email_submission_key ?? "未配置"}</dd>
+                <dt>任务提交标识</dt>
+                <dd>{visibleTask.submission_key ?? visibleTask.email_submission_key ?? "未配置"}</dd>
               </div>
               <div>
                 <dt>任务管理员</dt>
@@ -1032,7 +1032,7 @@ export function AdminTaskDetailPage() {
                     slotProps={{ inputLabel: { shrink: true } }}
                   />
                   <TextField
-                    label="邮件提交标识"
+                    label="任务提交标识"
                     value={formState.emailSubmissionKey}
                     onChange={(event) => {
                       updateField("emailSubmissionKey", event.target.value);

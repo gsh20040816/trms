@@ -49,6 +49,18 @@ class _TaskCreateBase(BaseModel):
             return None
         return _normalize_task_email_submission_key(value, field_name="email_submission_key")
 
+    @model_validator(mode="before")
+    @classmethod
+    def accept_submission_key_alias(cls, data):
+        if not isinstance(data, dict):
+            return data
+        if data.get("email_submission_key") is None and data.get("submission_key") is not None:
+            return {
+                **data,
+                "email_submission_key": data.get("submission_key"),
+            }
+        return data
+
     @field_validator("member_ids", "fee_categories")
     @classmethod
     def reject_blank_items(cls, values: list[str]) -> list[str]:
@@ -156,6 +168,18 @@ class TaskUpdateInput(BaseModel):
             return None
         return _normalize_task_email_submission_key(value, field_name="email_submission_key")
 
+    @model_validator(mode="before")
+    @classmethod
+    def accept_submission_key_alias(cls, data):
+        if not isinstance(data, dict):
+            return data
+        if data.get("email_submission_key") is None and data.get("submission_key") is not None:
+            return {
+                **data,
+                "email_submission_key": data.get("submission_key"),
+            }
+        return data
+
     @field_validator("project_info", "reimburser_info")
     @classmethod
     def normalize_optional_task_metadata(cls, value: str | None) -> str | None:
@@ -262,7 +286,7 @@ class TaskCompletionValidationError(ValueError):
 class TaskEmailSubmissionKeyConflictError(ValueError):
     def __init__(self, email_submission_key: str) -> None:
         self.email_submission_key = email_submission_key
-        super().__init__(f"task email submission key already exists: {email_submission_key}")
+        super().__init__(f"task submission key already exists: {email_submission_key}")
 
 
 class ReimbursementTask(BaseModel):
@@ -274,6 +298,7 @@ class ReimbursementTask(BaseModel):
     competition_end_date: date
     deadline: datetime
     email_submission_key: str | None = None
+    submission_key: str | None = None
     member_ids: list[str]
     member_summaries: list["TaskMemberSummary"] = Field(default_factory=list)
     fee_categories: list[str]
@@ -285,6 +310,14 @@ class ReimbursementTask(BaseModel):
     tax_number: str
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def populate_submission_key(self) -> "ReimbursementTask":
+        if self.submission_key is None:
+            self.submission_key = self.email_submission_key
+        if self.email_submission_key is None:
+            self.email_submission_key = self.submission_key
+        return self
 
 
 def is_task_administrator(task: ReimbursementTask, *, actor_id: str) -> bool:
@@ -761,6 +794,17 @@ class InMemoryTaskRepository:
     def list(self) -> list[ReimbursementTask]:
         with self._lock:
             return sorted(self._tasks.values(), key=lambda task: task.created_at)
+
+    def list_for_member(self, member_id: str) -> list[ReimbursementTask]:
+        normalized_member_id = member_id.strip()
+        if not normalized_member_id:
+            return []
+        with self._lock:
+            return [
+                task
+                for task in sorted(self._tasks.values(), key=lambda task: task.created_at)
+                if normalized_member_id in task.member_ids
+            ]
 
     def update_status(self, task_id: str, target_status: TaskStatus) -> ReimbursementTask | None:
         with self._lock:

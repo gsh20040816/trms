@@ -75,6 +75,7 @@ npm run dev
 - `login`
 - `health`
 - `tasks`
+- `task`
 - `submit`
 - `status`
 - `missing-materials`
@@ -87,7 +88,12 @@ npm run dev
 uv run python -m trms_cli.cli --help
 ```
 
-CLI `login` 目前只是“本地 token 会话保存占位”，不是完整登录闭环：
+CLI 与 Telegram 现在共用一套“任务列表 / 当前任务切换 / 文件提交”语义，但认证方式不同：
+
+- CLI 通过 bearer token 会话访问 API；
+- Telegram 通过绑定后的账号身份访问同一套任务与上传主链路。
+
+CLI `login` 目前仍只是“本地 token 会话保存占位”，不是完整 OAuth 登录闭环：
 
 - 它会读取预先提供的 `TRMS_CLI_ACCESS_TOKEN` 和 `TRMS_CLI_REFRESH_TOKEN`，并安全写入本地 session 文件；
 - 默认 session 文件路径是 `~/.config/trms/session.json`，也可用 `TRMS_CLI_CONFIG_DIR` 覆盖；
@@ -123,6 +129,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_STORAGE_S3_KEY_PREFIX`
 - `TRMS_CORS_ALLOWED_ORIGINS`：逗号分隔的 `http(s)://host[:port]` 列表
 - `TRMS_PUBLIC_API_BASE_URL`
+- `TRMS_PUBLIC_WEB_BASE_URL`
 - `TZ`：系统时区，默认 `UTC`；建议使用 IANA 时区名，例如 `Asia/Shanghai`
 - `TRMS_API_HOST`
 - `TRMS_API_PORT`
@@ -133,6 +140,8 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
 - `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`
 - `TRMS_AUTH_EMAIL_INBOUND_TOKEN`
+- `TRMS_TELEGRAM_BOT_TOKEN`
+- `TRMS_TELEGRAM_WEBHOOK_SECRET`
 - `TRMS_SMTP_HOST`
 - `TRMS_SMTP_PORT`
 - `TRMS_SMTP_USERNAME`
@@ -253,9 +262,12 @@ OpenAI 兼容文本 LLM / VLM Provider 配置边界：
   - `vlm_provider_not_configured`
   而不是伪造识别成功。
 
-Telegram 入站可信边界：
+Telegram Bot 与入站可信边界：
 
 - `PUT /api/telegram-bindings/*` 与 Telegram 绑定查询接口现在都要求 bearer 身份，且仅 `admin` / `system_admin` 可管理。
+- 成员现在可在 Telegram 中发送 `/bind` 获取一次性网页绑定链接；登录 Web 后确认，即可把当前 Telegram 账号绑定到当前成员身份。
+- 真实 Telegram bot webhook 入口为 `/api/telegram/bot/webhook`；配置 `TRMS_TELEGRAM_BOT_TOKEN` 后可处理 `/bind`、`/tasks`、`/task <submission_key>` 和直接发送文件上传。
+- 任务对外统一暴露 `submission_key` 作为跨 Telegram / CLI / 邮件的稳定任务提交标识；旧字段名 `email_submission_key` 继续兼容已有 API / 数据。
 - 只有在后端配置了 `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`，且请求头 `X-TRMS-Telegram-Inbound-Token` 与之匹配时，`/api/telegram/materials` 才会把表单中的 `telegram_user_id` 当作可信身份来源。
 - 未配置该 token，或请求未携带该 token 时，Telegram 材料仍会被接收，但只进入待归属流程，不会直接归档到成员主链路。
 - 该 token 只允许保留在后端环境变量或渠道入站器密钥管理中，不入库、不返回前端，也不应写入日志。
@@ -307,7 +319,7 @@ TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker --once
 
 以下能力不要按“README 已写到就等于可直接使用”理解：
 
-- Telegram 渠道目前只完成后端可信边界和待归属语义，未提供真实 Bot / Webhook 联通说明。
+- Telegram 渠道现在已补真实 Bot / Webhook 接入口，但生产环境仍需自行向 Telegram 注册 webhook，并通过 `TRMS_TELEGRAM_WEBHOOK_SECRET` 收口入口可信性。
 - 格式化邮件渠道目前已完成格式规范、受信任入站边界、邮箱绑定、IMAP 轮询去重、附件写入统一材料主链路和 SMTP 结果回执。
 - OpenAI 兼容文本 LLM / VLM Provider 只有在环境变量或系统管理员系统配置中至少配置了一类后才会启用；未配置对应 provider 时识别会显式失败，不会伪装为识别成功。
 - Browser Use / 财务系统自动录入明确属于第一阶段范围外，不应被当作现成功能。

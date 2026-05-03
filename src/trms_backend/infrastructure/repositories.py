@@ -117,6 +117,13 @@ from trms_backend.domain.telegram_bindings import (
     TelegramAccountBindingRepository,
     TelegramAccountBindingUpsert,
 )
+from trms_backend.domain.telegram_bot import (
+    TelegramBindingAuthorizationCreate,
+    TelegramBindingAuthorizationRecord,
+    TelegramBindingAuthorizationRepository,
+    TelegramTaskContextRecord,
+    TelegramTaskContextRepository,
+)
 from trms_backend.infrastructure.database import session_scope
 from trms_backend.infrastructure.models import (
     AuthSessionRow,
@@ -137,6 +144,8 @@ from trms_backend.infrastructure.models import (
     SystemAiProviderConfigRow,
     TaskRow,
     TelegramAccountBindingRow,
+    TelegramBindingAuthorizationRow,
+    TelegramTaskContextRow,
     UserAccountRow,
     ValidationResultRow,
 )
@@ -796,6 +805,93 @@ class SqlAlchemyTelegramAccountBindingRepository(TelegramAccountBindingRepositor
                 .limit(1)
             )
             return _telegram_account_binding_from_row(row) if row else None
+
+
+class SqlAlchemyTelegramBindingAuthorizationRepository(
+    TelegramBindingAuthorizationRepository
+):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(
+        self,
+        data: TelegramBindingAuthorizationCreate,
+    ) -> TelegramBindingAuthorizationRecord:
+        row = TelegramBindingAuthorizationRow(
+            id=str(uuid4()),
+            telegram_user_id=data.telegram_user_id,
+            telegram_chat_id=data.telegram_chat_id,
+            telegram_username=data.telegram_username,
+            token_hash=data.token_hash,
+            created_at=datetime.now(timezone.utc),
+            expires_at=data.expires_at,
+            consumed_at=None,
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _telegram_binding_authorization_from_row(row)
+
+    def get_by_token_hash(self, token_hash: str) -> TelegramBindingAuthorizationRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalars(
+                select(TelegramBindingAuthorizationRow).where(
+                    TelegramBindingAuthorizationRow.token_hash == token_hash
+                )
+            ).first()
+            return _telegram_binding_authorization_from_row(row) if row else None
+
+    def mark_consumed(
+        self,
+        authorization_id: str,
+        *,
+        consumed_at: datetime,
+    ) -> TelegramBindingAuthorizationRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(TelegramBindingAuthorizationRow, authorization_id)
+            if row is None:
+                return None
+            row.consumed_at = consumed_at
+            session.add(row)
+        return _telegram_binding_authorization_from_row(row)
+
+
+class SqlAlchemyTelegramTaskContextRepository(TelegramTaskContextRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def get_by_telegram_user_id(self, telegram_user_id: int) -> TelegramTaskContextRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(TelegramTaskContextRow, telegram_user_id)
+            return _telegram_task_context_from_row(row) if row else None
+
+    def upsert(
+        self,
+        *,
+        telegram_user_id: int,
+        task_id: str,
+    ) -> TelegramTaskContextRecord:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            row = session.get(TelegramTaskContextRow, telegram_user_id)
+            if row is None:
+                row = TelegramTaskContextRow(
+                    telegram_user_id=telegram_user_id,
+                    task_id=task_id,
+                    updated_at=now,
+                )
+            else:
+                row.task_id = task_id
+                row.updated_at = now
+            session.add(row)
+        return _telegram_task_context_from_row(row)
+
+    def delete(self, telegram_user_id: int) -> None:
+        with session_scope(self._session_factory) as session:
+            session.execute(
+                delete(TelegramTaskContextRow).where(
+                    TelegramTaskContextRow.telegram_user_id == telegram_user_id
+                )
+            )
 
 
 class SqlAlchemyEmailAccountBindingRepository(EmailAccountBindingRepository):
@@ -1944,6 +2040,31 @@ def _telegram_account_binding_from_row(
         member_id=row.member_id,
         telegram_username=row.telegram_username,
         created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _telegram_binding_authorization_from_row(
+    row: TelegramBindingAuthorizationRow,
+) -> TelegramBindingAuthorizationRecord:
+    return TelegramBindingAuthorizationRecord(
+        id=row.id,
+        telegram_user_id=row.telegram_user_id,
+        telegram_chat_id=row.telegram_chat_id,
+        telegram_username=row.telegram_username,
+        token_hash=row.token_hash,
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+        consumed_at=row.consumed_at,
+    )
+
+
+def _telegram_task_context_from_row(
+    row: TelegramTaskContextRow,
+) -> TelegramTaskContextRecord:
+    return TelegramTaskContextRecord(
+        telegram_user_id=row.telegram_user_id,
+        task_id=row.task_id,
         updated_at=row.updated_at,
     )
 

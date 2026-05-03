@@ -24,6 +24,8 @@ class TokenSession:
     member_id: str
     access_token: str
     refresh_token: str
+    current_task_id: str | None = None
+    current_task_submission_key: str | None = None
 
 
 def resolve_token_store_path() -> Path:
@@ -44,6 +46,8 @@ def save_token_session(
     member_id: str,
     access_token: str,
     refresh_token: str,
+    current_task_id: str | None = None,
+    current_task_submission_key: str | None = None,
 ) -> Path:
     token_store_path = resolve_token_store_path()
     token_store_path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,6 +61,8 @@ def save_token_session(
         "member_id": member_id,
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "current_task_id": current_task_id,
+        "current_task_submission_key": current_task_submission_key,
     }
 
     fd = os.open(
@@ -101,6 +107,8 @@ def load_token_session() -> TokenSession:
         member_id=_require_member_id(payload, token_store_path),
         access_token=_require_non_empty_string(payload, "access_token", token_store_path),
         refresh_token=_require_non_empty_string(payload, "refresh_token", token_store_path),
+        current_task_id=_read_optional_string(payload, "current_task_id"),
+        current_task_submission_key=_read_optional_string(payload, "current_task_submission_key"),
     )
 
 
@@ -120,6 +128,16 @@ def _require_member_id(payload: dict[str, object], token_store_path: Path) -> st
         raise TokenStoreError(
             "CLI token session is missing bound member id; run `trms-cli login --member-id ...` again"
         ) from error
+
+
+def _read_optional_string(payload: dict[str, object], field_name: str) -> str | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _assert_private_permissions(token_store_path: Path) -> None:

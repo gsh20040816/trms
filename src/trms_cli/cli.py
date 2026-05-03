@@ -51,6 +51,7 @@ class CliError(Exception):
 @dataclass(frozen=True)
 class VisibleTaskSummary:
     id: str
+    submission_key: str
     competition_name: str
     status: str
     deadline: str
@@ -437,13 +438,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tasks_parser.set_defaults(handler=run_tasks_command)
 
+    task_parser = subparsers.add_parser(
+        "task",
+        help="switch or clear the current reimbursement task in the local CLI session",
+    )
+    task_parser.add_argument(
+        "submission_key",
+        nargs="?",
+        help="task submission key returned by `trms-cli tasks`",
+    )
+    task_parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="clear the current task selection",
+    )
+    task_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit machine-readable JSON output",
+    )
+    task_parser.set_defaults(handler=run_task_command)
+
     submit_parser = subparsers.add_parser(
         "submit",
         help="upload one or more local material files to a visible reimbursement task",
     )
     submit_parser.add_argument(
         "--task-id",
-        required=True,
         help="target reimbursement task id",
     )
     submit_parser.add_argument(
@@ -470,7 +492,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status_parser.add_argument(
         "--task-id",
-        required=True,
         help="target reimbursement task id",
     )
     status_parser.add_argument(
@@ -487,7 +508,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     missing_materials_parser.add_argument(
         "--task-id",
-        required=True,
         help="target reimbursement task id",
     )
     missing_materials_parser.add_argument(
@@ -529,7 +549,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     confirm_expense_parser.add_argument(
         "--task-id",
-        required=True,
         help="target reimbursement task id",
     )
     confirm_expense_parser.add_argument(
@@ -661,17 +680,7 @@ def run_tasks_command(args: argparse.Namespace) -> int:
         raise CliError(str(error), code="login_required") from error
 
     base_url = session.base_url.rstrip("/")
-    status_code, payload = fetch_json(
-        build_task_list_url(base_url, member_id=session.member_id),
-        headers=build_cli_request_headers(access_token=session.access_token),
-    )
-    if status_code != 200:
-        raise CliError(
-            f"task list endpoint returned unexpected status {status_code}",
-            code="task_list_unexpected_status",
-        )
-
-    tasks = parse_visible_tasks(payload)
+    tasks = fetch_visible_tasks_from_session(session)
     if args.json_output:
         emit_json(
             {
@@ -682,6 +691,8 @@ def run_tasks_command(args: argparse.Namespace) -> int:
                     "base_url": base_url,
                     "member_id": session.member_id,
                     "count": len(tasks),
+                    "current_task_id": session.current_task_id,
+                    "current_task_submission_key": session.current_task_submission_key,
                     "items": [asdict(task) for task in tasks],
                 },
             }
@@ -689,12 +700,90 @@ def run_tasks_command(args: argparse.Namespace) -> int:
         return 0
 
     if not tasks:
-        print("No current submission tasks.")
+        print("No visible reimbursement tasks.")
         return 0
 
-    print("task_id\tcompetition_name\tstatus\tdeadline")
+    print("submission_key\ttask_id\tstatus\tdeadline\tcompetition_name")
     for task in tasks:
-        print(f"{task.id}\t{task.competition_name}\t{task.status}\t{task.deadline}")
+        marker = " *" if session.current_task_id == task.id else ""
+        print(
+            f"{task.submission_key}{marker}\t{task.id}\t{task.status}\t{task.deadline}\t{task.competition_name}"
+        )
+    return 0
+
+
+def run_task_command(args: argparse.Namespace) -> int:
+    try:
+        session = load_token_session()
+    except TokenStoreError as error:
+        raise CliError(str(error), code="login_required") from error
+
+    if args.clear:
+        token_store_path = save_token_session(
+            base_url=session.base_url,
+            member_id=session.member_id,
+            access_token=session.access_token,
+            refresh_token=session.refresh_token,
+            current_task_id=None,
+            current_task_submission_key=None,
+        )
+        if args.json_output:
+            emit_json(
+                {
+                    "schema_version": CLI_JSON_SCHEMA_VERSION,
+                    "ok": True,
+                    "command": "task",
+                    "data": {
+                        "cleared": True,
+                        "token_store_path": str(token_store_path),
+                    },
+                }
+            )
+            return 0
+        print("Cleared current task selection.")
+        return 0
+
+    submission_key = (args.submission_key or "").strip()
+    if not submission_key:
+        raise CliError("task submission key is required", code="task_submission_key_required")
+
+    tasks = fetch_visible_tasks_from_session(session)
+    matched_task = next((task for task in tasks if task.submission_key == submission_key), None)
+    if matched_task is None:
+        raise CliError(
+            f"task submission key not found in current visible tasks: {submission_key}",
+            code="task_submission_key_not_found",
+        )
+
+    token_store_path = save_token_session(
+        base_url=session.base_url,
+        member_id=session.member_id,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        current_task_id=matched_task.id,
+        current_task_submission_key=matched_task.submission_key,
+    )
+    if args.json_output:
+        emit_json(
+            {
+                "schema_version": CLI_JSON_SCHEMA_VERSION,
+                "ok": True,
+                "command": "task",
+                "data": {
+                    "task_id": matched_task.id,
+                    "submission_key": matched_task.submission_key,
+                    "competition_name": matched_task.competition_name,
+                    "status": matched_task.status,
+                    "token_store_path": str(token_store_path),
+                },
+            }
+        )
+        return 0
+
+    print(
+        "Current task switched to "
+        f"{matched_task.competition_name} ({matched_task.submission_key})."
+    )
     return 0
 
 
@@ -706,10 +795,11 @@ def run_submit_command(args: argparse.Namespace) -> int:
 
     upload_files, local_failures = prepare_upload_files(args.file_paths)
     base_url = session.base_url.rstrip("/")
+    resolved_task_id = resolve_cli_task_id(args.task_id, session=session)
     result = build_local_only_submit_result(local_failures)
     if upload_files:
         status_code, payload = post_multipart_json(
-            build_material_submit_url(base_url, task_id=args.task_id),
+            build_material_submit_url(base_url, task_id=resolved_task_id),
             headers=build_cli_request_headers(access_token=session.access_token),
             fields={
                 "submitter_id": session.member_id,
@@ -733,7 +823,7 @@ def run_submit_command(args: argparse.Namespace) -> int:
     if args.json_output:
         emit_submit_json_result(
             base_url=base_url,
-            requested_task_id=args.task_id,
+            requested_task_id=resolved_task_id,
             member_id=session.member_id,
             result=result,
         )
@@ -750,8 +840,9 @@ def run_status_command(args: argparse.Namespace) -> int:
         raise CliError(str(error), code="login_required") from error
 
     base_url = session.base_url.rstrip("/")
+    resolved_task_id = resolve_cli_task_id(args.task_id, session=session)
     status_code, payload = fetch_json(
-        build_task_status_url(base_url, task_id=args.task_id),
+        build_task_status_url(base_url, task_id=resolved_task_id),
         headers=build_cli_request_headers(access_token=session.access_token),
     )
     if status_code != 200:
@@ -792,8 +883,9 @@ def run_missing_materials_command(args: argparse.Namespace) -> int:
         raise CliError(str(error), code="login_required") from error
 
     base_url = session.base_url.rstrip("/")
+    resolved_task_id = resolve_cli_task_id(args.task_id, session=session)
     status_code, payload = fetch_json(
-        build_task_missing_materials_url(base_url, task_id=args.task_id),
+        build_task_missing_materials_url(base_url, task_id=resolved_task_id),
         headers=build_cli_request_headers(access_token=session.access_token),
     )
     if status_code != 200:
@@ -877,9 +969,10 @@ def run_confirm_expense_command(args: argparse.Namespace) -> int:
 
     action = resolve_confirm_expense_action(args)
     base_url = session.base_url.rstrip("/")
+    resolved_task_id = resolve_cli_task_id(args.task_id, session=session)
     report = fetch_expense_detail_confirmation_report(
         base_url=base_url,
-        task_id=args.task_id,
+        task_id=resolved_task_id,
         access_token=session.access_token,
     )
     if action == "list":
@@ -913,7 +1006,7 @@ def run_confirm_expense_command(args: argparse.Namespace) -> int:
         report,
         split_id=args.split_id,
         expected_split_version=args.split_version,
-        task_id=args.task_id,
+        task_id=resolved_task_id,
     )
     status_code, payload = put_json(
         build_split_confirmation_url(base_url, split_id=detail.split_id),
@@ -941,7 +1034,7 @@ def run_confirm_expense_command(args: argparse.Namespace) -> int:
                 "data": {
                     "base_url": base_url,
                     "mode": "submit",
-                    "task_id": args.task_id,
+                    "task_id": resolved_task_id,
                     "member_id": session.member_id,
                     "item": asdict(result),
                 },
@@ -951,6 +1044,32 @@ def run_confirm_expense_command(args: argparse.Namespace) -> int:
 
     emit_confirm_expense_submission_text_result(result)
     return 0
+
+
+def fetch_visible_tasks_from_session(session) -> list[VisibleTaskSummary]:
+    base_url = session.base_url.rstrip("/")
+    status_code, payload = fetch_json(
+        build_task_list_url(base_url, member_id=session.member_id),
+        headers=build_cli_request_headers(access_token=session.access_token),
+    )
+    if status_code != 200:
+        raise CliError(
+            f"task list endpoint returned unexpected status {status_code}",
+            code="task_list_unexpected_status",
+        )
+    return parse_visible_tasks(payload)
+
+
+def resolve_cli_task_id(task_id: str | None, *, session) -> str:
+    normalized_task_id = (task_id or "").strip()
+    if normalized_task_id:
+        return normalized_task_id
+    if session.current_task_id:
+        return session.current_task_id
+    raise CliError(
+        "task id is required; pass --task-id or run `trms-cli task <submission-key>` first",
+        code="task_id_required",
+    )
 
 
 def build_task_list_url(base_url: str, *, member_id: str) -> str:
@@ -1397,7 +1516,6 @@ def parse_visible_tasks(payload: object) -> list[VisibleTaskSummary]:
         raise CliError("TRMS API returned invalid task list payload", code="task_list_invalid_response")
 
     visible_tasks: list[VisibleTaskSummary] = []
-    now = datetime.now(timezone.utc)
     for item in payload:
         if not isinstance(item, dict):
             raise CliError(
@@ -1405,18 +1523,19 @@ def parse_visible_tasks(payload: object) -> list[VisibleTaskSummary]:
             )
 
         task_id = _require_non_empty_task_field(item, "id")
+        submission_key = _require_non_empty_task_field(
+            item,
+            "submission_key",
+            fallback_field_name="email_submission_key",
+        )
         competition_name = _require_non_empty_task_field(item, "competition_name")
         status = _require_non_empty_task_field(item, "status")
         deadline = _require_non_empty_task_field(item, "deadline")
-        if status != "open":
-            continue
-
-        if parse_task_deadline(deadline) <= now:
-            continue
 
         visible_tasks.append(
             VisibleTaskSummary(
                 id=task_id,
+                submission_key=submission_key,
                 competition_name=competition_name,
                 status=status,
                 deadline=deadline,
@@ -1795,8 +1914,15 @@ def emit_confirm_expense_submission_text_result(
         print(f"Dispute reason: {result.dispute_reason}")
 
 
-def _require_non_empty_task_field(item: dict[str, object], field_name: str) -> str:
+def _require_non_empty_task_field(
+    item: dict[str, object],
+    field_name: str,
+    *,
+    fallback_field_name: str | None = None,
+) -> str:
     value = item.get(field_name)
+    if (not isinstance(value, str) or not value.strip()) and fallback_field_name is not None:
+        value = item.get(fallback_field_name)
     if not isinstance(value, str) or not value.strip():
         raise CliError(
             f"TRMS API task payload is missing a valid {field_name!r} field",

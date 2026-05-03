@@ -82,7 +82,7 @@ async function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("提交截止时间"), {
     target: { value: "2026-11-10T18:00" },
   });
-  fireEvent.change(screen.getByLabelText("邮件提交标识"), {
+  fireEvent.change(screen.getByLabelText("任务提交标识"), {
     target: { value: "e2e-main-flow" },
   });
   await addMember("2250", "张三 / member1 / 2250001");
@@ -103,7 +103,7 @@ function buildTask(status: "draft" | "open" | "ready_to_export") {
     competition_start_date: "2026-11-01",
     competition_end_date: "2026-11-03",
     deadline: "2026-11-10T10:00:00.000Z",
-    email_submission_key: "e2e-main-flow",
+    submission_key: "e2e-main-flow",
     member_ids: ["2250001"],
     fee_categories: ["railway"],
     administrator_id: "admin-1",
@@ -520,7 +520,7 @@ describe("frontend main flow e2e placeholder", () => {
       if (url === "/api/tasks" && init?.method === "POST") {
         const body = parseRequestJsonBody(init);
         expect(body.member_ids).toEqual(["member-actor-1"]);
-        expect(body.email_submission_key).toBe("e2e-main-flow");
+        expect(body.submission_key).toBe("e2e-main-flow");
         workflowState.taskCreated = true;
         workflowState.taskStatus = "draft";
         return Promise.resolve(jsonResponse(buildTask("draft"), { status: 201 }));

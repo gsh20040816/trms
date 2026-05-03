@@ -116,3 +116,42 @@ def test_binding_rejects_member_conflict(tmp_path):
     assert conflict_response.json()["detail"] == (
         "member is already bound to another telegram user: 2250001"
     )
+
+
+def test_member_can_confirm_telegram_binding_via_web_oauth_flow(tmp_path):
+    client = make_client(tmp_path)
+    member_token = register_and_get_token(
+        client,
+        username="member1",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+
+    app = client.app
+    oauth_service = app.state.telegram_binding_oauth_service
+    authorization = oauth_service.create_authorization(
+        telegram_user_id=987654321,
+        telegram_chat_id=987654321,
+        telegram_username="tongjicoder",
+    )
+
+    status_response = client.get(
+        f"/api/telegram-bindings/oauth/{authorization.token}",
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["item"]["status"] == "pending"
+
+    confirm_response = client.post(
+        f"/api/telegram-bindings/oauth/{authorization.token}/confirm",
+        headers=auth_headers(member_token),
+    )
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["item"]["member_id"] == "2250001"
+    assert confirm_response.json()["item"]["telegram_user_id"] == 987654321
+
+    consumed_response = client.get(
+        f"/api/telegram-bindings/oauth/{authorization.token}",
+    )
+    assert consumed_response.status_code == 200
+    assert consumed_response.json()["item"]["status"] == "consumed"

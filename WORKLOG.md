@@ -1,5 +1,85 @@
 # WORKLOG
 
+## 2026-05-03 23:55 - Add Telegram bot task switching/upload flow and align CLI semantics
+
+### 完成内容
+- 完成任务“补齐 Telegram Bot 绑定、任务切换、直接上传，并让 CLI / Telegram 共享同一套提交语义”。
+- 已补 Telegram 绑定网页授权闭环：
+  - [src/trms_backend/application/telegram_binding_oauth.py](/home/gsh/workspace/TRMS/src/trms_backend/application/telegram_binding_oauth.py)
+  - [src/trms_backend/api/telegram_bindings.py](/home/gsh/workspace/TRMS/src/trms_backend/api/telegram_bindings.py)
+  - [web/src/app/telegram-binding.tsx](/home/gsh/workspace/TRMS/web/src/app/telegram-binding.tsx)
+  - Telegram 中发送 `/bind` 后，后端会签发一次性绑定 token；
+  - 成员登录 Web 后访问 `/telegram/bind?token=...`，即可完成当前 Telegram 账号与当前成员身份绑定；
+  - 不再要求 `/bind <username>` 传用户名。
+- 已补真实 Telegram Bot webhook 与命令流：
+  - [src/trms_backend/application/telegram_bot_aiogram.py](/home/gsh/workspace/TRMS/src/trms_backend/application/telegram_bot_aiogram.py)
+  - [src/trms_backend/api/telegram_bot.py](/home/gsh/workspace/TRMS/src/trms_backend/api/telegram_bot.py)
+  - [src/trms_backend/application/telegram_bot.py](/home/gsh/workspace/TRMS/src/trms_backend/application/telegram_bot.py)
+  - 现使用 `aiogram` 接入 Telegram webhook，而不是手写 Bot API 轮子；
+  - 支持 `/bind`、`/tasks`、`/task <submission_key>`；
+  - 直接发送文件时，会要求：
+    - Telegram 账号已绑定；
+    - 已切换当前任务；
+    - 当前任务仍允许成员上传发票；
+  - 上传成功/失败会即时回消息。
+- 已把“任务上传主链路”抽成共享服务，供 Web 上传与 Telegram Bot 复用：
+  - [src/trms_backend/application/task_material_upload.py](/home/gsh/workspace/TRMS/src/trms_backend/application/task_material_upload.py)
+  - [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)
+  - 统一复用：
+    - 材料落库；
+    - 自动关联；
+    - 识别任务调度；
+    - 校验刷新；
+  - Telegram 文件上传不再走旁路。
+- 已增加 Telegram Bot 所需持久化状态：
+  - [src/trms_backend/domain/telegram_bot.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/telegram_bot.py)
+  - [src/trms_backend/infrastructure/models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [alembic/versions/20260503_04_telegram_bot_sessions.py](/home/gsh/workspace/TRMS/alembic/versions/20260503_04_telegram_bot_sessions.py)
+  - 新增：
+    - Telegram 绑定授权记录；
+    - Telegram 当前任务上下文。
+- 已收口对外任务标识命名：
+  - [src/trms_backend/domain/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py)
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - 前后端现在统一对外暴露 `submission_key`；
+  - 旧 `email_submission_key` 继续兼容创建、更新、列表和历史邮件链路。
+- 已让 CLI 与 Telegram 共用“任务列表 / 当前任务切换 / 文件提交”语义：
+  - [src/trms_cli/cli.py](/home/gsh/workspace/TRMS/src/trms_cli/cli.py)
+  - [src/trms_cli/token_store.py](/home/gsh/workspace/TRMS/src/trms_cli/token_store.py)
+  - CLI 新增 `task` 命令；
+  - `tasks` 输出现在包含 `submission_key`；
+  - `submit`、`status`、`missing-materials`、`confirm-expense` 在未显式传 `--task-id` 时可回退到本地已选当前任务。
+- 已同步更新运行配置与说明：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+
+### 根因
+- 仓库之前只有 Telegram 入站占位接口 `/api/telegram/materials`，没有真实 Bot、命令解析、文件下载和成员自助绑定闭环。
+- 任务稳定提交标识长期叫 `email_submission_key`，对邮件还勉强说得通，但一旦要给 CLI / Telegram 复用，就会造成语义偏差和接口命名污染。
+- Web 上传链路中的“自动关联 + 识别调度 + 校验刷新”之前只散落在 API 层，Telegram 若直接各写一套，必然形成旁路和行为漂移。
+
+### 风险与影响面
+- 本轮把 Telegram webhook 收到 `aiogram` 上，运行时新增了：
+  - `TRMS_TELEGRAM_BOT_TOKEN`
+  - `TRMS_TELEGRAM_WEBHOOK_SECRET`
+  - `TRMS_PUBLIC_WEB_BASE_URL`
+- CLI 本轮复用的是仓库已存在的 bearer token 会话边界，并没有新增独立 OAuth token 签发器；也就是说，CLI 的“任务切换/上传语义”已与 Telegram 对齐，但 CLI 登录仍保持当前仓库原有 token 占位方式。
+- `submission_key` 目前是对外别名兼容收口，不是数据库列重命名；这样避免了大范围数据迁移，但仓库内部仍保留部分 `email_submission_key` 旧命名。
+
+### 验证结果
+- 已通过定向后端/CLI 测试：
+  - `uv run pytest tests/test_telegram_bindings_api.py tests/test_telegram_bot_api.py tests/test_telegram_bot_workflow.py tests/test_cli_tasks.py tests/test_runtime_config.py`
+  - `41/41` 通过。
+- 已通过任务/邮件/Telegram 上传相关回归：
+  - `uv run pytest tests/test_tasks_api.py tests/test_email_materials_api.py tests/test_material_upload_integration.py tests/test_telegram_materials_api.py`
+  - `84/84` 通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/telegram-binding.test.tsx src/app/admin-task-create.test.tsx src/app/admin-task-detail.test.tsx src/app/account-profile.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+  - `18/18` 通过。
+
 ## 2026-05-03 22:10 - Serialize recognition worker on SQLite and extend lock wait
 
 ### 完成内容

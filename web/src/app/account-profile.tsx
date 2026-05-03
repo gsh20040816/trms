@@ -225,7 +225,7 @@ export function AccountProfilePage() {
       {canManageEmailBindings ? (
         <SectionCard
           title="绑定邮箱"
-          description="可绑定多个邮箱；绑定后，这些邮箱都可按任务邮件标识提交报销材料。"
+          description="可绑定多个邮箱；绑定后，这些邮箱都可按任务提交标识提交报销材料。"
         >
           {emailBindings.length > 0 ? (
             <List dense aria-label="已绑定邮箱列表" sx={{ py: 0, mb: 2 }}>

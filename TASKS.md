@@ -2,6 +2,18 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-03 Telegram Bot 与 CLI 共享任务切换提交流程
+
+- [x] 补齐 Telegram Bot 绑定、任务切换、直接上传，并让 CLI / Telegram 共享同一套提交语义
+  - Done when:
+    - Telegram Bot 提供 `/bind`、`/tasks`、`/task <submission_key>` 和直接发送文件上传
+    - `/bind` 通过一次性网页授权链接完成 Telegram 账号绑定，不再要求命令参数用户名
+    - Telegram 直接上传要求已绑定且已切换当前任务；任务不接受成员发票上传时会明确报错
+    - Telegram 文件提交复用现有网页上传主链路，而不是独立旁路
+    - CLI 与 Telegram 共用“任务列表 / 当前任务切换 / 文件提交”语义，CLI 可在本地会话中记住当前任务
+    - 任务对外统一暴露 `submission_key` 命名，旧 `email_submission_key` 继续兼容
+    - 相关测试和仓库级验证通过
+
 ## 临时任务 - 2026-05-03 worker SQLite 锁库修复
 
 - [x] 收口识别 worker 在线程并发下的 SQLite 锁库问题

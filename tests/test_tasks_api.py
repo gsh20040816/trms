@@ -1185,7 +1185,7 @@ def test_create_task_rejects_duplicate_email_submission_key(tmp_path):
 
     assert response.status_code == 409
     assert response.json()["detail"] == (
-        "task email submission key already exists: icpc-asia-regional"
+        "task submission key already exists: icpc-asia-regional"
     )
 
 
@@ -1211,7 +1211,7 @@ def test_update_task_rejects_duplicate_email_submission_key(tmp_path):
 
     assert response.status_code == 409
     assert response.json()["detail"] == (
-        "task email submission key already exists: icpc-asia-regional"
+        "task submission key already exists: icpc-asia-regional"
     )
 
 

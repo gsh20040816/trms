@@ -202,6 +202,17 @@ export type EmailBindingVerifyPayload = {
   code: string;
 };
 
+export type TelegramBindingAuthorizationStatus = "pending" | "expired" | "consumed";
+
+export type TelegramBindingAuthorizationView = {
+  telegram_user_id: number;
+  telegram_chat_id: number;
+  telegram_username: string | null;
+  expires_at: ApiDateTime;
+  consumed_at: ApiDateTime | null;
+  status: TelegramBindingAuthorizationStatus;
+};
+
 export type ReimbursementTask = {
   id: string;
   status: TaskStatus;
@@ -211,6 +222,7 @@ export type ReimbursementTask = {
   competition_end_date: ApiDate;
   deadline: ApiDateTime;
   email_submission_key: string | null;
+  submission_key: string | null;
   member_ids: string[];
   member_summaries?: TaskMemberSummary[];
   fee_categories: string[];
@@ -230,7 +242,8 @@ export type TaskCreateInput = {
   competition_start_date: ApiDate;
   competition_end_date: ApiDate;
   deadline: ApiDateTime;
-  email_submission_key: string;
+  email_submission_key?: string;
+  submission_key?: string;
   member_ids: string[];
   fee_categories: string[];
   administrator_id: string;
@@ -245,7 +258,8 @@ export type TaskUpdateInput = {
   competition_start_date: ApiDate;
   competition_end_date: ApiDate;
   deadline: ApiDateTime;
-  email_submission_key: string;
+  email_submission_key?: string;
+  submission_key?: string;
   member_ids: string[];
   fee_categories: string[];
   administrator_id?: string;

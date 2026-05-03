@@ -2,6 +2,7 @@ import { apiClient, type ApiDownloadedFile, getConfiguredApiAccessToken } from "
 import type {
   ApiItemResponse,
   ApiListResponse,
+  ApiDateTime,
   AuthenticatedUser,
   AuthSessionResponse,
   ConfirmationRecord,
@@ -55,6 +56,7 @@ import type {
   TaskReviewSummary,
   TaskStatusUpdate,
   TaskUpdateInput,
+  TelegramBindingAuthorizationView,
   UserSearchSummary,
   UserProfileUpdatePayload,
   UserPasswordUpdatePayload,
@@ -182,6 +184,28 @@ export const trmsApi = {
       method: "POST",
       body: payload,
     });
+  },
+
+  getTelegramBindingAuthorization(token: string) {
+    return apiClient.request<ApiItemResponse<TelegramBindingAuthorizationView>>(
+      `/telegram-bindings/oauth/${encodeSegment(token)}`,
+    );
+  },
+
+  confirmTelegramBindingAuthorization(token: string) {
+    return apiClient.request<ApiItemResponse<{
+      id: string;
+      telegram_user_id: number;
+      member_id: string;
+      telegram_username: string | null;
+      created_at: ApiDateTime;
+      updated_at: ApiDateTime;
+    }>>(
+      `/telegram-bindings/oauth/${encodeSegment(token)}/confirm`,
+      {
+        method: "POST",
+      },
+    );
   },
 
   switchRole(accessToken: string, payload: RoleSwitchPayload) {

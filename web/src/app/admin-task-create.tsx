@@ -98,11 +98,11 @@ function validateForm(formState: TaskCreateFormState): {
     errors.deadline = "请选择提交截止时间。";
   }
   if (normalizedEmailSubmissionKey.length === 0) {
-    errors.emailSubmissionKey = "请填写邮件提交标识。";
+    errors.emailSubmissionKey = "请填写任务提交标识。";
   } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedEmailSubmissionKey)) {
-    errors.emailSubmissionKey = "邮件提交标识只能包含小写字母、数字和单个连字符。";
+    errors.emailSubmissionKey = "任务提交标识只能包含小写字母、数字和单个连字符。";
   } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(normalizedEmailSubmissionKey)) {
-    errors.emailSubmissionKey = "邮件提交标识不能直接使用 UUID。";
+    errors.emailSubmissionKey = "任务提交标识不能直接使用 UUID。";
   }
 
   const normalizedMembers = formState.memberIds.map((memberId) => memberId.trim());
@@ -139,7 +139,7 @@ function validateForm(formState: TaskCreateFormState): {
       competition_start_date: formState.competitionStartDate,
       competition_end_date: formState.competitionEndDate,
       deadline: new Date(formState.deadline).toISOString(),
-      email_submission_key: normalizedEmailSubmissionKey,
+      submission_key: normalizedEmailSubmissionKey,
       member_ids: normalizedMembers,
       fee_categories: formState.feeCategories,
       administrator_id: normalizedAdministrators[0] ?? "",
@@ -450,7 +450,7 @@ export function AdminTaskCreatePage() {
               slotProps={{ inputLabel: { shrink: true } }}
             />
             <TextField
-              label="邮件提交标识"
+              label="任务提交标识"
               name="email-submission-key"
               value={formState.emailSubmissionKey}
               onChange={(event) => {

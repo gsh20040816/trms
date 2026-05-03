@@ -181,6 +181,44 @@ class AuthConfig(BaseModel):
         )
 
 
+class TelegramBotConfig(BaseModel):
+    token: SecretStr
+    webhook_secret: SecretStr | None = None
+
+    @field_validator("token", mode="before")
+    @classmethod
+    def validate_token(cls, value: SecretStr | str) -> SecretStr:
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            raise ValueError("telegram_bot.token must not be empty")
+        return SecretStr(normalized)
+
+    @field_validator("webhook_secret", mode="before")
+    @classmethod
+    def validate_webhook_secret(
+        cls,
+        value: SecretStr | str | None,
+    ) -> SecretStr | None:
+        if value is None:
+            return None
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            return None
+        return SecretStr(normalized)
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return sanitize_log_fields(
+            {
+                "token": "[redacted]",
+                "token_configured": True,
+                "webhook_secret": "[redacted]" if self.webhook_secret is not None else None,
+                "webhook_secret_configured": self.webhook_secret is not None,
+            }
+        )
+
+
 class OutboundEmailConfig(BaseModel):
     host: str
     port: int = Field(ge=1, le=65535)
@@ -415,11 +453,13 @@ class RuntimeConfig(BaseModel):
     file_storage: FileStorageConfig
     cors_allowed_origins: tuple[str, ...]
     public_api_base_url: str
+    public_web_base_url: str
     system_timezone: str
     api_host: str
     api_port: int = Field(ge=1, le=65535)
     async_jobs: AsyncJobConfig
     auth: AuthConfig
+    telegram_bot: TelegramBotConfig | None = None
     outbound_email: OutboundEmailConfig | None = None
     email_inbox: EmailInboxConfig | None = None
     text_llm_provider: LLMProviderConfig | None = None
@@ -467,6 +507,15 @@ class RuntimeConfig(BaseModel):
             allow_path=True,
         )
 
+    @field_validator("public_web_base_url")
+    @classmethod
+    def validate_public_web_base_url(cls, value: str) -> str:
+        return _normalize_http_url(
+            value,
+            field_name="public_web_base_url",
+            allow_path=True,
+        )
+
     @field_validator("system_timezone")
     @classmethod
     def validate_system_timezone(cls, value: str) -> str:
@@ -500,6 +549,7 @@ class RuntimeConfig(BaseModel):
                 "file_storage": self.file_storage.to_safe_log_fields(),
                 "cors_allowed_origins": list(self.cors_allowed_origins),
                 "public_api_base_url": self.public_api_base_url,
+                "public_web_base_url": self.public_web_base_url,
                 "system_timezone": self.system_timezone,
                 "api_host": self.api_host,
                 "api_port": self.api_port,
@@ -509,6 +559,11 @@ class RuntimeConfig(BaseModel):
                     "worker_concurrency": self.async_jobs.worker_concurrency,
                 },
                 "auth": self.auth.to_safe_log_fields(),
+                "telegram_bot": (
+                    self.telegram_bot.to_safe_log_fields()
+                    if self.telegram_bot is not None
+                    else None
+                ),
                 "outbound_email": (
                     self.outbound_email.to_safe_log_fields()
                     if self.outbound_email is not None
@@ -544,6 +599,7 @@ def load_runtime_config(
     material_storage_dir: str | Path | None = None,
     cors_allowed_origins: str | Iterable[str] | None = None,
     public_api_base_url: str | None = None,
+    public_web_base_url: str | None = None,
     system_timezone: str | None = None,
     api_host: str | None = None,
     api_port: str | int | None = None,
@@ -561,6 +617,8 @@ def load_runtime_config(
     auth_bootstrap_admin_token: str | None = None,
     auth_telegram_inbound_token: str | None = None,
     auth_email_inbound_token: str | None = None,
+    telegram_bot_token: str | None = None,
+    telegram_webhook_secret: str | None = None,
     imap_host: str | None = None,
     imap_port: str | int | None = None,
     imap_username: str | None = None,
@@ -631,6 +689,14 @@ def load_runtime_config(
         raw_public_api_base_url = _build_default_public_api_base_url(
             host=str(raw_api_host),
             port=str(raw_api_port),
+        )
+    raw_public_web_base_url = _resolve_value(
+        public_web_base_url,
+        environment_variables.get("TRMS_PUBLIC_WEB_BASE_URL"),
+    )
+    if raw_public_web_base_url is None:
+        raw_public_web_base_url = _build_default_public_web_base_url(
+            public_api_base_url=str(raw_public_api_base_url),
         )
     raw_system_timezone = _resolve_value(system_timezone, environment_variables.get("TZ"))
     if raw_system_timezone is None:
@@ -733,6 +799,14 @@ def load_runtime_config(
         auth_email_inbound_token,
         environment_variables.get("TRMS_AUTH_EMAIL_INBOUND_TOKEN"),
     )
+    raw_telegram_bot_token = _resolve_value(
+        telegram_bot_token,
+        environment_variables.get("TRMS_TELEGRAM_BOT_TOKEN"),
+    )
+    raw_telegram_webhook_secret = _resolve_value(
+        telegram_webhook_secret,
+        environment_variables.get("TRMS_TELEGRAM_WEBHOOK_SECRET"),
+    )
     outbound_email_payload = _resolve_outbound_email_payload(
         explicit={
             "host": smtp_host,
@@ -818,6 +892,7 @@ def load_runtime_config(
                 "file_storage": storage_payload,
                 "cors_allowed_origins": raw_cors_allowed_origins,
                 "public_api_base_url": raw_public_api_base_url,
+                "public_web_base_url": raw_public_web_base_url,
                 "system_timezone": raw_system_timezone,
                 "api_host": raw_api_host,
                 "api_port": raw_api_port,
@@ -832,6 +907,14 @@ def load_runtime_config(
                     "telegram_inbound_token": raw_auth_telegram_inbound_token,
                     "email_inbound_token": raw_auth_email_inbound_token,
                 },
+                "telegram_bot": (
+                    {
+                        "token": raw_telegram_bot_token,
+                        "webhook_secret": raw_telegram_webhook_secret,
+                    }
+                    if _has_meaningful_value(raw_telegram_bot_token)
+                    else None
+                ),
                 "outbound_email": outbound_email_payload,
                 "email_inbox": email_inbox_payload,
                 "text_llm_provider": text_llm_provider_payload,
@@ -1200,6 +1283,13 @@ def _build_default_public_api_base_url(*, host: str, port: str) -> str:
     normalized_host = host.strip() if host.strip() != "0.0.0.0" else DEFAULT_API_HOST
     normalized_port = port.strip()
     return f"http://{normalized_host}:{normalized_port}/api"
+
+
+def _build_default_public_web_base_url(*, public_api_base_url: str) -> str:
+    normalized = public_api_base_url.rstrip("/")
+    if normalized.endswith("/api"):
+        return normalized[:-4] or normalized
+    return normalized
 
 
 def _normalize_origin(value: str) -> str:

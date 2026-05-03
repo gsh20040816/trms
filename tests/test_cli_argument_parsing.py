@@ -136,8 +136,6 @@ def test_build_parser_accepts_supported_cli_commands(argv, expected):
     [
         ["login"],
         ["submit", "--task-id", "task-123", "--material-type", "invoice"],
-        ["status"],
-        ["missing-materials"],
         ["split", "--invoice-id", "invoice-001"],
     ],
 )

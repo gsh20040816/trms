@@ -38,6 +38,7 @@ from trms_backend.application.material_submission import (
     MaterialSubmissionTaskNotFoundError,
     MaterialSubmissionTaskNotOpenError,
 )
+from trms_backend.application.task_material_upload import TaskMaterialUploadService
 from trms_backend.application.recognition_preparation import (
     RecognitionMaterialNotFoundError,
     RecognitionPreparationService,
@@ -118,6 +119,7 @@ def build_material_router(
     async_job_mode: AsyncJobMode,
     metrics_collector: MetricsCollector | None = None,
     recognition_provider_configured_resolver: Callable[[], bool] | None = None,
+    task_material_upload_service: TaskMaterialUploadService | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["materials"])
     optional_request_identity = build_optional_request_identity_dependency(auth_repository)
@@ -137,6 +139,21 @@ def build_material_router(
         split_repository=split_repository,
         confirmation_repository=confirmation_repository,
         supporting_material_auto_link_service=supporting_material_auto_link_service,
+    )
+    resolved_task_material_upload_service = task_material_upload_service or TaskMaterialUploadService(
+        task_repository=task_repository,
+        material_repository=material_repository,
+        invoice_repository=invoice_repository,
+        validation_repository=validation_repository,
+        recognition_task_repository=recognition_task_repository,
+        split_repository=split_repository,
+        confirmation_repository=confirmation_repository,
+        material_submission_service=material_submission_service,
+        recognition_preparation_service=recognition_preparation_service,
+        audit_log_repository=audit_log_repository,
+        async_job_mode=async_job_mode,
+        metrics_collector=metrics,
+        recognition_provider_configured_resolver=recognition_provider_configured_resolver,
     )
 
     def dispatch_recognition_tasks_for_uploaded_materials(
@@ -264,7 +281,7 @@ def build_material_router(
         )
         resolved_material_type = _resolve_uploaded_material_type(material_type)
         try:
-            result = material_submission_service.submit_to_task(
+            result = resolved_task_material_upload_service.submit_to_task(
                 task_id=task_id,
                 submitter_id=resolved_submitter_id,
                 actor_id=resolved_submitter_id,
@@ -291,39 +308,19 @@ def build_material_router(
                 detail=str(error),
             ) from error
 
-        auto_linked_invoice_ids: set[str] = set()
-        for record in result.records:
-            for link in supporting_material_auto_link_service.auto_link_for_material(record):
-                auto_linked_invoice_ids.add(link.invoice_id)
-        for invoice_id in auto_linked_invoice_ids:
-            refresh_invoice_validations(
-                invoice_id,
-                task_repository=task_repository,
-                material_repository=material_repository,
-                invoice_repository=invoice_repository,
-                validation_repository=validation_repository,
-                recognition_task_repository=recognition_task_repository,
-                metrics_collector=metrics,
-            )
-
-        recognition_status_by_material_id, recognition_dispatch = dispatch_recognition_tasks_for_uploaded_materials(
-            material_ids=[record.id for record in result.records],
-            actor_id=resolved_submitter_id,
-            request_id=ensure_request_id(request),
-        )
         encoded_items = [
             {
-                **(material_repository.get(item.id) or item).model_dump(mode="json"),
-                "recognition_status": recognition_status_by_material_id.get(item.id, "pending"),
+                **item.material.model_dump(mode="json"),
+                "recognition_status": item.recognition_status,
             }
-            for item in result.records
+            for item in result.items
         ]
         return build_batch_response(
-            result,
+            result.batch_result,
             file_count=len(uploaded_files),
             extra_body={
                 "items": encoded_items,
-                "recognition_dispatch": recognition_dispatch,
+                "recognition_dispatch": result.recognition_dispatch,
             },
         )
 
