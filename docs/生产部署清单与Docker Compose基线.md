@@ -5,6 +5,7 @@
 本文档为第一阶段提供最小可运行的部署基线，对应 `deploy/docker-compose.yml`、`deploy/Dockerfile.api`、`deploy/Dockerfile.web` 和根目录 `.env.example`。本地开发环境建议改用根目录 `.env.development.example` 复制为 `.env`。
 
 根目录 `.env` 也是当前仓库统一的运行配置文件：后端 `uv run python -m trms_backend`、worker 和 `web` 前端开发/构建流程都会默认读取这同一份文件；若 shell 中显式传入同名环境变量，则以显式环境变量为准。
+当前 `deploy/docker-compose.yml` 中的 `migrate`、`api`、`worker` 也会通过 `env_file` 继承同一份运行环境文件；默认路径是仓库根目录 `.env`，若需要改用其他文件，必须同时覆盖 Compose CLI 的 `--env-file` 与 `TRMS_RUNTIME_ENV_FILE`。
 
 ## 当前范围
 
@@ -79,6 +80,7 @@ cp .env.example .env
 补充约束：
 
 - 脚本默认读取仓库根目录 `.env` 与 `deploy/docker-compose.yml`
+- 脚本会同时把该 `.env` 路径传给 Compose 的 `--env-file` 与后端容器 `env_file`，避免容器继续沿用错误或过期的环境文件
 - 脚本会校验 `TRMS_ENV=production`，避免误把开发配置当成生产基线执行
 - 若需覆盖路径，可设置 `TRMS_PROD_ENV_FILE` 或 `TRMS_PROD_COMPOSE_FILE`
 - `start` 不会主动重建镜像；服务器上执行 `git pull` 后，应优先使用 `./scripts/trms-prod.sh deploy`
@@ -156,7 +158,8 @@ docker compose --env-file .env -f deploy/docker-compose.yml logs -f minio
 4. 当前 Compose 基线默认使用 S3 兼容对象存储，并指向内部 `minio:9000`；若改为 `TRMS_STORAGE_BACKEND=local`，Compose 已会把 `MATERIAL_STORAGE_DIR` 透传给 `migrate`、`api`、`worker`，并将宿主机同一路径 bind mount 到 `api` 与 `worker` 容器内，例如 `MATERIAL_STORAGE_DIR=/srv/trms/materials` 时，宿主机 `/srv/trms/materials` 就是材料与导出产物的持久化目录。
 5. 若需要邮箱验证码、成员邮箱绑定验证码或邮件处理回执，除了在 `.env` 中配置 `TRMS_SMTP_*` 外，还必须让 `api` / `worker` 容器实际继承这些变量；当前仓库基线已透传这些环境变量，更新后需重新 `build/deploy` 才会生效。
 6. 若需要 worker 启用 IMAP 邮箱轮询，除了在 `.env` 中配置 `TRMS_IMAP_*` 外，还必须让应用容器实际继承这些变量；当前仓库基线已透传这些环境变量，更新后需重新 `build/deploy` 才会生效。
-7. 当前导出下载仍经后端接口鉴权读取，不暴露长期公开对象 URL。
+7. 当前基线不再用手工白名单枚举后端运行时环境变量；`TRMS_PUBLIC_WEB_BASE_URL`、`TRMS_TELEGRAM_BOT_TOKEN`、`TRMS_TELEGRAM_WEBHOOK_SECRET` 以及后续新增的后端配置项，都会随同运行环境文件一起进入 `migrate`、`api`、`worker` 容器。
+8. 当前导出下载仍经后端接口鉴权读取，不暴露长期公开对象 URL。
 
 ## 初始管理员创建
 

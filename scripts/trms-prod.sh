@@ -18,6 +18,15 @@ have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+abspath() {
+  local path="$1"
+  if [[ "$path" == /* ]]; then
+    printf '%s\n' "$path"
+    return
+  fi
+  printf '%s\n' "$ROOT_DIR/${path#./}"
+}
+
 usage() {
   cat <<'EOF'
 用法：
@@ -39,7 +48,9 @@ EOF
 }
 
 compose() {
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  local resolved_env_file=""
+  resolved_env_file="$(abspath "$ENV_FILE")"
+  TRMS_RUNTIME_ENV_FILE="$resolved_env_file" docker compose --env-file "$resolved_env_file" -f "$COMPOSE_FILE" "$@"
 }
 
 trim() {

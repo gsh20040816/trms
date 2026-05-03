@@ -23,6 +23,7 @@ cp .env.development.example .env
 - `uv run python -m trms_backend`、`uv run python -m trms_backend worker` 会默认读取根目录 `.env`；
 - `cd web && npm run dev`、`npm run build` 会从仓库根目录而不是 `web/` 子目录读取 `.env` 中的 `TRMS_WEB_*` 与 `VITE_*` 变量；
 - `docker compose --env-file .env -f deploy/docker-compose.yml ...` 使用同一份根目录 `.env`；
+- `deploy/docker-compose.yml` 中的 `migrate`、`api`、`worker` 也会默认通过 `env_file` 继承这同一份根目录 `.env`；若需要覆盖，必须同时覆盖 Compose CLI 的 `--env-file` 与 `TRMS_RUNTIME_ENV_FILE`；
 - 若 shell 中显式传入同名环境变量，则显式环境变量优先于 `.env`。
 
 生产环境若沿用仓库基线，推荐直接使用：
@@ -217,7 +218,7 @@ uv run python -m trms_backend --reload
 - 开发和测试环境默认使用 `local`，并从 `MATERIAL_STORAGE_DIR` 读取本地根目录。
 - 单个上传材料默认大小上限为 64MiB；后端上传校验、CLI 本地预检和前端上传预检共用同一阈值。
 - `TRMS_ENV=production` 时必须显式配置 `TRMS_STORAGE_BACKEND`；当前支持 `local` 和 `s3`，其中 `local` 适合单机部署，`s3` 更适合容器化和多实例部署。
-- 当前 `deploy/docker-compose.yml` 已把 `MATERIAL_STORAGE_DIR` 透传给 `migrate`、`api`、`worker`；当配置 `TRMS_STORAGE_BACKEND=local` 时，`api` 与 `worker` 会把宿主机 `MATERIAL_STORAGE_DIR` bind mount 到容器内同一路径，例如 `MATERIAL_STORAGE_DIR=/srv/trms/materials` 时，宿主机 `/srv/trms/materials` 会成为原始材料与导出产物的持久化目录。
+- 当前 `deploy/docker-compose.yml` 中 `migrate`、`api`、`worker` 会统一通过 `env_file` 继承运行环境文件，并在 `TRMS_STORAGE_BACKEND=local` 时把宿主机 `MATERIAL_STORAGE_DIR` bind mount 到容器内同一路径，例如 `MATERIAL_STORAGE_DIR=/srv/trms/materials` 时，宿主机 `/srv/trms/materials` 会成为原始材料与导出产物的持久化目录。
 - `TRMS_STORAGE_S3_ENDPOINT`、`TRMS_STORAGE_S3_BUCKET`、`TRMS_STORAGE_S3_ACCESS_KEY_ID`、`TRMS_STORAGE_S3_SECRET_ACCESS_KEY` 为 `s3` 后端必填项；`TRMS_STORAGE_S3_REGION` 和 `TRMS_STORAGE_S3_KEY_PREFIX` 为可选项。
 - 对象存储凭据只允许通过后端环境变量或密钥管理注入，不入库、不返回前端，也不应写入日志。
 - 当前导出产物下载继续走后端接口读取存储内容，不暴露长期公开 URL；更细粒度的 bearer 下载鉴权仍待后续权限任务收口。

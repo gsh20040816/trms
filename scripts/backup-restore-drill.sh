@@ -45,7 +45,7 @@ have_cmd() {
 }
 
 compose() {
-  docker compose \
+  TRMS_RUNTIME_ENV_FILE="$ENV_FILE" docker compose \
     --project-name "$PROJECT_NAME" \
     --env-file "$ENV_FILE" \
     -f "$COMPOSE_FILE" \

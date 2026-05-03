@@ -1,5 +1,47 @@
 # WORKLOG
 
+## 2026-05-04 05:35 - Eliminate Compose backend env passthrough drift by inheriting the runtime env file directly
+
+### 完成内容
+- 完成任务“修复生产 Compose 通过手工白名单透传环境变量导致持续漏传的问题”。
+- 已将后端容器环境来源从“手工枚举白名单”改为“统一继承运行环境文件”：
+  - [deploy/docker-compose.yml](/home/gsh/workspace/TRMS/deploy/docker-compose.yml)
+  - 新增共享锚点 `x-backend-runtime-env`；
+  - `migrate`、`api`、`worker` 现在统一通过 `env_file` 继承 `TRMS_RUNTIME_ENV_FILE` 指向的 env 文件，默认回退到仓库根目录 `.env`；
+  - 不再在 Compose 中手工枚举 `TRMS_*`、`DATABASE_URL`、`MATERIAL_STORAGE_DIR`、`TZ` 等后端运行时变量。
+- 已同步修正所有依赖 Compose 的脚本，让“Compose CLI 变量替换来源”和“容器内 env_file 来源”始终指向同一份文件：
+  - [scripts/trms-prod.sh](/home/gsh/workspace/TRMS/scripts/trms-prod.sh)
+  - [scripts/verify.sh](/home/gsh/workspace/TRMS/scripts/verify.sh)
+  - [scripts/backup-restore-drill.sh](/home/gsh/workspace/TRMS/scripts/backup-restore-drill.sh)
+  - 这些脚本现在都会显式传入 `TRMS_RUNTIME_ENV_FILE=<实际 env 文件路径>`，避免 Compose `--env-file` 与容器 `env_file` 分离后读到不同配置。
+- 已同步更新文档与任务记录：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/%E7%94%9F%E4%BA%A7%E9%83%A8%E7%BD%B2%E6%B8%85%E5%8D%95%E4%B8%8EDocker%20Compose%E5%9F%BA%E7%BA%BF.md)
+  - [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)
+  - 文档现明确说明：后端容器默认继承根目录 `.env`；若要改用其他 env 文件，必须同时覆盖 Compose CLI 的 `--env-file` 与 `TRMS_RUNTIME_ENV_FILE`。
+
+### 根因
+- 之前的 `deploy/docker-compose.yml` 继续靠手工白名单把后端运行时配置一项项写进 `migrate`、`api`、`worker` 的 `environment`。
+- 这种做法的根本问题不是“偶尔漏了某几个变量”，而是每次 `runtime_config.py` 新增配置项时，都需要人工同步多处 Compose 白名单；一旦漏改，就会出现：
+  - `.env` 明明已经配置；
+  - Compose CLI 变量替换也能看到值；
+  - 但容器内应用实际拿不到对应环境变量。
+- 本次远端排查已经验证了这一类退化：
+  - `.env` 中存在 `TRMS_PUBLIC_WEB_BASE_URL`、`TRMS_TELEGRAM_BOT_TOKEN`、`TRMS_TELEGRAM_WEBHOOK_SECRET`；
+  - 但 `api` 容器内缺失这些变量；
+  - 导致 Telegram `/bind` 链接回退为 `http://127.0.0.1:9876/...`，并且 webhook 处理器无法启用。
+
+### 风险与影响面
+- 本轮改动影响 `migrate`、`api`、`worker` 三个容器的环境注入方式，但不改变运行时配置解析逻辑本身。
+- 任何自定义 Compose 调用若只改 `--env-file`、却不传 `TRMS_RUNTIME_ENV_FILE`，容器会继续回退读取默认 `../.env`；因此相关脚本已一并修正。
+- 部署侧仍需重新 `build/deploy`，旧容器不会自动切换到新的环境注入机制。
+
+### 验证结果
+- 已运行 `./scripts/verify.sh`：
+  - Shell 语法检查通过；
+  - Docker Compose 配置检查通过；
+  - 其余仓库级验证结果见本轮 `./scripts/verify.sh` 实际输出。
+
 ## 2026-05-04 04:30 - Pass remaining IMAP environment variables into production Compose containers
 
 ### 完成内容

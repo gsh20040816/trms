@@ -378,6 +378,8 @@ run_node_script_check() {
 }
 
 run_deployment_checks() {
+  local env_file="$ROOT_DIR/.env.example"
+
   if [[ ! -f deploy/docker-compose.yml || ! -f .env.example ]]; then
     return
   fi
@@ -388,7 +390,8 @@ run_deployment_checks() {
   fi
 
   log "运行 Docker Compose 配置检查"
-  docker compose --env-file .env.example -f deploy/docker-compose.yml config >/dev/null
+  TRMS_RUNTIME_ENV_FILE="$env_file" \
+    docker compose --env-file "$env_file" -f deploy/docker-compose.yml config >/dev/null
 }
 
 run_rust_checks() {
