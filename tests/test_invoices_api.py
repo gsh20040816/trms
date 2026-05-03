@@ -27,17 +27,6 @@ from test_tasks_api import (
     valid_task_payload,
 )
 
-AIRPORT_CODE_FIELD_GROUPS = [
-    ["departure_airport_code", "arrival_airport_code"],
-    [
-        "departure_airport_code",
-        "arrival_airport_code",
-        "return_departure_airport_code",
-        "return_arrival_airport_code",
-    ],
-]
-
-
 def make_client(tmp_path):
     runtime_config = load_runtime_config(
         environment="test",
@@ -313,13 +302,11 @@ def test_create_invoice_and_pass_basic_validations(tmp_path):
     assert airfare_cabin_validation["evidence"] == {
         "expense_type": "railway",
         "invoice_material_id": material_id,
-        "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
-        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
-        "requires_cabin_proof": False,
-        "itinerary_material_ids": [],
+        "required_material_type": "order_screenshot",
+        "requires_order_screenshot": False,
         "order_screenshot_material_ids": [],
-        "recognized_cabin_materials": [],
-        "recognized_airport_code_materials": [],
+        "airfare_required_field_checks": [],
+        "missing_required_fields": [],
     }
     local_transport_validation = validation_by_code(
         body, LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE
@@ -859,7 +846,9 @@ def test_create_registration_invoice_fails_when_competition_notice_is_missing(tm
     }
 
 
-def test_create_airfare_invoice_fails_when_itinerary_and_cabin_proof_are_missing(tmp_path):
+def test_create_airfare_invoice_fails_when_order_screenshot_is_missing_and_invoice_key_fields_are_incomplete(
+    tmp_path,
+):
     client = make_client(tmp_path)
     _, material_id = create_airfare_material(client)
 
@@ -877,30 +866,28 @@ def test_create_airfare_invoice_fails_when_itinerary_and_cabin_proof_are_missing
         response.json(),
         AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
     )
-    assert itinerary_validation["status"] == "failed"
-    assert itinerary_validation["message"] == "航空费用缺少行程单"
+    assert itinerary_validation["status"] == "not_applicable"
+    assert itinerary_validation["message"] == "当前航空费用不再单独要求行程单"
     assert itinerary_validation["evidence"] == {
         "expense_type": "airfare",
         "invoice_material_id": material_id,
         "required_material_type": "itinerary",
-        "requires_itinerary": True,
+        "requires_itinerary": False,
         "invoice_material_present": True,
         "itinerary_material_ids": [],
     }
     cabin_validation = validation_by_code(response.json(), AIRFARE_CABIN_PROOF_RULE_CODE)
     assert cabin_validation["status"] == "failed"
-    assert cabin_validation["message"] == "航空费用缺少舱位信息，且未关联订单截图"
-    assert cabin_validation["evidence"] == {
-        "expense_type": "airfare",
-        "invoice_material_id": material_id,
-        "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
-        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
-        "requires_cabin_proof": True,
-        "itinerary_material_ids": [],
-        "order_screenshot_material_ids": [],
-        "recognized_cabin_materials": [],
-        "recognized_airport_code_materials": [],
-    }
+    assert cabin_validation["message"] == "航空费用发票缺少乘客、航班号、日期、舱位信息，需补订单截图"
+    assert cabin_validation["evidence"]["required_material_type"] == "order_screenshot"
+    assert cabin_validation["evidence"]["requires_order_screenshot"] is True
+    assert cabin_validation["evidence"]["order_screenshot_material_ids"] == []
+    assert cabin_validation["evidence"]["missing_required_fields"] == [
+        "passenger",
+        "flight_number",
+        "date",
+        "cabin",
+    ]
 
 
 def test_create_local_transport_invoice_marks_pending_when_rideshare_cannot_be_determined(
@@ -1233,7 +1220,59 @@ def test_attach_competition_notice_revalidates_registration_invoice_to_pass(tmp_
     }
 
 
-def test_attach_itinerary_with_cabin_info_revalidates_airfare_invoice_to_pass(tmp_path):
+def test_create_airfare_invoice_skips_order_screenshot_when_invoice_has_required_fields(tmp_path):
+    client = make_client(tmp_path)
+    _, material_id = create_airfare_material(client)
+    set_recognition_result(
+        client,
+        material_id,
+        document_type="invoice",
+        recognized_fields={
+            "passenger_name": {
+                "value": "张三",
+                "source": "ai",
+                "confidence": 0.97,
+                "status": "recognized",
+            },
+            "flight_number": {
+                "value": "MU2451",
+                "source": "ai",
+                "confidence": 0.97,
+                "status": "recognized",
+            },
+            "airfare_travel_date": {
+                "value": "2026-11-04",
+                "source": "ai",
+                "confidence": 0.97,
+                "status": "recognized",
+            },
+            "cabin_class": {
+                "value": "Economy",
+                "source": "ai",
+                "confidence": 0.97,
+                "status": "recognized",
+            },
+        },
+    )
+
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload()
+        | {
+            "seller_name": "中国国航",
+            "expense_type": "airfare",
+        },
+    )
+
+    assert response.status_code == 201
+    cabin_validation = validation_by_code(response.json(), AIRFARE_CABIN_PROOF_RULE_CODE)
+    assert cabin_validation["status"] == "passed"
+    assert cabin_validation["message"] == "航空费用发票已具备乘客、航班号、日期和舱位信息，无需补充订单截图"
+    assert cabin_validation["evidence"]["missing_required_fields"] == []
+    assert cabin_validation["evidence"]["order_screenshot_material_ids"] == []
+
+
+def test_attach_order_screenshot_revalidates_airfare_invoice_to_pass(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_airfare_material(client)
     invoice_response = client.post(
@@ -1245,29 +1284,16 @@ def test_attach_itinerary_with_cabin_info_revalidates_airfare_invoice_to_pass(tm
         },
     )
     invoice_id = invoice_response.json()["invoice"]["id"]
-    itinerary_material_id = upload_supporting_material(
+    order_screenshot_material_id = upload_supporting_material(
         client,
         task_id,
-        material_type="itinerary",
-        filename="itinerary.pdf",
-        content_type="application/pdf",
-    )
-    recognition_task_id = set_recognition_result(
-        client,
-        itinerary_material_id,
-        document_type="itinerary",
-        recognized_fields={
-            "cabin_class": {
-                "value": "Economy",
-                "source": "ai",
-                "confidence": 0.97,
-                "status": "recognized",
-            }
-        },
+        material_type="order_screenshot",
+        filename="order.png",
+        content_type="image/png",
     )
 
     attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{itinerary_material_id}",
+        f"/api/invoices/{invoice_id}/supporting-materials/{order_screenshot_material_id}",
         headers=admin_auth_headers(client),
     )
 
@@ -1281,15 +1307,15 @@ def test_attach_itinerary_with_cabin_info_revalidates_airfare_invoice_to_pass(tm
         for item in validations_response.json()["items"]
         if item["rule_code"] == AIRFARE_ITINERARY_REQUIRED_RULE_CODE
     )
-    assert itinerary_validation["status"] == "passed"
-    assert itinerary_validation["message"] == "航空费用已关联行程单"
+    assert itinerary_validation["status"] == "not_applicable"
+    assert itinerary_validation["message"] == "当前航空费用不再单独要求行程单"
     assert itinerary_validation["evidence"] == {
         "expense_type": "airfare",
         "invoice_material_id": material_id,
         "required_material_type": "itinerary",
-        "requires_itinerary": True,
+        "requires_itinerary": False,
         "invoice_material_present": True,
-        "itinerary_material_ids": [itinerary_material_id],
+        "itinerary_material_ids": [],
     }
     cabin_validation = next(
         item
@@ -1297,90 +1323,11 @@ def test_attach_itinerary_with_cabin_info_revalidates_airfare_invoice_to_pass(tm
         if item["rule_code"] == AIRFARE_CABIN_PROOF_RULE_CODE
     )
     assert cabin_validation["status"] == "passed"
-    assert cabin_validation["message"] == "航空费用已具备舱位信息"
-    assert cabin_validation["evidence"] == {
-        "expense_type": "airfare",
-        "invoice_material_id": material_id,
-        "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
-        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
-        "requires_cabin_proof": True,
-        "itinerary_material_ids": [itinerary_material_id],
-        "order_screenshot_material_ids": [],
-        "recognized_cabin_materials": [
-            {
-                "material_id": itinerary_material_id,
-                "material_type": "itinerary",
-                "field_name": "cabin_class",
-                "field_value": "Economy",
-                "recognition_task_id": recognition_task_id,
-                "recognition_task_status": "succeeded",
-            }
-        ],
-        "recognized_airport_code_materials": [],
-    }
-
-
-def test_attach_order_screenshot_marks_airfare_cabin_validation_pending_when_cabin_missing(
-    tmp_path,
-):
-    client = make_client(tmp_path)
-    task_id, material_id = create_airfare_material(client)
-    invoice_response = client.post(
-        f"/api/materials/{material_id}/invoice",
-        json=valid_invoice_payload()
-        | {
-            "seller_name": "海南航空",
-            "expense_type": "airfare",
-        },
-    )
-    invoice_id = invoice_response.json()["invoice"]["id"]
-    itinerary_material_id = upload_supporting_material(
-        client,
-        task_id,
-        material_type="itinerary",
-        filename="itinerary.pdf",
-        content_type="application/pdf",
-    )
-    order_screenshot_material_id = upload_supporting_material(
-        client,
-        task_id,
-        material_type="order_screenshot",
-        filename="order.png",
-        content_type="image/png",
-    )
-    client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{itinerary_material_id}",
-        headers=admin_auth_headers(client),
-    )
-
-    attach_response = client.put(
-        f"/api/invoices/{invoice_id}/supporting-materials/{order_screenshot_material_id}",
-        headers=admin_auth_headers(client),
-    )
-
-    assert attach_response.status_code == 200
-
-    validations_response = client.get(f"/api/invoices/{invoice_id}/validations")
-
-    assert validations_response.status_code == 200
-    cabin_validation = next(
-        item
-        for item in validations_response.json()["items"]
-        if item["rule_code"] == AIRFARE_CABIN_PROOF_RULE_CODE
-    )
-    assert cabin_validation["status"] == "pending"
-    assert cabin_validation["message"] == "航空费用未识别到舱位信息，需结合订单截图人工确认"
-    assert cabin_validation["evidence"] == {
-        "expense_type": "airfare",
-        "invoice_material_id": material_id,
-        "cabin_field_names": ["cabin_class", "seat_class", "cabin"],
-        "airport_code_field_groups": AIRPORT_CODE_FIELD_GROUPS,
-        "requires_cabin_proof": True,
-        "itinerary_material_ids": [itinerary_material_id],
-        "order_screenshot_material_ids": [order_screenshot_material_id],
-        "recognized_cabin_materials": [],
-        "recognized_airport_code_materials": [],
-    }
+    assert cabin_validation["message"] == "航空费用发票关键信息不完整，已关联订单截图"
+    assert cabin_validation["evidence"]["required_material_type"] == "order_screenshot"
+    assert cabin_validation["evidence"]["order_screenshot_material_ids"] == [
+        order_screenshot_material_id
+    ]
 
 
 def test_attach_payment_record_fails_amount_match_when_total_differs_from_invoice(tmp_path):

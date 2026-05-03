@@ -254,6 +254,9 @@ function pickItemByMaterialId(summary: TaskMemberWorkbenchSummary, materialId: s
 function collectAbnormalReasons(item: TaskMemberWorkbenchItem) {
   const reasons: string[] = [];
   const recognitionStatus = item.recognition?.status ?? item.material.recognition_status;
+  const coveredMissingMaterialRuleCodes = new Set(
+    item.missing_materials.map((missingMaterial) => missingMaterial.source_rule_code),
+  );
   if (recognitionStatus === "pending") {
     reasons.push("系统正在处理该材料识别；识别完成前只展示基础状态。");
   }
@@ -271,6 +274,9 @@ function collectAbnormalReasons(item: TaskMemberWorkbenchItem) {
     reasons.push("识别结果仍有待确认字段，请先核对当前材料的关键线索。");
   }
   for (const validation of item.validations) {
+    if (coveredMissingMaterialRuleCodes.has(validation.rule_code)) {
+      continue;
+    }
     if (validation.status === "failed" || validation.status === "pending") {
       reasons.push(`${formatValidationRule(validation.rule_code)}：${validation.message}`);
     }

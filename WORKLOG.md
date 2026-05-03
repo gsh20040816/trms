@@ -1,5 +1,64 @@
 # WORKLOG
 
+## 2026-05-03 21:05 - Dedupe missing-material prompts and switch airfare supporting rule to order screenshots
+
+### 完成内容
+- 完成任务“收口成员侧缺失材料重复提示，并改造航空交通附加材料校验”。
+- 已收口成员侧缺失材料重复提示：
+  - [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  - 当同一条缺失材料已经进入 `missing_materials` 列表时，成员侧“当前状态/工作台异常原因”不再同时重复渲染对应 `validation` 文案。
+- 已改造航空交通附加材料规则：
+  - [src/trms_backend/domain/invoice_validation.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_validation.py)
+  - 航空交通不再把“缺少行程单”作为阻塞缺失材料；
+  - 现改为检查发票识别结果中是否存在乘客、航班号、日期、舱位四类关键信息；
+  - 若四类信息齐全，则无需补订单截图；
+  - 若任一缺失，则要求补 `order_screenshot`；一旦已关联订单截图，即视为该附加材料要求满足。
+- 已把新规则接入 LLM 提示词与缺失材料聚合：
+  - [src/trms_backend/application/recognition_llm.py](/home/gsh/workspace/TRMS/src/trms_backend/application/recognition_llm.py)
+  - [src/trms_backend/domain/missing_materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/missing_materials.py)
+  - [web/src/lib/ui-text.ts](/home/gsh/workspace/TRMS/web/src/lib/ui-text.ts)
+  - [web/src/app/member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx)
+  - LLM 发票抽取 schema 新增 `passenger_name`、`flight_number`、`airfare_travel_date`，并在提示词中明确“仅在显式可见时提取”；
+  - 缺失材料导出、成员提示和工作台标签现统一落为“订单截图”而不是“行程单”。
+- 已补/改回归测试：
+  - [tests/test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)
+  - [tests/test_invoice_validation_rules.py](/home/gsh/workspace/TRMS/tests/test_invoice_validation_rules.py)
+  - [tests/test_missing_materials.py](/home/gsh/workspace/TRMS/tests/test_missing_materials.py)
+  - [tests/test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)
+  - [tests/test_task_readiness_api.py](/home/gsh/workspace/TRMS/tests/test_task_readiness_api.py)
+  - [tests/test_recognition_llm.py](/home/gsh/workspace/TRMS/tests/test_recognition_llm.py)
+  - [web/src/app/member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+
+### 根因
+- 成员侧页面同时把“失败校验文案”和“缺失材料汇总文案”都拼进异常原因列表；而缺失材料本来就是从一部分失败校验衍生出来的，因此同一问题被展示了两次。
+- 航空交通旧规则把“行程单/机场代码/舱位”混在一起判断，实际不符合新的产品口径：现在需要直接判断发票是否已包含乘客、航班号、日期、舱位，缺任一项时才要求补订单截图。
+
+### 风险与影响面
+- 本轮调整会改变航空交通相关的缺失材料导出、工作台提示和任务就绪度呈现口径；旧测试中所有“缺少行程单”的航空断言已同步改为“缺少订单截图”或“不再适用”。
+- 新规则依赖 LLM 是否正确识别出三类新增字段和既有舱位字段；若原始票面模糊，系统会更倾向于要求补订单截图，这是保守且符合当前业务要求的结果。
+- `./scripts/verify.sh` 中前端 lint 仍存在 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_invoices_api.py tests/test_invoice_validation_rules.py tests/test_missing_materials.py tests/test_exports_api.py tests/test_recognition_llm.py`
+  - `131/131` 通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-invoice-detail.test.tsx`
+  - `8/8` 通过。
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx src/app/member-material-status.test.tsx`
+  - `14/14` 通过。
+- 已通过定向任务就绪度测试：
+  - `uv run pytest tests/test_task_readiness_api.py -k supporting_material_and_missing_material_blockers`
+  - `1/1` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `627/627` 通过；
+  - Web `lint/test/build` 通过，其中 lint 仍只有既有两条 warning；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 20:43 - Allow deleting misclassified materials from member invoice detail route
 
 ### 完成内容

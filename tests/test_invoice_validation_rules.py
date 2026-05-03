@@ -372,19 +372,9 @@ def test_competition_notice_rule_covers_passed_and_failed_paths(
     assert result.status is expected_status
 
 
-@pytest.mark.parametrize(
-    ("supporting_materials", "expected_status"),
-    [
-        ([], ValidationStatus.FAILED),
-        (
-            [make_material("itinerary-1", material_type=MaterialType.ITINERARY)],
-            ValidationStatus.PASSED,
-        ),
-    ],
-)
-def test_airfare_itinerary_rule_covers_passed_and_failed_paths(
+@pytest.mark.parametrize("supporting_materials", [[], [make_material("itinerary-1", material_type=MaterialType.ITINERARY)]])
+def test_airfare_itinerary_rule_is_not_applicable_under_new_policy(
     supporting_materials: list[MaterialRecord],
-    expected_status: ValidationStatus,
 ):
     result = validate_airfare_itinerary_requirement(
         make_invoice(expense_type=ExpenseType.AIRFARE),
@@ -392,10 +382,10 @@ def test_airfare_itinerary_rule_covers_passed_and_failed_paths(
     )
 
     assert result.rule_code == AIRFARE_ITINERARY_REQUIRED_RULE_CODE
-    assert result.status is expected_status
+    assert result.status is ValidationStatus.NOT_APPLICABLE
 
 
-def test_airfare_itinerary_rule_passes_when_invoice_has_airport_codes():
+def test_airfare_itinerary_rule_no_longer_uses_airport_codes_as_requirement():
     result = validate_airfare_itinerary_requirement(
         make_invoice(expense_type=ExpenseType.AIRFARE),
         [],
@@ -411,8 +401,8 @@ def test_airfare_itinerary_rule_passes_when_invoice_has_airport_codes():
     )
 
     assert result.rule_code == AIRFARE_ITINERARY_REQUIRED_RULE_CODE
-    assert result.status is ValidationStatus.PASSED
-    assert result.message == "航空费用已具备往返机场代码，无需补充行程单"
+    assert result.status is ValidationStatus.NOT_APPLICABLE
+    assert result.message == "当前航空费用不再单独要求行程单"
 
 
 @pytest.mark.parametrize(
@@ -421,7 +411,7 @@ def test_airfare_itinerary_rule_passes_when_invoice_has_airport_codes():
         (
             [make_material("order-1", material_type=MaterialType.ORDER_SCREENSHOT, content_type="image/png")],
             {},
-            ValidationStatus.PENDING,
+            ValidationStatus.PASSED,
         ),
         (
             [],
@@ -434,10 +424,10 @@ def test_airfare_itinerary_rule_passes_when_invoice_has_airport_codes():
                 "material-invoice": make_recognition(
                     "material-invoice",
                     recognized_fields={
-                        "departure_airport_code": "SHA",
-                        "arrival_airport_code": "WUH",
-                        "return_departure_airport_code": "WUH",
-                        "return_arrival_airport_code": "SHA",
+                        "passenger_name": "张三",
+                        "flight_number": "MU2451",
+                        "airfare_travel_date": "2026-11-04",
+                        "cabin_class": "经济舱",
                     },
                 )
             },
@@ -446,11 +436,11 @@ def test_airfare_itinerary_rule_passes_when_invoice_has_airport_codes():
         (
             [make_material("itinerary-1", material_type=MaterialType.ITINERARY)],
             {"itinerary-1": make_recognition("itinerary-1", recognized_fields={"cabin_class": "经济舱"})},
-            ValidationStatus.PASSED,
+            ValidationStatus.FAILED,
         ),
     ],
 )
-def test_airfare_cabin_rule_covers_passed_failed_pending_paths(
+def test_airfare_order_screenshot_rule_covers_passed_failed_paths(
     supporting_materials: list[MaterialRecord],
     supporting_material_recognitions: dict[str, RecognitionTaskRecord],
     expected_status: ValidationStatus,

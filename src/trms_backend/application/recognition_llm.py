@@ -23,7 +23,7 @@ from trms_backend.domain.recognitions import (
 from trms_backend.runtime_config import LLMProviderConfig
 
 LOW_CONFIDENCE_THRESHOLD = 0.8
-PROMPT_VERSION = "trms-recognition-v6"
+PROMPT_VERSION = "trms-recognition-v7"
 _CONFIDENCE_TEXT_TO_FLOAT = {
     "high": 0.95,
     "medium": 0.7,
@@ -322,6 +322,9 @@ class RecognitionInvoiceExtractionOutput(BaseModel):
     expense_type: RecognitionExpenseTypeField | None = None
     trip_route: RecognitionTextField | None = None
     transport_mode: RecognitionTextField | None = None
+    passenger_name: RecognitionTextField | None = None
+    flight_number: RecognitionTextField | None = None
+    airfare_travel_date: RecognitionTextField | None = None
     cabin_class: RecognitionTextField | None = None
     departure_airport_code: RecognitionTextField | None = None
     arrival_airport_code: RecognitionTextField | None = None
@@ -918,6 +921,7 @@ def _build_extraction_chat_completions_payload(
             "If the document only shows a date but not a complete time, keep transaction_time absent instead of inventing a time.",
             "For RMB amounts, normalize yuan to integer cents and ignore currency symbols such as 元, ￥ and commas.",
             "When a selected-schema field is absent, omit it entirely or return null; never emit an empty object or a confidence-only placeholder.",
+            "For airfare invoices or reimbursement vouchers, extract passenger_name, flight_number, airfare_travel_date, and cabin_class when they are explicitly visible; use airfare_travel_date with YYYY-MM-DD when only the flight date is shown.",
             "For local_transport electronic invoices or e-tickets, set expense_type.value=local_transport and populate is_rideshare.value=true when that field is available in the selected schema.",
             "For local_transport electronic invoices, extract the invoice_number when it is visible; do not omit it just because the document is a platform-issued electronic ticket.",
             "For itinerary materials that describe local_transport trips, extract amount_cents and transaction_time whenever the trip record shows them, and keep expense_type.value=local_transport.",
@@ -944,6 +948,7 @@ def _build_extraction_chat_completions_payload(
                     "For amount_cents, convert RMB yuan to integer cents and ignore currency symbols or separators. "
                     "For transaction_time, use the clearest transaction or issue timestamp on the document; if only a date is present, leave the field absent. "
                     "When a selected-schema field is absent, omit it entirely or return null; never emit an empty object or a confidence-only placeholder. "
+                    "For airfare invoices or reimbursement vouchers, extract passenger_name, flight_number, airfare_travel_date, and cabin_class only when they are explicitly visible; when only a flight date is visible, encode airfare_travel_date as YYYY-MM-DD text. "
                     "For expense_type, choose only a TRMS enum value that is directly supported by the document evidence. "
                     "For local_transport electronic invoices or e-tickets, choose expense_type='local_transport' and populate is_rideshare=true when that field is available. "
                     "For local_transport electronic invoices, extract a visible invoice_number instead of omitting it as a platform ticket identifier. "

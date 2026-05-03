@@ -541,4 +541,55 @@ describe("MemberInvoiceDetailPage", () => {
       expect(router.state.location.search).toBe("?taskId=TASK-OPEN");
     });
   });
+
+  it("does not duplicate missing-material reasons in the current status list", async () => {
+    const summary = buildSummary();
+    summary.items[0]!.validations = [
+      {
+        id: "VAL-PAYMENT-001",
+        rule_code: "invoice_payment_record_required",
+        target_type: "invoice",
+        target_id: "INV-READY-001",
+        severity: "blocker",
+        status: "failed",
+        message: "发票金额达到阈值，缺少支付记录",
+        evidence: {},
+        created_at: "2026-04-28T10:10:00+08:00",
+      },
+    ];
+    summary.items[0]!.missing_materials = [
+      {
+        task_id: "TASK-OPEN",
+        member_id: "2250001",
+        invoice_id: "INV-READY-001",
+        invoice_number: "INV-READY-001",
+        expense_type: "railway",
+        required_material_type: "payment_record",
+        source_rule_code: "invoice_payment_record_required",
+        message: "发票金额达到阈值，缺少支付记录",
+        evidence: {},
+        detected_at: "2026-04-28T10:10:00+08:00",
+      },
+    ];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(summary));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    renderDetail();
+
+    const currentStatusList = await screen.findByLabelText("单张发票待处理事项");
+    expect(within(currentStatusList).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(currentStatusList).getByText("支付记录：发票金额达到阈值，缺少支付记录")).toBeInTheDocument();
+  });
 });

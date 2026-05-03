@@ -133,6 +133,7 @@ const VALIDATION_RULE_LABELS: Record<string, string> = {
   invoice_payment_record_required: "缺少支付记录",
   invoice_competition_notice_required: "缺少比赛通知",
   invoice_airfare_itinerary_required: "缺少行程单",
+  invoice_airfare_cabin_proof_required: "缺少订单截图",
   invoice_local_transport_rideshare_trip_required: "缺少行程信息",
   invoice_duplicate_number: "疑似重复发票",
   invoice_amount_split_mismatch: "分摊金额需要核对",

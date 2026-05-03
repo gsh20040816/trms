@@ -445,6 +445,9 @@ function collectAbnormalReasons(item: WorkbenchInvoiceItem, task: ReimbursementT
   const memberSummaryMap = buildTaskMemberSummaryMap(task?.member_summaries);
   const recognitionStatus = getRecognitionStatus(item);
   const recognitionFailure = getRecognitionFailure(item);
+  const coveredMissingMaterialRuleCodes = new Set(
+    item.missingMaterials.map((missingMaterial) => missingMaterial.source_rule_code),
+  );
 
   if (recognitionStatus === "pending") {
     reasons.push("系统正在处理该材料识别；识别完成前，暂时还不能生成完整发票字段、分摊与确认上下文。");
@@ -457,6 +460,9 @@ function collectAbnormalReasons(item: WorkbenchInvoiceItem, task: ReimbursementT
   }
   for (const validation of item.validations) {
     if (MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code)) {
+      continue;
+    }
+    if (coveredMissingMaterialRuleCodes.has(validation.rule_code)) {
       continue;
     }
     if (validation.status === "failed" || validation.status === "pending") {
@@ -849,6 +855,9 @@ function buildInvoiceQueueStatusSummary(item: WorkbenchInvoiceItem) {
   const messages: string[] = [];
   const recognitionStatus = getRecognitionStatus(item);
   const isInvoiceMaterial = item.material.material_type === "invoice";
+  const coveredMissingMaterialRuleCodes = new Set(
+    item.missingMaterials.map((missingMaterial) => missingMaterial.source_rule_code),
+  );
 
   if (recognitionStatus === "pending") {
     messages.push(isInvoiceMaterial
@@ -870,6 +879,9 @@ function buildInvoiceQueueStatusSummary(item: WorkbenchInvoiceItem) {
   }
   for (const validation of item.validations) {
     if (MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code)) {
+      continue;
+    }
+    if (coveredMissingMaterialRuleCodes.has(validation.rule_code)) {
       continue;
     }
     if (validation.status === "failed" || validation.status === "pending") {

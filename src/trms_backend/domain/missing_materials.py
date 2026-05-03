@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from trms_backend.domain.invoice_validation import (
+    AIRFARE_CABIN_PROOF_RULE_CODE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE,
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
@@ -20,6 +21,7 @@ _MISSING_MATERIAL_RULE_TO_TYPE = {
     PAYMENT_RECORD_REQUIRED_RULE_CODE: MaterialType.PAYMENT_RECORD,
     COMPETITION_NOTICE_REQUIRED_RULE_CODE: MaterialType.COMPETITION_NOTICE,
     AIRFARE_ITINERARY_REQUIRED_RULE_CODE: MaterialType.ITINERARY,
+    AIRFARE_CABIN_PROOF_RULE_CODE: MaterialType.ORDER_SCREENSHOT,
     # The current domain model has no dedicated "trip information" material type,
     # so rideshare trip evidence is conservatively exported as itinerary-like input.
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE: MaterialType.ITINERARY,

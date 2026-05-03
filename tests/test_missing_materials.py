@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
 from trms_backend.domain.invoice_validation import (
-    AIRFARE_ITINERARY_REQUIRED_RULE_CODE,
+    AIRFARE_CABIN_PROOF_RULE_CODE,
     LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE,
     validate_competition_notice_requirement,
-    validate_airfare_itinerary_requirement,
+    validate_airfare_cabin_requirement,
     validate_payment_record_requirement,
 )
 from trms_backend.domain.invoices import (
@@ -240,7 +240,14 @@ def test_aggregate_task_missing_materials_includes_trip_information_requirements
             rideshare_material.id: rideshare_material,
         },
         validations_by_invoice_id={
-            airfare_invoice.id: [validate_airfare_itinerary_requirement(airfare_invoice, [])],
+            airfare_invoice.id: [
+                validate_airfare_cabin_requirement(
+                    airfare_invoice,
+                    recognition_task=None,
+                    supporting_materials=[],
+                    supporting_material_recognitions={},
+                )
+            ],
             rideshare_invoice.id: [rideshare_missing_trip],
         },
     )
@@ -249,6 +256,10 @@ def test_aggregate_task_missing_materials_includes_trip_information_requirements
         (item.source_rule_code, item.required_material_type.value, item.message)
         for item in missing_materials.items
     ] == [
-        (AIRFARE_ITINERARY_REQUIRED_RULE_CODE, "itinerary", "航空费用缺少行程单"),
+        (
+            AIRFARE_CABIN_PROOF_RULE_CODE,
+            "order_screenshot",
+            "航空费用发票缺少乘客、航班号、日期、舱位信息，需补订单截图",
+        ),
         (LOCAL_TRANSPORT_RIDESHARE_TRIP_RULE_CODE, "itinerary", "网约车费用缺少行程信息"),
     ]

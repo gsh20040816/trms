@@ -110,6 +110,7 @@ const MISSING_MATERIAL_RULE_TO_TYPE: Partial<Record<string, MaterialType>> = {
   invoice_payment_record_required: "payment_record",
   invoice_competition_notice_required: "competition_notice",
   invoice_airfare_itinerary_required: "itinerary",
+  invoice_airfare_cabin_proof_required: "order_screenshot",
   invoice_local_transport_rideshare_trip_required: "itinerary",
 };
 

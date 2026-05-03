@@ -408,7 +408,7 @@ def test_task_readiness_reports_supporting_material_and_missing_material_blocker
     body = response.json()
     assert body["counts"]["pending_supporting_material_linkage_count"] == 1
     assert body["counts"]["missing_material_count"] >= 1
-    assert body["counts"]["blocker_validation_count"] == 2
+    assert body["counts"]["blocker_validation_count"] == 0
     issues_by_kind = {item["kind"]: item for item in body["issues"]}
     assert issues_by_kind["supporting_material_linkage"]["count"] == 1
     assert issues_by_kind["supporting_material_linkage"]["invoice_ids"] == [
@@ -416,10 +416,7 @@ def test_task_readiness_reports_supporting_material_and_missing_material_blocker
         second_invoice_id,
     ]
     assert invoice_id in issues_by_kind["missing_materials"]["invoice_ids"]
-    assert issues_by_kind["validation_blocker"]["invoice_ids"] == [
-        invoice_id,
-        second_invoice_id,
-    ]
+    assert "validation_blocker" not in issues_by_kind
 
 
 def test_task_readiness_reports_confirmation_and_split_blockers(tmp_path):

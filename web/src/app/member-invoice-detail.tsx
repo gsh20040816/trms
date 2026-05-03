@@ -309,6 +309,9 @@ function summarizeSplitDrafts(drafts: SplitDraftRow[]) {
 function collectAbnormalReasons(item: TaskMemberWorkbenchItem) {
   const reasons: string[] = [];
   const recognitionStatus = item.recognition?.status ?? item.material.recognition_status;
+  const coveredMissingMaterialRuleCodes = new Set(
+    item.missing_materials.map((missingMaterial) => missingMaterial.source_rule_code),
+  );
   if (recognitionStatus === "pending") {
     reasons.push("系统正在处理该材料识别；识别完成前暂时不能形成完整发票上下文。");
   }
@@ -327,6 +330,9 @@ function collectAbnormalReasons(item: TaskMemberWorkbenchItem) {
   }
   for (const validation of item.validations) {
     if (MEMBER_HIDDEN_VALIDATION_RULE_CODES.has(validation.rule_code)) {
+      continue;
+    }
+    if (coveredMissingMaterialRuleCodes.has(validation.rule_code)) {
       continue;
     }
     if (validation.status === "failed" || validation.status === "pending") {

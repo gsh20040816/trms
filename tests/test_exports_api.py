@@ -654,9 +654,9 @@ def test_task_administrator_can_export_missing_materials_csv(tmp_path):
             "member_id": "2250003",
             "expense_type": "airfare",
             "invoice_number": "AIR-001",
-            "required_material_type": "itinerary",
-            "source_rule_code": "invoice_airfare_itinerary_required",
-            "message": "航空费用缺少行程单",
+            "required_material_type": "order_screenshot",
+            "source_rule_code": "invoice_airfare_cabin_proof_required",
+            "message": "航空费用发票缺少乘客、航班号、日期、舱位信息，需补订单截图",
         },
     ]
 
