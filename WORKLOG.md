@@ -1,5 +1,76 @@
 # WORKLOG
 
+## 2026-05-03 20:05 - Add stable task email submission keys
+
+### 完成内容
+- 完成任务“为任务补齐管理员可指定的稳定邮件提交标识”。
+- 已扩展任务领域模型、仓储和数据库结构：
+  - [src/trms_backend/domain/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py)
+  - [src/trms_backend/infrastructure/models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [alembic/versions/20260503_02_task_email_submission_key.py](/home/gsh/workspace/TRMS/alembic/versions/20260503_02_task_email_submission_key.py)
+  - 任务新增 `email_submission_key` 字段，用作成员邮件主题里的稳定提交标识；
+  - 新任务可显式指定该标识，数据库按唯一索引约束防止冲突；
+  - 旧任务迁移时会回填一个稳定兼容值，避免升级后邮件主题解析失效。
+- 已扩展任务创建/编辑 API 与冲突处理：
+  - [src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)
+  - 管理员创建或编辑草稿任务时可配置邮件提交标识；
+  - 若标识重复，接口返回 `409 task email submission key already exists: ...`；
+  - 若旧调用方未提供该字段，后端会生成带随机后缀的默认标识，避免打断既有调用链。
+- 已把格式化邮件主题解析切到“稳定标识优先，旧任务 ID 兼容”：
+  - [src/trms_backend/application/email_material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_material_submission.py)
+  - [src/trms_backend/main.py](/home/gsh/workspace/TRMS/src/trms_backend/main.py)
+  - 邮件主题中的 `task:<...>` 现在优先按 `email_submission_key` 查找任务；
+  - 若没有命中稳定标识，仍兼容按旧内部任务 ID 查找；
+  - 待归属材料会保留用户实际提交的主题标识，而不是被内部 UUID 覆盖。
+- 已扩展管理员前端创建/详情页：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - [web/src/app/admin-task-create.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.tsx)
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)
+  - 管理员创建任务时必须填写邮件提交标识；
+  - 草稿任务详情页支持查看和修改该标识；
+  - 摘要区会展示当前邮件提交标识，便于管理员对外发给成员。
+- 已补测试：
+  - [tests/test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py)
+  - [tests/test_email_materials_api.py](/home/gsh/workspace/TRMS/tests/test_email_materials_api.py)
+  - [tests/test_material_upload_integration.py](/home/gsh/workspace/TRMS/tests/test_material_upload_integration.py)
+  - [tests/test_material_submission_service.py](/home/gsh/workspace/TRMS/tests/test_material_submission_service.py)
+  - [tests/test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py)
+  - [web/src/app/admin-task-create.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-create.test.tsx)
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+
+### 根因
+- 现有格式化邮件提交流程把主题里的 `task:<...>` 直接当作系统内部任务 ID 使用。
+- 这会把内部 UUID 暴露给成员，既不稳定也不可读，且管理员无法为外部邮件渠道提供一个长期可用、便于口头传达或模板复用的任务标识。
+- 同时，任务模型里也没有任何“用户侧稳定邮件标识”的持久化字段和唯一性边界，因此问题不能只靠前端文案解决，必须从数据库、领域模型和邮件解析链路一起修正。
+
+### 风险与影响面
+- 本轮只处理“稳定邮件提交标识”的任务配置与解析，不包含：
+  - IMAP 轮询；
+  - 未绑定邮箱直接忽略；
+  - SMTP 自动回执。
+- 为避免打断现有测试夹具、脚本和旧客户端，本轮对后端保留了兼容行为：
+  - 若创建任务时未显式传 `email_submission_key`，后端会自动生成默认值；
+  - 邮件主题仍兼容旧内部任务 ID。
+- 迁移对旧任务的回填值主要用于兼容读取，不保证业务语义优雅；后续若管理员需要对外稳定传播该值，仍应在任务详情页改成更可读的标识。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py tests/test_web_bearer_request_identity_api.py tests/test_task_readiness_api.py tests/test_invoice_supporting_material_permissions_api.py tests/test_material_submission_service.py tests/test_overdue_confirmations_api.py tests/test_email_materials_api.py tests/test_material_upload_integration.py tests/test_database_migrations.py`
+  - `108/108` 通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-create.test.tsx src/app/admin-task-detail.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+  - `12/12` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `589/589` 通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error；
+  - `web` 测试 `124/124` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 17:32 - Add email verification bindings and trusted sender resolution
 
 ### 完成内容

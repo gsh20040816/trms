@@ -172,6 +172,7 @@ def create_app(
     )
     email_material_submission_service = EmailMaterialSubmissionService(
         material_submission_service,
+        task_repository,
         submission_identity_resolver=EmailSubmissionIdentityResolver(
             email_account_binding_repository
         ),

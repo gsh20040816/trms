@@ -26,6 +26,7 @@ type TaskCreateFormState = {
   competitionStartDate: string;
   competitionEndDate: string;
   deadline: string;
+  emailSubmissionKey: string;
   memberIds: string[];
   feeCategories: ExpenseType[];
   administratorIds: string[];
@@ -53,6 +54,7 @@ function buildInitialFormState(administratorId: string): TaskCreateFormState {
     competitionStartDate: "",
     competitionEndDate: "",
     deadline: "",
+    emailSubmissionKey: "",
     memberIds: [],
     feeCategories: [...DEFAULT_FEE_CATEGORIES],
     administratorIds: administratorId.trim().length > 0 ? [administratorId] : [],
@@ -71,6 +73,7 @@ function validateForm(formState: TaskCreateFormState): {
   payload: TaskCreateInput | null;
 } {
   const errors: ValidationErrorState = {};
+  const normalizedEmailSubmissionKey = formState.emailSubmissionKey.trim().toLowerCase();
 
   if (formState.competitionName.trim().length === 0) {
     errors.competitionName = "比赛名称不能为空。";
@@ -93,6 +96,13 @@ function validateForm(formState: TaskCreateFormState): {
   }
   if (formState.deadline.length === 0) {
     errors.deadline = "请选择提交截止时间。";
+  }
+  if (normalizedEmailSubmissionKey.length === 0) {
+    errors.emailSubmissionKey = "请填写邮件提交标识。";
+  } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedEmailSubmissionKey)) {
+    errors.emailSubmissionKey = "邮件提交标识只能包含小写字母、数字和单个连字符。";
+  } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(normalizedEmailSubmissionKey)) {
+    errors.emailSubmissionKey = "邮件提交标识不能直接使用 UUID。";
   }
 
   const normalizedMembers = formState.memberIds.map((memberId) => memberId.trim());
@@ -129,6 +139,7 @@ function validateForm(formState: TaskCreateFormState): {
       competition_start_date: formState.competitionStartDate,
       competition_end_date: formState.competitionEndDate,
       deadline: new Date(formState.deadline).toISOString(),
+      email_submission_key: normalizedEmailSubmissionKey,
       member_ids: normalizedMembers,
       fee_categories: formState.feeCategories,
       administrator_id: normalizedAdministrators[0] ?? "",
@@ -437,6 +448,21 @@ export function AdminTaskCreatePage() {
               helperText={validationErrors.deadline}
               fullWidth
               slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              label="邮件提交标识"
+              name="email-submission-key"
+              value={formState.emailSubmissionKey}
+              onChange={(event) => {
+                updateField("emailSubmissionKey", event.target.value);
+              }}
+              error={Boolean(validationErrors.emailSubmissionKey)}
+              helperText={
+                validationErrors.emailSubmissionKey
+                ?? "管理员给成员的稳定邮件主题标识，例如 wuhan 或 icpc-shanghai。"
+              }
+              placeholder="例如 icpc-shanghai"
+              fullWidth
             />
           </div>
         </SurfaceCard>

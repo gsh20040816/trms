@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from enum import StrEnum
+import re
 from threading import RLock
 from typing import Protocol
 from uuid import uuid4
@@ -35,10 +36,18 @@ class _TaskCreateBase(BaseModel):
     competition_start_date: date
     competition_end_date: date
     deadline: datetime
+    email_submission_key: str | None = Field(default=None, min_length=3, max_length=32)
     member_ids: list[str] = Field(min_length=1)
     fee_categories: list[str] = Field(min_length=1)
     administrator_id: str | None = None
     administrator_ids: list[str] | None = None
+
+    @field_validator("email_submission_key")
+    @classmethod
+    def normalize_email_submission_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_task_email_submission_key(value, field_name="email_submission_key")
 
     @field_validator("member_ids", "fee_categories")
     @classmethod
@@ -104,6 +113,7 @@ class TaskCreateInput(_TaskCreateBase):
 class TaskCreate(_TaskCreateBase):
     administrator_id: str = Field(min_length=1)
     administrator_ids: list[str] = Field(min_length=1)
+    email_submission_key: str = Field(default_factory=lambda: f"task-{uuid4().hex[:8]}")
     project_info: str = ""
     reimburser_info: str = ""
     invoice_title: str = Field(min_length=1)
@@ -116,6 +126,7 @@ class TaskUpdateInput(BaseModel):
     competition_start_date: date
     competition_end_date: date
     deadline: datetime
+    email_submission_key: str | None = Field(default=None, min_length=3, max_length=32)
     member_ids: list[str] = Field(min_length=1)
     fee_categories: list[str] = Field(min_length=1)
     administrator_id: str | None = None
@@ -137,6 +148,13 @@ class TaskUpdateInput(BaseModel):
         if not normalized:
             raise ValueError("value must not be blank")
         return normalized
+
+    @field_validator("email_submission_key")
+    @classmethod
+    def normalize_optional_email_submission_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_task_email_submission_key(value, field_name="email_submission_key")
 
     @field_validator("project_info", "reimburser_info")
     @classmethod
@@ -241,6 +259,12 @@ class TaskCompletionValidationError(ValueError):
         super().__init__("task cannot transition to completed before export completion is recorded")
 
 
+class TaskEmailSubmissionKeyConflictError(ValueError):
+    def __init__(self, email_submission_key: str) -> None:
+        self.email_submission_key = email_submission_key
+        super().__init__(f"task email submission key already exists: {email_submission_key}")
+
+
 class ReimbursementTask(BaseModel):
     id: str
     status: TaskStatus
@@ -249,6 +273,7 @@ class ReimbursementTask(BaseModel):
     competition_start_date: date
     competition_end_date: date
     deadline: datetime
+    email_submission_key: str | None = None
     member_ids: list[str]
     member_summaries: list["TaskMemberSummary"] = Field(default_factory=list)
     fee_categories: list[str]
@@ -315,6 +340,9 @@ class TaskRepository(Protocol):
     def get(self, task_id: str) -> ReimbursementTask | None:
         raise NotImplementedError
 
+    def get_by_email_submission_key(self, email_submission_key: str) -> ReimbursementTask | None:
+        raise NotImplementedError
+
     def list(self) -> list[ReimbursementTask]:
         raise NotImplementedError
 
@@ -356,10 +384,20 @@ def resolve_task_create(
         raise MissingTaskInvoiceConfigError(missing_fields)
 
     data = payload.model_dump(
-        exclude={"project_info", "reimburser_info", "invoice_title", "tax_number"},
+        exclude={
+            "project_info",
+            "reimburser_info",
+            "invoice_title",
+            "tax_number",
+            "email_submission_key",
+        },
     )
+    email_submission_key = payload.email_submission_key
+    if email_submission_key is None:
+        email_submission_key = _build_default_email_submission_key(payload.competition_name)
     return TaskCreate(
         **data,
+        email_submission_key=email_submission_key,
         project_info=(payload.project_info or "").strip(),
         reimburser_info=(payload.reimburser_info or "").strip(),
         invoice_title=invoice_title,
@@ -657,6 +695,33 @@ def _resolve_task_administrator_assignment(
     ]
 
 
+EMAIL_SUBMISSION_KEY_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+UUID_LIKE_TASK_IDENTIFIER_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
+def _normalize_task_email_submission_key(value: str, *, field_name: str) -> str:
+    normalized = value.strip().lower()
+    if not normalized:
+        raise ValueError(f"{field_name} must not be blank")
+    if not EMAIL_SUBMISSION_KEY_PATTERN.fullmatch(normalized):
+        raise ValueError(
+            f"{field_name} must contain only lowercase letters, digits, and single hyphens"
+        )
+    if UUID_LIKE_TASK_IDENTIFIER_PATTERN.fullmatch(normalized):
+        raise ValueError(f"{field_name} must not use a UUID-like value")
+    return normalized
+
+
+def _build_default_email_submission_key(competition_name: str) -> str:
+    slug_base = re.sub(r"[^a-z0-9]+", "-", competition_name.strip().lower()).strip("-")
+    if not slug_base:
+        slug_base = "task"
+    slug_base = slug_base[:20].strip("-") or "task"
+    return f"{slug_base}-{uuid4().hex[:8]}"
+
+
 class InMemoryTaskRepository:
     def __init__(self) -> None:
         self._tasks: dict[str, ReimbursementTask] = {}
@@ -672,12 +737,26 @@ class InMemoryTaskRepository:
             **data.model_dump(),
         )
         with self._lock:
+            existing = self.get_by_email_submission_key(data.email_submission_key)
+            if existing is not None:
+                raise TaskEmailSubmissionKeyConflictError(data.email_submission_key)
             self._tasks[task.id] = task
         return task
 
     def get(self, task_id: str) -> ReimbursementTask | None:
         with self._lock:
             return self._tasks.get(task_id)
+
+    def get_by_email_submission_key(self, email_submission_key: str) -> ReimbursementTask | None:
+        normalized_key = _normalize_task_email_submission_key(
+            email_submission_key,
+            field_name="email_submission_key",
+        )
+        with self._lock:
+            for task in self._tasks.values():
+                if task.email_submission_key == normalized_key:
+                    return task
+            return None
 
     def list(self) -> list[ReimbursementTask]:
         with self._lock:
@@ -722,6 +801,9 @@ class InMemoryTaskRepository:
             task = self._tasks.get(task_id)
             if task is None:
                 return None
+            existing = self.get_by_email_submission_key(payload.email_submission_key)
+            if existing is not None and existing.id != task_id:
+                raise TaskEmailSubmissionKeyConflictError(payload.email_submission_key)
 
             updated = task.model_copy(
                 update={

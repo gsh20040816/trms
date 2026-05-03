@@ -47,6 +47,7 @@ type TaskEditFormState = {
   competitionStartDate: string;
   competitionEndDate: string;
   deadline: string;
+  emailSubmissionKey: string;
   memberIds: string[];
   administratorIds: string[];
   feeCategories: ExpenseType[];
@@ -259,6 +260,7 @@ function buildFormState(task: ReimbursementTask): TaskEditFormState {
     competitionStartDate: task.competition_start_date,
     competitionEndDate: task.competition_end_date,
     deadline: toDateTimeLocalValue(task.deadline),
+    emailSubmissionKey: task.email_submission_key ?? "",
     memberIds: [...task.member_ids],
     administratorIds: getTaskAdministratorIds(task),
     feeCategories: task.fee_categories as ExpenseType[],
@@ -272,6 +274,7 @@ function validateForm(formState: TaskEditFormState): {
   payload: TaskUpdateInput | null;
 } {
   const errors: ValidationErrorState = {};
+  const normalizedEmailSubmissionKey = formState.emailSubmissionKey.trim().toLowerCase();
 
   if (formState.competitionName.trim().length === 0) {
     errors.competitionName = "比赛名称不能为空。";
@@ -294,6 +297,13 @@ function validateForm(formState: TaskEditFormState): {
   }
   if (formState.deadline.length === 0) {
     errors.deadline = "请选择提交截止时间。";
+  }
+  if (normalizedEmailSubmissionKey.length === 0) {
+    errors.emailSubmissionKey = "请填写邮件提交标识。";
+  } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedEmailSubmissionKey)) {
+    errors.emailSubmissionKey = "邮件提交标识只能包含小写字母、数字和单个连字符。";
+  } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(normalizedEmailSubmissionKey)) {
+    errors.emailSubmissionKey = "邮件提交标识不能直接使用 UUID。";
   }
 
   const normalizedMembers = formState.memberIds.map((memberId) => memberId.trim());
@@ -329,6 +339,7 @@ function validateForm(formState: TaskEditFormState): {
       competition_start_date: formState.competitionStartDate,
       competition_end_date: formState.competitionEndDate,
       deadline: new Date(formState.deadline).toISOString(),
+      email_submission_key: normalizedEmailSubmissionKey,
       member_ids: normalizedMembers,
       fee_categories: formState.feeCategories,
       invoice_title: formState.invoiceTitle.trim(),
@@ -711,6 +722,10 @@ export function AdminTaskDetailPage() {
                 <dd>{formatDateTime(visibleTask.deadline)}</dd>
               </div>
               <div>
+                <dt>邮件提交标识</dt>
+                <dd>{visibleTask.email_submission_key ?? "未配置"}</dd>
+              </div>
+              <div>
                 <dt>任务管理员</dt>
                 <dd>{formatTaskAdministratorCountLabel(visibleTask)}</dd>
               </div>
@@ -977,6 +992,21 @@ export function AdminTaskDetailPage() {
                     disabled={!isDraftEditable}
                     fullWidth
                     slotProps={{ inputLabel: { shrink: true } }}
+                  />
+                  <TextField
+                    label="邮件提交标识"
+                    value={formState.emailSubmissionKey}
+                    onChange={(event) => {
+                      updateField("emailSubmissionKey", event.target.value);
+                    }}
+                    error={Boolean(validationErrors.emailSubmissionKey)}
+                    helperText={
+                      validationErrors.emailSubmissionKey
+                      ?? "成员发邮件时主题使用的稳定标识，例如 icpc-shanghai。"
+                    }
+                    disabled={!isDraftEditable}
+                    placeholder="例如 icpc-shanghai"
+                    fullWidth
                   />
                 </div>
               </section>

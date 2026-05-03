@@ -43,6 +43,32 @@ def create_open_task(client: TestClient) -> str:
     return created["id"]
 
 
+def create_open_task_with_mail_key(client: TestClient) -> tuple[str, str]:
+    created = create_task(
+        client,
+        payload={
+            "competition_name": "Integration Mail Task",
+            "competition_location": "Shanghai",
+            "competition_start_date": "2026-11-01",
+            "competition_end_date": "2026-11-03",
+            "deadline": "2026-12-01T00:00:00Z",
+            "email_submission_key": "integration-mail-task",
+            "member_ids": ["2250001", "2250002", "2250003"],
+            "fee_categories": ["registration", "railway", "hotel"],
+            "administrator_id": "admin-1",
+            "invoice_title": "同济大学",
+            "tax_number": "12100000425006117D",
+        },
+    )
+    response = client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert response.status_code == 200
+    return created["id"], created["email_submission_key"]
+
+
 def get_material_row(tmp_path, material_id: str) -> MaterialRow:
     session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
     with session_scope(session_factory) as session:
@@ -66,6 +92,7 @@ def submit_assigned_material(
     client: TestClient,
     *,
     task_id: str,
+    email_submission_key: str | None = None,
     channel: str,
     filename: str,
     content: bytes,
@@ -111,7 +138,7 @@ def submit_assigned_material(
             data={
                 "sender_email": "member1@tongji.edu.cn",
                 "resolved_member_id": "2250001",
-                "subject": f"[TRMS] task:{task_id}",
+                "subject": f"[TRMS] task:{email_submission_key or task_id}",
                 "body": "material_type: invoice\nsubmitter_id: 2250001\n",
             },
             files={"files": (filename, content, "application/pdf")},
@@ -125,12 +152,13 @@ def submit_assigned_material(
 @pytest.mark.parametrize("channel", ["web", "cli", "telegram", "email"])
 def test_assigned_upload_channels_share_storage_and_recognition_contract(tmp_path, channel: str):
     client = make_client(tmp_path)
-    task_id = create_open_task(client)
+    task_id, email_submission_key = create_open_task_with_mail_key(client)
     content = f"{channel}-invoice-content".encode("utf-8")
 
     material = submit_assigned_material(
         client,
         task_id=task_id,
+        email_submission_key=email_submission_key,
         channel=channel,
         filename=f"{channel}.pdf",
         content=content,
@@ -163,12 +191,13 @@ def test_assigned_upload_channels_share_storage_and_recognition_contract(tmp_pat
 
 def test_duplicate_detection_matches_same_hash_across_web_and_telegram_uploads(tmp_path):
     client = make_client(tmp_path)
-    task_id = create_open_task(client)
+    task_id, email_submission_key = create_open_task_with_mail_key(client)
     content = b"same-invoice-content"
 
     first = submit_assigned_material(
         client,
         task_id=task_id,
+        email_submission_key=email_submission_key,
         channel="web",
         filename="web.pdf",
         content=content,
@@ -176,6 +205,7 @@ def test_duplicate_detection_matches_same_hash_across_web_and_telegram_uploads(t
     duplicate = submit_assigned_material(
         client,
         task_id=task_id,
+        email_submission_key=email_submission_key,
         channel="telegram",
         filename="telegram-copy.pdf",
         content=content,

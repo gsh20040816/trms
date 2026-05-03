@@ -14,6 +14,7 @@ from trms_backend.domain.email_bindings import (
     EmailSubmissionIdentityStatus,
 )
 from trms_backend.domain.materials import MaterialType, SubmissionChannel
+from trms_backend.domain.tasks import ReimbursementTask, TaskRepository
 
 SUBJECT_PREFIX = "[TRMS] "
 TASK_MARKER = "task:"
@@ -26,6 +27,7 @@ SUPPORTED_METADATA_KEYS = frozenset({"material_type", "submitter_id", "task_id",
 class ParsedEmailSubmission:
     sender_email: str
     task_id: str
+    submitted_task_key: str
     material_type: MaterialType
     metadata_submitter_id: str | None
     note: str | None
@@ -47,9 +49,11 @@ class EmailMaterialSubmissionService:
     def __init__(
         self,
         material_submission_service: MaterialSubmissionService,
+        task_repository: TaskRepository,
         submission_identity_resolver: EmailSubmissionIdentityResolver | None = None,
     ) -> None:
         self._material_submission_service = material_submission_service
+        self._task_repository = task_repository
         self._submission_identity_resolver = submission_identity_resolver
 
     def submit(
@@ -66,6 +70,7 @@ class EmailMaterialSubmissionService:
             sender_email=sender_email,
             subject=subject,
             body=body,
+            task_repository=self._task_repository,
         )
         normalized_resolved_member_id = _normalize_optional_string(resolved_member_id)
         if normalized_resolved_member_id is None and self._submission_identity_resolver is not None:
@@ -79,7 +84,7 @@ class EmailMaterialSubmissionService:
                 channel=SubmissionChannel.EMAIL,
                 material_type=parsed_email.material_type,
                 files=files,
-                task_id_hint=parsed_email.task_id,
+                task_id_hint=parsed_email.submitted_task_key,
                 submitter_id_hint=_build_submitter_hint(
                     sender_email=parsed_email.sender_email,
                     metadata_submitter_id=parsed_email.metadata_submitter_id,
@@ -104,7 +109,7 @@ class EmailMaterialSubmissionService:
                     channel=SubmissionChannel.EMAIL,
                     material_type=parsed_email.material_type,
                     files=files,
-                    task_id_hint=parsed_email.task_id,
+                    task_id_hint=parsed_email.submitted_task_key,
                     submitter_id_hint=_build_submitter_hint(
                         sender_email=parsed_email.sender_email,
                         metadata_submitter_id=parsed_email.metadata_submitter_id,
@@ -124,21 +129,27 @@ def parse_formatted_email_submission(
     sender_email: str,
     subject: str,
     body: str,
+    task_repository: TaskRepository,
 ) -> ParsedEmailSubmission:
     normalized_sender_email = _normalize_sender_email(sender_email)
-    task_id = _parse_subject(subject)
+    submitted_task_key = _parse_subject(subject)
     metadata = _parse_metadata_block(body)
     metadata_task_id = _normalize_optional_string(metadata.get("task_id"))
-    if metadata_task_id is not None and metadata_task_id != task_id:
+    if metadata_task_id is not None and metadata_task_id != submitted_task_key:
         raise EmailMaterialSubmissionFormatError(
             error_code="task_id_mismatch",
             detail="metadata task_id does not match subject task_id",
         )
 
     material_type = _parse_material_type(metadata.get("material_type"))
+    resolved_task = _resolve_email_target_task(
+        submitted_task_key=submitted_task_key,
+        task_repository=task_repository,
+    )
     return ParsedEmailSubmission(
         sender_email=normalized_sender_email,
-        task_id=task_id,
+        task_id=resolved_task.id if resolved_task is not None else submitted_task_key,
+        submitted_task_key=submitted_task_key,
         material_type=material_type,
         metadata_submitter_id=_normalize_optional_string(metadata.get("submitter_id")),
         note=_normalize_optional_string(metadata.get("note")),
@@ -262,3 +273,14 @@ def _normalize_optional_string(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _resolve_email_target_task(
+    *,
+    submitted_task_key: str,
+    task_repository: TaskRepository,
+) -> ReimbursementTask | None:
+    task = task_repository.get_by_email_submission_key(submitted_task_key)
+    if task is not None:
+        return task
+    return task_repository.get(submitted_task_key)

@@ -127,6 +127,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-05-01",
           competition_end_date: "2026-05-03",
           deadline: "2026-05-10T18:00:00+08:00",
+          email_submission_key: "alpha-mail-key",
           member_ids: ["2250001", "2250002"],
           member_summaries: [
             { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
@@ -159,6 +160,7 @@ describe("admin task detail page", () => {
     expect(screen.queryByText("报销人信息")).not.toBeInTheDocument();
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
+    expect(screen.getByText("alpha-mail-key")).toBeInTheDocument();
     expect(screen.getByText("2 名管理员")).toBeInTheDocument();
     expect(screen.getByLabelText("任务管理员列表")).toHaveTextContent("admin-1");
     expect(screen.getByLabelText("任务管理员列表")).toHaveTextContent("admin-2");
@@ -241,6 +243,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-06-01",
           competition_end_date: "2026-06-03",
           deadline: "2026-06-10T18:00:00+08:00",
+          email_submission_key: "draft-status-mail-key",
           member_ids: ["2250001"],
           fee_categories: ["registration"],
           administrator_id: "admin-1",
@@ -290,6 +293,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-06-01",
           competition_end_date: "2026-06-03",
           deadline: "2026-06-10T18:00:00+08:00",
+          email_submission_key: "draft-status-mail-key",
           member_ids: ["2250001"],
           fee_categories: ["registration"],
           administrator_id: "admin-1",
@@ -361,6 +365,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-08-01",
           competition_end_date: "2026-08-03",
           deadline: "2026-08-10T10:00:00.000Z",
+          email_submission_key: "updated-mail-key",
           member_ids: ["2250001", "2250002"],
           administrator_id: "admin-1",
           administrator_ids: ["admin-1", "admin-2"],
@@ -376,6 +381,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-08-01",
           competition_end_date: "2026-08-03",
           deadline: "2026-08-10T10:00:00.000Z",
+          email_submission_key: "updated-mail-key",
           member_ids: ["2250001", "2250002"],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
@@ -417,6 +423,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-08-01",
           competition_end_date: "2026-08-03",
           deadline: "2026-08-10T18:00:00+08:00",
+          email_submission_key: "draft-mail-key",
           member_ids: ["2250001", "2250002"],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
@@ -449,6 +456,9 @@ describe("admin task detail page", () => {
     fireEvent.change(screen.getByLabelText("比赛名称"), {
       target: { value: "已更新任务" },
     });
+    fireEvent.change(screen.getByLabelText("邮件提交标识"), {
+      target: { value: "updated-mail-key" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "保存任务基础配置" }));
 
     expect(await screen.findByDisplayValue("已更新任务")).toBeInTheDocument();
@@ -477,6 +487,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-08-01",
           competition_end_date: "2026-08-03",
           deadline: "2026-08-10T18:00:00+08:00",
+          email_submission_key: "multi-admin-mail-key",
           member_ids: ["2250001"],
           member_summaries: [
             { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
@@ -522,6 +533,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-09-01",
           competition_end_date: "2026-09-03",
           deadline: "2026-09-10T18:00:00+08:00",
+          email_submission_key: "closed-mail-key",
           member_ids: ["2250001"],
           fee_categories: ["registration"],
           administrator_id: "admin-1",
@@ -562,6 +574,7 @@ describe("admin task detail page", () => {
           competition_start_date: "2026-07-01",
           competition_end_date: "2026-07-03",
           deadline: "2026-07-10T18:00:00+08:00",
+          email_submission_key: "ready-mail-key",
           member_ids: ["2250001", "2250002"],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",

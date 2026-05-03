@@ -90,6 +90,7 @@ from trms_backend.domain.tasks import (
     TaskCompletionValidationError,
     MissingTaskInvoiceConfigError,
     ReimbursementTask,
+    TaskEmailSubmissionKeyConflictError,
     TaskMembersUpdate,
     TaskRepository,
     TaskPublishValidationError,
@@ -232,7 +233,13 @@ def build_task_router(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(error),
             ) from error
-        return enrich_task_member_summaries(repository.create(task_create))
+        try:
+            return enrich_task_member_summaries(repository.create(task_create))
+        except TaskEmailSubmissionKeyConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
 
     @router.get("")
     def list_tasks(
@@ -1155,7 +1162,18 @@ def build_task_router(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="task can only be updated while it is draft",
             )
-        updated = repository.update_task(task_id, payload)
+        effective_payload = payload
+        if payload.email_submission_key is None:
+            effective_payload = payload.model_copy(
+                update={"email_submission_key": task.email_submission_key}
+            )
+        try:
+            updated = repository.update_task(task_id, effective_payload)
+        except TaskEmailSubmissionKeyConflictError as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
         if updated is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
         return enrich_task_member_summaries(updated)

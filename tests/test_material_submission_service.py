@@ -34,6 +34,7 @@ def create_open_task(task_repository: InMemoryTaskRepository) -> str:
             competition_start_date=date(2026, 5, 1),
             competition_end_date=date(2026, 5, 3),
             deadline=datetime.now(UTC) + timedelta(days=3),
+            email_submission_key="ccpc-final-material-service",
             member_ids=["2250001", "2250002"],
             fee_categories=["registration", "railway"],
             administrator_id="admin-1",

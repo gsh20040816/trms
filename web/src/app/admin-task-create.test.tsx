@@ -65,6 +65,9 @@ async function fillRequiredTaskForm() {
   fireEvent.change(screen.getByLabelText("提交截止时间"), {
     target: { value: "2026-12-01T10:00" },
   });
+  fireEvent.change(screen.getByLabelText("邮件提交标识"), {
+    target: { value: "icpc-shanghai" },
+  });
   await selectMember("2250", "张三 / member1 / 2250001");
 }
 
@@ -88,6 +91,7 @@ describe("admin task create page", () => {
       competition_start_date: "2026-11-01",
       competition_end_date: "2026-11-03",
       deadline: "2026-12-01T02:00:00.000Z",
+      email_submission_key: "icpc-shanghai",
       member_ids: ["2250001"],
       fee_categories: ["registration"],
       administrator_id: "admin-1",
@@ -176,6 +180,7 @@ describe("admin task create page", () => {
     expect(within(moduleNav).queryByText("材料审核")).not.toBeInTheDocument();
     expect(screen.getByText("输入后会实时向后端检索候选成员。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("输入成员姓名、用户名或学号检索")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("例如 icpc-shanghai")).toBeInTheDocument();
     expect(screen.getByLabelText("参赛费").closest("label")).toHaveClass("checkbox-card-surface");
     expect(screen.queryByLabelText("项目/课题信息")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("报销人信息")).not.toBeInTheDocument();
@@ -206,6 +211,7 @@ describe("admin task create page", () => {
     expect(postCall).toBeTruthy();
     const requestBody = JSON.parse((postCall?.[1]?.body as string) ?? "{}") as Record<string, unknown>;
     expect(requestBody.competition_name).toBe("ICPC 区域赛");
+    expect(requestBody.email_submission_key).toBe("icpc-shanghai");
     expect(requestBody.member_ids).toEqual(["member-actor-1"]);
     expect(requestBody.fee_categories).toEqual([
       "registration",

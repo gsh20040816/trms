@@ -57,6 +57,31 @@ def create_open_task(client: TestClient) -> str:
     return created["id"]
 
 
+def create_open_task_with_mail_key(client: TestClient) -> tuple[str, str]:
+    created = create_task(
+        client,
+        payload={
+            "competition_name": "ICPC Mail Task",
+            "competition_location": "Shanghai",
+            "competition_start_date": "2026-11-01",
+            "competition_end_date": "2026-11-03",
+            "deadline": "2026-12-01T00:00:00Z",
+            "email_submission_key": "icpc-mail-task",
+            "member_ids": ["2250001", "2250002", "2250003"],
+            "fee_categories": ["registration", "railway", "hotel"],
+            "administrator_id": "admin-1",
+            "invoice_title": "同济大学",
+            "tax_number": "12100000425006117D",
+        },
+    )
+    client.patch(
+        f"/api/tasks/{created['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    return created["id"], created["email_submission_key"]
+
+
 def member_auth_headers(client: TestClient, *, username: str, actor_id: str) -> dict[str, str]:
     return auth_headers(
         register_and_get_token(
@@ -82,7 +107,7 @@ def assert_single_pending_recognition_task(client: TestClient, material_id: str)
 
 def test_email_material_submission_routes_trusted_resolved_member_to_assigned_flow(tmp_path):
     client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
-    task_id = create_open_task(client)
+    task_id, task_key = create_open_task_with_mail_key(client)
 
     response = client.post(
         "/api/email/materials",
@@ -90,7 +115,7 @@ def test_email_material_submission_routes_trusted_resolved_member_to_assigned_fl
         data={
             "sender_email": "Member1@Tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_id}",
+            "subject": f"[TRMS] task:{task_key}",
             "body": "material_type: invoice\nsubmitter_id: 2250999\nnote: train ticket\n",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
@@ -101,6 +126,7 @@ def test_email_material_submission_routes_trusted_resolved_member_to_assigned_fl
     assert body["parsed_email"] == {
         "sender_email": "member1@tongji.edu.cn",
         "task_id": task_id,
+        "submitted_task_key": task_key,
         "material_type": "invoice",
         "metadata_submitter_id": "2250999",
         "note": "train ticket",
@@ -120,14 +146,14 @@ def test_email_material_submission_without_trusted_header_keeps_claimed_member_p
     tmp_path,
 ):
     client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
-    task_id = create_open_task(client)
+    _task_id, task_key = create_open_task_with_mail_key(client)
 
     response = client.post(
         "/api/email/materials",
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_id}",
+            "subject": f"[TRMS] task:{task_key}",
             "body": "material_type: invoice\nsubmitter_id: 2250999\n",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
@@ -138,7 +164,7 @@ def test_email_material_submission_without_trusted_header_keeps_claimed_member_p
     assert material["status"] == "pending_assignment"
     assert material["task_id"] is None
     assert material["submitter_id"] is None
-    assert material["task_id_hint"] == task_id
+    assert material["task_id_hint"] == task_key
     assert material["submitter_id_hint"] == "email:member1@tongji.edu.cn (submitter_id:2250999)"
     assert material["channel"] == "email"
     assert material["storage_key"].startswith("_pending_assignment/")
@@ -147,7 +173,7 @@ def test_email_material_submission_without_trusted_header_keeps_claimed_member_p
 
 def test_email_material_submission_rejects_invalid_trusted_header(tmp_path):
     client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
-    task_id = create_open_task(client)
+    _task_id, task_key = create_open_task_with_mail_key(client)
 
     response = client.post(
         "/api/email/materials",
@@ -155,7 +181,7 @@ def test_email_material_submission_rejects_invalid_trusted_header(tmp_path):
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_id}",
+            "subject": f"[TRMS] task:{task_key}",
             "body": "material_type: invoice\n",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
@@ -167,13 +193,13 @@ def test_email_material_submission_rejects_invalid_trusted_header(tmp_path):
 
 def test_email_material_submission_routes_unresolved_sender_to_pending_assignment(tmp_path):
     client = make_client(tmp_path)
-    task_id = create_open_task(client)
+    _task_id, task_key = create_open_task_with_mail_key(client)
 
     response = client.post(
         "/api/email/materials",
         data={
             "sender_email": "member2@tongji.edu.cn",
-            "subject": f"[TRMS] task:{task_id}",
+            "subject": f"[TRMS] task:{task_key}",
             "body": "material_type: competition_notice\nsubmitter_id: 2250002\n",
         },
         files={"files": ("notice.pdf", b"email-notice", "application/pdf")},
@@ -185,7 +211,7 @@ def test_email_material_submission_routes_unresolved_sender_to_pending_assignmen
     assert material["status"] == "pending_assignment"
     assert material["task_id"] is None
     assert material["submitter_id"] is None
-    assert material["task_id_hint"] == task_id
+    assert material["task_id_hint"] == task_key
     assert material["submitter_id_hint"] == "email:member2@tongji.edu.cn (submitter_id:2250002)"
     assert material["channel"] == "email"
     assert material["storage_key"].startswith("_pending_assignment/")
@@ -195,7 +221,7 @@ def test_email_material_submission_routes_unresolved_sender_to_pending_assignmen
 def test_email_material_submission_uses_bound_sender_email_without_trusted_header(tmp_path):
     sender = RecordingOutboundEmailSender()
     client = make_client(tmp_path, outbound_email_sender=sender)
-    task_id = create_open_task(client)
+    task_id, task_key = create_open_task_with_mail_key(client)
     member_headers = member_auth_headers(client, username="member1", actor_id="2250001")
 
     verification_request = client.post(
@@ -219,7 +245,7 @@ def test_email_material_submission_uses_bound_sender_email_without_trusted_heade
         "/api/email/materials",
         data={
             "sender_email": "Member1@Tongji.edu.cn",
-            "subject": f"[TRMS] task:{task_id}",
+            "subject": f"[TRMS] task:{task_key}",
             "body": "material_type: invoice\n",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
@@ -302,7 +328,7 @@ def test_email_material_submission_rejects_task_id_mismatch(tmp_path):
 
 def test_email_material_submission_reports_missing_attachment_filename_as_partial_failure(tmp_path):
     client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
-    task_id = create_open_task(client)
+    _task_id, task_key = create_open_task_with_mail_key(client)
 
     response = client.post(
         "/api/email/materials",
@@ -310,7 +336,7 @@ def test_email_material_submission_reports_missing_attachment_filename_as_partia
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_id}",
+            "subject": f"[TRMS] task:{task_key}",
             "body": "material_type: invoice\n",
         },
         files=[
@@ -330,3 +356,26 @@ def test_email_material_submission_reports_missing_attachment_filename_as_partia
             "detail": "uploaded file must have a filename",
         }
     ]
+
+
+def test_email_material_submission_keeps_legacy_task_id_subject_compatible(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"[TRMS] task:{task_id}",
+            "body": "material_type: invoice\n",
+        },
+        files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["parsed_email"]["task_id"] == task_id
+    assert payload["parsed_email"]["submitted_task_key"] == task_id
+    assert payload["items"][0]["task_id"] == task_id

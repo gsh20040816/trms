@@ -129,6 +129,7 @@ def valid_task_update_payload(**overrides):
         "competition_start_date": "2026-11-05",
         "competition_end_date": "2026-11-07",
         "deadline": "2026-12-10T00:00:00Z",
+        "email_submission_key": "updated-icpc-asia-regional",
         "member_ids": ["2250001", "2250099"],
         "fee_categories": ["registration", "hotel"],
         "invoice_title": "更新后的同济大学",
@@ -222,7 +223,7 @@ def test_create_and_get_task(tmp_path):
 
     created = client.post(
         "/api/tasks",
-        json=valid_task_payload(),
+        json=valid_task_payload() | {"email_submission_key": "icpc-asia-regional"},
         headers=admin_auth_headers(client),
     )
 
@@ -233,6 +234,7 @@ def test_create_and_get_task(tmp_path):
     assert body["competition_name"] == "ICPC Asia Regional"
     assert body["administrator_id"] == "admin-1"
     assert body["administrator_ids"] == ["admin-1"]
+    assert body["email_submission_key"] == "icpc-asia-regional"
     assert body["project_info"] == ""
     assert body["reimburser_info"] == ""
     assert body["invoice_title"] == "同济大学"
@@ -246,6 +248,7 @@ def test_create_and_get_task(tmp_path):
     assert fetched.json()["id"] == body["id"]
     assert fetched.json()["administrator_id"] == "admin-1"
     assert fetched.json()["administrator_ids"] == ["admin-1"]
+    assert fetched.json()["email_submission_key"] == "icpc-asia-regional"
 
 
 def test_create_task_accepts_multiple_administrators_with_primary_compat_field(tmp_path):
@@ -356,7 +359,10 @@ def test_create_task_rejects_missing_invoice_config_without_global_default(tmp_p
 def test_list_tasks_returns_created_tasks(tmp_path):
     client = make_client(tmp_path)
     first = valid_task_payload()
-    second = valid_task_payload() | {"competition_name": "CCPC Final"}
+    second = valid_task_payload() | {
+        "competition_name": "CCPC Final",
+        "email_submission_key": "ccpc-final",
+    }
 
     client.post("/api/tasks", json=first, headers=admin_auth_headers(client))
     client.post("/api/tasks", json=second, headers=admin_auth_headers(client))
@@ -376,8 +382,9 @@ def test_list_tasks_filters_by_member_id(tmp_path):
     create_task(
         client,
         payload=valid_task_payload() | {
-        "competition_name": "CCPC Final",
-        "member_ids": ["2250003", "2250999"],
+            "competition_name": "CCPC Final",
+            "email_submission_key": "ccpc-final",
+            "member_ids": ["2250003", "2250999"],
         },
     )
     member_token = register_and_get_token(
@@ -957,6 +964,7 @@ def test_update_task_allows_replace_in_draft(tmp_path):
     body = response.json()
     assert body["competition_name"] == "Updated ICPC Asia Regional"
     assert body["competition_location"] == "Hangzhou"
+    assert body["email_submission_key"] == "updated-icpc-asia-regional"
     assert body["member_ids"] == ["2250001", "2250099"]
     assert body["fee_categories"] == ["registration", "hotel"]
     assert body["project_info"] == ""
@@ -970,6 +978,7 @@ def test_update_task_allows_replace_in_draft(tmp_path):
     )
     assert fetched.status_code == 200
     assert fetched.json()["competition_name"] == "Updated ICPC Asia Regional"
+    assert fetched.json()["email_submission_key"] == "updated-icpc-asia-regional"
 
 
 def test_update_task_allows_replacing_multiple_administrators_in_draft(tmp_path):
@@ -1032,6 +1041,66 @@ def test_update_task_rejects_non_draft_task(tmp_path):
 
     assert response.status_code == 409
     assert response.json()["detail"] == "task can only be updated while it is draft"
+
+
+def test_create_task_rejects_duplicate_email_submission_key(tmp_path):
+    client = make_client(tmp_path)
+    create_task(client, payload=valid_task_payload() | {"email_submission_key": "icpc-asia-regional"})
+
+    response = client.post(
+        "/api/tasks",
+        json=valid_task_payload() | {
+            "competition_name": "Another Task",
+            "email_submission_key": "icpc-asia-regional",
+        },
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task email submission key already exists: icpc-asia-regional"
+    )
+
+
+def test_update_task_rejects_duplicate_email_submission_key(tmp_path):
+    client = make_client(tmp_path)
+    first = create_task(
+        client,
+        payload=valid_task_payload() | {"email_submission_key": "icpc-asia-regional"},
+    )
+    second = create_task(
+        client,
+        payload=valid_task_payload() | {
+            "competition_name": "Second Task",
+            "email_submission_key": "second-task-mail-key",
+        },
+    )
+
+    response = client.put(
+        f"/api/tasks/{second['id']}",
+        json=valid_task_update_payload(email_submission_key=first["email_submission_key"]),
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "task email submission key already exists: icpc-asia-regional"
+    )
+
+
+def test_create_task_rejects_uuid_like_email_submission_key(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/tasks",
+        json=valid_task_payload() | {
+            "email_submission_key": "123e4567-e89b-12d3-a456-426614174000",
+        },
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 422
+    assert "email_submission_key" in response.text
 
 
 def test_update_task_rejects_non_owner(tmp_path):
@@ -1557,7 +1626,10 @@ def test_run_task_deadline_check_ignores_non_open_tasks(tmp_path):
     draft_task = create_task(client)
     open_task = create_task(
         client,
-        payload=valid_task_payload() | {"competition_name": "CCPC Final"},
+        payload=valid_task_payload() | {
+            "competition_name": "CCPC Final",
+            "email_submission_key": "ccpc-final",
+        },
     )
     client.patch(
         f"/api/tasks/{open_task['id']}/status",

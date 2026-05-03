@@ -101,6 +101,7 @@ from trms_backend.domain.splits import ExpenseSplitItem, ExpenseSplitRecord, Exp
 from trms_backend.domain.tasks import (
     ReimbursementTask,
     TaskCreate,
+    TaskEmailSubmissionKeyConflictError,
     TaskStatus,
     TaskUpdateInput,
 )
@@ -500,13 +501,25 @@ class SqlAlchemyTaskRepository:
             updated_at=now,
             **data.model_dump(),
         )
-        with session_scope(self._session_factory) as session:
-            session.add(row)
+        try:
+            with session_scope(self._session_factory) as session:
+                session.add(row)
+        except IntegrityError as error:
+            if "email_submission_key" in str(error).lower():
+                raise TaskEmailSubmissionKeyConflictError(data.email_submission_key) from error
+            raise
         return _task_from_row(row)
 
     def get(self, task_id: str) -> ReimbursementTask | None:
         with session_scope(self._session_factory) as session:
             row = session.get(TaskRow, task_id)
+            return _task_from_row(row) if row else None
+
+    def get_by_email_submission_key(self, email_submission_key: str) -> ReimbursementTask | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalars(
+                select(TaskRow).where(TaskRow.email_submission_key == email_submission_key)
+            ).first()
             return _task_from_row(row) if row else None
 
     def list(self) -> list[ReimbursementTask]:
@@ -552,29 +565,38 @@ class SqlAlchemyTaskRepository:
         task_id: str,
         payload: TaskUpdateInput,
     ) -> ReimbursementTask | None:
-        with session_scope(self._session_factory) as session:
-            row = session.get(TaskRow, task_id)
-            if row is None:
-                return None
-            row.competition_name = payload.competition_name
-            row.competition_location = payload.competition_location
-            row.competition_start_date = payload.competition_start_date
-            row.competition_end_date = payload.competition_end_date
-            row.deadline = payload.deadline
-            row.member_ids = payload.member_ids
-            row.fee_categories = payload.fee_categories
-            if payload.administrator_ids is not None:
-                row.administrator_ids = payload.administrator_ids
-            if payload.administrator_id is not None:
-                row.administrator_id = payload.administrator_id
-            if payload.project_info is not None:
-                row.project_info = payload.project_info
-            if payload.reimburser_info is not None:
-                row.reimburser_info = payload.reimburser_info
-            row.invoice_title = payload.invoice_title
-            row.tax_number = payload.tax_number
-            row.updated_at = datetime.now(timezone.utc)
-            session.add(row)
+        normalized_email_submission_key = payload.email_submission_key
+        if normalized_email_submission_key is None:
+            raise ValueError("email_submission_key is required for task update")
+        try:
+            with session_scope(self._session_factory) as session:
+                row = session.get(TaskRow, task_id)
+                if row is None:
+                    return None
+                row.competition_name = payload.competition_name
+                row.competition_location = payload.competition_location
+                row.competition_start_date = payload.competition_start_date
+                row.competition_end_date = payload.competition_end_date
+                row.deadline = payload.deadline
+                row.email_submission_key = normalized_email_submission_key
+                row.member_ids = payload.member_ids
+                row.fee_categories = payload.fee_categories
+                if payload.administrator_ids is not None:
+                    row.administrator_ids = payload.administrator_ids
+                if payload.administrator_id is not None:
+                    row.administrator_id = payload.administrator_id
+                if payload.project_info is not None:
+                    row.project_info = payload.project_info
+                if payload.reimburser_info is not None:
+                    row.reimburser_info = payload.reimburser_info
+                row.invoice_title = payload.invoice_title
+                row.tax_number = payload.tax_number
+                row.updated_at = datetime.now(timezone.utc)
+                session.add(row)
+        except IntegrityError as error:
+            if "email_submission_key" in str(error).lower():
+                raise TaskEmailSubmissionKeyConflictError(normalized_email_submission_key) from error
+            raise
         return _task_from_row(row)
 
 
@@ -1710,6 +1732,7 @@ def _task_from_row(row: TaskRow) -> ReimbursementTask:
         competition_start_date=row.competition_start_date,
         competition_end_date=row.competition_end_date,
         deadline=row.deadline,
+        email_submission_key=row.email_submission_key,
         member_ids=list(row.member_ids),
         fee_categories=list(row.fee_categories),
         administrator_ids=administrator_ids,

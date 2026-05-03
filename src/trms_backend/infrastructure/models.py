@@ -77,6 +77,12 @@ class TaskRow(Base):
     competition_start_date: Mapped[date] = mapped_column(Date, nullable=False)
     competition_end_date: Mapped[date] = mapped_column(Date, nullable=False)
     deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    email_submission_key: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     member_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     fee_categories: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     administrator_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
