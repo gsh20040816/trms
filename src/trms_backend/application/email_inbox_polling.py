@@ -14,12 +14,11 @@ from trms_backend.application.email_material_submission import EmailMaterialSubm
 from trms_backend.application.email_material_submission import (
     EmailMaterialSubmissionFormatError,
     ParsedEmailSubmission,
+    extract_email_attachments,
+    extract_email_body,
     parse_formatted_email_submission,
 )
-from trms_backend.application.material_submission import (
-    MaterialSubmissionTaskNotOpenError,
-    SubmittedMaterialFile,
-)
+from trms_backend.application.material_submission import MaterialSubmissionTaskNotOpenError
 from trms_backend.application.outbound_email import OutboundEmailMessage, OutboundEmailSender
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.email_bindings import (
@@ -258,8 +257,8 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
             return
         raw_email = self._raw_email_storage.read(storage_key=record.raw_storage_key)
         parsed = BytesParser(policy=policy.default).parsebytes(raw_email)
-        body = _extract_email_body(parsed)
-        attachments = _extract_email_attachments(parsed)
+        body = extract_email_body(parsed)
+        attachments = extract_email_attachments(parsed)
         if not attachments:
             updated = self._email_inbox_record_repository.update_result(
                 record.id,
@@ -428,7 +427,7 @@ class ImapEmailInboxClient:
                 parsed = BytesParser(policy=policy.default).parsebytes(raw_email)
                 sender_email = parsed.get("From", "")
                 subject = parsed.get("Subject", "")
-                body = _extract_email_body(parsed)
+                body = extract_email_body(parsed)
                 messages.append(
                     PolledEmailMessage(
                         mailbox_uid=uid,
@@ -453,46 +452,6 @@ def _extract_raw_email_bytes(fetch_data) -> bytes | None:
         if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes):
             return item[1]
     return None
-
-
-def _extract_email_body(message) -> str:
-    if message.is_multipart():
-        for part in message.walk():
-            if part.get_content_maintype() != "text":
-                continue
-            if part.get_content_subtype() != "plain":
-                continue
-            content_disposition = part.get_content_disposition()
-            if content_disposition == "attachment":
-                continue
-            try:
-                return part.get_content()
-            except Exception:
-                continue
-        return ""
-    try:
-        return message.get_content()
-    except Exception:
-        return ""
-
-
-def _extract_email_attachments(message) -> list[SubmittedMaterialFile]:
-    attachments: list[SubmittedMaterialFile] = []
-    for part in message.walk():
-        if part.is_multipart():
-            continue
-        filename = part.get_filename()
-        if filename is None:
-            continue
-        content = part.get_payload(decode=True) or b""
-        attachments.append(
-            SubmittedMaterialFile(
-                original_filename=filename,
-                content_type=part.get_content_type(),
-                content=content,
-            )
-        )
-    return attachments
 
 
 def _extract_email_address(raw_from: str) -> str:

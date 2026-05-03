@@ -7,6 +7,8 @@ from trms_backend.application.metrics import MetricsCollector, NoOpMetricsCollec
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.materials import (
     MaterialCreate,
+    MaterialUploadEmailPackageMissingAttachmentsError,
+    MaterialUploadEmailPackageUnreadableError,
     MaterialFileStorage,
     MaterialRecord,
     MaterialRepository,
@@ -52,6 +54,10 @@ class MaterialUploadFailure:
             return "missing_filename"
         if isinstance(self.error, MaterialUploadEmptyFileError):
             return "empty_file"
+        if isinstance(self.error, MaterialUploadEmailPackageUnreadableError):
+            return "email_package_unreadable"
+        if isinstance(self.error, MaterialUploadEmailPackageMissingAttachmentsError):
+            return "email_package_missing_attachments"
         if isinstance(self.error, MaterialUploadUnsupportedContentTypeError):
             return "unsupported_content_type"
         if isinstance(self.error, MaterialUploadTooLargeError):

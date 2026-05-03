@@ -27,6 +27,41 @@ def _extract_latest_code(sender: RecordingOutboundEmailSender) -> str:
     return match.group(1)
 
 
+def build_email_package_bytes(
+    *,
+    subject: str = "Forwarded package",
+    attachments: list[tuple[str, bytes, str]] | None = None,
+) -> bytes:
+    payload = [
+        b"From: package@example.edu\r\n",
+        f"Subject: {subject}\r\n".encode("utf-8"),
+        b"MIME-Version: 1.0\r\n",
+    ]
+    if not attachments:
+        payload.extend([
+            b"Content-Type: text/plain; charset=utf-8\r\n\r\n",
+            b"plain body only\r\n",
+        ])
+        return b"".join(payload)
+
+    payload.append(b"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n")
+    payload.extend([
+        b"--BOUNDARY\r\n",
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\n",
+        b"forwarded body\r\n\r\n",
+    ])
+    for filename, content, content_type in attachments:
+        payload.extend([
+            b"--BOUNDARY\r\n",
+            f"Content-Type: {content_type}\r\n".encode("utf-8"),
+            f"Content-Disposition: attachment; filename=\"{filename}\"\r\n\r\n".encode("utf-8"),
+            content,
+            b"\r\n",
+        ])
+    payload.append(b"--BOUNDARY--\r\n")
+    return b"".join(payload)
+
+
 def make_client(tmp_path, *, trusted_inbound_token: str | None = None, outbound_email_sender=None):
     runtime_config = load_runtime_config(
         env={
@@ -399,4 +434,69 @@ def test_email_material_submission_rejects_legacy_trms_subject(tmp_path):
         "status": "failed",
         "error_code": "invalid_subject_prefix",
         "detail": "email subject must start with <task_key>",
+    }
+
+
+def test_email_material_submission_expands_uploaded_eml_package_into_inner_attachments(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id, task_key = create_open_task_with_mail_key(client)
+    eml_bytes = build_email_package_bytes(
+        attachments=[("invoice.pdf", b"inner-pdf", "application/pdf")]
+    )
+
+    response = client.post(
+        "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"<{task_key}>Fw: package",
+        },
+        files={"files": ("forwarded.eml", eml_bytes, "message/rfc822")},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert [item["original_filename"] for item in payload["items"]] == ["invoice.pdf"]
+    assert payload["items"][0]["task_id"] == task_id
+    assert payload["items"][0]["content_type"] == "application/pdf"
+    assert payload["items"][0]["material_type"] == "other_attachment"
+
+
+def test_email_material_submission_reports_uploaded_eml_without_importable_attachments(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    _task_id, task_key = create_open_task_with_mail_key(client)
+    eml_bytes = build_email_package_bytes(attachments=None)
+
+    response = client.post(
+        "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"<{task_key}>Fw: package",
+        },
+        files={"files": ("forwarded.eml", eml_bytes, "message/rfc822")},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "status": "failed",
+        "items": [],
+        "parsed_email": {
+            "sender_email": "member1@tongji.edu.cn",
+            "task_id": _task_id,
+            "submitted_task_key": task_key,
+            "material_type": "other_attachment",
+            "metadata_submitter_id": None,
+            "note": None,
+        },
+        "failures": [
+            {
+                "original_filename": "forwarded.eml",
+                "error_code": "email_package_missing_attachments",
+                "detail": "uploaded email package has no importable attachments: forwarded.eml",
+            }
+        ],
     }

@@ -1114,6 +1114,26 @@ def test_submit_material_rejects_unsupported_content_type(tmp_path):
     assert response.json()["detail"].startswith("unsupported material content type: text/plain;")
 
 
+def test_submit_material_rejects_eml_outside_email_channel(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+
+    response = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "other_attachment",
+        },
+        files={"files": ("forwarded.eml", b"raw-email", "message/rfc822")},
+    )
+
+    assert response.status_code == 415
+    assert response.json()["detail"].startswith(
+        "unsupported material content type: message/rfc822;"
+    )
+
+
 def test_submit_material_rejects_file_exceeding_size_limit(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)

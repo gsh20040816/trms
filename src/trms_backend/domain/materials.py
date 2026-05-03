@@ -134,6 +134,18 @@ class MaterialUploadTooLargeError(MaterialUploadValidationError):
         )
 
 
+class MaterialUploadEmailPackageUnreadableError(MaterialUploadValidationError):
+    def __init__(self, filename: str | None) -> None:
+        display_name = (filename or "").strip() or "<unnamed>"
+        super().__init__(f"uploaded email package is unreadable: {display_name}")
+
+
+class MaterialUploadEmailPackageMissingAttachmentsError(MaterialUploadValidationError):
+    def __init__(self, filename: str | None) -> None:
+        display_name = (filename or "").strip() or "<unnamed>"
+        super().__init__(f"uploaded email package has no importable attachments: {display_name}")
+
+
 class MaterialRepository(Protocol):
     def create(self, data: MaterialCreate) -> MaterialRecord:
         raise NotImplementedError

@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-05-03 19:42 - Unpack eml files only within email submission channel
+
+### 完成内容
+- 完成任务“仅在邮件渠道支持 eml 邮件包，并把其中附件作为真正材料上传”。
+- 已把 `.eml` / `message/rfc822` 处理收口到邮件提交服务：
+  - [src/trms_backend/application/email_material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_material_submission.py)
+  - 邮件渠道收到 `.eml` 文件时，不再把外层 `.eml` 当作材料直接入库；
+  - 系统会先解析邮件包，提取其中真正附件，再把这些附件送入统一材料上传链路；
+  - 若邮件包自身不可解析，会返回 `email_package_unreadable`；
+  - 若邮件包可解析但没有可导入附件，会返回 `email_package_missing_attachments`；
+  - 该解包逻辑支持递归处理邮件附件中的 `.eml`。
+- 已把 worker 的收件导入也切换到同一套 `.eml` 解包逻辑：
+  - [src/trms_backend/application/email_inbox_polling.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_inbox_polling.py)
+  - IMAP 轮询导入邮件时，若邮件附件本身是 `.eml` 邮件包，也会继续提取其内部附件并导入，而不是把 `.eml` 外壳直接当材料。
+- 已明确普通上传链路继续拒绝 `.eml`：
+  - [src/trms_backend/domain/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/materials.py)
+  - [src/trms_backend/application/material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/material_submission.py)
+  - 没有放宽统一材料白名单；Web / CLI / Telegram 的普通材料上传仍不接受 `message/rfc822`。
+- 已补回归测试与规范文档：
+  - [tests/test_email_materials_api.py](/home/gsh/workspace/TRMS/tests/test_email_materials_api.py)
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+  - [tests/test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py)
+  - [docs/格式化邮件提交规范说明.md](/home/gsh/workspace/TRMS/docs/格式化邮件提交规范说明.md)
+  - 覆盖邮件 API 解包成功、邮件包无附件失败、worker 解包 nested `.eml`、普通上传拒绝 `.eml`。
+
+### 根因
+- `.eml` 是邮件打包格式，不是最终报销材料本体。
+- 如果把 `message/rfc822` 直接加入统一上传白名单，会把 Web / CLI 普通上传也一起放开，违背“仅邮件渠道支持”的边界，并且后续识别与合并 PDF 仍会把 `.eml` 当成不可识别、不可渲染文件。
+- 正确的最小改法不是扩大全局白名单，而是在邮件渠道把 `.eml` 当成容器先解包，再把其中真实附件交给现有统一上传链路。
+
+### 风险与影响面
+- 本轮没有让 `.eml` 变成通用材料类型；只有邮件渠道会解包它，普通材料上传仍然拒绝。
+- `.eml` 解包后，内部附件仍按邮件渠道当前默认行为以 `other_attachment` 入链；若希望进一步成为更具体材料类型，仍依赖现有识别或人工改类型主链路。
+- 合并 PDF / 完整材料包对 `.eml` 外壳仍不提供直接渲染支持；这不是缺失，而是本轮明确保留的边界。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_email_materials_api.py tests/test_async_jobs.py tests/test_materials_api.py`
+  - `71/71` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `605/605` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 19:05 - Restrict email task matching to angle brackets and drop body formatting requirements
 
 ### 完成内容
