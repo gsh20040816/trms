@@ -620,4 +620,90 @@ describe("admin task detail page", () => {
     expect(await screen.findByRole("heading", { name: "操作未完成" })).toBeInTheDocument();
     expect(screen.getByText("导出完成前，任务不能切换为已完成。")).toBeInTheDocument();
   });
+
+  it("allows deleting the task from detail page", async () => {
+    const originalLocation = window.location;
+    const assignSpy = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        assign: assignSpy,
+      },
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-DELETE") {
+        if (init?.method === "DELETE") {
+          return Promise.resolve(jsonResponse({
+            status: "deleted",
+            task: {
+              id: "TASK-DELETE",
+              status: "reviewing",
+              competition_name: "待删除任务",
+            },
+          }));
+        }
+        return Promise.resolve(jsonResponse({
+          id: "TASK-DELETE",
+          status: "reviewing",
+          competition_name: "待删除任务",
+          competition_location: "上海",
+          competition_start_date: "2026-05-01",
+          competition_end_date: "2026-05-03",
+          deadline: "2026-05-10T18:00:00+08:00",
+          email_submission_key: "delete-mail-key",
+          member_ids: ["2250001"],
+          member_summaries: [
+            { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+          ],
+          fee_categories: ["registration"],
+          administrator_id: "admin-1",
+          administrator_ids: ["admin-1"],
+          project_info: "",
+          reimburser_info: "",
+          invoice_title: "同济大学",
+          tax_number: "91310000TEST00001",
+          created_at: "2026-04-20T09:00:00+08:00",
+          updated_at: "2026-04-25T10:00:00+08:00",
+        }));
+      }
+
+      if (url === "/api/tasks/TASK-DELETE/readiness?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildReadinessResponse({
+          task_id: "TASK-DELETE",
+        })));
+      }
+
+      throw new Error(`Unhandled fetch URL in delete detail test: ${url}`);
+    });
+
+    renderAdminTaskDetailRoute("TASK-DELETE");
+
+    expect(await screen.findByRole("button", { name: "删除任务" })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "删除任务" }));
+      await Promise.resolve();
+    });
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("这会删除任务本身，以及它的材料、发票、分摊、确认、提醒、导出记录和相关存储文件。删除后不能恢复。")).toBeInTheDocument();
+    fireEvent.change(within(confirmDialog).getByLabelText("确认动作输入框"), {
+      target: { value: "待删除任务" },
+    });
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "删除任务" }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(assignSpy).toHaveBeenCalledWith("/admin/tasks");
+    });
+
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
+  });
 });

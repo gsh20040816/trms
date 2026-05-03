@@ -14,6 +14,7 @@ import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
+import { useSnackbar } from "../components/use-snackbar";
 import { MetadataChip, PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
 import { trmsApi } from "../lib/api/trms";
 import type {
@@ -351,6 +352,7 @@ function validateForm(formState: TaskEditFormState): {
 export function AdminTaskDetailPage() {
   const session = useAuthSession();
   const { confirm } = useConfirmDialog();
+  const { showError, showSuccess } = useSnackbar();
   const { taskId } = useParams<{ taskId: string }>();
   const [state, setState] = useState<TaskDetailState>({ status: "loading" });
   const [formState, setFormState] = useState<TaskEditFormState | null>(null);
@@ -365,6 +367,7 @@ export function AdminTaskDetailPage() {
   const [statusUpdateError, setStatusUpdateError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isDeletingTask, setIsDeletingTask] = useState(false);
   const administratorSearchTimerRef = useRef<number | null>(null);
 
   useEffect(() => (
@@ -644,6 +647,38 @@ export function AdminTaskDetailPage() {
     }
   }
 
+  async function handleDeleteTask() {
+    if (!task) {
+      return;
+    }
+    const confirmed = await confirm({
+      title: `确认删除任务 ${task.competition_name}？`,
+      description: "这会删除任务本身，以及它的材料、发票、分摊、确认、提醒、导出记录和相关存储文件。删除后不能恢复。",
+      confirmLabel: "删除任务",
+      cancelLabel: "继续保留",
+      destructive: true,
+      tone: "warning",
+      requireTyping: task.competition_name,
+    });
+    if (!confirmed) {
+      return;
+    }
+    setIsDeletingTask(true);
+    setSubmitError(null);
+    setStatusUpdateError(null);
+    setSaveNotice(null);
+    try {
+      await trmsApi.deleteTask(task.id);
+      showSuccess("任务已删除。");
+      window.location.assign("/admin/tasks");
+    } catch (error) {
+      setStatusUpdateError(error);
+      showError("删除任务失败。");
+    } finally {
+      setIsDeletingTask(false);
+    }
+  }
+
   return (
     <AdminWorkspaceShell
       activeModule="tasks"
@@ -657,14 +692,17 @@ export function AdminTaskDetailPage() {
             actions={(
               <div className="page-actions">
                 <Button component={RouterLink} variant="contained" to={`/admin/tasks/${taskId}/invoices`}>
-                录入或更正发票
-              </Button>
-              <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
-                进入材料审核
-              </Button>
-            </div>
-          )}
-        />
+                  录入或更正发票
+                </Button>
+                <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
+                  进入材料审核
+                </Button>
+                <Button type="button" color="error" variant="outlined" disabled={isDeletingTask || !task} onClick={() => { void handleDeleteTask(); }}>
+                  {isDeletingTask ? "删除中..." : "删除任务"}
+                </Button>
+              </div>
+            )}
+          />
       )}
     >
       {state.status === "loading" ? (

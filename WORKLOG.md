@@ -1,5 +1,73 @@
 # WORKLOG
 
+## 2026-05-03 21:28 - Add administrator task deletion across every task stage
+
+### 完成内容
+- 完成任务“增加管理员删除任务功能，并在任意任务阶段可用”。
+- 已新增任务级删除服务：
+  - [src/trms_backend/application/task_deletion.py](/home/gsh/workspace/TRMS/src/trms_backend/application/task_deletion.py)
+  - 任务管理员现在可删除自己管理的任务；系统管理员也可删除任意任务；
+  - 删除不再受任务状态限制，`draft/open/closed/reviewing/ready_to_export/completed` 都可执行；
+  - 删除时会级联清理：
+    - 已归属材料；
+    - 以任务 ID 或邮件提交标识挂着的待认领材料；
+    - 发票、附件关联、识别任务；
+    - 分摊、确认、发票校验；
+    - 材料提醒、自动提醒任务、导出任务。
+- 已补任务删除 API：
+  - [src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)
+  - 新增 `DELETE /api/tasks/{task_id}`；
+  - 删除成功后返回 `status=deleted` 与被删任务快照；
+  - 同时记录一条 `delete_task` 审计日志，保留任务名称、删除前状态和级联删除数量摘要。
+- 已补存储删除能力并接入任务删除：
+  - [src/trms_backend/domain/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/materials.py)
+  - [src/trms_backend/infrastructure/storage.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/storage.py)
+  - 统一存储抽象新增 `delete(storage_key)`；
+  - 本地存储会真正删除文件；
+  - S3 兼容存储会调用 `delete_object`；
+  - 任务删除现在会同时删除任务下原始材料文件与导出产物文件，而不是只删数据库记录。
+- 已补管理员前端入口：
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)
+  - 管理员任务详情页新增“删除任务”按钮；
+  - 删除前需要在确认框中输入任务名称，避免误删；
+  - 删除成功后会跳回任务列表。
+- 已补回归测试：
+  - [tests/test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py)
+  - [tests/test_material_storage.py](/home/gsh/workspace/TRMS/tests/test_material_storage.py)
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - 覆盖任意阶段任务删除、级联清理数据库记录、删除存储文件、外部管理员拒绝和管理员详情页删除入口。
+
+### 根因
+- 当前仓库有材料删除、发票删除和成员侧撤回等局部删除能力，但没有“任务整体撤销”入口。
+- 如果只删任务表一行，会立刻留下大量孤儿数据和悬挂存储文件：
+  - 材料、发票、附件关联、识别任务、分摊、确认、提醒、导出任务都会继续残留；
+  - 审计日志的 `task_id` 外键也会失效；
+  - 原始材料和导出产物文件会继续留在本地/S3 存储中。
+- 因此本轮没有走“任务状态伪装删除”或“只删任务主表”的捷径，而是新增集中式删除服务，把数据库和存储一起收口。
+
+### 风险与影响面
+- 任务删除是高破坏性操作：删除后任务、材料、发票、分摊、确认和导出记录都不可恢复。
+- 审计日志本轮保留对象级记录，但会把关联到该任务的 `task_id` 置空，避免外键悬挂；这是保留审计痕迹与删除任务主数据之间的折中。
+- 存储清理采用“数据库删除成功后再删文件”的顺序，避免先删文件再事务失败导致任务仍在但附件丢失；若极端情况下存储删除单独失败，当前会记录 warning，但不回滚已完成的数据库删除。
+- 仓库级验证中的前端 lint 仍保留 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py tests/test_material_storage.py`
+  - `65/65` 通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-task-detail.test.tsx`
+  - `7/7` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `617/617` 通过；
+  - `web` lint 仍只有 `task-missing-materials.tsx` 两条既有 warning；
+  - `web` 测试 `127/127` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 21:02 - List attachment names in email receipts and unify material deletion rules
 
 ### 完成内容

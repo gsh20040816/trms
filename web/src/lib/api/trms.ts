@@ -265,6 +265,15 @@ export const trmsApi = {
     return apiClient.request<ReimbursementTask>(`/tasks/${encodeSegment(taskId)}`);
   },
 
+  deleteTask(taskId: string) {
+    return apiClient.request<{
+      status: "deleted";
+      task: ReimbursementTask;
+    }>(`/tasks/${encodeSegment(taskId)}`, {
+      method: "DELETE",
+    });
+  },
+
   searchTaskMemberCandidates(keyword: string, limit = 10) {
     return apiClient.request<ApiListResponse<UserSearchSummary>>(
       `/tasks/search/member-candidates${buildQuery({

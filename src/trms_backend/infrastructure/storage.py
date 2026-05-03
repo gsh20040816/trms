@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import logging
 from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
@@ -15,6 +16,8 @@ from trms_backend.runtime_config import (
     RuntimeConfig,
     S3FileStorageConfig,
 )
+
+LOGGER = logging.getLogger("trms_backend.storage")
 
 
 class LocalMaterialFileStorage(MaterialFileStorage):
@@ -44,6 +47,13 @@ class LocalMaterialFileStorage(MaterialFileStorage):
 
     def read(self, *, storage_key: str) -> bytes:
         return self._resolve_storage_path(storage_key).read_bytes()
+
+    def delete(self, *, storage_key: str) -> None:
+        storage_path = self._resolve_storage_path(storage_key)
+        try:
+            storage_path.unlink()
+        except FileNotFoundError:
+            return
 
     def _build_storage_key(self, task_id: str, filename: str) -> Path:
         while True:
@@ -118,6 +128,12 @@ class S3CompatibleMaterialFileStorage(MaterialFileStorage):
             close = getattr(body, "close", None)
             if callable(close):
                 close()
+
+    def delete(self, *, storage_key: str) -> None:
+        try:
+            self._client.delete_object(Bucket=self._bucket, Key=storage_key)
+        except ClientError:
+            LOGGER.warning("failed_to_delete_storage_object", extra={"storage_key": storage_key})
 
     def _build_storage_key(self, task_id: str, filename: str) -> str:
         path_parts: list[str] = []

@@ -18,6 +18,11 @@ from trms_backend.application.invoice_member_submission_withdrawal import (
     InvoiceMemberSubmissionWithdrawalService,
 )
 from trms_backend.application.supporting_material_auto_link import SupportingMaterialAutoLinkService
+from trms_backend.application.task_deletion import (
+    TaskDeletionActorNotAllowedError,
+    TaskDeletionNotFoundError,
+    TaskDeletionService,
+)
 from trms_backend.domain.automatic_reminders import (
     AutomaticReminderTaskActorNotAllowedError,
     AutomaticReminderTaskGenerate,
@@ -25,7 +30,7 @@ from trms_backend.domain.automatic_reminders import (
     generate_task_automatic_reminder_tasks,
     list_task_automatic_reminder_tasks,
 )
-from trms_backend.domain.audit_logs import AuditLogRepository
+from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.auth import AuthRepository, UserRole
 from trms_backend.domain.confirmations import (
     ConfirmationDisputeResolve,
@@ -172,6 +177,7 @@ def build_task_router(
     split_repository: ExpenseSplitRepository,
     confirmation_repository: ConfirmationRepository,
     audit_log_repository: AuditLogRepository,
+    task_deletion_service: TaskDeletionService,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     authenticated_request_identity = build_authenticated_request_identity_dependency(
@@ -275,6 +281,53 @@ def build_task_router(
             forbidden_detail="actor is not allowed to view this task",
         )
         return enrich_task_member_summaries(task)
+
+    @router.delete("/{task_id}")
+    def delete_task(
+        task_id: str,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        ensure_task_management_role(
+            identity,
+            forbidden_detail="actor is not allowed to delete reimbursement tasks",
+        )
+        try:
+            result = task_deletion_service.delete_task(
+                task_id=task_id,
+                actor_id=identity.actor_id or "",
+                actor_role=identity.role,
+            )
+        except TaskDeletionNotFoundError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        except TaskDeletionActorNotAllowedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        audit_log_repository.create(
+            AuditLogCreate(
+                actor_id=identity.actor_id or "",
+                object_type="task",
+                object_id=result.task.id,
+                action="delete_task",
+                result=AuditLogResult.SUCCEEDED,
+                summary=f"delete task {result.task.id}",
+                detail={
+                    "competition_name": result.task.competition_name,
+                    "previous_status": result.task.status,
+                    "deleted_material_count": result.deleted_material_count,
+                    "deleted_pending_material_count": result.deleted_pending_material_count,
+                    "deleted_invoice_count": result.deleted_invoice_count,
+                    "deleted_export_job_count": result.deleted_export_job_count,
+                },
+                task_id=None,
+                request_id=None,
+            )
+        )
+        return {
+            "status": "deleted",
+            "task": result.task,
+        }
 
     @router.get("/{task_id}/members")
     def get_task_members(

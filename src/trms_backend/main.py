@@ -16,6 +16,7 @@ from trms_backend.application.recognition_runtime import resolve_recognition_llm
 from trms_backend.application.telegram_material_submission import (
     TelegramMaterialSubmissionService,
 )
+from trms_backend.application.task_deletion import TaskDeletionService
 from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
 from trms_backend.api.error_responses import ensure_request_id, register_error_response_handlers
 from trms_backend.api.auth import build_auth_router
@@ -156,6 +157,10 @@ def create_app(
         material_repository,
         invoice_repository,
     )
+    task_deletion_service = TaskDeletionService(
+        session_factory=session_factory,
+        material_file_storage=material_file_storage,
+    )
     material_type_update_service = MaterialTypeUpdateService(
         task_repository,
         material_repository,
@@ -239,6 +244,7 @@ def create_app(
             split_repository,
             confirmation_repository,
             audit_log_repository,
+            task_deletion_service,
         )
     )
     app.include_router(

@@ -1,10 +1,20 @@
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 from trms_backend.infrastructure.database import build_session_factory, session_scope
-from trms_backend.infrastructure.models import TaskRow
+from trms_backend.infrastructure.models import (
+    ConfirmationRow,
+    ExpenseSplitRow,
+    ExportJobRow,
+    InvoiceRow,
+    InvoiceSupportingMaterialLinkRow,
+    MaterialRow,
+    RecognitionTaskRow,
+    TaskRow,
+)
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
@@ -216,6 +226,123 @@ def test_health_check(tmp_path):
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_task_administrator_can_delete_task_and_related_records_in_any_status(tmp_path):
+    client = make_client(tmp_path)
+    task = create_task(client)
+    open_task(client, task["id"])
+    invoice_material_id = upload_material(client, task["id"], filename="invoice.pdf")
+    invoice_id = create_invoice(client, invoice_material_id)
+    split_id = replace_invoice_splits(client, invoice_id)
+    confirm_split(client, split_id)
+    supporting_material_response = client.post(
+        f"/api/tasks/{task['id']}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-content", "image/png")},
+    )
+    assert supporting_material_response.status_code == 201
+    supporting_material = supporting_material_response.json()["items"][0]
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert attach_response.status_code == 200
+    update_task_row(tmp_path, task["id"], status="completed")
+
+    session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    with session_scope(session_factory) as session:
+        material_rows = session.query(MaterialRow).filter(MaterialRow.task_id == task["id"]).all()
+        material_storage_paths = [
+            tmp_path / "material-storage" / row.storage_key
+            for row in material_rows
+        ]
+        export_row = ExportJobRow(
+            id=str(uuid4()),
+            task_id=task["id"],
+            requested_by="admin-1",
+            kind="merged_pdf",
+            format="pdf",
+            status="succeeded",
+            parameters={
+                "_artifact": {
+                    "storage_key": "exports/fake-export.pdf",
+                    "filename": "fake-export.pdf",
+                    "content_type": "application/pdf",
+                    "size_bytes": 9,
+                    "sha256": "a" * 64,
+                }
+            },
+            failure_reason=None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+        )
+        session.add(export_row)
+    export_storage_path = tmp_path / "material-storage" / "exports/fake-export.pdf"
+    export_storage_path.parent.mkdir(parents=True, exist_ok=True)
+    export_storage_path.write_bytes(b"pdf-bytes")
+    assert all(path.exists() for path in material_storage_paths)
+    assert export_storage_path.exists()
+
+    response = client.delete(
+        f"/api/tasks/{task['id']}",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    assert response.json()["task"]["id"] == task["id"]
+
+    fetched = client.get(
+        f"/api/tasks/{task['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert fetched.status_code == 404
+
+    with session_scope(session_factory) as session:
+        assert session.get(TaskRow, task["id"]) is None
+        assert session.query(MaterialRow).filter(MaterialRow.task_id == task["id"]).count() == 0
+        assert session.query(InvoiceRow).filter(InvoiceRow.task_id == task["id"]).count() == 0
+        assert session.query(InvoiceSupportingMaterialLinkRow).count() == 0
+        assert session.query(RecognitionTaskRow).count() == 0
+        assert session.query(ExpenseSplitRow).count() == 0
+        assert session.query(ConfirmationRow).count() == 0
+        assert session.query(ExportJobRow).filter(ExportJobRow.task_id == task["id"]).count() == 0
+
+    assert all(not path.exists() for path in material_storage_paths)
+    assert not export_storage_path.exists()
+
+
+def test_outsider_admin_cannot_delete_task(tmp_path):
+    client = make_client(tmp_path)
+    task = create_task(client)
+    outsider_admin_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="admin-outsider",
+            role="admin",
+            actor_id="admin-2",
+            member_code=None,
+        )
+    )
+
+    response = client.delete(
+        f"/api/tasks/{task['id']}",
+        headers=outsider_admin_headers,
+    )
+
+    assert_api_error(
+        response,
+        status_code=403,
+        code="forbidden",
+        detail="actor is not allowed to delete this task",
+    )
 
 
 def test_create_and_get_task(tmp_path):

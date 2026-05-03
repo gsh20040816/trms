@@ -60,6 +60,22 @@ def test_local_material_storage_records_file_metadata(tmp_path):
     assert (storage_root / stored_file.storage_key).read_bytes() == b"png-bytes"
 
 
+def test_local_material_storage_can_delete_saved_file(tmp_path):
+    storage_root = tmp_path / "material-storage"
+    storage = LocalMaterialFileStorage(storage_root)
+
+    stored_file = storage.save(
+        task_id="task-1",
+        original_filename="ticket.pdf",
+        content_type="application/pdf",
+        content=b"pdf-bytes",
+    )
+
+    assert (storage_root / stored_file.storage_key).exists()
+    storage.delete(storage_key=stored_file.storage_key)
+    assert not (storage_root / stored_file.storage_key).exists()
+
+
 def test_material_record_persists_storage_key_for_saved_file(tmp_path):
     client = TestClient(
         create_app(
@@ -119,6 +135,10 @@ class RecordingS3Client:
             ) from error
         return {"Body": BytesIO(content)}
 
+    def delete_object(self, *, Bucket: str, Key: str):
+        self.objects.pop((Bucket, Key), None)
+        return {}
+
 
 def test_s3_material_storage_persists_under_bucket_key_contract():
     client = RecordingS3Client()
@@ -170,3 +190,29 @@ def test_s3_material_storage_translates_missing_object_to_file_not_found():
 
     with pytest.raises(FileNotFoundError):
         storage.read(storage_key="task-1/missing.pdf")
+
+
+def test_s3_material_storage_can_delete_saved_file():
+    client = RecordingS3Client()
+    storage = S3CompatibleMaterialFileStorage(
+        S3FileStorageConfig(
+            backend="s3",
+            endpoint="https://minio.example.com",
+            bucket="trms-materials",
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+        ),
+        client=client,
+    )
+
+    stored_file = storage.save(
+        task_id="task-1",
+        original_filename="ticket.pdf",
+        content_type="application/pdf",
+        content=b"pdf-bytes",
+    )
+    assert ("trms-materials", stored_file.storage_key) in client.objects
+
+    storage.delete(storage_key=stored_file.storage_key)
+
+    assert ("trms-materials", stored_file.storage_key) not in client.objects
