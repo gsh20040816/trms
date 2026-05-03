@@ -934,6 +934,11 @@ class SqlAlchemyEmailInboxRecordRepository(EmailInboxRecordRepository):
             session.add(row)
         return _email_inbox_record_from_row(row)
 
+    def get(self, record_id: str) -> EmailInboxRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(EmailInboxRecordRow, record_id)
+            return _email_inbox_record_from_row(row) if row else None
+
     def get_by_mailbox_uid(self, mailbox_uid: str) -> EmailInboxRecord | None:
         with session_scope(self._session_factory) as session:
             row = session.scalars(
@@ -950,6 +955,22 @@ class SqlAlchemyEmailInboxRecordRepository(EmailInboxRecordRepository):
                 .limit(limit)
             ).all()
             return [_email_inbox_record_from_row(row) for row in rows]
+
+    def update_result(
+        self,
+        record_id: str,
+        *,
+        status: EmailInboxRecordStatus,
+        result_code: str,
+    ) -> EmailInboxRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(EmailInboxRecordRow, record_id)
+            if row is None:
+                return None
+            row.status = status.value
+            row.result_code = result_code
+            session.add(row)
+        return _email_inbox_record_from_row(row)
 
 
 class SqlAlchemyInvoiceRepository:

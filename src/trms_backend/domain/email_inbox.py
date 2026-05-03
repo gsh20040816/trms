@@ -14,6 +14,9 @@ from trms_backend.domain.email_bindings import normalize_email_address
 class EmailInboxRecordStatus(StrEnum):
     READY_FOR_IMPORT = "ready_for_import"
     IGNORED = "ignored"
+    IMPORTED = "imported"
+    PARTIALLY_IMPORTED = "partially_imported"
+    IMPORT_FAILED = "import_failed"
 
 
 class EmailInboxRecordCreate(BaseModel):
@@ -71,10 +74,22 @@ class EmailInboxRecordRepository(Protocol):
     def create(self, data: EmailInboxRecordCreate) -> EmailInboxRecord:
         raise NotImplementedError
 
+    def get(self, record_id: str) -> EmailInboxRecord | None:
+        raise NotImplementedError
+
     def get_by_mailbox_uid(self, mailbox_uid: str) -> EmailInboxRecord | None:
         raise NotImplementedError
 
     def list_ready_for_import(self, *, limit: int) -> list[EmailInboxRecord]:
+        raise NotImplementedError
+
+    def update_result(
+        self,
+        record_id: str,
+        *,
+        status: EmailInboxRecordStatus,
+        result_code: str,
+    ) -> EmailInboxRecord | None:
         raise NotImplementedError
 
 
@@ -92,6 +107,10 @@ class InMemoryEmailInboxRecordRepository:
             )
             self._records[record.id] = record
             return record
+
+    def get(self, record_id: str) -> EmailInboxRecord | None:
+        with self._lock:
+            return self._records.get(record_id)
 
     def get_by_mailbox_uid(self, mailbox_uid: str) -> EmailInboxRecord | None:
         normalized = mailbox_uid.strip()
@@ -112,3 +131,23 @@ class InMemoryEmailInboxRecordRepository:
             ]
             records.sort(key=lambda item: item.created_at)
             return records[:limit]
+
+    def update_result(
+        self,
+        record_id: str,
+        *,
+        status: EmailInboxRecordStatus,
+        result_code: str,
+    ) -> EmailInboxRecord | None:
+        with self._lock:
+            record = self._records.get(record_id)
+            if record is None:
+                return None
+            updated = record.model_copy(
+                update={
+                    "status": status,
+                    "result_code": result_code,
+                }
+            )
+            self._records[record_id] = updated
+            return updated

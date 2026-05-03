@@ -10,11 +10,17 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from trms_backend.application.async_jobs import AsyncJobProcessor
+from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.email_material_submission import (
     EmailMaterialSubmissionFormatError,
     ParsedEmailSubmission,
     parse_formatted_email_submission,
 )
+from trms_backend.application.material_submission import (
+    MaterialSubmissionTaskNotOpenError,
+    SubmittedMaterialFile,
+)
+from trms_backend.application.outbound_email import OutboundEmailMessage, OutboundEmailSender
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
 from trms_backend.domain.email_bindings import (
     EmailSubmissionIdentityResolver,
@@ -26,6 +32,7 @@ from trms_backend.domain.email_inbox import (
     EmailInboxRecordStatus,
 )
 from trms_backend.domain.tasks import TaskRepository
+from trms_backend.domain.tasks import TaskSubmissionDeadlinePassedError, TaskSubmitterNotMemberError
 from trms_backend.domain.materials import MaterialFileStorage
 from trms_backend.runtime_config import EmailInboxConfig
 from trms_backend.logging_safety import sanitize_log_fields
@@ -170,6 +177,163 @@ class EmailInboxPollingProcessor(AsyncJobProcessor):
         )
 
 
+class EmailInboxImportProcessor(AsyncJobProcessor):
+    job_type = "email_inbox_import"
+
+    def __init__(
+        self,
+        *,
+        email_inbox_record_repository: EmailInboxRecordRepository,
+        raw_email_storage: MaterialFileStorage,
+        email_material_submission_service: EmailMaterialSubmissionService,
+        outbound_email_sender: OutboundEmailSender | None,
+        audit_log_repository: AuditLogRepository,
+        batch_size: int = 10,
+    ) -> None:
+        self._email_inbox_record_repository = email_inbox_record_repository
+        self._raw_email_storage = raw_email_storage
+        self._email_material_submission_service = email_material_submission_service
+        self._outbound_email_sender = outbound_email_sender
+        self._audit_log_repository = audit_log_repository
+        self._batch_size = batch_size
+
+    def run_once(self) -> int:
+        processed_count = 0
+        for record in self._email_inbox_record_repository.list_ready_for_import(limit=self._batch_size):
+            self._import_record(record.id)
+            processed_count += 1
+        return processed_count
+
+    def _import_record(self, record_id: str) -> None:
+        record = self._email_inbox_record_repository.get(record_id)
+        if record is None or record.status is not EmailInboxRecordStatus.READY_FOR_IMPORT:
+            return
+        raw_email = self._raw_email_storage.read(storage_key=record.raw_storage_key)
+        parsed = BytesParser(policy=policy.default).parsebytes(raw_email)
+        body = _extract_email_body(parsed)
+        attachments = _extract_email_attachments(parsed)
+        if not attachments:
+            updated = self._email_inbox_record_repository.update_result(
+                record.id,
+                status=EmailInboxRecordStatus.IMPORT_FAILED,
+                result_code="missing_attachments",
+            )
+            if updated is not None:
+                self._send_result_email(updated, success_count=0, failure_count=0)
+            return
+
+        try:
+            result = self._email_material_submission_service.submit(
+                sender_email=record.sender_email,
+                subject=record.subject,
+                body=body,
+                resolved_member_id=record.resolved_member_id,
+                files=attachments,
+                request_id=None,
+            )
+        except EmailMaterialSubmissionFormatError:
+            updated = self._email_inbox_record_repository.update_result(
+                record.id,
+                status=EmailInboxRecordStatus.IMPORT_FAILED,
+                result_code="import_format_error",
+            )
+            if updated is not None:
+                self._send_result_email(updated, success_count=0, failure_count=0)
+            return
+        except MaterialSubmissionTaskNotOpenError:
+            updated = self._email_inbox_record_repository.update_result(
+                record.id,
+                status=EmailInboxRecordStatus.IMPORT_FAILED,
+                result_code="import_task_not_open",
+            )
+            if updated is not None:
+                self._send_result_email(updated, success_count=0, failure_count=0)
+            return
+        except TaskSubmitterNotMemberError:
+            updated = self._email_inbox_record_repository.update_result(
+                record.id,
+                status=EmailInboxRecordStatus.IMPORT_FAILED,
+                result_code="import_submitter_not_member",
+            )
+            if updated is not None:
+                self._send_result_email(updated, success_count=0, failure_count=0)
+            return
+        except TaskSubmissionDeadlinePassedError:
+            updated = self._email_inbox_record_repository.update_result(
+                record.id,
+                status=EmailInboxRecordStatus.IMPORT_FAILED,
+                result_code="import_deadline_passed",
+            )
+            if updated is not None:
+                self._send_result_email(updated, success_count=0, failure_count=0)
+            return
+        success_count = len(result.material_submission.records)
+        failure_count = len(result.material_submission.failures)
+        if success_count > 0 and failure_count == 0:
+            updated_status = EmailInboxRecordStatus.IMPORTED
+            result_code = "imported"
+        elif success_count > 0:
+            updated_status = EmailInboxRecordStatus.PARTIALLY_IMPORTED
+            result_code = "partially_imported"
+        else:
+            updated_status = EmailInboxRecordStatus.IMPORT_FAILED
+            result_code = "import_failed"
+        updated = self._email_inbox_record_repository.update_result(
+            record.id,
+            status=updated_status,
+            result_code=result_code,
+        )
+        if updated is not None:
+            self._audit_log_repository.create(
+                AuditLogCreate(
+                    actor_id=SYSTEM_EMAIL_POLL_ACTOR_ID,
+                    object_type="email_inbox_record",
+                    object_id=updated.id,
+                    action="import_email_inbox_message",
+                    result=AuditLogResult.SUCCEEDED,
+                    summary=f"import email inbox message {updated.mailbox_uid}",
+                    detail={
+                        "status": updated.status,
+                        "result_code": updated.result_code,
+                        "success_count": success_count,
+                        "failure_count": failure_count,
+                    },
+                    task_id=updated.resolved_task_id,
+                    request_id=None,
+                )
+            )
+            self._send_result_email(updated, success_count=success_count, failure_count=failure_count)
+
+    def _send_result_email(
+        self,
+        record,
+        *,
+        success_count: int,
+        failure_count: int,
+    ) -> None:
+        if self._outbound_email_sender is None:
+            return
+        if record.status is EmailInboxRecordStatus.IMPORTED:
+            subject = "TRMS 邮件材料已收到"
+            body = f"你的邮件材料已收到并进入任务处理链路。\n成功附件数：{success_count}\n"
+        elif record.status is EmailInboxRecordStatus.PARTIALLY_IMPORTED:
+            subject = "TRMS 邮件材料部分成功"
+            body = (
+                "你的邮件材料已部分进入任务处理链路。\n"
+                f"成功附件数：{success_count}\n失败附件数：{failure_count}\n"
+            )
+        else:
+            subject = "TRMS 邮件材料处理失败"
+            body = f"你的邮件材料未成功进入任务处理链路。\n失败原因：{record.result_code}\n"
+        self._outbound_email_sender.send(
+            OutboundEmailMessage(
+                to_email=record.sender_email,
+                subject=subject,
+                text_body=body,
+            )
+        )
+
+
 class StaticEmailInboxClient:
     def __init__(self, messages: list[PolledEmailMessage]) -> None:
         self._messages = messages
@@ -253,6 +417,25 @@ def _extract_email_body(message) -> str:
         return message.get_content()
     except Exception:
         return ""
+
+
+def _extract_email_attachments(message) -> list[SubmittedMaterialFile]:
+    attachments: list[SubmittedMaterialFile] = []
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+        filename = part.get_filename()
+        if filename is None:
+            continue
+        content = part.get_payload(decode=True) or b""
+        attachments.append(
+            SubmittedMaterialFile(
+                original_filename=filename,
+                content_type=part.get_content_type(),
+                content=content,
+            )
+        )
+    return attachments
 
 
 def _extract_email_address(raw_from: str) -> str:

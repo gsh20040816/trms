@@ -4,11 +4,15 @@ from threading import Event, Lock, Thread
 import trms_backend.__main__ as backend_main
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
 from trms_backend.application.email_inbox_polling import (
+    EmailInboxImportProcessor,
     EmailInboxPollingProcessor,
     PolledEmailMessage,
     StaticEmailInboxClient,
 )
+from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
+from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.metrics import InMemoryMetricsCollector
+from trms_backend.application.outbound_email import OutboundEmailMessage
 import trms_backend.application.recognition_async_jobs as recognition_async_jobs
 from trms_backend.application.async_jobs import AsyncJobWorker, AsyncJobWorkerModeError
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
@@ -19,17 +23,39 @@ from trms_backend.domain.email_bindings import (
     EmailSubmissionIdentityResolver,
     InMemoryEmailAccountBindingRepository,
 )
-from trms_backend.domain.email_inbox import InMemoryEmailInboxRecordRepository
+from trms_backend.domain.email_inbox import (
+    EmailInboxRecordCreate,
+    EmailInboxRecordStatus,
+    InMemoryEmailInboxRecordRepository,
+)
 from trms_backend.domain.tasks import InMemoryTaskRepository, TaskCreate, TaskStatus
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
+from trms_backend.domain.materials import InMemoryMaterialRepository
 from trms_backend.domain.exports import (
     StoredExportArtifactRecord,
     TaskExportJobRecord,
     TaskExportJobStatus,
     TaskExportVersionSnapshot,
 )
-from trms_backend.domain.recognitions import RecognitionTaskRecord, RecognitionTaskStatus
+from trms_backend.domain.recognitions import RecognitionTaskCreate, RecognitionTaskRecord, RecognitionTaskStatus
 from trms_backend.runtime_config import load_runtime_config
+
+
+class RecordingOutboundEmailSender:
+    def __init__(self) -> None:
+        self.messages: list[OutboundEmailMessage] = []
+
+    def send(self, message: OutboundEmailMessage) -> None:
+        self.messages.append(message)
+
+
+class InMemoryRecognitionTaskRepository:
+    def __init__(self) -> None:
+        self._items: list[RecognitionTaskCreate] = []
+
+    def create(self, data: RecognitionTaskCreate):
+        self._items.append(data)
+        return data
 
 
 class CountingProcessor:
@@ -267,6 +293,257 @@ def test_email_inbox_polling_processor_ignores_bound_sender_with_unknown_task_ke
     record = inbox_repository.get_by_mailbox_uid("missing-task-1")
     assert record is not None
     assert record.result_code == "ignored_unknown_task_key"
+
+
+def test_email_inbox_import_processor_submits_attachment_and_sends_receipt(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    task = task_repository.create(
+        TaskCreate(
+            competition_name="ICPC Mail Task",
+            competition_location="Shanghai",
+            competition_start_date=datetime(2026, 11, 1, tzinfo=timezone.utc).date(),
+            competition_end_date=datetime(2026, 11, 3, tzinfo=timezone.utc).date(),
+            deadline=datetime.now(timezone.utc) + timedelta(days=7),
+            email_submission_key="icpc-mail-task",
+            member_ids=["2250001"],
+            fee_categories=["registration"],
+            administrator_id="admin-1",
+            administrator_ids=["admin-1"],
+            project_info="",
+            reimburser_info="",
+            invoice_title="同济大学",
+            tax_number="91310000TEST00001",
+        )
+    )
+    task_repository.update_status(task.id, TaskStatus.OPEN)
+    material_repository = InMemoryMaterialRepository()
+    recognition_task_repository = InMemoryRecognitionTaskRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    material_storage = LocalMaterialFileStorage(tmp_path / "materials")
+    inbox_storage = LocalMaterialFileStorage(tmp_path / "emails")
+    binding_repository = InMemoryEmailAccountBindingRepository()
+    binding_repository.upsert(
+        EmailAccountBindingUpsert(member_id="2250001", email="bound@tongji.edu.cn")
+    )
+    email_material_submission_service = EmailMaterialSubmissionService(
+        material_submission_service=MaterialSubmissionService(
+            task_repository,
+            material_repository,
+            material_storage,
+            recognition_task_repository,
+            audit_repository,
+        ),
+        task_repository=task_repository,
+        submission_identity_resolver=EmailSubmissionIdentityResolver(binding_repository),
+    )
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    raw_email = (
+        b"From: bound@tongji.edu.cn\r\n"
+        b"Subject: [TRMS] task:icpc-mail-task\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
+        b"--BOUNDARY\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        b"material_type: invoice\r\n\r\n"
+        b"--BOUNDARY\r\n"
+        b"Content-Type: application/pdf\r\n"
+        b"Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\r\n"
+        b"fake-pdf-content\r\n"
+        b"--BOUNDARY--\r\n"
+    )
+    stored_raw = inbox_storage.save(
+        task_id="_email_inbox",
+        original_filename="1.eml",
+        content_type="message/rfc822",
+        content=raw_email,
+    )
+    record = inbox_repository.create(
+        EmailInboxRecordCreate(
+            mailbox_uid="1",
+            message_id="<a@example.edu>",
+            sender_email="bound@tongji.edu.cn",
+            subject="[TRMS] task:icpc-mail-task",
+            raw_storage_key=stored_raw.storage_key,
+            received_at=datetime.now(timezone.utc),
+            status=EmailInboxRecordStatus.READY_FOR_IMPORT,
+            result_code="ready_for_import",
+            resolved_member_id="2250001",
+            submitted_task_key="icpc-mail-task",
+            resolved_task_id=task.id,
+        )
+    )
+    sender = RecordingOutboundEmailSender()
+    processor = EmailInboxImportProcessor(
+        email_inbox_record_repository=inbox_repository,
+        raw_email_storage=inbox_storage,
+        email_material_submission_service=email_material_submission_service,
+        outbound_email_sender=sender,
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 1
+    updated = inbox_repository.get(record.id)
+    assert updated is not None
+    assert updated.status == EmailInboxRecordStatus.IMPORTED
+    assert updated.result_code == "imported"
+    assert len(material_repository.list_by_task(task.id)) == 1
+    assert sender.messages[-1].subject == "TRMS 邮件材料已收到"
+
+
+def test_email_inbox_import_processor_marks_missing_attachment_as_failed(tmp_path):
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    sender = RecordingOutboundEmailSender()
+    inbox_storage = LocalMaterialFileStorage(tmp_path / "emails")
+    raw_email = (
+        b"From: bound@tongji.edu.cn\r\n"
+        b"Subject: [TRMS] task:icpc-mail-task\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        b"material_type: invoice\r\n"
+    )
+    stored_raw = inbox_storage.save(
+        task_id="_email_inbox",
+        original_filename="2.eml",
+        content_type="message/rfc822",
+        content=raw_email,
+    )
+    record = inbox_repository.create(
+        EmailInboxRecordCreate(
+            mailbox_uid="2",
+            message_id="<b@example.edu>",
+            sender_email="bound@tongji.edu.cn",
+            subject="[TRMS] task:icpc-mail-task",
+            raw_storage_key=stored_raw.storage_key,
+            received_at=datetime.now(timezone.utc),
+            status=EmailInboxRecordStatus.READY_FOR_IMPORT,
+            result_code="ready_for_import",
+            resolved_member_id="2250001",
+            submitted_task_key="icpc-mail-task",
+            resolved_task_id="task-1",
+        )
+    )
+    processor = EmailInboxImportProcessor(
+        email_inbox_record_repository=inbox_repository,
+        raw_email_storage=inbox_storage,
+        email_material_submission_service=EmailMaterialSubmissionService(
+            material_submission_service=MaterialSubmissionService(
+                InMemoryTaskRepository(),
+                InMemoryMaterialRepository(),
+                LocalMaterialFileStorage(tmp_path / "materials"),
+                InMemoryRecognitionTaskRepository(),
+                audit_repository,
+            ),
+            task_repository=InMemoryTaskRepository(),
+            submission_identity_resolver=None,
+        ),
+        outbound_email_sender=sender,
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 1
+    updated = inbox_repository.get(record.id)
+    assert updated is not None
+    assert updated.status == EmailInboxRecordStatus.IMPORT_FAILED
+    assert updated.result_code == "missing_attachments"
+    assert sender.messages[-1].subject == "TRMS 邮件材料处理失败"
+
+
+def test_email_inbox_import_processor_marks_partial_success_and_sends_partial_receipt(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    task = task_repository.create(
+        TaskCreate(
+            competition_name="ICPC Mail Task",
+            competition_location="Shanghai",
+            competition_start_date=datetime(2026, 11, 1, tzinfo=timezone.utc).date(),
+            competition_end_date=datetime(2026, 11, 3, tzinfo=timezone.utc).date(),
+            deadline=datetime.now(timezone.utc) + timedelta(days=7),
+            email_submission_key="icpc-mail-task",
+            member_ids=["2250001"],
+            fee_categories=["registration"],
+            administrator_id="admin-1",
+            administrator_ids=["admin-1"],
+            project_info="",
+            reimburser_info="",
+            invoice_title="同济大学",
+            tax_number="91310000TEST00001",
+        )
+    )
+    task_repository.update_status(task.id, TaskStatus.OPEN)
+    material_repository = InMemoryMaterialRepository()
+    recognition_task_repository = InMemoryRecognitionTaskRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    material_storage = LocalMaterialFileStorage(tmp_path / "materials")
+    inbox_storage = LocalMaterialFileStorage(tmp_path / "emails")
+    binding_repository = InMemoryEmailAccountBindingRepository()
+    binding_repository.upsert(
+        EmailAccountBindingUpsert(member_id="2250001", email="bound@tongji.edu.cn")
+    )
+    email_material_submission_service = EmailMaterialSubmissionService(
+        material_submission_service=MaterialSubmissionService(
+            task_repository,
+            material_repository,
+            material_storage,
+            recognition_task_repository,
+            audit_repository,
+        ),
+        task_repository=task_repository,
+        submission_identity_resolver=EmailSubmissionIdentityResolver(binding_repository),
+    )
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    raw_email = (
+        b"From: bound@tongji.edu.cn\r\n"
+        b"Subject: [TRMS] task:icpc-mail-task\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
+        b"--BOUNDARY\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        b"material_type: invoice\r\n\r\n"
+        b"--BOUNDARY\r\n"
+        b"Content-Type: application/pdf\r\n"
+        b"Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\r\n"
+        b"fake-pdf-content\r\n"
+        b"--BOUNDARY\r\n"
+        b"Content-Type: application/pdf\r\n"
+        b"Content-Disposition: attachment; filename=\"   \"\r\n\r\n"
+        b"bad-file\r\n"
+        b"--BOUNDARY--\r\n"
+    )
+    stored_raw = inbox_storage.save(
+        task_id="_email_inbox",
+        original_filename="3.eml",
+        content_type="message/rfc822",
+        content=raw_email,
+    )
+    record = inbox_repository.create(
+        EmailInboxRecordCreate(
+            mailbox_uid="3",
+            message_id="<c@example.edu>",
+            sender_email="bound@tongji.edu.cn",
+            subject="[TRMS] task:icpc-mail-task",
+            raw_storage_key=stored_raw.storage_key,
+            received_at=datetime.now(timezone.utc),
+            status=EmailInboxRecordStatus.READY_FOR_IMPORT,
+            result_code="ready_for_import",
+            resolved_member_id="2250001",
+            submitted_task_key="icpc-mail-task",
+            resolved_task_id=task.id,
+        )
+    )
+    sender = RecordingOutboundEmailSender()
+    processor = EmailInboxImportProcessor(
+        email_inbox_record_repository=inbox_repository,
+        raw_email_storage=inbox_storage,
+        email_material_submission_service=email_material_submission_service,
+        outbound_email_sender=sender,
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 1
+    updated = inbox_repository.get(record.id)
+    assert updated is not None
+    assert updated.status == EmailInboxRecordStatus.PARTIALLY_IMPORTED
+    assert updated.result_code == "partially_imported"
+    assert sender.messages[-1].subject == "TRMS 邮件材料部分成功"
 
 
 def test_backend_main_worker_once_uses_worker_entry(monkeypatch):

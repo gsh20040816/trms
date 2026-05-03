@@ -9,12 +9,16 @@ import uvicorn
 
 from trms_backend.application.async_jobs import AsyncJobWorker
 from trms_backend.application.email_inbox_polling import (
+    EmailInboxImportProcessor,
     EmailInboxPollingProcessor,
     ImapEmailInboxClient,
     StaticEmailInboxClient,
 )
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
 from trms_backend.application.metrics import InMemoryMetricsCollector
+from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
+from trms_backend.application.material_submission import MaterialSubmissionService
+from trms_backend.application.outbound_email import SmtpOutboundEmailSender
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_llm import (
     RoutedRecognitionClient,
@@ -133,6 +137,26 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
         recognition_llm_client,
         metrics_collector,
     )
+    material_submission_service = MaterialSubmissionService(
+        task_repository,
+        material_repository,
+        material_file_storage,
+        recognition_task_repository,
+        audit_log_repository,
+        metrics_collector,
+    )
+    outbound_email_sender = (
+        SmtpOutboundEmailSender(effective_config.outbound_email)
+        if effective_config.outbound_email is not None
+        else None
+    )
+    email_material_submission_service = EmailMaterialSubmissionService(
+        material_submission_service=material_submission_service,
+        task_repository=task_repository,
+        submission_identity_resolver=EmailSubmissionIdentityResolver(
+            email_account_binding_repository
+        ),
+    )
     return (
         AsyncJobWorker(
             effective_config.async_jobs,
@@ -145,6 +169,13 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
                     ),
                     task_repository=task_repository,
                     raw_email_storage=material_file_storage,
+                    audit_log_repository=audit_log_repository,
+                ),
+                EmailInboxImportProcessor(
+                    email_inbox_record_repository=email_inbox_record_repository,
+                    raw_email_storage=material_file_storage,
+                    email_material_submission_service=email_material_submission_service,
+                    outbound_email_sender=outbound_email_sender,
                     audit_log_repository=audit_log_repository,
                 ),
                 RecognitionAsyncJobProcessor(

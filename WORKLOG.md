@@ -1,5 +1,62 @@
 # WORKLOG
 
+## 2026-05-03 16:20 - Import email attachments into material pipeline and send receipts
+
+### 完成内容
+- 完成任务“将邮件附件接入统一上传链路并通过 SMTP 回复处理结果”。
+- 已扩展邮件收件记录状态机：
+  - [src/trms_backend/domain/email_inbox.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/email_inbox.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - 收件记录状态从上一轮的 `ready_for_import / ignored` 扩展为：
+    - `imported`
+    - `partially_imported`
+    - `import_failed`
+  - 新增读取单条记录和导入结果更新能力，避免同一封邮件在 worker 中被重复消费。
+- 已扩展 worker 内邮件导入处理器：
+  - [src/trms_backend/application/email_inbox_polling.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_inbox_polling.py)
+  - 新增 `EmailInboxImportProcessor`；
+  - 对 `ready_for_import` 的收件记录，会读取原始 `.eml`、提取正文和附件，再复用既有 [src/trms_backend/application/email_material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_material_submission.py) 与统一材料上传链路；
+  - 上传后的材料仍走现有识别任务占位、对象存储、重复文件检测和审计日志，不单独造一条邮件专用材料链路。
+- 已把附件导入与 SMTP 回执接入 worker 装配：
+  - [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py)
+  - worker 现在按顺序执行：
+    - `email_inbox` 轮询收件；
+    - `email_inbox_import` 导入附件；
+    - `recognition`；
+    - `export`
+  - 若已配置 SMTP，系统会按导入结果自动回复：
+    - `TRMS 邮件材料已收到`
+    - `TRMS 邮件材料部分成功`
+    - `TRMS 邮件材料处理失败`
+- 已补回执与导入结果边界：
+  - 单附件全部成功时，收件记录标记为 `imported`；
+  - 有成功也有失败时，标记为 `partially_imported`；
+  - 没有任何有效附件或任务状态/成员校验失败时，标记为 `import_failed`；
+  - 回执目前是纯文本摘要，包含成功/失败数量或稳定失败码。
+- 已补测试：
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+  - 覆盖单附件成功、缺少附件失败、部分成功回执三条主路径。
+
+### 根因
+- 上一轮虽然已经把 IMAP 收件轮询、去重和忽略原因记录接入 worker，但收件记录只停在 `ready_for_import`。
+- 这意味着“邮件已经被系统看见”和“邮件里的附件已经进入统一材料处理链路”之间仍然断开，成员也收不到处理结果，无法形成真正的邮件提交闭环。
+- 如果继续把附件导入做成旁路实现，会重复发明上传、识别占位、去重和审计逻辑；因此本轮直接复用已有 `EmailMaterialSubmissionService` 和 `MaterialSubmissionService` 才能保证权限、识别和失败语义与网页上传一致。
+
+### 风险与影响面
+- 本轮附件导入复用了现有邮件正文规范和材料类型约束；如果原始邮件正文缺少元数据或主题不合法，仍按既有稳定错误码处理。
+- 当前回执只反馈整体导入结果和稳定失败码，不会逐附件展开详细财务/识别诊断；更细粒度的成员可读反馈仍可在后续迭代增强。
+- IMAP client 目前仍按全量 `UID SEARCH ALL` + 本地去重消费；当邮箱规模变大时可能需要服务端搜索优化或状态标记策略，但不影响当前功能正确性。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_async_jobs.py`
+  - `18/18` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `597/597` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 16:11 - Add IMAP inbox polling and ignored-sender recording
 
 ### 完成内容
