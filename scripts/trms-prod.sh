@@ -24,6 +24,8 @@ usage() {
   ./scripts/trms-prod.sh <command> [args...]
 
 命令：
+  build           重建 migrate/api/worker/web 镜像，不启动容器
+  deploy          先重建镜像，再按生产基线启动依赖、执行迁移并拉起 api/worker/web
   start           按生产基线启动依赖、执行迁移并拉起 api/worker/web
   stop            停止当前 Compose 项目中的全部服务，但保留容器和卷
   down            停止并移除当前 Compose 项目的容器与网络
@@ -105,6 +107,14 @@ ensure_production_env() {
   [[ "$trms_env" == "production" ]] || fail "TRMS_ENV=$trms_env；生产脚本只允许用于 production"
 }
 
+build_stack() {
+  ensure_prerequisites
+  ensure_production_env
+
+  log "重建应用镜像：migrate api worker web"
+  compose build migrate api worker web
+}
+
 start_stack() {
   ensure_prerequisites
   ensure_production_env
@@ -123,6 +133,11 @@ start_stack() {
 
   log "当前服务状态"
   compose ps
+}
+
+deploy_stack() {
+  build_stack
+  start_stack
 }
 
 stop_stack() {
@@ -164,6 +179,16 @@ main() {
   local command="${1:-}"
 
   case "$command" in
+    build)
+      shift
+      [[ "$#" -eq 0 ]] || fail "build 不接受额外参数"
+      build_stack
+      ;;
+    deploy)
+      shift
+      [[ "$#" -eq 0 ]] || fail "deploy 不接受额外参数"
+      deploy_stack
+      ;;
     start)
       shift
       [[ "$#" -eq 0 ]] || fail "start 不接受额外参数"

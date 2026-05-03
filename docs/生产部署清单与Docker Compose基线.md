@@ -53,11 +53,15 @@ cp .env.example .env
 优先使用仓库提供的统一脚本：
 
 ```bash
+./scripts/trms-prod.sh build
+./scripts/trms-prod.sh deploy
 ./scripts/trms-prod.sh start
 ```
 
 该脚本会依次执行：
 
+- `build`：重建 `migrate`、`api`、`worker`、`web` 镜像
+- `deploy`：先执行 `build`，再执行下方 `start` 流程
 - 启动 `postgres`、`redis`、`minio`
 - 运行 `minio-init`
 - 执行 `migrate`
@@ -77,10 +81,12 @@ cp .env.example .env
 - 脚本默认读取仓库根目录 `.env` 与 `deploy/docker-compose.yml`
 - 脚本会校验 `TRMS_ENV=production`，避免误把开发配置当成生产基线执行
 - 若需覆盖路径，可设置 `TRMS_PROD_ENV_FILE` 或 `TRMS_PROD_COMPOSE_FILE`
+- `start` 不会主动重建镜像；服务器上执行 `git pull` 后，应优先使用 `./scripts/trms-prod.sh deploy`
 
 若需要手工分步执行，等价命令如下：
 
 ```bash
+docker compose --env-file .env -f deploy/docker-compose.yml build migrate api worker web
 docker compose --env-file .env -f deploy/docker-compose.yml up -d postgres redis minio
 docker compose --env-file .env -f deploy/docker-compose.yml up minio-init
 docker compose --env-file .env -f deploy/docker-compose.yml run --rm migrate

@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-05-04 03:55 - Add build and deploy commands to production helper script
+
+### 完成内容
+- 完成任务“为生产启停脚本增加 `build` 和 `deploy` 命令”。
+- 已更新生产脚本：
+  - [scripts/trms-prod.sh](/home/gsh/workspace/TRMS/scripts/trms-prod.sh)
+  - 新增 `build`：执行 `docker compose build migrate api worker web`
+  - 新增 `deploy`：先执行 `build`，再执行现有 `start` 流程
+  - `start` 语义保持不变，仍只负责依赖启动、`minio-init`、迁移和应用服务拉起，不会主动重建镜像
+- 已同步更新说明文档：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/%E7%94%9F%E4%BA%A7%E9%83%A8%E7%BD%B2%E6%B8%85%E5%8D%95%E4%B8%8EDocker%20Compose%E5%9F%BA%E7%BA%BF.md)
+  - 文档现明确区分：
+    - `build` 只重建镜像
+    - `deploy` 用于服务器 `git pull` 后更新代码
+    - 仅执行 `start` 可能继续复用旧镜像
+
+### 根因
+- 当前 Compose 基线中的 `migrate`、`api`、`worker`、`web` 都使用 `build:`，但旧版 `./scripts/trms-prod.sh start` 只会 `up` 和 `run`，不会先重建镜像。
+- 结果是服务器在 `git pull` 之后直接执行 `start`，很容易继续运行旧镜像，看起来像“代码没有变化”。
+
+### 风险与影响面
+- 本轮没有改动 Compose 拓扑，也没有改变 `start` 现有启动顺序，只是把“显式重建镜像”收口成脚本命令。
+- `deploy` 当前始终会重建 `migrate`、`api`、`worker`、`web`，因此更新时间会比单纯 `start` 更长，但行为更符合代码更新后的真实部署需求。
+
+### 验证结果
+- 已运行：
+  - `bash -n scripts/trms-prod.sh`
+  - `TRMS_PROD_ENV_FILE=.env.example ./scripts/trms-prod.sh --help`
+- 已运行 `./scripts/verify.sh`：
+  - 按改动范围执行 `bash -n scripts/trms-prod.sh`
+  - `git diff --check` 通过
+
 ## 2026-05-04 03:25 - Add production registration email host allowlist and verification flow
 
 ### 完成内容

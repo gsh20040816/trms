@@ -28,10 +28,18 @@ cp .env.development.example .env
 生产环境若沿用仓库基线，推荐直接使用：
 
 ```bash
+./scripts/trms-prod.sh build
+./scripts/trms-prod.sh deploy
 ./scripts/trms-prod.sh start
 ./scripts/trms-prod.sh status
 ./scripts/trms-prod.sh stop
 ```
+
+说明：
+
+- `build` 只重建 `migrate`、`api`、`worker`、`web` 镜像，不启动容器。
+- `deploy` 会先执行 `build`，再执行当前 `start` 流程，适合服务器上 `git pull` 之后更新代码。
+- `start` 不会主动重建镜像；如果源码、`Dockerfile` 或前端构建产物依赖发生变化，仅执行 `start` 可能继续复用旧镜像。
 
 ## 本地验证
 

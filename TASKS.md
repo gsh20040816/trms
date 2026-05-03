@@ -2,6 +2,15 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-04 生产脚本增加 build / deploy 命令
+
+- [x] 为生产启停脚本增加 `build` 和 `deploy` 命令
+  - Done when:
+    - `./scripts/trms-prod.sh build` 会按当前 Compose 基线重建 `migrate`、`api`、`worker`、`web`
+    - `./scripts/trms-prod.sh deploy` 会先执行 `build`，再执行当前 `start` 流程
+    - README 与生产部署文档同步说明新命令和“源码更新后需 rebuild”边界
+    - 仓库级验证通过
+
 ## 临时任务 - 2026-05-04 生产环境注册邮箱 host 白名单与验证码闭环
 
 - [x] 为生产环境增加可配置的注册邮箱 host 白名单、注册验证码和自动邮箱绑定
