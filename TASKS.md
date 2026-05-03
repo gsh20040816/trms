@@ -2,6 +2,15 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-04 Docker Compose 本地材料目录宿主持久化
+
+- [x] 让 Docker Compose 在 local 存储模式下持久化 `MATERIAL_STORAGE_DIR`
+  - Done when:
+    - `deploy/docker-compose.yml` 会把 `MATERIAL_STORAGE_DIR` 传给 `migrate`、`api`、`worker`
+    - `api` 与 `worker` 在 Compose 下会把宿主机 `MATERIAL_STORAGE_DIR` bind mount 到容器内同一路径
+    - 根目录 `.env.example`、README 和生产部署文档同步说明该行为
+    - 仓库级验证通过
+
 ## 临时任务 - 2026-05-03 Telegram 默认材料类型收口
 
 - [x] 让 Telegram 和未显式指定类型的上传默认先落为其他材料，再由识别结果修正

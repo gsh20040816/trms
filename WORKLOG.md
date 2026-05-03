@@ -1,5 +1,33 @@
 # WORKLOG
 
+## 2026-05-04 00:55 - Persist local material storage path on host in Docker Compose
+
+### 完成内容
+- 完成任务“让 Docker Compose 在 local 存储模式下持久化 `MATERIAL_STORAGE_DIR`”。
+- 已更新 Compose 基线：
+  - [deploy/docker-compose.yml](/home/gsh/workspace/TRMS/deploy/docker-compose.yml)
+  - `migrate`、`api`、`worker` 现都会显式继承 `MATERIAL_STORAGE_DIR`；
+  - `api` 与 `worker` 新增 bind mount：宿主机 `MATERIAL_STORAGE_DIR` -> 容器内同一路径；
+  - 例如 `.env` 中配置 `MATERIAL_STORAGE_DIR=/srv/trms/materials` 时，宿主机 `/srv/trms/materials` 会成为 local 存储模式下的持久化目录。
+- 已补齐部署模板与说明：
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md)
+  - 现在明确说明：Compose 默认仍以 S3/MinIO 为基线，但切换到 `TRMS_STORAGE_BACKEND=local` 时，`MATERIAL_STORAGE_DIR` 会直接映射到宿主机同一路径。
+
+### 根因
+- 运行时配置层已经允许生产环境显式使用 `local` 存储，但 Compose 基线此前只透传了 `TRMS_STORAGE_BACKEND`，没有把 `MATERIAL_STORAGE_DIR` 传入容器，也没有为本地材料目录提供宿主机持久化挂载。
+- 结果是即便部署方在 `.env` 里设置了 `MATERIAL_STORAGE_DIR=/srv/trms/materials`，容器化部署仍缺少明确、可审查的宿主持久化边界。
+
+### 风险与影响面
+- 本轮选择“宿主机路径 = 容器内路径”的 bind mount 策略，部署方需要确保 `MATERIAL_STORAGE_DIR` 对 Docker 守护进程可创建或可写。
+- Compose 基线默认仍保留 PostgreSQL、Redis、MinIO 与 `minio-init`；即使切到 `local` 存储，本轮也没有顺手移除这些服务，以避免扩大部署拓扑改动范围。
+
+### 验证结果
+- 已运行 `./scripts/verify.sh`：
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-04 00:20 - Allow local file storage in production
 
 ### 完成内容
