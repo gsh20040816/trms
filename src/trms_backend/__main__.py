@@ -42,6 +42,7 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyValidationRepository,
 )
 from trms_backend.infrastructure.storage import build_material_file_storage
+from trms_backend.logging_safety import sanitize_log_fields
 from trms_backend.runtime_config import (
     RuntimeConfig,
     apply_system_ai_provider_overrides,
@@ -157,6 +158,21 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
             email_account_binding_repository
         ),
     )
+    recognition_worker_max_workers = _resolve_recognition_worker_max_workers(
+        config.database_url,
+        effective_config.async_jobs.worker_concurrency,
+    )
+    if recognition_worker_max_workers != effective_config.async_jobs.worker_concurrency:
+        LOGGER.warning(
+            "recognition_worker_sqlite_serialized %s",
+            sanitize_log_fields(
+                {
+                    "database_url": config.database_url,
+                    "configured_max_workers": effective_config.async_jobs.worker_concurrency,
+                    "effective_max_workers": recognition_worker_max_workers,
+                }
+            ),
+        )
     return (
         AsyncJobWorker(
             effective_config.async_jobs,
@@ -187,7 +203,7 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
                     split_repository=split_repository,
                     confirmation_repository=confirmation_repository,
                     recognition_preparation_service=recognition_preparation_service,
-                    max_workers=effective_config.async_jobs.worker_concurrency,
+                    max_workers=recognition_worker_max_workers,
                     metrics_collector=metrics_collector,
                 ),
                 ExportAsyncJobProcessor(
@@ -206,6 +222,17 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
         ),
         effective_config,
     )
+
+
+def _resolve_recognition_worker_max_workers(
+    database_url: str,
+    configured_max_workers: int,
+) -> int:
+    if configured_max_workers <= 1:
+        return 1
+    if database_url.strip().lower().startswith("sqlite"):
+        return 1
+    return configured_max_workers
 
 
 def run_worker_command(argv: Sequence[str]) -> int:

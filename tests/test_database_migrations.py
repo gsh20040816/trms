@@ -2,6 +2,7 @@ from alembic import command
 from sqlalchemy import inspect
 
 import pytest
+import trms_backend.infrastructure.database as database_module
 
 from trms_backend.infrastructure.database import (
     DatabaseSchemaNotReadyError,
@@ -10,6 +11,34 @@ from trms_backend.infrastructure.database import (
     get_alembic_head_revisions,
     init_database,
 )
+
+
+def test_build_engine_sets_sqlite_busy_timeout(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        database_module,
+        "create_engine",
+        lambda database_url, connect_args: calls.append(
+            {
+                "database_url": database_url,
+                "connect_args": connect_args,
+            }
+        )
+        or object(),
+    )
+
+    database_module.build_engine("sqlite:///./test.db")
+
+    assert calls == [
+        {
+            "database_url": "sqlite:///./test.db",
+            "connect_args": {
+                "check_same_thread": False,
+                "timeout": database_module.SQLITE_BUSY_TIMEOUT_SECONDS,
+            },
+        }
+    ]
 
 
 def test_init_database_bootstraps_schema_for_local_sqlite(tmp_path):

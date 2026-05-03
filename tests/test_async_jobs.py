@@ -122,6 +122,13 @@ def test_async_job_worker_run_once_aggregates_registered_processors():
     assert result.total_processed == 3
 
 
+def test_resolve_recognition_worker_max_workers_serializes_sqlite():
+    assert backend_main._resolve_recognition_worker_max_workers("sqlite:///./trms.db", 4) == 1
+    assert backend_main._resolve_recognition_worker_max_workers(" sqlite:///./trms.db ", 2) == 1
+    assert backend_main._resolve_recognition_worker_max_workers("postgresql+psycopg://db/trms", 4) == 4
+    assert backend_main._resolve_recognition_worker_max_workers("postgresql+psycopg://db/trms", 1) == 1
+
+
 def test_async_job_worker_run_once_emits_iteration_logs(monkeypatch):
     config = load_runtime_config(env={}, async_job_mode="worker")
     worker = AsyncJobWorker(
@@ -960,6 +967,42 @@ def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
 
     assert exit_code == 0
     assert calls == ["run_once"]
+
+
+def test_build_async_job_worker_serializes_recognition_threads_for_sqlite(tmp_path, monkeypatch):
+    config = load_runtime_config(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path}/test.db",
+        material_storage_dir=tmp_path / "material-storage",
+        cors_allowed_origins="http://127.0.0.1:5173",
+        public_api_base_url="http://127.0.0.1:8000/api",
+        api_host="127.0.0.1",
+        api_port=8000,
+        async_job_mode="worker",
+        async_job_worker_concurrency=4,
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        backend_main,
+        "LOGGER",
+        type(
+            "Logger",
+            (),
+            {
+                "warning": lambda self, message, payload: warnings.append(f"{message} {payload}"),
+            },
+        )(),
+    )
+
+    worker, _ = backend_main.build_async_job_worker(config)
+
+    recognition_processor = next(
+        processor
+        for processor in worker._processors
+        if isinstance(processor, RecognitionAsyncJobProcessor)
+    )
+    assert recognition_processor.max_workers == 1
+    assert any("recognition_worker_sqlite_serialized" in entry for entry in warnings)
 
 
 def test_worker_entry_configures_info_logging(monkeypatch):

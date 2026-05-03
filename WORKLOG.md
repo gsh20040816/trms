@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-03 22:10 - Serialize recognition worker on SQLite and extend lock wait
+
+### 完成内容
+- 完成任务“收口识别 worker 在线程并发下的 SQLite 锁库问题”。
+- 已在 worker 构建阶段按数据库类型收口识别并发：
+  - [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py)
+  - 当 `DATABASE_URL` 指向 SQLite 且 `TRMS_ASYNC_JOB_WORKER_CONCURRENCY > 1` 时，识别 worker 现在会强制降为单线程执行；
+  - worker 启动时会额外记录 `recognition_worker_sqlite_serialized` warning，显式暴露“配置想并发，但 SQLite 不适合并发写库”的事实，而不是继续偶发崩溃。
+- 已增强 SQLite 连接的锁等待配置：
+  - [src/trms_backend/infrastructure/database.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/database.py)
+  - SQLite 引擎现在会显式设置 `timeout=30.0` 与 `check_same_thread=False`；
+  - 这样即使还有 API/worker 之间的短时锁竞争，也会先等待一段时间，而不是沿用默认较短等待后直接抛 `database is locked`。
+- 已补回归测试：
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+  - [tests/test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py)
+  - 覆盖 SQLite 下识别 worker 自动串行化、相关 warning 输出，以及 SQLite 引擎连接参数。
+
+### 根因
+- 当前识别 worker 会用 `ThreadPoolExecutor` 并发处理多个 `pending` 识别任务。
+- 仓库默认数据库仍是本地 SQLite，而 SQLite 天然只有单写者模型；同一 worker 线程池里的多个识别任务会在更新识别状态、自动建票、刷新校验时竞争写锁。
+- 原有实现既没有在 SQLite 下收口这类自竞争，也没有显式放宽 SQLite 的 busy timeout，所以竞争窗口一旦拉长，就会直接以 `sqlite3.OperationalError: database is locked` 终止 worker。
+
+### 风险与影响面
+- 本轮只对“识别 worker + SQLite”这条热点路径做并发降级，不影响 PostgreSQL 等真正适合并发写的数据库配置。
+- SQLite 下识别吞吐会下降到串行，但这是用可预测的稳定性换取本地/小规模部署的正确性；相比偶发崩溃，这是更可维护的边界。
+- 更长的 SQLite 锁等待时间会让部分竞争场景从“快速失败”变成“短暂等待后成功”；若未来仍要在多进程高并发场景长期使用 worker，根本方案仍是迁移到 PostgreSQL。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_async_jobs.py tests/test_database_migrations.py`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `620/620` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 21:28 - Add administrator task deletion across every task stage
 
 ### 完成内容

@@ -8,6 +8,8 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
+
 
 class Base(DeclarativeBase):
     pass
@@ -18,7 +20,12 @@ class DatabaseSchemaNotReadyError(RuntimeError):
 
 
 def build_engine(database_url: str):
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    connect_args = {}
+    if database_url.startswith("sqlite"):
+        connect_args = {
+            "check_same_thread": False,
+            "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
+        }
     return create_engine(database_url, connect_args=connect_args)
 
 
