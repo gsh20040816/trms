@@ -51,6 +51,7 @@ const EXPORT_KIND_LABELS: Record<ExportArtifactKind, string> = {
   finance_draft: "财务填报草稿",
   merged_pdf: "PDF 合并材料包",
   reimbursement_package: "完整报销材料包",
+  original_materials_archive: "原始材料压缩包",
 };
 
 const EXPORT_KIND_DESCRIPTIONS: Record<ExportArtifactKind, string> = {
@@ -62,6 +63,8 @@ const EXPORT_KIND_DESCRIPTIONS: Record<ExportArtifactKind, string> = {
   merged_pdf: "校验材料并按系统默认顺序合并 PDF/图片，生成可下载的打印材料包。",
   reimbursement_package:
     "生成一个 ZIP 完整材料包，内含合并 PDF、汇总/明细、缺失清单、财务草稿和 manifest。",
+  original_materials_archive:
+    "把任务下全部原始材料按原始文件名写入 ZIP；若存在重名文件，会自动追加顺序后缀避免覆盖。",
 };
 
 const EXPORT_FORMAT_LABELS: Record<ExportArtifactFormat, string> = {
@@ -80,6 +83,7 @@ const PREFERRED_JOB_FORMATS: Record<ExportArtifactKind, ExportArtifactFormat> = 
   finance_draft: "xlsx",
   merged_pdf: "pdf",
   reimbursement_package: "zip",
+  original_materials_archive: "zip",
 };
 
 function formatExportKind(kind: ExportArtifactKind) {
@@ -130,7 +134,10 @@ function buildPreviewDescriptor(capability: TaskExportCapability) {
     };
   }
 
-  if (capability.kind === "reimbursement_package") {
+  if (
+    capability.kind === "reimbursement_package"
+    || capability.kind === "original_materials_archive"
+  ) {
     return {
       available: false,
       buttonLabel: "暂不支持页面查看",
@@ -448,6 +455,7 @@ export function AdminExportTasksPage() {
           );
           break;
         case "reimbursement_package":
+        case "original_materials_archive":
           content = "";
           break;
         default:
@@ -684,8 +692,8 @@ export function AdminExportTasksPage() {
                       </p>
                       <h3>{formatExportKind(capability.kind)}</h3>
                     </div>
-                    <StatusBadge tone={capability.implemented ? "success" : "warning"}>
-                      {capability.implemented ? "可直接查看" : "需先生成"}
+                    <StatusBadge tone={previewDescriptor.available ? "success" : "warning"}>
+                      {previewDescriptor.available ? "可直接查看" : "需先生成"}
                     </StatusBadge>
                   </div>
 

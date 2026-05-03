@@ -689,6 +689,73 @@ def test_reimbursement_package_export_groups_shared_attachment_related_invoices(
         assert page_widths == [101, 111, 303, 222, 202]
 
 
+def test_original_materials_archive_export_preserves_original_filenames_and_deduplicates_collisions(tmp_path):
+    runtime_config = make_runtime_config(tmp_path)
+    client = make_client(tmp_path, runtime_config=runtime_config)
+    task_id = create_task(client)
+    update_task_row(tmp_path, task_id, status="open")
+    create_invoice_with_splits(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="invoice.pdf",
+        material_content=build_pdf_bytes(width=101, height=101),
+        split_items=[{"member_id": "2250001", "amount_cents": 12345}],
+    )
+    upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="payment_record",
+        filename="invoice.pdf",
+        content_type="image/png",
+        content=build_png_bytes(),
+    )
+    upload_supporting_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="competition_notice",
+        filename="notice.pdf",
+        content=build_pdf_bytes(width=202, height=202),
+    )
+    update_task_row(tmp_path, task_id, status="ready_to_export")
+    export_job = create_export_job(
+        client,
+        task_id,
+        kind="original_materials_archive",
+        format="zip",
+    )
+    processor = build_processor(tmp_path, runtime_config)
+
+    processed_count = processor.run_once()
+
+    assert processed_count == 1
+
+    status_response = client.get(
+        f"/api/tasks/exports/{export_job['id']}",
+        headers=admin_auth_headers(client),
+    )
+    assert status_response.status_code == 200
+    status_body = status_response.json()
+    assert status_body["status"] == "succeeded"
+    assert status_body["artifact"]["filename"] == f"{task_id}-original-materials.zip"
+    assert status_body["artifact"]["content_type"] == "application/zip"
+
+    artifact_download = client.get(
+        f"/api/tasks/exports/{export_job['id']}/artifact",
+        headers=admin_auth_headers(client),
+    )
+    assert artifact_download.status_code == 200
+
+    with ZipFile(BytesIO(artifact_download.content)) as archive:
+        names = archive.namelist()
+        assert names == ["invoice.pdf", "invoice (2).pdf", "notice.pdf"]
+        assert archive.read("invoice.pdf").startswith(b"%PDF-")
+        assert archive.read("invoice (2).pdf").startswith(b"\x89PNG\r\n\x1a\n")
+        assert archive.read("notice.pdf").startswith(b"%PDF-")
+
+
 def test_export_async_processor_rejects_stale_reimbursement_package_job(tmp_path):
     runtime_config = make_runtime_config(tmp_path)
     client = make_client(tmp_path, runtime_config=runtime_config)

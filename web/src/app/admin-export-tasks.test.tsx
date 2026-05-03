@@ -110,6 +110,12 @@ function buildCapabilities(taskId: string, exportAllowed: boolean) {
         implemented: true,
         implemented_formats: ["zip"],
       },
+      {
+        kind: "original_materials_archive",
+        formats: ["zip"],
+        implemented: true,
+        implemented_formats: ["zip"],
+      },
     ],
   };
 }
@@ -461,6 +467,93 @@ describe("admin export tasks page", () => {
     expect(packageHistory.getAllByText(/完整报销材料包\s*\/\s*ZIP/).length).toBe(2);
     expect(screen.queryByText("export-job-package-new")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建报销汇总表任务" })).toBeInTheDocument();
+  });
+
+  it("allows creating original materials archive jobs from advanced export options", async () => {
+    const createRequests: Array<{ kind: string; format: string }> = [];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-RAW") {
+        return Promise.resolve(jsonResponse(buildTask("TASK-RAW", "ready_to_export")));
+      }
+
+      if (url === "/api/tasks/TASK-RAW/exports/capabilities?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(buildCapabilities("TASK-RAW", true)));
+      }
+
+      if (url === "/api/tasks/TASK-RAW/exports?actor_id=admin-1" && !init?.method) {
+        return Promise.resolve(jsonResponse([]));
+      }
+
+      if (url === "/api/tasks/TASK-RAW/exports" && init?.method === "POST") {
+        if (typeof init.body !== "string") {
+          throw new Error("Expected export creation body to be a JSON string");
+        }
+        const body = JSON.parse(init.body) as { kind: string; format: string };
+        createRequests.push({ kind: body.kind, format: body.format });
+        return Promise.resolve(jsonResponse(
+          {
+            id: "export-job-raw-1",
+            task_id: "TASK-RAW",
+            requested_by: "admin-1",
+            kind: "original_materials_archive",
+            format: "zip",
+            status: "pending",
+            parameters: {},
+            task_status_at_request: "ready_to_export",
+            task_data_version: "r".repeat(64),
+            is_latest_for_task: true,
+            failure_reason: null,
+            created_at: "2026-04-28T10:10:00+08:00",
+            updated_at: "2026-04-28T10:10:00+08:00",
+            started_at: null,
+            finished_at: null,
+            retry_count: 0,
+            artifact: null,
+          },
+          { status: 201 },
+        ));
+      }
+
+      throw new Error(`Unhandled fetch URL in original materials archive export page test: ${url}`);
+    });
+
+    renderExportRoute("TASK-RAW");
+
+    const archiveCardHeading = await screen.findByRole("heading", { name: "原始材料压缩包" });
+    const archiveCard = archiveCardHeading.closest("article");
+    expect(archiveCard).not.toBeNull();
+    const archiveActions = within(archiveCard as HTMLElement);
+    expect(archiveActions.getByText("需先生成")).toBeInTheDocument();
+    expect(
+      archiveActions.getByText("把任务下全部原始材料按原始文件名写入 ZIP；若存在重名文件，会自动追加顺序后缀避免覆盖。"),
+    ).toBeInTheDocument();
+    expect(archiveActions.queryByRole("button", { name: "直接查看内容" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(archiveActions.getByRole("button", { name: "创建原始材料压缩包任务" }));
+      await Promise.resolve();
+    });
+
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText(
+      "任务 ICPC 区域赛报销 当前处于可导出。确认后，系统会按当前数据版本创建一个 ZIP 导出任务并放入后台队列。",
+    )).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "创建导出任务" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(createRequests).toEqual([{ kind: "original_materials_archive", format: "zip" }]);
+    expect(
+      await screen.findByText("原始材料压缩包已加入导出队列，当前状态：待生成。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/原始材料压缩包\s*\/\s*ZIP/)).toBeInTheDocument();
   });
 
   it("shows blocking reasons and disables export creation before final confirmation", async () => {

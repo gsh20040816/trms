@@ -1,5 +1,54 @@
 # WORKLOG
 
+## 2026-05-03 15:08 - Add original-materials ZIP export with original filenames
+
+### 完成内容
+- 完成任务“导出任务增加全部原始材料压缩包”。
+- 已扩展后端导出模型与异步导出执行链：
+  - [src/trms_backend/domain/exports.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/exports.py)
+    - 新增 `original_materials_archive` 导出种类与 ZIP 能力声明；
+    - 新增原始材料压缩包导出模型；
+    - 新增 ZIP 条目命名规则：优先保留原始文件名，若同任务内存在重名材料，则对后续重名项追加 ` (2)`、` (3)` 这类顺序后缀，避免压缩包内覆盖。
+  - [src/trms_backend/application/export_async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/export_async_jobs.py)
+    - 新增 `original_materials_archive` 异步导出分支；
+    - 导出时直接读取任务下全部材料原文件，写入 ZIP 产物，不再受 merged PDF 可渲染类型限制。
+- 已扩展前端导出页：
+  - [web/src/lib/api/types.ts](/home/gsh/workspace/TRMS/web/src/lib/api/types.ts)
+  - [web/src/app/admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx)
+  - 管理员“导出与下载”页现在会在高级单项导出中展示“原始材料压缩包”；
+  - 该导出项明确标记为“需先生成”，不提供页面预览，只保留后台生成与下载入口。
+- 已补回归测试：
+  - [tests/test_exports_api.py](/home/gsh/workspace/TRMS/tests/test_exports_api.py)
+  - [tests/test_export_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_export_async_jobs.py)
+  - [tests/test_main_flow_e2e.py](/home/gsh/workspace/TRMS/tests/test_main_flow_e2e.py)
+  - [web/src/app/admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+
+### 根因
+- 当前系统虽然已经支持“完整材料包 ZIP”和“合并打印 PDF”，但这两个导出都偏向最终交付或打印整理，不适合直接把任务下所有原始材料原封不动交给管理员做线下比对、补件排查或二次归档。
+- 尤其在存在非 PDF/图片材料、纸票占位文件或需要按原始提交文件复核时，现有 merged PDF / reimbursement package 不能替代一个“按原始文件名批量打包原件”的导出入口。
+
+### 风险与影响面
+- 本轮只新增独立导出种类，不修改现有完整材料包、merged PDF、分摊、校验、权限或任务状态机。
+- 为避免 ZIP 内重名条目互相覆盖，本轮做了保守假设：同任务内若出现重复原始文件名，只对后续重复项追加顺序后缀；首个同名文件仍保留原名。
+- 导出内容基于对象存储中的原始材料文件；若某个材料文件已丢失，导出任务会显式失败，不会静默跳过。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_exports_api.py tests/test_export_async_jobs.py tests/test_main_flow_e2e.py`
+  - `37/37` 通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-export-tasks.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+  - `5/5` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `577/577` 通过；
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error；
+  - `web` 测试 `124/124` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 14:58 - Review remaining non-Material-3 frontend components and migrate them to M3 wrappers
 
 ### 完成内容

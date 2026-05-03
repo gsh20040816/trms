@@ -6,6 +6,7 @@ import json
 from io import BytesIO, StringIO
 from datetime import date, datetime, timezone
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Protocol
 
 from PIL import Image, UnidentifiedImageError
@@ -28,6 +29,7 @@ class ExportArtifactKind(StrEnum):
     FINANCE_DRAFT = "finance_draft"
     MERGED_PDF = "merged_pdf"
     REIMBURSEMENT_PACKAGE = "reimbursement_package"
+    ORIGINAL_MATERIALS_ARCHIVE = "original_materials_archive"
 
 
 class ExportArtifactFormat(StrEnum):
@@ -215,6 +217,12 @@ class MergedPdfSourceMaterialError(ValueError):
         super().__init__(f"merged pdf source material {material_id} {reason}")
 
 
+class OriginalMaterialsArchiveSourceMaterialError(ValueError):
+    def __init__(self, material_id: str, reason: str) -> None:
+        self.material_id = material_id
+        super().__init__(f"original materials archive source material {material_id} {reason}")
+
+
 class ReimbursementSummaryRow(BaseModel):
     expense_type: ExpenseType
     total_amount_cents: int = Field(ge=0)
@@ -392,6 +400,23 @@ class ReimbursementPackageManifestMaterial(BaseModel):
     material_type: MaterialType
     original_filename: str
     sha256: str = Field(min_length=64, max_length=64)
+
+
+class OriginalMaterialsArchiveItem(BaseModel):
+    material_id: str
+    original_filename: str
+    archive_filename: str
+    content_type: str | None = None
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class OriginalMaterialsArchiveExport(BaseModel):
+    task_id: str
+    administrator_id: str = Field(min_length=1)
+    format: ExportArtifactFormat
+    filename: str
+    generated_at: datetime
+    items: list[OriginalMaterialsArchiveItem]
 
 
 class ReimbursementPackageManifest(BaseModel):
@@ -1205,6 +1230,33 @@ def build_reimbursement_package_manifest(
     )
 
 
+def build_original_materials_archive_export(
+    task: ReimbursementTask,
+    *,
+    actor_id: str,
+    format: ExportArtifactFormat,
+    materials: list[MaterialRecord],
+    generated_at: datetime | None = None,
+) -> OriginalMaterialsArchiveExport:
+    boundary = build_task_export_boundary(task, actor_id=actor_id)
+    if not boundary.export_allowed:
+        raise TaskExportJobNotReadyError(boundary.blocking_reasons)
+    ensure_export_format_implemented(
+        ExportArtifactKind.ORIGINAL_MATERIALS_ARCHIVE,
+        format,
+    )
+
+    generated_at = generated_at or datetime.now(timezone.utc)
+    return OriginalMaterialsArchiveExport(
+        task_id=task.id,
+        administrator_id=boundary.administrator_id,
+        format=format,
+        filename=f"{task.id}-original-materials.{format.value}",
+        generated_at=generated_at,
+        items=_build_original_materials_archive_items(materials),
+    )
+
+
 def update_task_export_job_status(
     task: ReimbursementTask,
     *,
@@ -1397,6 +1449,12 @@ _SUPPORTED_EXPORT_CAPABILITIES = [
         implemented=True,
         implemented_formats=[ExportArtifactFormat.ZIP],
     ),
+    TaskExportCapability(
+        kind=ExportArtifactKind.ORIGINAL_MATERIALS_ARCHIVE,
+        formats=[ExportArtifactFormat.ZIP],
+        implemented=True,
+        implemented_formats=[ExportArtifactFormat.ZIP],
+    ),
 ]
 
 _SUPPORTED_EXPORT_FORMATS_BY_KIND = {
@@ -1437,6 +1495,55 @@ def _summarize_invoice_validation_status(
     if ValidationStatus.PASSED in statuses:
         return ValidationStatus.PASSED
     return ValidationStatus.NOT_APPLICABLE
+
+
+def _build_original_materials_archive_items(
+    materials: list[MaterialRecord],
+) -> list[OriginalMaterialsArchiveItem]:
+    used_archive_filenames: set[str] = set()
+    duplicate_counts: dict[str, int] = {}
+    items: list[OriginalMaterialsArchiveItem] = []
+    for material in sorted(
+        materials,
+        key=lambda item: (item.created_at, item.original_filename, item.id),
+    ):
+        duplicate_counts[material.original_filename] = duplicate_counts.get(material.original_filename, 0) + 1
+        items.append(
+            OriginalMaterialsArchiveItem(
+                material_id=material.id,
+                original_filename=material.original_filename,
+                archive_filename=_build_unique_archive_filename(
+                    material.original_filename,
+                    occurrence_index=duplicate_counts[material.original_filename],
+                    used_archive_filenames=used_archive_filenames,
+                ),
+                content_type=material.content_type,
+                sha256=material.sha256,
+            )
+        )
+    return items
+
+
+def _build_unique_archive_filename(
+    original_filename: str,
+    *,
+    occurrence_index: int,
+    used_archive_filenames: set[str],
+) -> str:
+    path = Path(original_filename)
+    stem = path.stem or original_filename
+    suffix = path.suffix
+    if occurrence_index == 1 and original_filename not in used_archive_filenames:
+        used_archive_filenames.add(original_filename)
+        return original_filename
+
+    candidate_index = occurrence_index
+    while True:
+        candidate = f"{stem} ({candidate_index}){suffix}"
+        if candidate not in used_archive_filenames:
+            used_archive_filenames.add(candidate)
+            return candidate
+        candidate_index += 1
 
 
 def _validate_merged_pdf_material(

@@ -937,6 +937,12 @@ describe("frontend main flow e2e placeholder", () => {
               implemented: true,
               implemented_formats: ["zip"],
             },
+            {
+              kind: "original_materials_archive",
+              formats: ["zip"],
+              implemented: true,
+              implemented_formats: ["zip"],
+            },
           ],
         }));
       }

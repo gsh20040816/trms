@@ -50,7 +50,8 @@ export type ExportArtifactKind =
   | "missing_materials"
   | "finance_draft"
   | "merged_pdf"
-  | "reimbursement_package";
+  | "reimbursement_package"
+  | "original_materials_archive";
 
 export type ExportArtifactFormat = "xlsx" | "csv" | "json" | "pdf" | "zip";
 

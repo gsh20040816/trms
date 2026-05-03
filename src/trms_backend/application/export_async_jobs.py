@@ -21,6 +21,7 @@ from trms_backend.domain.exports import (
     ExportArtifactKind,
     MergedPdfPlanItemStatus,
     ReimbursementPackageManifestArtifact,
+    OriginalMaterialsArchiveSourceMaterialError,
     StoredExportArtifactRecord,
     MergedPdfSourceMaterialError,
     TaskExportFormatNotImplementedError,
@@ -28,6 +29,7 @@ from trms_backend.domain.exports import (
     TaskExportJobRepository,
     TaskExportJobStatus,
     build_reimbursement_package_manifest,
+    build_original_materials_archive_export,
     build_finance_draft_export,
     build_invoice_details_export,
     build_member_details_export,
@@ -505,6 +507,39 @@ class ExportAsyncJobProcessor(AsyncJobProcessor):
             return self._save_artifact(
                 task_id=task.id,
                 filename=f"{task.id}-reimbursement-package.zip",
+                content_type="application/zip",
+                content=archive_buffer.getvalue(),
+            )
+
+        if export_job.kind is ExportArtifactKind.ORIGINAL_MATERIALS_ARCHIVE:
+            for material in materials:
+                try:
+                    material_bytes_by_id[material.id] = self._material_file_storage.read(
+                        storage_key=material.storage_key
+                    )
+                except FileNotFoundError as error:
+                    raise OriginalMaterialsArchiveSourceMaterialError(
+                        material.id,
+                        "file content is missing from storage",
+                    ) from error
+
+            export = build_original_materials_archive_export(
+                task,
+                actor_id=export_job.requested_by,
+                format=export_job.format,
+                materials=materials,
+                generated_at=export_job.updated_at.astimezone(timezone.utc),
+            )
+            archive_buffer = BytesIO()
+            with ZipFile(archive_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
+                for item in export.items:
+                    archive.writestr(
+                        item.archive_filename,
+                        material_bytes_by_id[item.material_id],
+                    )
+            return self._save_artifact(
+                task_id=task.id,
+                filename=export.filename,
                 content_type="application/zip",
                 content=archive_buffer.getvalue(),
             )
