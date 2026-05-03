@@ -47,7 +47,7 @@ class FakeTaskMaterialUploadService:
             task_id_hint=None,
             submitter_id_hint=None,
             channel=SubmissionChannel.TELEGRAM,
-            material_type=MaterialType.INVOICE,
+            material_type=MaterialType.OTHER_ATTACHMENT,
             storage_key="TASK-001/invoice.pdf",
             original_filename="invoice.pdf",
             content_type="application/pdf",
@@ -147,7 +147,7 @@ def test_workflow_lists_selects_and_uploads_current_task():
     assert "已切换当前任务" in select_text
     assert task_context_repository.get_by_telegram_user_id(123456) is not None
 
-    upload_text = workflow_service.upload_invoice(
+    upload_text = workflow_service.upload_material(
         telegram_user_id=123456,
         incoming_file=TelegramIncomingFile(
             original_filename="invoice.pdf",
@@ -158,6 +158,7 @@ def test_workflow_lists_selects_and_uploads_current_task():
     )
     assert "上传成功" in upload_text
     assert upload_service.calls[0]["task_id"] == open_task_id
+    assert upload_service.calls[0]["material_type"] is MaterialType.OTHER_ATTACHMENT
 
 
 def test_workflow_requires_current_task_before_upload():
@@ -169,7 +170,7 @@ def test_workflow_requires_current_task_before_upload():
     )
     oauth_service.confirm_authorization(token=authorization.token, member_id="2250001")
 
-    upload_text = workflow_service.upload_invoice(
+    upload_text = workflow_service.upload_material(
         telegram_user_id=123456,
         incoming_file=TelegramIncomingFile(
             original_filename="invoice.pdf",
@@ -196,7 +197,7 @@ def test_workflow_reports_task_not_open_error():
     )
     upload_service.mode = "task_not_open"
 
-    upload_text = workflow_service.upload_invoice(
+    upload_text = workflow_service.upload_material(
         telegram_user_id=123456,
         incoming_file=TelegramIncomingFile(
             original_filename="invoice.pdf",
@@ -205,4 +206,4 @@ def test_workflow_reports_task_not_open_error():
         ),
         request_id="req-3",
     )
-    assert "现在不接受发票上传" in upload_text
+    assert "现在不接受材料上传" in upload_text

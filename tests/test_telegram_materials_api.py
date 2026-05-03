@@ -89,6 +89,31 @@ def test_telegram_material_submission_routes_trusted_bound_account_to_assigned_f
     assert_single_pending_recognition_task(client, material["id"])
 
 
+def test_telegram_material_submission_defaults_material_type_to_other_attachment(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_TELEGRAM_TOKEN)
+    task_id = create_open_task(client)
+    bind_response = client.put(
+        "/api/telegram-bindings/123456789",
+        json={"member_id": "2250001", "telegram_username": "@TongjiCoder"},
+        headers=admin_auth_headers(client),
+    )
+    assert bind_response.status_code == 200
+
+    response = client.post(
+        "/api/telegram/materials",
+        headers={"X-TRMS-Telegram-Inbound-Token": TRUSTED_TELEGRAM_TOKEN},
+        data={
+            "telegram_user_id": "123456789",
+            "telegram_username": "@TongjiCoder",
+            "task_id": task_id,
+        },
+        files={"files": ("payment.jpg", b"telegram-image", "image/jpeg")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["items"][0]["material_type"] == "other_attachment"
+
+
 def test_telegram_material_submission_without_trusted_header_keeps_bound_account_pending_assignment(
     tmp_path,
 ):

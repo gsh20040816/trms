@@ -88,11 +88,11 @@ class AiogramTelegramWebhookProcessor:
             if incoming_file is None:
                 await message.answer(
                     "可用命令：/bind、/tasks、/task <任务提交标识>。"
-                    "直接发送 PDF、图片或其他文件时，会按当前任务作为发票上传。"
+                    "直接发送 PDF、图片或其他文件时，会先按当前任务的其他材料上传，再由识别结果修正类型。"
                 )
                 return
             await message.answer(
-                self._workflow_service.upload_invoice(
+                self._workflow_service.upload_material(
                     telegram_user_id=message.from_user.id,
                     incoming_file=incoming_file,
                     request_id=request_id,

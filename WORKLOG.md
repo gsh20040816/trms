@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-05-03 20:50 - Default Telegram uploads to other_attachment before recognition typing
+
+### 完成内容
+- 完成任务“让 Telegram 和未显式指定类型的上传默认先落为其他材料，再由识别结果修正”。
+- 已收口 Telegram Bot 直接上传默认类型：
+  - [src/trms_backend/application/telegram_bot.py](/home/gsh/workspace/TRMS/src/trms_backend/application/telegram_bot.py)
+  - 直接发送到 Bot 的文件不再先写成 `invoice`，而是先按 `other_attachment` 进入统一上传主链路；
+  - 这样识别出的 `payment_record`、`competition_notice`、`invoice` 等类型都可以继续自动回写到材料主记录。
+- 已收口 Telegram 入站接口默认类型：
+  - [src/trms_backend/api/telegram_materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/telegram_materials.py)
+  - `/api/telegram/materials` 现在允许省略 `material_type`，省略时默认按 `other_attachment` 入链，与普通 `/api/tasks/{task_id}/materials` 一致。
+- 已同步调整 Bot 提示文案：
+  - [src/trms_backend/application/telegram_bot_aiogram.py](/home/gsh/workspace/TRMS/src/trms_backend/application/telegram_bot_aiogram.py)
+  - 帮助提示不再宣称“作为发票上传”，而是明确说明会先作为其他材料接收，再由识别修正类型。
+- 已补 Telegram 默认类型回归测试：
+  - [tests/test_telegram_bot_workflow.py](/home/gsh/workspace/TRMS/tests/test_telegram_bot_workflow.py)
+  - [tests/test_telegram_materials_api.py](/home/gsh/workspace/TRMS/tests/test_telegram_materials_api.py)
+- 已修正数据库中的历史误分类材料：
+  - 材料 `telegram-photo-AQADPBFrG6HduVd-.jpg`
+  - `materials.id = 35f25cf2-3a6c-49ac-aab4-56ed492689a7`
+  - 已从 `invoice` 改为 `payment_record`
+  - 已补关联到报名费发票 `invoice.id = 929ba2be-eec5-401b-9840-871034688792`
+  - 已刷新该发票校验结果，`invoice_payment_record_required` 与 `invoice_payment_record_amount_match` 现均为 `passed`
+
+### 根因
+- Telegram Bot 直接上传路径之前把所有文件都硬编码为 `MaterialType.INVOICE`。
+- 识别链路虽然已经正确把这张图片识别为 `payment_record`，但自动回写材料类型的保护逻辑不允许 `invoice -> payment_record` 这类回退，因此 `materials.material_type` 被卡在错误的 `invoice`。
+- 材料主类型错误后，自动关联支付记录的链路不会生效，进而把对应发票继续留在“缺少支付记录”的错误状态。
+
+### 风险与影响面
+- 本轮只收口“未显式指定类型”的 Telegram 上传默认值；显式指定 `material_type` 的上传路径仍保持原语义。
+- 这意味着 Telegram/其他渠道若明确声明“这是发票”，系统仍会尊重该初始类型，不会把“用户明确选择类型”和“系统默认兜底类型”混在一起。
+- 历史数据修正仅针对这条已确认误分类且识别结果、金额匹配关系明确的材料，未批量改动其他记录。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_telegram_bot_workflow.py tests/test_telegram_materials_api.py`
+  - `9/9` 通过。
+- 已核对数据库修正结果：
+  - `materials.material_type` 现为 `payment_record`
+  - `invoice_supporting_material_links` 已存在该材料到目标报名费发票的关联
+  - 目标发票的支付记录缺失/金额匹配校验现均为 `passed`
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `627/627` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 20:25 - Add Telegram long polling entry for development
 
 ### 完成内容

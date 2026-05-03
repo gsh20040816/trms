@@ -14,6 +14,10 @@ from trms_backend.domain.materials import MaterialType
 from trms_backend.domain.tasks import TaskSubmissionDeadlinePassedError, TaskSubmitterNotMemberError
 
 
+def _resolve_uploaded_material_type(material_type: MaterialType | None) -> MaterialType:
+    return material_type or MaterialType.OTHER_ATTACHMENT
+
+
 def build_telegram_material_router(
     telegram_material_submission_service: TelegramMaterialSubmissionService,
     *,
@@ -25,8 +29,8 @@ def build_telegram_material_router(
     async def submit_telegram_materials(
         request: Request,
         telegram_user_id: Annotated[int, Form(gt=0)],
-        material_type: Annotated[MaterialType, Form()],
         files: Annotated[list[UploadFile], File(min_length=1)],
+        material_type: Annotated[MaterialType | None, Form()] = None,
         task_id: Annotated[str | None, Form()] = None,
         telegram_username: Annotated[str | None, Form()] = None,
         telegram_inbound_token: Annotated[
@@ -44,7 +48,7 @@ def build_telegram_material_router(
                 telegram_user_id=telegram_user_id,
                 telegram_username=telegram_username,
                 task_id=task_id,
-                material_type=material_type,
+                material_type=_resolve_uploaded_material_type(material_type),
                 files=uploaded_files,
                 trust_form_telegram_user_id=trust_form_telegram_user_id,
                 request_id=ensure_request_id(request),

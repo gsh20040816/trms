@@ -2,6 +2,16 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-03 Telegram 默认材料类型收口
+
+- [x] 让 Telegram 和未显式指定类型的上传默认先落为其他材料，再由识别结果修正
+  - Done when:
+    - Telegram Bot 直接发送文件上传时，不再默认把材料写成 `invoice`
+    - Telegram 入站接口在未显式提供 `material_type` 时，默认按 `other_attachment` 入链
+    - 识别成功后，`other_attachment` 可继续自动修正为 `payment_record`、`invoice` 等具体类型
+    - 已修正数据库中 `telegram-photo-AQADPBFrG6HduVd-.jpg` 被误落为 `invoice` 的历史记录，并补齐其支付记录关联
+    - 相关测试和仓库级验证通过
+
 ## 临时任务 - 2026-05-03 Telegram Bot 与 CLI 共享任务切换提交流程
 
 - [x] 补齐 Telegram Bot 绑定、任务切换、直接上传，并让 CLI / Telegram 共享同一套提交语义

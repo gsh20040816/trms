@@ -108,7 +108,7 @@ class TelegramBotWorkflowService:
             f"当前状态：{task.status.value}"
         )
 
-    def upload_invoice(
+    def upload_material(
         self,
         *,
         telegram_user_id: int,
@@ -134,7 +134,7 @@ class TelegramBotWorkflowService:
                 submitter_id=binding.member_id,
                 actor_id=binding.member_id,
                 channel=SubmissionChannel.TELEGRAM,
-                material_type=MaterialType.INVOICE,
+                material_type=MaterialType.OTHER_ATTACHMENT,
                 files=[
                     SubmittedMaterialFile(
                         original_filename=incoming_file.original_filename,
@@ -149,7 +149,7 @@ class TelegramBotWorkflowService:
             return "当前任务已不存在，已清空选择。请重新发送 /tasks 查看可用任务。"
         except MaterialSubmissionTaskNotOpenError:
             return (
-                f"当前任务 {task.competition_name} 现在不接受发票上传。"
+                f"当前任务 {task.competition_name} 现在不接受材料上传。"
                 "请先用 /tasks 查看开放任务，再用 /task <任务提交标识> 切换。"
             )
         except TaskSubmitterNotMemberError:
@@ -157,7 +157,7 @@ class TelegramBotWorkflowService:
             return "你已不在当前任务成员名单中，已清空选择。请联系管理员确认成员范围。"
         except TaskSubmissionDeadlinePassedError:
             return (
-                f"当前任务 {task.competition_name} 的成员提交截止时间已过，暂不能继续上传发票。"
+                f"当前任务 {task.competition_name} 的成员提交截止时间已过，暂不能继续上传材料。"
             )
 
         if result.batch_result.failures:
