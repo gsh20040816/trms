@@ -143,8 +143,3 @@ class MemberInvoiceDeletionService:
             raise MemberInvoiceDeletionConflictError(
                 "submitted invoice cannot be deleted by member"
             )
-        supporting_links = self._invoice_repository.list_supporting_material_links(invoice.id)
-        if supporting_links:
-            raise MemberInvoiceDeletionConflictError(
-                "invoice with linked supporting materials cannot be deleted by member"
-            )

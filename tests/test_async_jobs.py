@@ -490,6 +490,12 @@ def test_email_inbox_import_processor_submits_attachment_and_sends_receipt(tmp_p
     assert len(materials) == 1
     assert materials[0].material_type.value == "other_attachment"
     assert sender.messages[-1].subject == "TRMS 邮件材料已收到"
+    assert sender.messages[-1].text_body == (
+        "你的邮件材料已收到并进入任务处理链路。\n"
+        "成功附件数：1\n"
+        "成功附件：\n"
+        "- invoice.pdf\n"
+    )
 
 
 def test_email_inbox_import_processor_marks_missing_attachment_as_failed(tmp_path):
@@ -548,6 +554,11 @@ def test_email_inbox_import_processor_marks_missing_attachment_as_failed(tmp_pat
     assert updated.status == EmailInboxRecordStatus.IMPORT_FAILED
     assert updated.result_code == "missing_attachments"
     assert sender.messages[-1].subject == "TRMS 邮件材料处理失败"
+    assert sender.messages[-1].text_body == (
+        "你的邮件材料未成功进入任务处理链路。\n"
+        "失败原因：missing_attachments\n"
+        "失败附件：无\n"
+    )
 
 
 def test_email_inbox_import_processor_does_not_read_ignored_invalid_subject_record(tmp_path):
@@ -708,6 +719,15 @@ def test_email_inbox_import_processor_marks_partial_success_and_sends_partial_re
     assert updated.status == EmailInboxRecordStatus.PARTIALLY_IMPORTED
     assert updated.result_code == "partially_imported"
     assert sender.messages[-1].subject == "TRMS 邮件材料部分成功"
+    assert sender.messages[-1].text_body == (
+        "你的邮件材料已部分进入任务处理链路。\n"
+        "成功附件数：1\n"
+        "失败附件数：1\n"
+        "成功附件：\n"
+        "- invoice.pdf\n"
+        "失败附件：\n"
+        "- <unnamed>\n"
+    )
 
 
 def test_email_inbox_import_processor_expands_nested_eml_attachment(tmp_path):

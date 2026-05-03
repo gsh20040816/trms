@@ -55,6 +55,7 @@ from trms_backend.application.supporting_material_auto_link import (
     SupportingMaterialAutoLinkService,
 )
 from trms_backend.domain.audit_logs import AuditLogCreate, AuditLogRepository, AuditLogResult
+from trms_backend.domain.auth import UserRole
 from trms_backend.domain.auth import AuthRepository
 from trms_backend.domain.confirmations import ConfirmationRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
@@ -518,6 +519,22 @@ def build_material_router(
         identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
     ):
         request_id = ensure_request_id(request)
+        material = material_repository.get(material_id)
+        if identity.role not in {UserRole.ADMIN, UserRole.SYSTEM_ADMIN}:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=identity.actor_id or payload.administrator_id or "",
+                material_id=material_id,
+                task_id=material.task_id if material is not None else None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject deletion mark for material {material_id}",
+                detail={"failure_reason": "actor is not allowed to delete materials for this task"},
+                request_id=request_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="actor is not allowed to delete materials for this task",
+            )
         try:
             administrator_id = resolve_required_actor_request_field(
                 identity,
@@ -540,11 +557,11 @@ def build_material_router(
             )
             raise
 
-        material = material_repository.get(material_id)
         try:
             deleted_material = material_deletion_service.mark_deleted(
                 material_id=material_id,
                 actor_id=administrator_id,
+                actor_role=identity.role,
             )
         except MaterialDeletionNotFoundError:
             _record_material_deletion_audit(
@@ -620,6 +637,96 @@ def build_material_router(
             request_id=request_id,
         )
         return {"item": deleted_material}
+
+    @router.delete("/api/materials/{material_id}")
+    def delete_material(
+        material_id: str,
+        request: Request,
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ):
+        request_id = ensure_request_id(request)
+        actor_id = identity.actor_id or ""
+        material = material_repository.get(material_id)
+        try:
+            deleted_material = material_deletion_service.mark_deleted(
+                material_id=material_id,
+                actor_id=actor_id,
+                actor_role=identity.role,
+            )
+        except MaterialDeletionNotFoundError:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=None,
+                result=AuditLogResult.FAILED,
+                summary=f"fail to delete material {material_id}",
+                detail={"failure_reason": "material not found"},
+                request_id=request_id,
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="material not found")
+        except MaterialDeletionTaskNotFoundError as error:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=error.task_id,
+                result=AuditLogResult.FAILED,
+                summary=f"fail to delete material {material_id}",
+                detail={"failure_reason": "task not found"},
+                request_id=request_id,
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
+        except MaterialDeletionActorNotAllowedError as error:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=material.task_id if material is not None else None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject delete material {material_id}",
+                detail={"failure_reason": str(error)},
+                request_id=request_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=str(error),
+            ) from error
+        except MaterialDeletionConflictError as error:
+            _record_material_deletion_audit(
+                audit_log_repository,
+                actor_id=actor_id,
+                material_id=material_id,
+                task_id=material.task_id if material is not None else None,
+                result=AuditLogResult.REJECTED,
+                summary=f"reject delete material {material_id}",
+                detail={
+                    "failure_reason": str(error),
+                    "current_status": material.status if material is not None else None,
+                },
+                request_id=request_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            ) from error
+        _record_material_deletion_audit(
+            audit_log_repository,
+            actor_id=actor_id,
+            material_id=material_id,
+            task_id=deleted_material.task_id,
+            result=AuditLogResult.SUCCEEDED,
+            summary=f"delete material {material_id}",
+            detail={
+                "deleted_status": deleted_material.status,
+                "submitter_id": deleted_material.submitter_id,
+                "channel": deleted_material.channel,
+                "material_type": deleted_material.material_type,
+                "original_filename": deleted_material.original_filename,
+            },
+            request_id=request_id,
+        )
+        return {"status": "deleted", "item": deleted_material}
 
     @router.patch("/api/materials/{material_id}/material-type")
     def update_material_type(

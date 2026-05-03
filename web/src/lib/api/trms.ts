@@ -484,6 +484,18 @@ export const trmsApi = {
     );
   },
 
+  deleteMaterial(materialId: string) {
+    return apiClient.request<{
+      status: "deleted";
+      item: MaterialRecord;
+    }>(
+      `/materials/${encodeSegment(materialId)}`,
+      {
+        method: "DELETE",
+      },
+    );
+  },
+
   createOrUpdateInvoice(materialId: string, payload: ManualInvoiceEntry) {
     return apiClient.request<ManualInvoiceEntryResponse>(
       `/materials/${encodeSegment(materialId)}/invoice`,

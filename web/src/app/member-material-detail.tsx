@@ -15,6 +15,7 @@ import {
   SectionCard,
   StatusBadge,
 } from "../components/dashboard";
+import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { useSnackbar } from "../components/use-snackbar";
 import { ApiError } from "../lib/api/client";
 import { trmsApi } from "../lib/api/trms";
@@ -416,12 +417,14 @@ export function MemberMaterialDetailPage() {
   const [searchParams] = useSearchParams();
   const taskId = searchParams.get("taskId") ?? "";
   const { showError, showSuccess, showWarning } = useSnackbar();
+  const { confirm } = useConfirmDialog();
   const [detailState, setDetailState] = useState<DetailState>({ status: "loading" });
   const [reloadVersion, setReloadVersion] = useState(0);
   const [materialTypeDraft, setMaterialTypeDraft] = useState<MaterialType | null>(null);
   const [savingMaterialType, setSavingMaterialType] = useState(false);
   const [retryingRecognition, setRetryingRecognition] = useState(false);
   const [openingOriginal, setOpeningOriginal] = useState(false);
+  const [deletingMaterial, setDeletingMaterial] = useState(false);
   const [recognitionForm, setRecognitionForm] = useState<MaterialRecognitionFormState>({});
   const [recognitionFormError, setRecognitionFormError] = useState<string | null>(null);
   const [savingRecognitionFields, setSavingRecognitionFields] = useState(false);
@@ -492,6 +495,13 @@ export function MemberMaterialDetailPage() {
     : currentLinkedInvoiceIds;
   const selectedLinkedInvoiceIdsKey = normalizeInvoiceIdSelection(selectedLinkedInvoiceIds).join(",");
   const linkageSelectionChanged = selectedLinkedInvoiceIdsKey !== currentLinkedInvoiceIdsKey;
+  const canDeleteMaterial = Boolean(
+    session
+    && item
+    && task
+    && task.status === "open"
+    && item.material.submitter_id === session.actorId
+  );
 
   useEffect(() => {
     if (!task || !item || item.material.material_type !== "invoice") {
@@ -617,6 +627,33 @@ export function MemberMaterialDetailPage() {
       showError(error instanceof ApiError ? error.summary.message : "原文件暂时无法打开。");
     } finally {
       setOpeningOriginal(false);
+    }
+  }
+
+  async function handleDeleteMaterial() {
+    if (!item || !task) {
+      return;
+    }
+    const confirmed = await confirm({
+      title: `确认删除材料 ${item.material.original_filename}？`,
+      description: "这会删除当前未提交材料；若它已关联到未提交发票，系统会一并移除这些未提交关联。删除后不能恢复。",
+      confirmLabel: "删除材料",
+      cancelLabel: "继续保留",
+      destructive: true,
+      tone: "warning",
+    });
+    if (!confirmed) {
+      return;
+    }
+    setDeletingMaterial(true);
+    try {
+      await trmsApi.deleteMaterial(item.material.material_id);
+      showSuccess("未提交材料已删除。");
+      void navigate(`/member/invoices/workbench?taskId=${encodeURIComponent(task.id)}`, { replace: true });
+    } catch (error) {
+      showError(error instanceof ApiError ? error.summary.message : "删除材料失败。");
+    } finally {
+      setDeletingMaterial(false);
     }
   }
 
@@ -746,6 +783,11 @@ export function MemberMaterialDetailPage() {
               <Button type="button" variant="outlined" disabled={retryingRecognition} onClick={() => { void handleRecognitionRetry(); }}>
                 {retryingRecognition ? "重新识别中..." : "重新识别材料"}
               </Button>
+              {canDeleteMaterial ? (
+                <Button type="button" color="error" variant="outlined" disabled={deletingMaterial} onClick={() => { void handleDeleteMaterial(); }}>
+                  {deletingMaterial ? "删除中..." : "删除未提交材料"}
+                </Button>
+              ) : null}
             </div>
           </SectionCard>
 

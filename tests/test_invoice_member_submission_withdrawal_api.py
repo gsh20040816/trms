@@ -399,3 +399,43 @@ def test_member_cannot_delete_other_members_unsubmitted_invoice(tmp_path):
 
     assert response.status_code == 403
     assert response.json()["detail"] == "actor can only delete invoices created from own materials"
+
+
+def test_member_can_delete_unsubmitted_invoice_even_with_linked_supporting_materials(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = upload_invoice_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        filename="draft-with-links.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        material_id,
+        actor_id="2250001",
+        invoice_number="INV-DRAFT-LINK-001",
+        expense_type="railway",
+    )
+    supporting_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-content", "image/png")},
+    ).json()["items"][0]["id"]
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
+    assert attach_response.status_code == 200
+
+    response = client.delete(
+        f"/api/invoices/{invoice_id}",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"

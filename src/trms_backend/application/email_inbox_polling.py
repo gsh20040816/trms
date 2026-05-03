@@ -266,7 +266,13 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
                 result_code="missing_attachments",
             )
             if updated is not None:
-                self._send_result_email(updated, success_count=0, failure_count=0)
+                self._send_result_email(
+                    updated,
+                    success_count=0,
+                    failure_count=0,
+                    succeeded_filenames=[],
+                    failed_filenames=[],
+                )
             return
 
         try:
@@ -285,7 +291,13 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
                 result_code="import_format_error",
             )
             if updated is not None:
-                self._send_result_email(updated, success_count=0, failure_count=0)
+                self._send_result_email(
+                    updated,
+                    success_count=0,
+                    failure_count=len(attachments),
+                    succeeded_filenames=[],
+                    failed_filenames=_collect_original_filenames(attachments),
+                )
             return
         except MaterialSubmissionTaskNotOpenError:
             updated = self._email_inbox_record_repository.update_result(
@@ -294,7 +306,13 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
                 result_code="import_task_not_open",
             )
             if updated is not None:
-                self._send_result_email(updated, success_count=0, failure_count=0)
+                self._send_result_email(
+                    updated,
+                    success_count=0,
+                    failure_count=len(attachments),
+                    succeeded_filenames=[],
+                    failed_filenames=_collect_original_filenames(attachments),
+                )
             return
         except TaskSubmitterNotMemberError:
             updated = self._email_inbox_record_repository.update_result(
@@ -303,7 +321,13 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
                 result_code="import_submitter_not_member",
             )
             if updated is not None:
-                self._send_result_email(updated, success_count=0, failure_count=0)
+                self._send_result_email(
+                    updated,
+                    success_count=0,
+                    failure_count=len(attachments),
+                    succeeded_filenames=[],
+                    failed_filenames=_collect_original_filenames(attachments),
+                )
             return
         except TaskSubmissionDeadlinePassedError:
             updated = self._email_inbox_record_repository.update_result(
@@ -312,10 +336,21 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
                 result_code="import_deadline_passed",
             )
             if updated is not None:
-                self._send_result_email(updated, success_count=0, failure_count=0)
+                self._send_result_email(
+                    updated,
+                    success_count=0,
+                    failure_count=len(attachments),
+                    succeeded_filenames=[],
+                    failed_filenames=_collect_original_filenames(attachments),
+                )
             return
         success_count = len(result.material_submission.records)
         failure_count = len(result.material_submission.failures)
+        succeeded_filenames = [record.original_filename for record in result.material_submission.records]
+        failed_filenames = [
+            _normalize_result_filename(failure.original_filename)
+            for failure in result.material_submission.failures
+        ]
         if success_count > 0 and failure_count == 0:
             updated_status = EmailInboxRecordStatus.IMPORTED
             result_code = "imported"
@@ -349,7 +384,13 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
                     request_id=None,
                 )
             )
-            self._send_result_email(updated, success_count=success_count, failure_count=failure_count)
+            self._send_result_email(
+                updated,
+                success_count=success_count,
+                failure_count=failure_count,
+                succeeded_filenames=succeeded_filenames,
+                failed_filenames=failed_filenames,
+            )
 
     def _send_result_email(
         self,
@@ -357,21 +398,33 @@ class EmailInboxImportProcessor(AsyncJobProcessor):
         *,
         success_count: int,
         failure_count: int,
+        succeeded_filenames: list[str],
+        failed_filenames: list[str],
     ) -> None:
         if self._outbound_email_sender is None:
             return
         if record.status is EmailInboxRecordStatus.IMPORTED:
             subject = "TRMS 邮件材料已收到"
-            body = f"你的邮件材料已收到并进入任务处理链路。\n成功附件数：{success_count}\n"
+            body = (
+                "你的邮件材料已收到并进入任务处理链路。\n"
+                f"成功附件数：{success_count}\n"
+                f"{_format_filename_section('成功附件', succeeded_filenames)}"
+            )
         elif record.status is EmailInboxRecordStatus.PARTIALLY_IMPORTED:
             subject = "TRMS 邮件材料部分成功"
             body = (
                 "你的邮件材料已部分进入任务处理链路。\n"
                 f"成功附件数：{success_count}\n失败附件数：{failure_count}\n"
+                f"{_format_filename_section('成功附件', succeeded_filenames)}"
+                f"{_format_filename_section('失败附件', failed_filenames)}"
             )
         else:
             subject = "TRMS 邮件材料处理失败"
-            body = f"你的邮件材料未成功进入任务处理链路。\n失败原因：{record.result_code}\n"
+            body = (
+                "你的邮件材料未成功进入任务处理链路。\n"
+                f"失败原因：{record.result_code}\n"
+                f"{_format_filename_section('失败附件', failed_filenames)}"
+            )
         self._outbound_email_sender.send(
             OutboundEmailMessage(
                 to_email=record.sender_email,
@@ -476,3 +529,19 @@ def _mailbox_uid_is_after(candidate: str, baseline: str) -> bool:
     if candidate.isdigit() and baseline.isdigit():
         return int(candidate) > int(baseline)
     return candidate > baseline
+
+
+def _normalize_result_filename(filename: str | None) -> str:
+    normalized = (filename or "").strip()
+    return normalized or "<unnamed>"
+
+
+def _collect_original_filenames(attachments: list[SubmittedMaterialFile]) -> list[str]:
+    return [_normalize_result_filename(attachment.original_filename) for attachment in attachments]
+
+
+def _format_filename_section(title: str, filenames: list[str]) -> str:
+    if not filenames:
+        return f"{title}：无\n"
+    lines = "\n".join(f"- {filename}" for filename in filenames)
+    return f"{title}：\n{lines}\n"

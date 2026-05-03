@@ -1,5 +1,77 @@
 # WORKLOG
 
+## 2026-05-03 21:02 - List attachment names in email receipts and unify material deletion rules
+
+### 完成内容
+- 完成任务“回执列出附件名，并收口成员/管理员删除材料权限”。
+- 已增强邮件回执正文：
+  - [src/trms_backend/application/email_inbox_polling.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_inbox_polling.py)
+  - 邮件导入结果回执现在除了成功/失败数量，还会列出：
+    - 成功附件名；
+    - 失败附件名；
+  - 对完全失败场景，也会尽量把失败附件名写进回执，而不是只返回稳定失败码。
+- 已收口管理员材料删除语义：
+  - [src/trms_backend/application/material_deletion.py](/home/gsh/workspace/TRMS/src/trms_backend/application/material_deletion.py)
+  - [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)
+  - 现有管理员 `POST /api/materials/{material_id}/deletion-mark` 不再只允许删除“无引用材料”；
+  - 任务管理员现在可删除：
+    - 主发票材料；
+    - 已关联到发票的附件材料；
+    - 已提交链路中的材料；
+  - 删除主发票材料时，会同步删除对应发票、分摊、确认、校验和附件归属关系；
+  - 删除附件材料时，会先解除其与发票的关联，再把材料标记为已删除。
+- 已新增成员通用材料删除接口：
+  - [src/trms_backend/api/materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/materials.py)
+  - 新增 `DELETE /api/materials/{material_id}`；
+  - 成员删除前提为：
+    - 任务仍是 `open`；
+    - 材料属于自己；
+    - 材料尚未进入已提交链路；
+  - 若材料已关联到未提交发票，系统会先移除未提交关联，再删除材料；
+  - 若材料已关联到已提交发票，则继续拒绝删除。
+- 已放宽成员删除未提交发票的旧限制：
+  - [src/trms_backend/application/member_invoice_deletion.py](/home/gsh/workspace/TRMS/src/trms_backend/application/member_invoice_deletion.py)
+  - 成员删除自己未提交发票时，不再因为“该发票挂着未提交附件”而被拦住；
+  - 删除未提交发票时，仍会同步删除发票自身数据，但保留附件材料本体，只解除归属关系。
+- 已补成员非发票材料详情页删除入口：
+  - [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx)
+  - [web/src/lib/api/trms.ts](/home/gsh/workspace/TRMS/web/src/lib/api/trms.ts)
+  - 自己的非发票材料且任务仍 `open` 时，页面会显示“删除未提交材料”按钮；
+  - 删除成功后返回工作台；若后端判断材料已进入已提交链路，则以前端错误提示显式暴露。
+- 已补回归测试：
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+  - [tests/test_materials_api.py](/home/gsh/workspace/TRMS/tests/test_materials_api.py)
+  - [tests/test_invoice_member_submission_withdrawal_api.py](/home/gsh/workspace/TRMS/tests/test_invoice_member_submission_withdrawal_api.py)
+  - [web/src/app/member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx)
+
+### 根因
+- 邮件回执之前只返回数量，无法让成员知道“哪些附件进去了、哪些没进去”，排错成本高。
+- 删除语义之前被拆散在两条链路里：
+  - 管理员通用材料删除过于保守，只能删“无引用材料”；
+  - 成员只有“删除未提交发票”的专用入口，非发票材料没有统一删除路径；
+  - 未提交发票还会因为挂着未提交附件被额外拦住，和“未提交材料可删”的产品要求不一致。
+
+### 风险与影响面
+- 管理员删除主发票材料现在会级联删除发票相关记录；这是显式能力放宽，符合“管理员任意时刻可删”的要求，但也意味着管理员误删的影响面比之前更大。
+- 成员非发票材料详情页当前只根据“是否本人 + 任务是否 open”展示删除按钮；若材料实际上已进入已提交链路，最终仍由后端拒绝并提示，不在前端静态猜测。
+- 仓库级验证中的前端 lint 仍保留 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error。
+
+### 验证结果
+- 已通过定向后端测试：
+  - `uv run pytest tests/test_async_jobs.py tests/test_materials_api.py tests/test_invoice_member_submission_withdrawal_api.py`
+  - `70/70` 通过。
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-material-detail.test.tsx`
+  - `10/10` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `613/613` 通过；
+  - `web` lint 仍只有 `task-missing-materials.tsx` 两条既有 warning；
+  - `web` 测试 `126/126` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 20:18 - Normalize octet-stream email attachments by filename and backfill missing PDFs
 
 ### 完成内容

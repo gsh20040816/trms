@@ -403,4 +403,53 @@ describe("MemberMaterialDetailPage", () => {
       ))).toBe(true);
     });
   });
+
+  it("shows delete action for own unsubmitted material and deletes after confirmation", async () => {
+    const requests: Array<{ method: string; url: string }> = [];
+    const summary = buildMaterialSummary("payment_record", "amount_cents", 12345);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      requests.push({ method, url });
+
+      if (url === "/api/tasks/TASK-OPEN" && method === "GET") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return Promise.resolve(jsonResponse(summary));
+      }
+      if (url === "/api/materials/MAT-TYPE-001" && method === "DELETE") {
+        return Promise.resolve(jsonResponse({
+          status: "deleted",
+          item: {
+            id: "MAT-TYPE-001",
+            status: "deleted",
+          },
+        }));
+      }
+
+      throw new Error(`Unhandled request ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/member/materials/MAT-TYPE-001?taskId=TASK-OPEN"],
+    });
+
+    act(() => {
+      render(<RouterProvider router={router} />);
+    });
+
+    expect(await screen.findByRole("button", { name: "删除未提交材料" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除未提交材料" }));
+    const dialog = await screen.findByRole("dialog", { name: /确认删除材料/ });
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除材料" }));
+
+    await waitFor(() => {
+      expect(requests).toContainEqual({
+        method: "DELETE",
+        url: "/api/materials/MAT-TYPE-001",
+      });
+    });
+  });
 });

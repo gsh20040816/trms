@@ -667,7 +667,7 @@ def test_mark_deleted_requires_authenticated_request(tmp_path):
     )
 
 
-def test_cannot_mark_primary_invoice_material_deleted(tmp_path):
+def test_task_administrator_can_delete_primary_invoice_material_anytime(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)
     material_id = client.post(
@@ -687,22 +687,22 @@ def test_cannot_mark_primary_invoice_material_deleted(tmp_path):
         headers=admin_auth_headers(client),
     )
 
-    assert_api_error(
-        response,
-        status_code=409,
-        code="conflict",
-        detail="material is referenced by an invoice and cannot be marked deleted",
-    )
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "deleted"
+    assert get_material_record(tmp_path, material_id).status is MaterialStatus.DELETED
 
     audit_logs = list_material_audit_logs(tmp_path, material_id)
     assert len(audit_logs) == 2
     assert audit_logs[1].action == "mark_material_deleted"
     assert audit_logs[1].actor_id == "admin-1"
-    assert audit_logs[1].result is AuditLogResult.REJECTED
+    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
     assert audit_logs[1].task_id == task_id
     assert audit_logs[1].detail == {
-        "failure_reason": "material is referenced by an invoice and cannot be marked deleted",
-        "current_status": "assigned",
+        "deleted_status": "deleted",
+        "submitter_id": "2250001",
+        "channel": "web",
+        "material_type": "invoice",
+        "original_filename": "ticket.pdf",
     }
 
 
@@ -750,7 +750,7 @@ def test_mark_deleted_rejects_mismatched_authenticated_administrator_id_with_aud
     }
 
 
-def test_cannot_mark_supporting_material_deleted_when_linked_to_invoice(tmp_path):
+def test_task_administrator_can_delete_linked_supporting_material_anytime(tmp_path):
     client = make_client(tmp_path)
     task_id = create_open_task(client)
     invoice_material_id = client.post(
@@ -784,11 +784,151 @@ def test_cannot_mark_supporting_material_deleted_when_linked_to_invoice(tmp_path
         headers=admin_auth_headers(client),
     )
 
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "deleted"
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, supporting_material_id) == []
+
+
+def test_member_can_delete_own_unsubmitted_supporting_material(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-content", "image/png")},
+    ).json()["items"][0]["id"]
+    member_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+
+    response = client.delete(
+        f"/api/materials/{material_id}",
+        headers=member_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    assert response.json()["item"]["status"] == "deleted"
+
+
+def test_member_can_delete_own_unsubmitted_supporting_material_linked_to_draft_invoice(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    invoice_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"invoice-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+    supporting_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-content", "image/png")},
+    ).json()["items"][0]["id"]
+    invoice_id = create_invoice(client, invoice_material_id, actor_id="2250001")
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
+    assert attach_response.status_code == 200
+    member_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+
+    response = client.delete(
+        f"/api/materials/{supporting_material_id}",
+        headers=member_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["item"]["status"] == "deleted"
+    assert list_linked_invoice_ids_for_supporting_material(tmp_path, supporting_material_id) == []
+
+
+def test_member_cannot_delete_material_after_invoice_submission(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_open_task(client)
+    invoice_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "invoice",
+        },
+        files={"files": ("ticket.pdf", b"invoice-content", "application/pdf")},
+    ).json()["items"][0]["id"]
+    supporting_material_id = client.post(
+        f"/api/tasks/{task_id}/materials",
+        data={
+            "submitter_id": "2250001",
+            "channel": "web",
+            "material_type": "payment_record",
+        },
+        files={"files": ("payment.png", b"payment-content", "image/png")},
+    ).json()["items"][0]["id"]
+    invoice_id = create_invoice(client, invoice_material_id, actor_id="2250001")
+    attach_response = client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{supporting_material_id}",
+        headers=admin_auth_headers(client),
+    )
+    assert attach_response.status_code == 200
+    submit_response = client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        json={"actor_id": "2250001", "invoice_ids": [invoice_id]},
+        headers=auth_headers(
+            register_and_get_token(
+                client,
+                username="member1",
+                role="member",
+                actor_id="2250001",
+                member_code="2250001",
+            )
+        ),
+    )
+    assert submit_response.status_code == 200
+    member_headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member1b",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+
+    response = client.delete(
+        f"/api/materials/{supporting_material_id}",
+        headers=member_headers,
+    )
+
     assert_api_error(
         response,
         status_code=409,
         code="conflict",
-        detail="material is referenced by supporting invoice links and cannot be marked deleted",
+        detail="submitted material cannot be deleted by member",
     )
 
 
