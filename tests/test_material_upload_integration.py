@@ -138,8 +138,7 @@ def submit_assigned_material(
             data={
                 "sender_email": "member1@tongji.edu.cn",
                 "resolved_member_id": "2250001",
-                "subject": f"[TRMS] task:{email_submission_key or task_id}",
-                "body": "material_type: invoice\nsubmitter_id: 2250001\n",
+                "subject": f"<{email_submission_key or task_id}>Fw: upload",
             },
             files={"files": (filename, content, "application/pdf")},
         )

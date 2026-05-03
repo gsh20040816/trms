@@ -115,8 +115,8 @@ def test_email_material_submission_routes_trusted_resolved_member_to_assigned_fl
         data={
             "sender_email": "Member1@Tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_key}",
-            "body": "material_type: invoice\nsubmitter_id: 2250999\nnote: train ticket\n",
+            "subject": f"<{task_key}>Fw: train ticket",
+            "body": "附件就是原样上传，不要求正文格式。",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
@@ -127,9 +127,9 @@ def test_email_material_submission_routes_trusted_resolved_member_to_assigned_fl
         "sender_email": "member1@tongji.edu.cn",
         "task_id": task_id,
         "submitted_task_key": task_key,
-        "material_type": "invoice",
-        "metadata_submitter_id": "2250999",
-        "note": "train ticket",
+        "material_type": "other_attachment",
+        "metadata_submitter_id": None,
+        "note": None,
     }
     material = body["items"][0]
     assert material["status"] == "assigned"
@@ -153,8 +153,8 @@ def test_email_material_submission_without_trusted_header_keeps_claimed_member_p
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_key}",
-            "body": "material_type: invoice\nsubmitter_id: 2250999\n",
+            "subject": f"<{task_key}>Fw: upload",
+            "body": "随便写一些说明也不会影响解析。",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
@@ -165,7 +165,7 @@ def test_email_material_submission_without_trusted_header_keeps_claimed_member_p
     assert material["task_id"] is None
     assert material["submitter_id"] is None
     assert material["task_id_hint"] == task_key
-    assert material["submitter_id_hint"] == "email:member1@tongji.edu.cn (submitter_id:2250999)"
+    assert material["submitter_id_hint"] == "email:member1@tongji.edu.cn"
     assert material["channel"] == "email"
     assert material["storage_key"].startswith("_pending_assignment/")
     assert_single_pending_recognition_task(client, material["id"])
@@ -181,8 +181,8 @@ def test_email_material_submission_rejects_invalid_trusted_header(tmp_path):
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_key}",
-            "body": "material_type: invoice\n",
+            "subject": f"<{task_key}>Fw: upload",
+            "body": "正文不再要求格式。",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
@@ -199,8 +199,8 @@ def test_email_material_submission_routes_unresolved_sender_to_pending_assignmen
         "/api/email/materials",
         data={
             "sender_email": "member2@tongji.edu.cn",
-            "subject": f"[TRMS] task:{task_key}",
-            "body": "material_type: competition_notice\nsubmitter_id: 2250002\n",
+            "subject": f"<{task_key}>Fw: notice",
+            "body": "这里只是普通正文。",
         },
         files={"files": ("notice.pdf", b"email-notice", "application/pdf")},
     )
@@ -212,7 +212,7 @@ def test_email_material_submission_routes_unresolved_sender_to_pending_assignmen
     assert material["task_id"] is None
     assert material["submitter_id"] is None
     assert material["task_id_hint"] == task_key
-    assert material["submitter_id_hint"] == "email:member2@tongji.edu.cn (submitter_id:2250002)"
+    assert material["submitter_id_hint"] == "email:member2@tongji.edu.cn"
     assert material["channel"] == "email"
     assert material["storage_key"].startswith("_pending_assignment/")
     assert_single_pending_recognition_task(client, material["id"])
@@ -245,8 +245,7 @@ def test_email_material_submission_uses_bound_sender_email_without_trusted_heade
         "/api/email/materials",
         data={
             "sender_email": "Member1@Tongji.edu.cn",
-            "subject": f"[TRMS] task:{task_key}",
-            "body": "material_type: invoice\n",
+            "subject": f"<{task_key}>Fw: invoice",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
@@ -268,8 +267,8 @@ def test_email_material_submission_routes_unknown_task_to_pending_assignment(tmp
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": "[TRMS] task:missing-task",
-            "body": "material_type: invoice\n",
+            "subject": "<missing-task>Fw: invoice",
+            "body": "任务不存在时也应按待认领处理。",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
@@ -284,7 +283,7 @@ def test_email_material_submission_routes_unknown_task_to_pending_assignment(tmp
     assert material["channel"] == "email"
 
 
-def test_email_material_submission_rejects_subject_without_trms_prefix(tmp_path):
+def test_email_material_submission_rejects_subject_without_angle_bracket_prefix(tmp_path):
     client = make_client(tmp_path)
 
     response = client.post(
@@ -292,7 +291,7 @@ def test_email_material_submission_rejects_subject_without_trms_prefix(tmp_path)
         data={
             "sender_email": "member1@tongji.edu.cn",
             "subject": "task:task-1",
-            "body": "material_type: invoice\n",
+            "body": "这封邮件没有尖括号任务标识。",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
@@ -301,7 +300,7 @@ def test_email_material_submission_rejects_subject_without_trms_prefix(tmp_path)
     assert response.json() == {
         "status": "failed",
         "error_code": "invalid_subject_prefix",
-        "detail": "email subject must start with [TRMS] or <task_key>",
+        "detail": "email subject must start with <task_key>",
     }
 
 
@@ -316,7 +315,6 @@ def test_email_material_submission_accepts_angle_bracket_task_key_subject(tmp_pa
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
             "subject": f"<{task_key}>Fw: 中国南方航空全电发票（全面数字化电子发票）",
-            "body": "material_type: invoice\n",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
@@ -328,25 +326,26 @@ def test_email_material_submission_accepts_angle_bracket_task_key_subject(tmp_pa
     assert payload["items"][0]["task_id"] == task_id
 
 
-def test_email_material_submission_rejects_task_id_mismatch(tmp_path):
-    client = make_client(tmp_path)
+def test_email_material_submission_defaults_material_type_to_other_attachment(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id, task_key = create_open_task_with_mail_key(client)
 
     response = client.post(
         "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
         data={
             "sender_email": "member1@tongji.edu.cn",
-            "subject": "[TRMS] task:task-1",
-            "body": "material_type: invoice\ntask_id: task-2\n",
+            "resolved_member_id": "2250001",
+            "subject": f"<{task_key}>Fw: upload",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
 
-    assert response.status_code == 422
-    assert response.json() == {
-        "status": "failed",
-        "error_code": "task_id_mismatch",
-        "detail": "metadata task_id does not match subject task_id",
-    }
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["parsed_email"]["material_type"] == "other_attachment"
+    assert payload["items"][0]["task_id"] == task_id
+    assert payload["items"][0]["material_type"] == "other_attachment"
 
 
 def test_email_material_submission_reports_missing_attachment_filename_as_partial_failure(tmp_path):
@@ -359,8 +358,7 @@ def test_email_material_submission_reports_missing_attachment_filename_as_partia
         data={
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
-            "subject": f"[TRMS] task:{task_key}",
-            "body": "material_type: invoice\n",
+            "subject": f"<{task_key}>Fw: upload",
         },
         files=[
             ("files", ("invoice.pdf", b"email-pdf", "application/pdf")),
@@ -381,7 +379,7 @@ def test_email_material_submission_reports_missing_attachment_filename_as_partia
     ]
 
 
-def test_email_material_submission_keeps_legacy_task_id_subject_compatible(tmp_path):
+def test_email_material_submission_rejects_legacy_trms_subject(tmp_path):
     client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
     task_id = create_open_task(client)
 
@@ -392,13 +390,13 @@ def test_email_material_submission_keeps_legacy_task_id_subject_compatible(tmp_p
             "sender_email": "member1@tongji.edu.cn",
             "resolved_member_id": "2250001",
             "subject": f"[TRMS] task:{task_id}",
-            "body": "material_type: invoice\n",
         },
         files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
     )
 
-    assert response.status_code == 201
-    payload = response.json()
-    assert payload["parsed_email"]["task_id"] == task_id
-    assert payload["parsed_email"]["submitted_task_key"] == task_id
-    assert payload["items"][0]["task_id"] == task_id
+    assert response.status_code == 422
+    assert response.json() == {
+        "status": "failed",
+        "error_code": "invalid_subject_prefix",
+        "detail": "email subject must start with <task_key>",
+    }

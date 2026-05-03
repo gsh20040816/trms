@@ -191,8 +191,8 @@ def test_email_inbox_polling_processor_records_ready_and_ignored_messages(tmp_pa
                 mailbox_uid="1",
                 message_id="<a@example.edu>",
                 sender_email="bound@tongji.edu.cn",
-                subject="[TRMS] task:icpc-mail-task",
-                body="material_type: invoice\n",
+                subject="<icpc-mail-task>Fw: invoice",
+                body="正文内容不参与结构化解析。",
                 raw_bytes=b"raw-message-1",
                 received_at=datetime.now(timezone.utc),
             ),
@@ -200,8 +200,8 @@ def test_email_inbox_polling_processor_records_ready_and_ignored_messages(tmp_pa
                 mailbox_uid="2",
                 message_id="<b@example.edu>",
                 sender_email="unknown@tongji.edu.cn",
-                subject="[TRMS] task:icpc-mail-task",
-                body="material_type: invoice\n",
+                subject="<icpc-mail-task>Fw: invoice",
+                body="正文内容不参与结构化解析。",
                 raw_bytes=b"raw-message-2",
                 received_at=datetime.now(timezone.utc),
             ),
@@ -239,8 +239,8 @@ def test_email_inbox_polling_processor_skips_duplicate_mailbox_uid(tmp_path):
                 mailbox_uid="dup-1",
                 message_id="<dup@example.edu>",
                 sender_email="unknown@tongji.edu.cn",
-                subject="[TRMS] task:missing-task",
-                body="material_type: invoice\n",
+                subject="<missing-task>Fw: upload",
+                body="任意正文",
                 raw_bytes=b"dup-message",
                 received_at=datetime.now(timezone.utc),
             )
@@ -302,8 +302,8 @@ def test_email_inbox_polling_processor_ignores_bound_sender_with_unknown_task_ke
                 mailbox_uid="missing-task-1",
                 message_id="<missing@example.edu>",
                 sender_email="bound@tongji.edu.cn",
-                subject="[TRMS] task:missing-task",
-                body="material_type: invoice\n",
+                subject="<missing-task>Fw: upload",
+                body="任意正文",
                 raw_bytes=b"missing-task-message",
                 received_at=datetime.now(timezone.utc),
             )
@@ -335,8 +335,8 @@ def test_email_inbox_polling_processor_ignores_invalid_sender_email_without_cras
                 mailbox_uid="invalid-sender-1",
                 message_id="<invalid@example.edu>",
                 sender_email="invalid sender",
-                subject="[TRMS] task:anything",
-                body="material_type: invoice\n",
+                subject="<anything>Fw: upload",
+                body="任意正文",
                 raw_bytes=b"invalid-sender-message",
                 received_at=datetime.now(timezone.utc),
             )
@@ -402,12 +402,12 @@ def test_email_inbox_import_processor_submits_attachment_and_sends_receipt(tmp_p
     inbox_repository = InMemoryEmailInboxRecordRepository()
     raw_email = (
         b"From: bound@tongji.edu.cn\r\n"
-        b"Subject: [TRMS] task:icpc-mail-task\r\n"
+        b"Subject: <icpc-mail-task>Fw: invoice\r\n"
         b"MIME-Version: 1.0\r\n"
         b"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
         b"--BOUNDARY\r\n"
         b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
-        b"material_type: invoice\r\n\r\n"
+        b"\xe8\xbf\x99\xe9\x87\x8c\xe6\x98\xaf\xe8\x87\xaa\xe7\x94\xb1\xe6\xad\xa3\xe6\x96\x87\xe3\x80\x82\r\n\r\n"
         b"--BOUNDARY\r\n"
         b"Content-Type: application/pdf\r\n"
         b"Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\r\n"
@@ -425,7 +425,7 @@ def test_email_inbox_import_processor_submits_attachment_and_sends_receipt(tmp_p
             mailbox_uid="1",
             message_id="<a@example.edu>",
             sender_email="bound@tongji.edu.cn",
-            subject="[TRMS] task:icpc-mail-task",
+            subject="<icpc-mail-task>Fw: invoice",
             raw_storage_key=stored_raw.storage_key,
             received_at=datetime.now(timezone.utc),
             status=EmailInboxRecordStatus.READY_FOR_IMPORT,
@@ -449,7 +449,9 @@ def test_email_inbox_import_processor_submits_attachment_and_sends_receipt(tmp_p
     assert updated is not None
     assert updated.status == EmailInboxRecordStatus.IMPORTED
     assert updated.result_code == "imported"
-    assert len(material_repository.list_by_task(task.id)) == 1
+    materials = material_repository.list_by_task(task.id)
+    assert len(materials) == 1
+    assert materials[0].material_type.value == "other_attachment"
     assert sender.messages[-1].subject == "TRMS 邮件材料已收到"
 
 
@@ -460,9 +462,9 @@ def test_email_inbox_import_processor_marks_missing_attachment_as_failed(tmp_pat
     inbox_storage = LocalMaterialFileStorage(tmp_path / "emails")
     raw_email = (
         b"From: bound@tongji.edu.cn\r\n"
-        b"Subject: [TRMS] task:icpc-mail-task\r\n"
+        b"Subject: <icpc-mail-task>Fw: invoice\r\n"
         b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
-        b"material_type: invoice\r\n"
+        b"\xe6\xb2\xa1\xe6\x9c\x89\xe9\x99\x84\xe4\xbb\xb6\xe7\x9a\x84\xe9\x82\xae\xe4\xbb\xb6\r\n"
     )
     stored_raw = inbox_storage.save(
         task_id="_email_inbox",
@@ -475,7 +477,7 @@ def test_email_inbox_import_processor_marks_missing_attachment_as_failed(tmp_pat
             mailbox_uid="2",
             message_id="<b@example.edu>",
             sender_email="bound@tongji.edu.cn",
-            subject="[TRMS] task:icpc-mail-task",
+            subject="<icpc-mail-task>Fw: invoice",
             raw_storage_key=stored_raw.storage_key,
             received_at=datetime.now(timezone.utc),
             status=EmailInboxRecordStatus.READY_FOR_IMPORT,
@@ -617,12 +619,12 @@ def test_email_inbox_import_processor_marks_partial_success_and_sends_partial_re
     inbox_repository = InMemoryEmailInboxRecordRepository()
     raw_email = (
         b"From: bound@tongji.edu.cn\r\n"
-        b"Subject: [TRMS] task:icpc-mail-task\r\n"
+        b"Subject: <icpc-mail-task>Fw: invoice\r\n"
         b"MIME-Version: 1.0\r\n"
         b"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
         b"--BOUNDARY\r\n"
         b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
-        b"material_type: invoice\r\n\r\n"
+        b"\xe6\xad\xa3\xe6\x96\x87\xe4\xb8\x8d\xe9\x9c\x80\xe8\xa6\x81\xe5\x9b\xba\xe5\xae\x9a\xe6\xa0\xbc\xe5\xbc\x8f\xe3\x80\x82\r\n\r\n"
         b"--BOUNDARY\r\n"
         b"Content-Type: application/pdf\r\n"
         b"Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\r\n"
@@ -644,7 +646,7 @@ def test_email_inbox_import_processor_marks_partial_success_and_sends_partial_re
             mailbox_uid="3",
             message_id="<c@example.edu>",
             sender_email="bound@tongji.edu.cn",
-            subject="[TRMS] task:icpc-mail-task",
+            subject="<icpc-mail-task>Fw: invoice",
             raw_storage_key=stored_raw.storage_key,
             received_at=datetime.now(timezone.utc),
             status=EmailInboxRecordStatus.READY_FOR_IMPORT,

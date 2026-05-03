@@ -16,12 +16,7 @@ from trms_backend.domain.email_bindings import (
 from trms_backend.domain.materials import MaterialType, SubmissionChannel
 from trms_backend.domain.tasks import ReimbursementTask, TaskRepository
 
-SUBJECT_PREFIX = "[TRMS] "
-TASK_MARKER = "task:"
 ANGLE_BRACKET_TASK_PATTERN = re.compile(r"^<(?P<task_id>[^<>]+)>")
-OTHER_ATTACHMENT_EMAIL_ALIAS = "other"
-METADATA_LINE_PATTERN = re.compile(r"^(?P<key>[a-z_]+):(?P<value>.*)$")
-SUPPORTED_METADATA_KEYS = frozenset({"material_type", "submitter_id", "task_id", "note"})
 
 
 @dataclass(frozen=True)
@@ -134,15 +129,6 @@ def parse_formatted_email_submission(
 ) -> ParsedEmailSubmission:
     normalized_sender_email = _normalize_sender_email(sender_email)
     submitted_task_key = _parse_subject(subject)
-    metadata = _parse_metadata_block(body)
-    metadata_task_id = _normalize_optional_string(metadata.get("task_id"))
-    if metadata_task_id is not None and metadata_task_id != submitted_task_key:
-        raise EmailMaterialSubmissionFormatError(
-            error_code="task_id_mismatch",
-            detail="metadata task_id does not match subject task_id",
-        )
-
-    material_type = _parse_material_type(metadata.get("material_type"))
     resolved_task = _resolve_email_target_task(
         submitted_task_key=submitted_task_key,
         task_repository=task_repository,
@@ -151,9 +137,9 @@ def parse_formatted_email_submission(
         sender_email=normalized_sender_email,
         task_id=resolved_task.id if resolved_task is not None else submitted_task_key,
         submitted_task_key=submitted_task_key,
-        material_type=material_type,
-        metadata_submitter_id=_normalize_optional_string(metadata.get("submitter_id")),
-        note=_normalize_optional_string(metadata.get("note")),
+        material_type=MaterialType.OTHER_ATTACHMENT,
+        metadata_submitter_id=None,
+        note=None,
     )
 
 
@@ -169,89 +155,10 @@ def _parse_subject(subject: str) -> str:
             )
         return task_id
 
-    if not normalized_subject.startswith(SUBJECT_PREFIX):
-        raise EmailMaterialSubmissionFormatError(
-            error_code="invalid_subject_prefix",
-            detail="email subject must start with [TRMS] or <task_key>",
-        )
-
-    marker_count = normalized_subject.count(TASK_MARKER)
-    if marker_count == 0:
-        raise EmailMaterialSubmissionFormatError(
-            error_code="missing_task_id",
-            detail="email subject must include task:<task_id>",
-        )
-    if marker_count > 1:
-        raise EmailMaterialSubmissionFormatError(
-            error_code="duplicate_task_id_marker",
-            detail="email subject must include exactly one task: marker",
-        )
-
-    task_segment = normalized_subject[len(SUBJECT_PREFIX) :]
-    if not task_segment.startswith(TASK_MARKER):
-        raise EmailMaterialSubmissionFormatError(
-            error_code="missing_task_id",
-            detail="email subject must include task:<task_id>",
-        )
-
-    task_id = task_segment[len(TASK_MARKER) :].strip()
-    if not task_id or re.search(r"\s", task_id):
-        raise EmailMaterialSubmissionFormatError(
-            error_code="missing_task_id",
-            detail="email subject must include a non-empty task_id",
-        )
-    return task_id
-
-
-def _parse_metadata_block(body: str) -> dict[str, str]:
-    lines = body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    metadata: dict[str, str] = {}
-    saw_metadata_line = False
-
-    for line in lines:
-        if not line.strip():
-            break
-        match = METADATA_LINE_PATTERN.match(line)
-        if match is None:
-            if not saw_metadata_line:
-                raise EmailMaterialSubmissionFormatError(
-                    error_code="missing_metadata_block",
-                    detail="email body must start with a metadata block",
-                )
-            break
-
-        saw_metadata_line = True
-        key = match.group("key")
-        if key not in SUPPORTED_METADATA_KEYS:
-            continue
-        metadata[key] = match.group("value").strip()
-
-    if not saw_metadata_line:
-        raise EmailMaterialSubmissionFormatError(
-            error_code="missing_metadata_block",
-            detail="email body must start with a metadata block",
-        )
-    return metadata
-
-
-def _parse_material_type(value: str | None) -> MaterialType:
-    normalized_value = _normalize_optional_string(value)
-    if normalized_value is None:
-        raise EmailMaterialSubmissionFormatError(
-            error_code="missing_material_type",
-            detail="email metadata must include material_type",
-        )
-
-    if normalized_value == OTHER_ATTACHMENT_EMAIL_ALIAS:
-        return MaterialType.OTHER_ATTACHMENT
-
-    try:
-        return MaterialType(normalized_value)
-    except ValueError as error:
-        raise EmailMaterialSubmissionFormatError(
-            error_code="unsupported_material_type",
-            detail=f"unsupported email material_type: {normalized_value}",
-        ) from error
+    raise EmailMaterialSubmissionFormatError(
+        error_code="invalid_subject_prefix",
+        detail="email subject must start with <task_key>",
+    )
 
 
 def _build_submitter_hint(

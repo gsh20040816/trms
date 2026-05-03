@@ -27,7 +27,7 @@ def build_email_material_router(
         request: Request,
         sender_email: Annotated[str, Form(min_length=1)],
         subject: Annotated[str, Form(min_length=1)],
-        body: Annotated[str, Form()],
+        body: Annotated[str | None, Form()] = None,
         files: Annotated[list[UploadFile] | None, File()] = None,
         resolved_member_id: Annotated[str | None, Form()] = None,
         email_inbound_token: Annotated[str | None, Header(alias="X-TRMS-Email-Inbound-Token")] = None,
@@ -35,7 +35,7 @@ def build_email_material_router(
         if not files:
             return _build_email_format_error_response(
                 error_code="missing_attachments",
-                detail="formatted email must include at least one attachment",
+                detail="email must include at least one attachment",
             )
 
         uploaded_files = await read_uploaded_files(files)
@@ -47,7 +47,7 @@ def build_email_material_router(
             result = email_material_submission_service.submit(
                 sender_email=sender_email,
                 subject=subject,
-                body=body,
+                body=body or "",
                 resolved_member_id=resolved_member_id if trust_resolved_member_id else None,
                 files=uploaded_files,
                 request_id=ensure_request_id(request),

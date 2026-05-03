@@ -1,5 +1,46 @@
 # WORKLOG
 
+## 2026-05-03 19:05 - Restrict email task matching to angle brackets and drop body formatting requirements
+
+### 完成内容
+- 完成任务“让邮件提交只依赖尖括号任务标识，并取消正文格式要求”。
+- 已收口邮件主题解析：
+  - [src/trms_backend/application/email_material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_material_submission.py)
+  - 邮件主题现在只接受开头尖括号任务标识，例如 `<icpc-mail-task>Fw: ...`；
+  - 旧 `[TRMS] task:<task_id>` 主题不再兼容；
+  - 邮件正文不再解析 `material_type`、`task_id`、`submitter_id` 或 `note` 元数据。
+- 已把邮件材料类型改为与普通上传默认行为一致：
+  - [src/trms_backend/api/email_materials.py](/home/gsh/workspace/TRMS/src/trms_backend/api/email_materials.py)
+  - [src/trms_backend/application/email_material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_material_submission.py)
+  - `/api/email/materials` 现在允许省略 `body`；
+  - 邮件附件进入统一上传链路时，默认按 `other_attachment` 入链，后续继续复用现有识别、人工改类型和归票流程。
+- 已更新回归测试与规范文档：
+  - [tests/test_email_materials_api.py](/home/gsh/workspace/TRMS/tests/test_email_materials_api.py)
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+  - [tests/test_material_upload_integration.py](/home/gsh/workspace/TRMS/tests/test_material_upload_integration.py)
+  - [docs/格式化邮件提交规范说明.md](/home/gsh/workspace/TRMS/docs/格式化邮件提交规范说明.md)
+  - 覆盖尖括号主题、无正文/自由正文、默认 `other_attachment`、部分成功和旧 `[TRMS] task:` 主题拒绝场景。
+
+### 根因
+- 现有邮件链路仍沿用“格式化邮件”设计，把任务、材料类型和其他元数据拆到主题与正文里共同解析。
+- 这导致邮件入口与普通上传主链路不一致：普通上传未显式选择类型时会默认进入 `other_attachment`，而邮件入口却把正文元数据块当成硬门禁，正文稍有偏差就被判格式错误。
+
+### 风险与影响面
+- 本轮是显式行为变更：旧 `[TRMS] task:<task_id>` 主题现在会被拒绝，不再做兼容保留。
+- 邮件附件默认以 `other_attachment` 入链后，若管理员希望材料直接以更具体类型参与规则判断，仍需依赖现有识别或人工改类型流程；这是与普通上传默认行为保持一致的有意收口，不是回退。
+- 本轮未改动成员身份边界：可信成员身份仍只来自受信任入站器或已绑定发件人邮箱。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_email_materials_api.py tests/test_async_jobs.py tests/test_material_upload_integration.py`
+  - `38/38` 通过。
+- 仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `601/601` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 16:20 - Import email attachments into material pipeline and send receipts
 
 ### 完成内容
