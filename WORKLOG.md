@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-05-04 19:40 - Auto-register Telegram webhook during production API startup
+
+### 完成内容
+- 修复 Telegram Bot 在生产部署后仍需人工调用 `setWebhook` 才能收消息的问题。
+- 已为 Telegram webhook 处理器补充显式注册能力：
+  - [src/trms_backend/application/telegram_bot_aiogram.py](/home/gsh/workspace/TRMS/src/trms_backend/application/telegram_bot_aiogram.py)
+  - 新增 `configure_webhook()`，使用现有 bot token 调用 Telegram Bot API 注册 webhook，并按需附带 `secret_token` 与 `allowed_updates=["message"]`。
+- 已把生产环境自动注册逻辑挂到 API 启动阶段：
+  - [src/trms_backend/main.py](/home/gsh/workspace/TRMS/src/trms_backend/main.py)
+  - 当 `TRMS_ENV=production` 且 Telegram bot 已配置时，应用启动会自动把
+    `TRMS_PUBLIC_API_BASE_URL + /telegram/bot/webhook`
+    注册到 Telegram；
+  - 若配置了 `TRMS_TELEGRAM_WEBHOOK_SECRET`，会一并作为 `secret_token` 注册。
+- 已补回归测试：
+  - [tests/test_telegram_bot_api.py](/home/gsh/workspace/TRMS/tests/test_telegram_bot_api.py)
+  - 覆盖“生产环境启动自动注册 webhook”和“非生产环境不自动注册”两条主路径。
+- 已同步更新说明：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+
+### 根因
+- 之前代码只暴露了 `/api/telegram/bot/webhook` 接口和开发环境 long polling 入口，但生产 API 启动时从未主动调用 Telegram 的 `setWebhook`。
+- 这导致即使生产容器内已经拿到了：
+  - `TRMS_TELEGRAM_BOT_TOKEN`
+  - `TRMS_TELEGRAM_WEBHOOK_SECRET`
+  - `TRMS_PUBLIC_API_BASE_URL`
+  Telegram 侧的 `getWebhookInfo` 仍会保持 `url=""`，机器人消息不会被投递到后端。
+
+### 风险与影响面
+- 本轮只在 `TRMS_ENV=production` 下自动注册 webhook；开发/测试环境现有 long polling 与本地 TestClient 行为保持不变。
+- 自动注册依赖 `TRMS_PUBLIC_API_BASE_URL` 指向真实可公网访问的 HTTPS 地址；若该地址配置错误，启动时会在注册 webhook 这一步显式失败，而不是静默保持“看起来已配置但实际没接收消息”。
+- 当前仍使用 FastAPI `on_event` 启动/关闭钩子；测试中可见既有 deprecation warning，本轮未改为 lifespan，避免扩大改动面。
+
+### 验证结果
+- 已运行定向测试：
+  - `uv run pytest tests/test_telegram_bot_api.py tests/test_async_jobs.py -k 'telegram_bot'`
+  - `5 passed`
+- 已运行语法检查：
+  - `python -m py_compile src/trms_backend/application/telegram_bot_aiogram.py src/trms_backend/main.py tests/test_telegram_bot_api.py`
+
 ## 2026-05-04 05:35 - Eliminate Compose backend env passthrough drift by inheriting the runtime env file directly
 
 ### 完成内容

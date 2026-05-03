@@ -300,6 +300,7 @@ Telegram Bot 与入站可信边界：
 - `PUT /api/telegram-bindings/*` 与 Telegram 绑定查询接口现在都要求 bearer 身份，且仅 `admin` / `system_admin` 可管理。
 - 成员现在可在 Telegram 中发送 `/bind` 获取一次性网页绑定链接；登录 Web 后确认，即可把当前 Telegram 账号绑定到当前成员身份。
 - 真实 Telegram bot webhook 入口为 `/api/telegram/bot/webhook`；配置 `TRMS_TELEGRAM_BOT_TOKEN` 后可处理 `/bind`、`/tasks`、`/task <submission_key>` 和直接发送文件上传。
+- `TRMS_ENV=production` 且同时配置 `TRMS_TELEGRAM_BOT_TOKEN`、`TRMS_PUBLIC_API_BASE_URL` 后，API 启动时会自动向 Telegram 注册 `https://<public-api>/telegram/bot/webhook`，并在配置了 `TRMS_TELEGRAM_WEBHOOK_SECRET` 时一并设置 `secret_token`。
 - 任务对外统一暴露 `submission_key` 作为跨 Telegram / CLI / 邮件的稳定任务提交标识；旧字段名 `email_submission_key` 继续兼容已有 API / 数据。
 - 只有在后端配置了 `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`，且请求头 `X-TRMS-Telegram-Inbound-Token` 与之匹配时，`/api/telegram/materials` 才会把表单中的 `telegram_user_id` 当作可信身份来源。
 - 未配置该 token，或请求未携带该 token 时，Telegram 材料仍会被接收，但只进入待归属流程，不会直接归档到成员主链路。
@@ -364,7 +365,7 @@ TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker --once
 
 以下能力不要按“README 已写到就等于可直接使用”理解：
 
-- Telegram 渠道现在已补真实 Bot / Webhook 接入口，但生产环境仍需自行向 Telegram 注册 webhook，并通过 `TRMS_TELEGRAM_WEBHOOK_SECRET` 收口入口可信性。
+- Telegram 渠道现在已补真实 Bot / Webhook 接入口；生产环境 API 启动时会自动注册 webhook，并通过 `TRMS_TELEGRAM_WEBHOOK_SECRET` 收口入口可信性。
 - 格式化邮件渠道目前已完成格式规范、受信任入站边界、邮箱绑定、IMAP 轮询去重、附件写入统一材料主链路和 SMTP 结果回执。
 - OpenAI 兼容文本 LLM / VLM Provider 只有在环境变量或系统管理员系统配置中至少配置了一类后才会启用；未配置对应 provider 时识别会显式失败，不会伪装为识别成功。
 - Browser Use / 财务系统自动录入明确属于第一阶段范围外，不应被当作现成功能。

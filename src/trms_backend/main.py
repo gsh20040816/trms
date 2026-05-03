@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -75,6 +77,8 @@ from trms_backend.runtime_config import (
     apply_system_ai_provider_overrides,
     load_runtime_config,
 )
+
+TELEGRAM_LOGGER = logging.getLogger("trms_backend.telegram")
 
 
 def create_app(
@@ -456,6 +460,37 @@ def create_app(
     async def shutdown_telegram_bot() -> None:
         if resolved_telegram_webhook_processor is not None:
             await resolved_telegram_webhook_processor.close()
+
+    @app.on_event("startup")
+    async def configure_telegram_webhook_on_startup() -> None:
+        runtime_config = getattr(app.state, "runtime_config", None)
+        processor = getattr(app.state, "telegram_webhook_processor", None)
+        if runtime_config is None or processor is None:
+            return
+        if runtime_config.environment != "production":
+            return
+        if runtime_config.telegram_bot is None:
+            return
+
+        webhook_url = f"{runtime_config.public_api_base_url.rstrip('/')}/telegram/bot/webhook"
+        webhook_secret = (
+            runtime_config.telegram_bot.webhook_secret.get_secret_value()
+            if runtime_config.telegram_bot.webhook_secret is not None
+            else None
+        )
+        await processor.configure_webhook(
+            webhook_url=webhook_url,
+            secret_token=webhook_secret,
+            allowed_updates=["message"],
+        )
+        TELEGRAM_LOGGER.info(
+            "telegram_webhook_startup_ready %s",
+            {
+                "webhook_url": webhook_url,
+                "environment": runtime_config.environment,
+                "webhook_secret_configured": webhook_secret is not None,
+            },
+        )
 
     return app
 

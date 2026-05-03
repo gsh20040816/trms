@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 
 from aiogram import Bot, Dispatcher, Router
@@ -10,6 +11,8 @@ from trms_backend.application.telegram_bot import (
     TelegramBotWorkflowService,
     TelegramIncomingFile,
 )
+
+TELEGRAM_LOGGER = logging.getLogger("trms_backend.telegram")
 
 
 class AiogramTelegramWebhookProcessor:
@@ -43,6 +46,31 @@ class AiogramTelegramWebhookProcessor:
             )
         finally:
             await self.close()
+
+    async def configure_webhook(
+        self,
+        *,
+        webhook_url: str,
+        secret_token: str | None = None,
+        allowed_updates: list[str] | None = None,
+    ) -> None:
+        normalized_webhook_url = webhook_url.strip()
+        if not normalized_webhook_url:
+            raise ValueError("webhook_url must not be empty")
+        normalized_secret_token = (secret_token or "").strip() or None
+        await self._bot.set_webhook(
+            url=normalized_webhook_url,
+            secret_token=normalized_secret_token,
+            allowed_updates=allowed_updates,
+        )
+        TELEGRAM_LOGGER.info(
+            "telegram_webhook_configured %s",
+            {
+                "webhook_url": normalized_webhook_url,
+                "webhook_secret_configured": normalized_secret_token is not None,
+                "allowed_updates": allowed_updates or [],
+            },
+        )
 
     async def close(self) -> None:
         await self._bot.session.close()
