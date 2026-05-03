@@ -39,6 +39,7 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.auth.bootstrap_admin_token is None
     assert config.auth.telegram_inbound_token is None
     assert config.auth.email_inbound_token is None
+    assert config.outbound_email is None
     assert config.llm_provider is None
 
 
@@ -247,6 +248,52 @@ def test_load_runtime_config_reads_llm_provider_and_normalizes_base_url():
     assert config.llm_provider.model == "gpt-4.1-mini"
     assert config.llm_provider.timeout_seconds == 45
     assert config.llm_provider.max_retries == 3
+
+
+def test_load_runtime_config_reads_outbound_email_and_redacts_password():
+    config = load_runtime_config(
+        env={
+            "TRMS_SMTP_HOST": " smtp.example.edu ",
+            "TRMS_SMTP_PORT": "587",
+            "TRMS_SMTP_USERNAME": "mailer",
+            "TRMS_SMTP_PASSWORD": " smtp-secret ",
+            "TRMS_SMTP_FROM_ADDRESS": "TRMS@tongji.edu.cn",
+            "TRMS_SMTP_STARTTLS": "true",
+            "TRMS_SMTP_USE_SSL": "false",
+            "TRMS_SMTP_TIMEOUT_SECONDS": "20",
+        }
+    )
+
+    assert config.outbound_email is not None
+    assert config.outbound_email.host == "smtp.example.edu"
+    assert config.outbound_email.port == 587
+    assert config.outbound_email.username == "mailer"
+    assert config.outbound_email.password is not None
+    assert config.outbound_email.password.get_secret_value() == "smtp-secret"
+    assert config.outbound_email.from_address == "trms@tongji.edu.cn"
+    assert config.outbound_email.starttls is True
+    assert config.outbound_email.use_ssl is False
+    assert config.outbound_email.timeout_seconds == 20
+
+    safe_log_fields = config.to_safe_log_fields()
+    assert safe_log_fields["outbound_email"]["password"] == "[redacted]"
+    assert safe_log_fields["outbound_email"]["password_configured"] is True
+    assert "smtp-secret" not in str(safe_log_fields)
+
+
+def test_load_runtime_config_requires_complete_outbound_email_settings():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(
+            env={
+                "TRMS_SMTP_HOST": "smtp.example.edu",
+                "TRMS_SMTP_USERNAME": "mailer",
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "TRMS_SMTP_PORT is required" in message
+    assert "TRMS_SMTP_FROM_ADDRESS is required" in message
+    assert "TRMS_SMTP_USERNAME and TRMS_SMTP_PASSWORD must be configured together" in message
 
 
 def test_load_runtime_config_requires_llm_api_key_when_other_llm_settings_present():

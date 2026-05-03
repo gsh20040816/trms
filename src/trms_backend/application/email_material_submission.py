@@ -9,6 +9,10 @@ from trms_backend.application.material_submission import (
     MaterialSubmissionTaskNotFoundError,
     SubmittedMaterialFile,
 )
+from trms_backend.domain.email_bindings import (
+    EmailSubmissionIdentityResolver,
+    EmailSubmissionIdentityStatus,
+)
 from trms_backend.domain.materials import MaterialType, SubmissionChannel
 
 SUBJECT_PREFIX = "[TRMS] "
@@ -40,8 +44,13 @@ class EmailMaterialSubmissionFormatError(ValueError):
 
 
 class EmailMaterialSubmissionService:
-    def __init__(self, material_submission_service: MaterialSubmissionService) -> None:
+    def __init__(
+        self,
+        material_submission_service: MaterialSubmissionService,
+        submission_identity_resolver: EmailSubmissionIdentityResolver | None = None,
+    ) -> None:
         self._material_submission_service = material_submission_service
+        self._submission_identity_resolver = submission_identity_resolver
 
     def submit(
         self,
@@ -59,6 +68,10 @@ class EmailMaterialSubmissionService:
             body=body,
         )
         normalized_resolved_member_id = _normalize_optional_string(resolved_member_id)
+        if normalized_resolved_member_id is None and self._submission_identity_resolver is not None:
+            resolved_identity = self._submission_identity_resolver.resolve(parsed_email.sender_email)
+            if resolved_identity.status is EmailSubmissionIdentityStatus.BOUND:
+                normalized_resolved_member_id = resolved_identity.member_id
 
         if normalized_resolved_member_id is None:
             batch_result = self._material_submission_service.submit_pending_assignment(

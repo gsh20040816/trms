@@ -1,5 +1,70 @@
 # WORKLOG
 
+## 2026-05-03 17:32 - Add email verification bindings and trusted sender resolution
+
+### 完成内容
+- 完成任务“补齐邮箱验证码绑定与可信发件人解析”。
+- 已新增邮箱绑定领域模型、验证码服务和 SMTP 发信抽象：
+  - [src/trms_backend/domain/email_bindings.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/email_bindings.py)
+  - [src/trms_backend/application/email_binding.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_binding.py)
+  - [src/trms_backend/application/outbound_email.py](/home/gsh/workspace/TRMS/src/trms_backend/application/outbound_email.py)
+  - 支持成员账号把多个邮箱绑定到同一成员身份；
+  - 绑定过程改为“请求验证码 -> 收邮件 -> 提交验证码 -> 持久化绑定”；
+  - 同一邮箱不能同时绑定给多个成员。
+- 已新增邮箱绑定 API：
+  - [src/trms_backend/api/email_bindings.py](/home/gsh/workspace/TRMS/src/trms_backend/api/email_bindings.py)
+  - 已登录且具备 `member` 角色的账号可：
+    - 查询本人已绑定邮箱；
+    - 请求邮箱验证码；
+    - 验证验证码并完成绑定。
+- 已补数据库表与仓储：
+  - [src/trms_backend/infrastructure/models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [alembic/versions/20260503_01_email_account_bindings.py](/home/gsh/workspace/TRMS/alembic/versions/20260503_01_email_account_bindings.py)
+  - 新增 `email_account_bindings` 与 `email_binding_verifications` 两张表，用于持久化已绑定邮箱和验证码请求记录。
+- 已把格式化邮件入站接到绑定邮箱解析：
+  - [src/trms_backend/application/email_material_submission.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_material_submission.py)
+  - 当 `/api/email/materials` 未携带受信任 `resolved_member_id` 时，系统会先按发件人邮箱查找已绑定成员；
+  - 若邮箱已绑定，则直接进入成员主链路；若未绑定，则仍维持当前“待归属材料”边界，未在本轮改成直接丢弃。
+- 已补运行配置与文档：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+  - 新增 `TRMS_SMTP_*` 配置项，供验证码邮件发送使用。
+- 已补测试：
+  - [tests/test_email_bindings_api.py](/home/gsh/workspace/TRMS/tests/test_email_bindings_api.py)
+  - [tests/test_email_materials_api.py](/home/gsh/workspace/TRMS/tests/test_email_materials_api.py)
+  - [tests/test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py)
+  - [tests/test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py)
+
+### 根因
+- 当前仓库虽然已有“格式化邮件提交占位接口”，但邮件身份仍只有两种来源：
+  - 受信任入站器额外提供的 `resolved_member_id`；
+  - 或者完全无法可信解析，只能进入待归属。
+- 这意味着系统并没有“成员先绑定邮箱，再让邮件渠道自动识别本人”的能力，也没有验证码校验边界，无法安全支撑真实 IMAP 收件主路径。
+
+### 风险与影响面
+- 本轮只完成邮箱绑定与可信发件人解析，不包含：
+  - 管理员可自定义邮件任务标识；
+  - IMAP 定时轮询读取真实邮箱；
+  - 未绑定发件人直接忽略；
+  - SMTP 自动回复“已收到/失败原因”。
+- 对未绑定发件人的处理，本轮仍保持现有“进入待归属材料”语义；这是为了不在同一轮同时改动绑定体系和邮件接入主链路，避免无边界扩散。后续 `TASKS.md` 已拆出“IMAP 轮询 + 未绑定忽略 + 自动回执”独立任务。
+- SMTP 配置当前只服务于验证码邮件发送；尚未在系统管理页暴露配置状态，也未引入更细的发送限流策略。
+- 本轮做了保守假设：邮箱绑定到成员业务身份 `actor_id`，而不是绑定到单独任务或管理员身份。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_email_bindings_api.py tests/test_email_materials_api.py tests/test_runtime_config.py tests/test_database_migrations.py`
+  - `41/41` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `585/585` 通过；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 15:08 - Add original-materials ZIP export with original filenames
 
 ### 完成内容

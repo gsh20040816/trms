@@ -133,6 +133,14 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
 - `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`
 - `TRMS_AUTH_EMAIL_INBOUND_TOKEN`
+- `TRMS_SMTP_HOST`
+- `TRMS_SMTP_PORT`
+- `TRMS_SMTP_USERNAME`
+- `TRMS_SMTP_PASSWORD`
+- `TRMS_SMTP_FROM_ADDRESS`
+- `TRMS_SMTP_STARTTLS`
+- `TRMS_SMTP_USE_SSL`
+- `TRMS_SMTP_TIMEOUT_SECONDS`
 - `TRMS_TEXT_LLM_API_KEY`
 - `TRMS_TEXT_LLM_BASE_URL`
 - `TRMS_TEXT_LLM_MODEL`
@@ -180,6 +188,14 @@ uv run python -m trms_backend --reload
 - 对象存储凭据只允许通过后端环境变量或密钥管理注入，不入库、不返回前端，也不应写入日志。
 - 当前导出产物下载继续走后端接口读取存储内容，不暴露长期公开 URL；更细粒度的 bearer 下载鉴权仍待后续权限任务收口。
 - 当前仓库已补入 `psycopg[binary]` 依赖，`postgresql+psycopg://...` 连接串可直接用于 Compose 基线和共享环境。
+
+邮箱验证码发送边界：
+
+- 成员自助绑定邮箱时，后端会通过 SMTP 发送 6 位验证码邮件；当前验证码默认有效期为 10 分钟。
+- 只有配置了 `TRMS_SMTP_HOST`、`TRMS_SMTP_PORT` 和 `TRMS_SMTP_FROM_ADDRESS` 后，`/api/email-bindings/verification-code` 才可用。
+- `TRMS_SMTP_USERNAME` 与 `TRMS_SMTP_PASSWORD` 必须成对出现；若留空，则按“无需 SMTP 登录”的本地中继模式发送。
+- `TRMS_SMTP_STARTTLS` 默认 `true`，`TRMS_SMTP_USE_SSL` 默认 `false`；若使用 SMTPS 465 端口，可设置 `TRMS_SMTP_USE_SSL=true` 并按服务端要求关闭 `STARTTLS`。
+- SMTP 凭据只允许通过后端环境变量注入，不入库、不返回前端，也不应写入日志。
 
 生产环境不会静默回退到开发默认值；当 `TRMS_ENV=production` 时，以上变量都必须显式提供，否则服务会在启动时直接报错。启动参数 `--host`、`--port` 可覆盖对应环境变量，例如：
 

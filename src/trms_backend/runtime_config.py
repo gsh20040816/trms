@@ -181,6 +181,78 @@ class AuthConfig(BaseModel):
         )
 
 
+class OutboundEmailConfig(BaseModel):
+    host: str
+    port: int = Field(ge=1, le=65535)
+    username: str | None = None
+    password: SecretStr | None = None
+    from_address: str
+    starttls: bool = True
+    use_ssl: bool = False
+    timeout_seconds: float = Field(gt=0, le=300)
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("outbound_email.host must not be empty")
+        if "://" in normalized or "/" in normalized or " " in normalized:
+            raise ValueError("outbound_email.host must be a bare host or IP address")
+        return normalized
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def validate_password(cls, value: SecretStr | str | None) -> SecretStr | None:
+        if value is None:
+            return None
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            return None
+        return SecretStr(normalized)
+
+    @field_validator("from_address")
+    @classmethod
+    def validate_from_address(cls, value: str) -> str:
+        return _normalize_email_address(value, field_name="outbound_email.from_address")
+
+    @field_validator("starttls", "use_ssl", mode="before")
+    @classmethod
+    def validate_bool_fields(cls, value: bool | str) -> bool:
+        if isinstance(value, bool):
+            return value
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError("outbound_email boolean fields must be a boolean")
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return sanitize_log_fields(
+            {
+                "host": self.host,
+                "port": self.port,
+                "username": self.username,
+                "password": "[redacted]" if self.password is not None else None,
+                "password_configured": self.password is not None,
+                "from_address": self.from_address,
+                "starttls": self.starttls,
+                "use_ssl": self.use_ssl,
+                "timeout_seconds": self.timeout_seconds,
+            }
+        )
+
+
 class LocalFileStorageConfig(BaseModel):
     backend: Literal["local"]
     root_dir: Path
@@ -283,6 +355,7 @@ class RuntimeConfig(BaseModel):
     api_port: int = Field(ge=1, le=65535)
     async_jobs: AsyncJobConfig
     auth: AuthConfig
+    outbound_email: OutboundEmailConfig | None = None
     text_llm_provider: LLMProviderConfig | None = None
     vlm_provider: LLMProviderConfig | None = None
 
@@ -370,6 +443,11 @@ class RuntimeConfig(BaseModel):
                     "worker_concurrency": self.async_jobs.worker_concurrency,
                 },
                 "auth": self.auth.to_safe_log_fields(),
+                "outbound_email": (
+                    self.outbound_email.to_safe_log_fields()
+                    if self.outbound_email is not None
+                    else None
+                ),
                 "llm_provider": (
                     self.llm_provider.to_safe_log_fields() if self.llm_provider is not None else None
                 ),
@@ -412,6 +490,14 @@ def load_runtime_config(
     auth_bootstrap_admin_token: str | None = None,
     auth_telegram_inbound_token: str | None = None,
     auth_email_inbound_token: str | None = None,
+    smtp_host: str | None = None,
+    smtp_port: str | int | None = None,
+    smtp_username: str | None = None,
+    smtp_password: str | None = None,
+    smtp_from_address: str | None = None,
+    smtp_starttls: bool | str | None = None,
+    smtp_use_ssl: bool | str | None = None,
+    smtp_timeout_seconds: str | float | int | None = None,
     llm_api_key: str | None = None,
     llm_base_url: str | None = None,
     llm_model: str | None = None,
@@ -568,6 +654,20 @@ def load_runtime_config(
         auth_email_inbound_token,
         environment_variables.get("TRMS_AUTH_EMAIL_INBOUND_TOKEN"),
     )
+    outbound_email_payload = _resolve_outbound_email_payload(
+        explicit={
+            "host": smtp_host,
+            "port": smtp_port,
+            "username": smtp_username,
+            "password": smtp_password,
+            "from_address": smtp_from_address,
+            "starttls": smtp_starttls,
+            "use_ssl": smtp_use_ssl,
+            "timeout_seconds": smtp_timeout_seconds,
+        },
+        env=environment_variables,
+        issues=issues,
+    )
 
     if normalized_environment == "production" and str(raw_async_job_mode).strip() == "in_process":
         issues.append(
@@ -639,6 +739,7 @@ def load_runtime_config(
                     "telegram_inbound_token": raw_auth_telegram_inbound_token,
                     "email_inbound_token": raw_auth_email_inbound_token,
                 },
+                "outbound_email": outbound_email_payload,
                 "text_llm_provider": text_llm_provider_payload,
                 "vlm_provider": vlm_provider_payload,
             }
@@ -720,6 +821,64 @@ def _resolve_provider_payload(
             source_values.get("max_retries")
             if source_values.get("max_retries") is not None
             else DEFAULT_LLM_MAX_RETRIES
+        ),
+    }
+
+
+def _resolve_outbound_email_payload(
+    *,
+    explicit: Mapping[str, object | None],
+    env: Mapping[str, str],
+    issues: list[str],
+) -> dict[str, object] | None:
+    explicit_has_values = any(value is not None for value in explicit.values())
+    env_values = {
+        "host": env.get("TRMS_SMTP_HOST"),
+        "port": env.get("TRMS_SMTP_PORT"),
+        "username": env.get("TRMS_SMTP_USERNAME"),
+        "password": env.get("TRMS_SMTP_PASSWORD"),
+        "from_address": env.get("TRMS_SMTP_FROM_ADDRESS"),
+        "starttls": env.get("TRMS_SMTP_STARTTLS"),
+        "use_ssl": env.get("TRMS_SMTP_USE_SSL"),
+        "timeout_seconds": env.get("TRMS_SMTP_TIMEOUT_SECONDS"),
+    }
+    env_has_values = any(value is not None for value in env_values.values())
+    if not explicit_has_values and not env_has_values:
+        return None
+
+    values = dict(env_values)
+    for key, value in explicit.items():
+        if value is not None:
+            values[key] = value
+
+    if not _has_meaningful_value(values.get("host")):
+        issues.append("TRMS_SMTP_HOST is required when any TRMS_SMTP_* setting is configured")
+    if not _has_meaningful_value(values.get("port")):
+        issues.append("TRMS_SMTP_PORT is required when any TRMS_SMTP_* setting is configured")
+    if not _has_meaningful_value(values.get("from_address")):
+        issues.append(
+            "TRMS_SMTP_FROM_ADDRESS is required when any TRMS_SMTP_* setting is configured"
+        )
+
+    has_username = _has_meaningful_value(values.get("username"))
+    has_password = _has_meaningful_value(values.get("password"))
+    if has_username != has_password:
+        issues.append(
+            "TRMS_SMTP_USERNAME and TRMS_SMTP_PASSWORD must be configured together"
+        )
+
+    return {
+        "host": values.get("host"),
+        "port": values.get("port"),
+        "username": values.get("username"),
+        "password": values.get("password"),
+        "from_address": values.get("from_address"),
+        "starttls": values.get("starttls") if values.get("starttls") is not None else True,
+        "use_ssl": values.get("use_ssl") if values.get("use_ssl") is not None else False,
+        "timeout_seconds": (
+            values.get("timeout_seconds")
+            if values.get("timeout_seconds") is not None
+            else 15.0
         ),
     }
 
@@ -865,6 +1024,20 @@ def _normalize_timezone_name(value: str, *, field_name: str) -> str:
         ZoneInfo(normalized)
     except ZoneInfoNotFoundError as error:
         raise ValueError(f"{field_name} must be a valid IANA timezone name") from error
+    return normalized
+
+
+def _normalize_email_address(value: str, *, field_name: str) -> str:
+    normalized = value.strip().lower()
+    if not normalized:
+        raise ValueError(f"{field_name} must not be empty")
+    if " " in normalized or "\t" in normalized or "\n" in normalized or "\r" in normalized:
+        raise ValueError(f"{field_name} must not contain whitespace")
+    local_part, separator, domain_part = normalized.partition("@")
+    if separator != "@" or not local_part or not domain_part or "@" in domain_part:
+        raise ValueError(f"{field_name} must be a valid email address")
+    if "." not in domain_part:
+        raise ValueError(f"{field_name} must be a valid email address")
     return normalized
 
 

@@ -34,6 +34,15 @@ from trms_backend.domain.confirmations import (
     ConfirmationStatus,
     ConfirmationSubmit,
 )
+from trms_backend.domain.email_bindings import (
+    EmailAccountBindingConflictError,
+    EmailAccountBindingRecord,
+    EmailAccountBindingRepository,
+    EmailAccountBindingUpsert,
+    EmailBindingVerificationCreate,
+    EmailBindingVerificationRecord,
+    EmailBindingVerificationRepository,
+)
 from trms_backend.domain.exports import (
     ExportArtifactFormat,
     ExportArtifactRecord,
@@ -107,6 +116,8 @@ from trms_backend.infrastructure.models import (
     AuditLogRow,
     AutomaticReminderTaskRow,
     ConfirmationRow,
+    EmailAccountBindingRow,
+    EmailBindingVerificationRow,
     ExpenseSplitRow,
     ExportJobRow,
     GlobalInvoiceConfigRow,
@@ -756,6 +767,128 @@ class SqlAlchemyTelegramAccountBindingRepository(TelegramAccountBindingRepositor
                 .limit(1)
             )
             return _telegram_account_binding_from_row(row) if row else None
+
+
+class SqlAlchemyEmailAccountBindingRepository(EmailAccountBindingRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def upsert(self, data: EmailAccountBindingUpsert) -> EmailAccountBindingRecord:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(EmailAccountBindingRow)
+                .where(EmailAccountBindingRow.email == data.email)
+                .limit(1)
+            )
+            if row is not None:
+                if row.member_id != data.member_id:
+                    raise EmailAccountBindingConflictError(
+                        "email is already bound to another member: "
+                        f"{data.email}"
+                    )
+                row.updated_at = now
+                session.add(row)
+                return _email_account_binding_from_row(row)
+
+            row = EmailAccountBindingRow(
+                id=str(uuid4()),
+                member_id=data.member_id,
+                email=data.email,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(row)
+        return _email_account_binding_from_row(row)
+
+    def get_by_email(self, email: str) -> EmailAccountBindingRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(EmailAccountBindingRow)
+                .where(EmailAccountBindingRow.email == email)
+                .limit(1)
+            )
+            return _email_account_binding_from_row(row) if row else None
+
+    def list_by_member_id(self, member_id: str) -> list[EmailAccountBindingRecord]:
+        normalized_member_id = member_id.strip()
+        if not normalized_member_id:
+            return []
+
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(EmailAccountBindingRow)
+                .where(EmailAccountBindingRow.member_id == normalized_member_id)
+                .order_by(EmailAccountBindingRow.created_at, EmailAccountBindingRow.email)
+            ).all()
+            return [_email_account_binding_from_row(row) for row in rows]
+
+
+class SqlAlchemyEmailBindingVerificationRepository(EmailBindingVerificationRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def replace_pending(
+        self,
+        data: EmailBindingVerificationCreate,
+    ) -> EmailBindingVerificationRecord:
+        now = datetime.now(timezone.utc)
+        with session_scope(self._session_factory) as session:
+            existing_rows = session.scalars(
+                select(EmailBindingVerificationRow).where(
+                    EmailBindingVerificationRow.member_id == data.member_id,
+                    EmailBindingVerificationRow.email == data.email,
+                    EmailBindingVerificationRow.consumed_at.is_(None),
+                )
+            ).all()
+            for existing_row in existing_rows:
+                existing_row.consumed_at = now
+                session.add(existing_row)
+
+            row = EmailBindingVerificationRow(
+                id=str(uuid4()),
+                member_id=data.member_id,
+                email=data.email,
+                code_hash=data.code_hash,
+                expires_at=data.expires_at,
+                consumed_at=None,
+                created_at=now,
+            )
+            session.add(row)
+        return _email_binding_verification_from_row(row)
+
+    def get_latest_pending(
+        self,
+        *,
+        member_id: str,
+        email: str,
+    ) -> EmailBindingVerificationRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalar(
+                select(EmailBindingVerificationRow)
+                .where(
+                    EmailBindingVerificationRow.member_id == member_id,
+                    EmailBindingVerificationRow.email == email,
+                    EmailBindingVerificationRow.consumed_at.is_(None),
+                )
+                .order_by(EmailBindingVerificationRow.created_at.desc())
+                .limit(1)
+            )
+            return _email_binding_verification_from_row(row) if row else None
+
+    def mark_consumed(
+        self,
+        verification_id: str,
+        *,
+        consumed_at: datetime,
+    ) -> EmailBindingVerificationRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(EmailBindingVerificationRow, verification_id)
+            if row is None:
+                return None
+            row.consumed_at = consumed_at
+            session.add(row)
+        return _email_binding_verification_from_row(row)
 
 
 class SqlAlchemyInvoiceRepository:
@@ -1722,6 +1855,32 @@ def _telegram_account_binding_from_row(
         telegram_username=row.telegram_username,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _email_account_binding_from_row(
+    row: EmailAccountBindingRow,
+) -> EmailAccountBindingRecord:
+    return EmailAccountBindingRecord(
+        id=row.id,
+        member_id=row.member_id,
+        email=row.email,
+        created_at=_ensure_utc_datetime(row.created_at),
+        updated_at=_ensure_utc_datetime(row.updated_at),
+    )
+
+
+def _email_binding_verification_from_row(
+    row: EmailBindingVerificationRow,
+) -> EmailBindingVerificationRecord:
+    return EmailBindingVerificationRecord(
+        id=row.id,
+        member_id=row.member_id,
+        email=row.email,
+        code_hash=row.code_hash,
+        expires_at=_ensure_utc_datetime(row.expires_at),
+        consumed_at=_ensure_utc_datetime(row.consumed_at) if row.consumed_at is not None else None,
+        created_at=_ensure_utc_datetime(row.created_at),
     )
 
 

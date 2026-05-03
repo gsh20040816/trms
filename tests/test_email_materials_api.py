@@ -1,15 +1,33 @@
+import re
+
 from fastapi.testclient import TestClient
 
+from trms_backend.application.outbound_email import OutboundEmailMessage
 from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
-from test_tasks_api import admin_auth_headers, create_task
+from test_tasks_api import admin_auth_headers, auth_headers, create_task, register_and_get_token
 
 TRUSTED_EMAIL_TOKEN = "email-secret"
 
 
-def make_client(tmp_path, *, trusted_inbound_token: str | None = None):
+class RecordingOutboundEmailSender:
+    def __init__(self) -> None:
+        self.messages: list[OutboundEmailMessage] = []
+
+    def send(self, message: OutboundEmailMessage) -> None:
+        self.messages.append(message)
+
+
+def _extract_latest_code(sender: RecordingOutboundEmailSender) -> str:
+    assert sender.messages
+    match = re.search(r"验证码：(\d{6})", sender.messages[-1].text_body)
+    assert match is not None
+    return match.group(1)
+
+
+def make_client(tmp_path, *, trusted_inbound_token: str | None = None, outbound_email_sender=None):
     runtime_config = load_runtime_config(
         env={
             "DATABASE_URL": f"sqlite:///{tmp_path}/test.db",
@@ -24,6 +42,7 @@ def make_client(tmp_path, *, trusted_inbound_token: str | None = None):
         create_app(
             runtime_config=runtime_config,
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
+            outbound_email_sender=outbound_email_sender,
         )
     )
 
@@ -36,6 +55,18 @@ def create_open_task(client: TestClient) -> str:
         headers=admin_auth_headers(client),
     )
     return created["id"]
+
+
+def member_auth_headers(client: TestClient, *, username: str, actor_id: str) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username=username,
+            role="member",
+            actor_id=actor_id,
+            member_code=actor_id,
+        )
+    )
 
 
 def assert_single_pending_recognition_task(client: TestClient, material_id: str) -> None:
@@ -159,6 +190,47 @@ def test_email_material_submission_routes_unresolved_sender_to_pending_assignmen
     assert material["channel"] == "email"
     assert material["storage_key"].startswith("_pending_assignment/")
     assert_single_pending_recognition_task(client, material["id"])
+
+
+def test_email_material_submission_uses_bound_sender_email_without_trusted_header(tmp_path):
+    sender = RecordingOutboundEmailSender()
+    client = make_client(tmp_path, outbound_email_sender=sender)
+    task_id = create_open_task(client)
+    member_headers = member_auth_headers(client, username="member1", actor_id="2250001")
+
+    verification_request = client.post(
+        "/api/email-bindings/verification-code",
+        json={"email": "member1@tongji.edu.cn"},
+        headers=member_headers,
+    )
+    assert verification_request.status_code == 202
+
+    verification_confirm = client.post(
+        "/api/email-bindings/verify",
+        json={
+            "email": "member1@tongji.edu.cn",
+            "code": _extract_latest_code(sender),
+        },
+        headers=member_headers,
+    )
+    assert verification_confirm.status_code == 200
+
+    response = client.post(
+        "/api/email/materials",
+        data={
+            "sender_email": "Member1@Tongji.edu.cn",
+            "subject": f"[TRMS] task:{task_id}",
+            "body": "material_type: invoice\n",
+        },
+        files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    material = response.json()["items"][0]
+    assert material["status"] == "assigned"
+    assert material["task_id"] == task_id
+    assert material["submitter_id"] == "2250001"
+    assert material["channel"] == "email"
 
 
 def test_email_material_submission_routes_unknown_task_to_pending_assignment(tmp_path):

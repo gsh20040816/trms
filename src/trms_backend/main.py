@@ -1,12 +1,14 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from trms_backend.application.email_binding import EmailBindingService
 from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.material_deletion import MaterialDeletionService
 from trms_backend.application.metrics import InMemoryMetricsCollector, MetricsCollector
 from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.material_type_update import MaterialTypeUpdateService
 from trms_backend.application.member_invoice_deletion import MemberInvoiceDeletionService
+from trms_backend.application.outbound_email import OutboundEmailSender, SmtpOutboundEmailSender
 from trms_backend.application.recognition_llm import OpenAiCompatibleRecognitionClient
 from trms_backend.application.recognition_llm import RoutedRecognitionClient
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
@@ -18,6 +20,7 @@ from trms_backend.api.cli_compatibility import reject_incompatible_cli_request
 from trms_backend.api.error_responses import ensure_request_id, register_error_response_handlers
 from trms_backend.api.auth import build_auth_router
 from trms_backend.api.confirmations import build_confirmation_router
+from trms_backend.api.email_bindings import build_email_binding_router
 from trms_backend.api.email_materials import build_email_material_router
 from trms_backend.api.exports import build_export_router
 from trms_backend.api.invoices import build_invoice_router
@@ -28,6 +31,7 @@ from trms_backend.api.system import build_system_router
 from trms_backend.api.telegram_materials import build_telegram_material_router
 from trms_backend.api.tasks import build_task_router
 from trms_backend.api.telegram_bindings import build_telegram_binding_router
+from trms_backend.domain.email_bindings import EmailSubmissionIdentityResolver
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 from trms_backend.domain.materials import MaterialFileStorage
 from trms_backend.infrastructure.database import build_session_factory, init_database
@@ -36,6 +40,8 @@ from trms_backend.infrastructure.repositories import (
     SqlAlchemyAuditLogRepository,
     SqlAlchemyAuthRepository,
     SqlAlchemyConfirmationRepository,
+    SqlAlchemyEmailAccountBindingRepository,
+    SqlAlchemyEmailBindingVerificationRepository,
     SqlAlchemyExportJobRepository,
     SqlAlchemyInvoiceRepository,
     SqlAlchemyExpenseSplitRepository,
@@ -68,6 +74,7 @@ def create_app(
     runtime_config: RuntimeConfig | None = None,
     recognition_llm_client: OpenAiCompatibleRecognitionClient | None = None,
     metrics_collector: MetricsCollector | None = None,
+    outbound_email_sender: OutboundEmailSender | None = None,
 ) -> FastAPI:
     config = runtime_config or load_runtime_config(database_url=database_url)
     install_request_id_log_record_factory()
@@ -118,9 +125,16 @@ def create_app(
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
     telegram_account_binding_repository = SqlAlchemyTelegramAccountBindingRepository(session_factory)
+    email_account_binding_repository = SqlAlchemyEmailAccountBindingRepository(session_factory)
+    email_binding_verification_repository = SqlAlchemyEmailBindingVerificationRepository(
+        session_factory
+    )
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
+    resolved_outbound_email_sender = outbound_email_sender
+    if resolved_outbound_email_sender is None and effective_config.outbound_email is not None:
+        resolved_outbound_email_sender = SmtpOutboundEmailSender(effective_config.outbound_email)
     member_invoice_deletion_service = MemberInvoiceDeletionService(
         material_repository=material_repository,
         invoice_repository=invoice_repository,
@@ -158,6 +172,14 @@ def create_app(
     )
     email_material_submission_service = EmailMaterialSubmissionService(
         material_submission_service,
+        submission_identity_resolver=EmailSubmissionIdentityResolver(
+            email_account_binding_repository
+        ),
+    )
+    email_binding_service = EmailBindingService(
+        email_account_binding_repository,
+        email_binding_verification_repository,
+        resolved_outbound_email_sender,
     )
     telegram_material_submission_service = TelegramMaterialSubmissionService(
         telegram_account_binding_repository,
@@ -333,6 +355,12 @@ def create_app(
         build_telegram_binding_router(
             auth_repository,
             telegram_account_binding_repository,
+        )
+    )
+    app.include_router(
+        build_email_binding_router(
+            auth_repository,
+            email_binding_service,
         )
     )
     return app

@@ -128,6 +128,31 @@ class TelegramAccountBindingRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class EmailAccountBindingRow(Base):
+    __tablename__ = "email_account_bindings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EmailBindingVerificationRow(Base):
+    __tablename__ = "email_binding_verifications"
+    __table_args__ = (
+        Index("ix_email_binding_verification_member_email", "member_id", "email", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class InvoiceRow(Base):
     __tablename__ = "invoices"
     __table_args__ = (Index("ix_invoice_task_number", "task_id", "invoice_number"),)
