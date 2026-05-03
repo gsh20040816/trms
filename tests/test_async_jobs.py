@@ -259,6 +259,35 @@ def test_email_inbox_polling_processor_skips_duplicate_mailbox_uid(tmp_path):
     assert processor.run_once() == 0
 
 
+def test_static_email_inbox_client_only_returns_messages_after_last_seen_uid():
+    client = StaticEmailInboxClient(
+        [
+            PolledEmailMessage(
+                mailbox_uid="10",
+                message_id=None,
+                sender_email="a@example.edu",
+                subject="a",
+                body="",
+                raw_bytes=b"a",
+                received_at=None,
+            ),
+            PolledEmailMessage(
+                mailbox_uid="11",
+                message_id=None,
+                sender_email="b@example.edu",
+                subject="b",
+                body="",
+                raw_bytes=b"b",
+                received_at=None,
+            ),
+        ]
+    )
+
+    result = client.fetch_new_messages(after_uid="10")
+
+    assert [item.mailbox_uid for item in result] == ["11"]
+
+
 def test_email_inbox_polling_processor_ignores_bound_sender_with_unknown_task_key(tmp_path):
     task_repository = InMemoryTaskRepository()
     binding_repository = InMemoryEmailAccountBindingRepository()
@@ -293,6 +322,40 @@ def test_email_inbox_polling_processor_ignores_bound_sender_with_unknown_task_ke
     record = inbox_repository.get_by_mailbox_uid("missing-task-1")
     assert record is not None
     assert record.result_code == "ignored_unknown_task_key"
+
+
+def test_email_inbox_polling_processor_ignores_invalid_sender_email_without_crashing(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    binding_repository = InMemoryEmailAccountBindingRepository()
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    client = StaticEmailInboxClient(
+        [
+            PolledEmailMessage(
+                mailbox_uid="invalid-sender-1",
+                message_id="<invalid@example.edu>",
+                sender_email="invalid sender",
+                subject="[TRMS] task:anything",
+                body="material_type: invoice\n",
+                raw_bytes=b"invalid-sender-message",
+                received_at=datetime.now(timezone.utc),
+            )
+        ]
+    )
+    processor = EmailInboxPollingProcessor(
+        email_inbox_client=client,
+        email_inbox_record_repository=inbox_repository,
+        email_submission_identity_resolver=EmailSubmissionIdentityResolver(binding_repository),
+        task_repository=task_repository,
+        raw_email_storage=LocalMaterialFileStorage(tmp_path / "email-inbox"),
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 1
+    record = inbox_repository.get_by_mailbox_uid("invalid-sender-1")
+    assert record is not None
+    assert record.status == EmailInboxRecordStatus.IGNORED
+    assert record.result_code == "ignored_invalid_sender_email"
 
 
 def test_email_inbox_import_processor_submits_attachment_and_sends_receipt(tmp_path):
@@ -446,6 +509,68 @@ def test_email_inbox_import_processor_marks_missing_attachment_as_failed(tmp_pat
     assert updated.status == EmailInboxRecordStatus.IMPORT_FAILED
     assert updated.result_code == "missing_attachments"
     assert sender.messages[-1].subject == "TRMS 邮件材料处理失败"
+
+
+def test_email_inbox_import_processor_does_not_read_ignored_invalid_subject_record(tmp_path):
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    sender = RecordingOutboundEmailSender()
+    inbox_storage = LocalMaterialFileStorage(tmp_path / "emails")
+    raw_email = (
+        b"From: bound@tongji.edu.cn\r\n"
+        b"Subject: hello world\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n\r\n"
+        b"--BOUNDARY\r\n"
+        b"Content-Type: application/pdf\r\n"
+        b"Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\r\n"
+        b"fake-pdf-content\r\n"
+        b"--BOUNDARY--\r\n"
+    )
+    stored_raw = inbox_storage.save(
+        task_id="_email_inbox",
+        original_filename="ignored.eml",
+        content_type="message/rfc822",
+        content=raw_email,
+    )
+    record = inbox_repository.create(
+        EmailInboxRecordCreate(
+            mailbox_uid="ignored-1",
+            message_id="<ignored@example.edu>",
+            sender_email="bound@tongji.edu.cn",
+            subject="hello world",
+            raw_storage_key=stored_raw.storage_key,
+            received_at=datetime.now(timezone.utc),
+            status=EmailInboxRecordStatus.IGNORED,
+            result_code="invalid_subject_prefix",
+            resolved_member_id="2250001",
+            submitted_task_key=None,
+            resolved_task_id=None,
+        )
+    )
+    processor = EmailInboxImportProcessor(
+        email_inbox_record_repository=inbox_repository,
+        raw_email_storage=inbox_storage,
+        email_material_submission_service=EmailMaterialSubmissionService(
+            material_submission_service=MaterialSubmissionService(
+                InMemoryTaskRepository(),
+                InMemoryMaterialRepository(),
+                LocalMaterialFileStorage(tmp_path / "materials"),
+                InMemoryRecognitionTaskRepository(),
+                audit_repository,
+            ),
+            task_repository=InMemoryTaskRepository(),
+            submission_identity_resolver=None,
+        ),
+        outbound_email_sender=sender,
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 0
+    updated = inbox_repository.get(record.id)
+    assert updated is not None
+    assert updated.status == EmailInboxRecordStatus.IGNORED
+    assert sender.messages == []
 
 
 def test_email_inbox_import_processor_marks_partial_success_and_sends_partial_receipt(tmp_path):

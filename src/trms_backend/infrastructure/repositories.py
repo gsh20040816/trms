@@ -946,6 +946,13 @@ class SqlAlchemyEmailInboxRecordRepository(EmailInboxRecordRepository):
             ).first()
             return _email_inbox_record_from_row(row) if row else None
 
+    def get_max_mailbox_uid(self) -> str | None:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(select(EmailInboxRecordRow.mailbox_uid)).all()
+            if not rows:
+                return None
+            return max(rows, key=_mailbox_uid_sort_key)
+
     def list_ready_for_import(self, *, limit: int) -> list[EmailInboxRecord]:
         with session_scope(self._session_factory) as session:
             rows = session.scalars(
@@ -1983,6 +1990,13 @@ def _email_inbox_record_from_row(row: EmailInboxRecordRow) -> EmailInboxRecord:
         resolved_task_id=row.resolved_task_id,
         created_at=_ensure_utc_datetime(row.created_at),
     )
+
+
+def _mailbox_uid_sort_key(value: str) -> tuple[int, str]:
+    normalized = value.strip()
+    if normalized.isdigit():
+        return (0, f"{int(normalized):020d}")
+    return (1, normalized)
 
 
 def _invoice_from_row(row: InvoiceRow) -> InvoiceRecord:

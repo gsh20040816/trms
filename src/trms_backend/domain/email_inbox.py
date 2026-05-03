@@ -8,9 +8,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from trms_backend.domain.email_bindings import normalize_email_address
-
-
 class EmailInboxRecordStatus(StrEnum):
     READY_FOR_IMPORT = "ready_for_import"
     IGNORED = "ignored"
@@ -22,7 +19,7 @@ class EmailInboxRecordStatus(StrEnum):
 class EmailInboxRecordCreate(BaseModel):
     mailbox_uid: str = Field(min_length=1, max_length=255)
     message_id: str | None = Field(default=None, max_length=255)
-    sender_email: str = Field(min_length=3, max_length=320)
+    sender_email: str = Field(min_length=1, max_length=320)
     subject: str = Field(min_length=1, max_length=998)
     raw_storage_key: str = Field(min_length=1, max_length=512)
     received_at: datetime | None = None
@@ -43,7 +40,10 @@ class EmailInboxRecordCreate(BaseModel):
     @field_validator("sender_email")
     @classmethod
     def normalize_sender_email(cls, value: str) -> str:
-        return normalize_email_address(value, field_name="sender_email")
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("sender_email must not be empty")
+        return normalized
 
     @field_validator("submitted_task_key", "resolved_task_id")
     @classmethod
@@ -78,6 +78,9 @@ class EmailInboxRecordRepository(Protocol):
         raise NotImplementedError
 
     def get_by_mailbox_uid(self, mailbox_uid: str) -> EmailInboxRecord | None:
+        raise NotImplementedError
+
+    def get_max_mailbox_uid(self) -> str | None:
         raise NotImplementedError
 
     def list_ready_for_import(self, *, limit: int) -> list[EmailInboxRecord]:
@@ -122,6 +125,12 @@ class InMemoryEmailInboxRecordRepository:
                     return record
             return None
 
+    def get_max_mailbox_uid(self) -> str | None:
+        with self._lock:
+            if not self._records:
+                return None
+            return max(self._records.values(), key=lambda item: _mailbox_uid_sort_key(item.mailbox_uid)).mailbox_uid
+
     def list_ready_for_import(self, *, limit: int) -> list[EmailInboxRecord]:
         with self._lock:
             records = [
@@ -151,3 +160,10 @@ class InMemoryEmailInboxRecordRepository:
             )
             self._records[record_id] = updated
             return updated
+
+
+def _mailbox_uid_sort_key(value: str) -> tuple[int, str]:
+    normalized = value.strip()
+    if normalized.isdigit():
+        return (0, f"{int(normalized):020d}")
+    return (1, normalized)

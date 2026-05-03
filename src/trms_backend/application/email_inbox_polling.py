@@ -53,7 +53,7 @@ class PolledEmailMessage:
 
 
 class EmailInboxClient(Protocol):
-    def fetch_new_messages(self) -> list[PolledEmailMessage]:
+    def fetch_new_messages(self, *, after_uid: str | None = None) -> list[PolledEmailMessage]:
         raise NotImplementedError
 
 
@@ -79,7 +79,8 @@ class EmailInboxPollingProcessor(AsyncJobProcessor):
 
     def run_once(self) -> int:
         processed_count = 0
-        for message in self._email_inbox_client.fetch_new_messages():
+        last_seen_uid = self._email_inbox_record_repository.get_max_mailbox_uid()
+        for message in self._email_inbox_client.fetch_new_messages(after_uid=last_seen_uid):
             if self._email_inbox_record_repository.get_by_mailbox_uid(message.mailbox_uid) is not None:
                 continue
             self._ingest_message(message)
@@ -87,7 +88,17 @@ class EmailInboxPollingProcessor(AsyncJobProcessor):
         return processed_count
 
     def _ingest_message(self, message: PolledEmailMessage) -> None:
-        resolved_identity = self._email_submission_identity_resolver.resolve(message.sender_email)
+        try:
+            resolved_identity = self._email_submission_identity_resolver.resolve(message.sender_email)
+        except ValueError:
+            self._record_ignored_message(
+                message=message,
+                result_code="ignored_invalid_sender_email",
+                resolved_member_id=None,
+                submitted_task_key=None,
+                resolved_task_id=None,
+            )
+            return
         parsed_email: ParsedEmailSubmission | None = None
         result_code: str
         status: EmailInboxRecordStatus
@@ -119,6 +130,43 @@ class EmailInboxPollingProcessor(AsyncJobProcessor):
                     status = EmailInboxRecordStatus.READY_FOR_IMPORT
                     resolved_task_id = resolved_task.id
 
+        self._record_ignored_or_ready_message(
+            message=message,
+            status=status,
+            result_code=result_code,
+            resolved_member_id=resolved_identity.member_id,
+            submitted_task_key=submitted_task_key,
+            resolved_task_id=resolved_task_id,
+        )
+
+    def _record_ignored_message(
+        self,
+        *,
+        message: PolledEmailMessage,
+        result_code: str,
+        resolved_member_id: str | None,
+        submitted_task_key: str | None,
+        resolved_task_id: str | None,
+    ) -> None:
+        self._record_ignored_or_ready_message(
+            message=message,
+            status=EmailInboxRecordStatus.IGNORED,
+            result_code=result_code,
+            resolved_member_id=resolved_member_id,
+            submitted_task_key=submitted_task_key,
+            resolved_task_id=resolved_task_id,
+        )
+
+    def _record_ignored_or_ready_message(
+        self,
+        *,
+        message: PolledEmailMessage,
+        status: EmailInboxRecordStatus,
+        result_code: str,
+        resolved_member_id: str | None,
+        submitted_task_key: str | None,
+        resolved_task_id: str | None,
+    ) -> None:
         stored_raw_email = self._raw_email_storage.save(
             task_id="_email_inbox",
             original_filename=f"{message.mailbox_uid}.eml",
@@ -135,7 +183,7 @@ class EmailInboxPollingProcessor(AsyncJobProcessor):
                 received_at=message.received_at,
                 status=status,
                 result_code=result_code,
-                resolved_member_id=resolved_identity.member_id,
+                resolved_member_id=resolved_member_id,
                 submitted_task_key=submitted_task_key,
                 resolved_task_id=resolved_task_id,
             )
@@ -338,15 +386,21 @@ class StaticEmailInboxClient:
     def __init__(self, messages: list[PolledEmailMessage]) -> None:
         self._messages = messages
 
-    def fetch_new_messages(self) -> list[PolledEmailMessage]:
-        return list(self._messages)
+    def fetch_new_messages(self, *, after_uid: str | None = None) -> list[PolledEmailMessage]:
+        if after_uid is None:
+            return list(self._messages)
+        return [
+            message
+            for message in self._messages
+            if _mailbox_uid_is_after(message.mailbox_uid, after_uid)
+        ]
 
 
 class ImapEmailInboxClient:
     def __init__(self, config: EmailInboxConfig) -> None:
         self._config = config
 
-    def fetch_new_messages(self) -> list[PolledEmailMessage]:
+    def fetch_new_messages(self, *, after_uid: str | None = None) -> list[PolledEmailMessage]:
         if self._config.use_ssl:
             connection = imaplib.IMAP4_SSL(self._config.host, self._config.port)
         else:
@@ -356,12 +410,15 @@ class ImapEmailInboxClient:
                 connection.starttls()
             connection.login(self._config.username, self._config.password.get_secret_value())
             connection.select(self._config.mailbox)
-            status, data = connection.uid("search", None, "ALL")
+            search_criteria = "ALL" if after_uid is None else f"UID {after_uid}:*"
+            status, data = connection.uid("search", None, search_criteria)
             if status != "OK":
                 return []
             messages: list[PolledEmailMessage] = []
             for raw_uid in data[0].split():
                 uid = raw_uid.decode("utf-8")
+                if after_uid is not None and not _mailbox_uid_is_after(uid, after_uid):
+                    continue
                 fetch_status, fetch_data = connection.uid("fetch", raw_uid, "(RFC822)")
                 if fetch_status != "OK" or not fetch_data:
                     continue
@@ -454,3 +511,9 @@ def _extract_received_at(raw_date: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _mailbox_uid_is_after(candidate: str, baseline: str) -> bool:
+    if candidate.isdigit() and baseline.isdigit():
+        return int(candidate) > int(baseline)
+    return candidate > baseline
