@@ -154,7 +154,8 @@ docker compose --env-file .env -f deploy/docker-compose.yml logs -f minio
 2. 前端默认通过 `VITE_API_BASE_URL=/api` 走同源反向代理，不在构建产物里暴露后端内网地址；当前 Compose 基线默认假设宿主机上的 Caddy、Nginx 或其他外部反向代理负责把 `/api` 路由到 `127.0.0.1:${TRMS_API_PORT:-9876}`，并把其他路径路由到 `127.0.0.1:8081`。
 3. 当前 worker 仍使用数据库轮询模型，`redis` 只作为第一阶段部署基线预留，不代表仓库已经切换到 Redis Broker；`TRMS_ASYNC_JOB_WORKER_CONCURRENCY` 控制单个 worker 进程内的识别并发线程数。
 4. 当前 Compose 基线默认使用 S3 兼容对象存储，并指向内部 `minio:9000`；若改为 `TRMS_STORAGE_BACKEND=local`，Compose 已会把 `MATERIAL_STORAGE_DIR` 透传给 `migrate`、`api`、`worker`，并将宿主机同一路径 bind mount 到 `api` 与 `worker` 容器内，例如 `MATERIAL_STORAGE_DIR=/srv/trms/materials` 时，宿主机 `/srv/trms/materials` 就是材料与导出产物的持久化目录。
-5. 当前导出下载仍经后端接口鉴权读取，不暴露长期公开对象 URL。
+5. 若需要邮箱验证码、成员邮箱绑定验证码或邮件处理回执，除了在 `.env` 中配置 `TRMS_SMTP_*` 外，还必须让 `api` / `worker` 容器实际继承这些变量；当前仓库基线已透传这些环境变量，更新后需重新 `build/deploy` 才会生效。
+6. 当前导出下载仍经后端接口鉴权读取，不暴露长期公开对象 URL。
 
 ## 初始管理员创建
 

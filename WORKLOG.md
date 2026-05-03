@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-05-04 04:10 - Pass SMTP environment variables into production Compose app containers
+
+### 完成内容
+- 完成任务“修复生产 Compose 未向应用容器透传 `TRMS_SMTP_*` 配置的问题”。
+- 已更新 Compose 基线：
+  - [deploy/docker-compose.yml](/home/gsh/workspace/TRMS/deploy/docker-compose.yml)
+  - `api` 与 `worker` 现在都会显式继承：
+    - `TRMS_SMTP_HOST`
+    - `TRMS_SMTP_PORT`
+    - `TRMS_SMTP_USERNAME`
+    - `TRMS_SMTP_PASSWORD`
+    - `TRMS_SMTP_FROM_ADDRESS`
+    - `TRMS_SMTP_STARTTLS`
+    - `TRMS_SMTP_USE_SSL`
+    - `TRMS_SMTP_TIMEOUT_SECONDS`
+- 已同步更新生产部署文档：
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/%E7%94%9F%E4%BA%A7%E9%83%A8%E7%BD%B2%E6%B8%85%E5%8D%95%E4%B8%8EDocker%20Compose%E5%9F%BA%E7%BA%BF.md)
+  - 现明确说明：仅在 `.env` 中写 `TRMS_SMTP_*` 不够，`api` / `worker` 容器必须实际拿到这些环境变量；更新后需要重新 `build/deploy` 才会生效。
+
+### 根因
+- 运行时配置本身支持 `TRMS_SMTP_*`，邮件验证码接口报 `outbound email is not configured` 并不是 SMTP 参数名写错。
+- 真正问题是当前生产 Compose 基线此前没有把 `TRMS_SMTP_*` 从 `.env` 透传进 `api` 和 `worker` 容器。
+- 因此容器内应用看到的 `effective_config.outbound_email` 一直是 `None`，注册验证码、邮箱绑定验证码和邮件回执链路都会直接报“未配置 outbound email”。
+
+### 风险与影响面
+- 本轮只补齐环境变量透传，不改 SMTP 连接逻辑本身。
+- 旧容器不会自动拿到新变量；部署侧必须重新构建并拉起容器，否则仍会继续运行旧配置边界。
+
+### 验证结果
+- 已运行 `./scripts/verify.sh`：
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-04 03:55 - Add build and deploy commands to production helper script
 
 ### 完成内容

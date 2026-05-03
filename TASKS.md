@@ -2,6 +2,14 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-04 Compose 透传 SMTP 环境变量到生产容器
+
+- [x] 修复生产 Compose 未向应用容器透传 `TRMS_SMTP_*` 配置的问题
+  - Done when:
+    - `deploy/docker-compose.yml` 中 `api` 与 `worker` 明确继承 `TRMS_SMTP_HOST`、`TRMS_SMTP_PORT`、`TRMS_SMTP_USERNAME`、`TRMS_SMTP_PASSWORD`、`TRMS_SMTP_FROM_ADDRESS`、`TRMS_SMTP_STARTTLS`、`TRMS_SMTP_USE_SSL`、`TRMS_SMTP_TIMEOUT_SECONDS`
+    - 生产部署文档明确说明：仅修改 `.env` 不够，容器必须拿到这些环境变量后邮件验证码/回执能力才会可用
+    - 仓库级验证通过
+
 ## 临时任务 - 2026-05-04 生产脚本增加 build / deploy 命令
 
 - [x] 为生产启停脚本增加 `build` 和 `deploy` 命令
