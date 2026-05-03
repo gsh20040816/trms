@@ -233,12 +233,14 @@ def create_app(
         task_context_repository=telegram_task_context_repository,
         task_material_upload_service=task_material_upload_service,
     )
+    app.state.telegram_bot_workflow_service = telegram_bot_workflow_service
     resolved_telegram_webhook_processor = telegram_webhook_processor
     if resolved_telegram_webhook_processor is None and effective_config.telegram_bot is not None:
         resolved_telegram_webhook_processor = AiogramTelegramWebhookProcessor(
             bot_token=effective_config.telegram_bot.token.get_secret_value(),
             workflow_service=telegram_bot_workflow_service,
         )
+    app.state.telegram_webhook_processor = resolved_telegram_webhook_processor
 
     @app.middleware("http")
     async def enforce_cli_compatibility(request: Request, call_next):

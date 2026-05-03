@@ -309,6 +309,18 @@ uv run python -m trms_backend --reload
 TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker
 ```
 
+启动 Telegram 开发轮询入口：
+
+```bash
+uv run python -m trms_backend telegram-bot --drop-pending-updates
+```
+
+说明：
+
+- 该入口面向开发环境，使用 Telegram long polling，不依赖公网 webhook；
+- 仍要求已配置 `TRMS_TELEGRAM_BOT_TOKEN`；
+- 若同时配置过 webhook，启动轮询前会先删除 webhook。
+
 本地仅做入口自检时可运行一次轮询后退出：
 
 ```bash

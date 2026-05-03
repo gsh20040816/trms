@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-03 20:25 - Add Telegram long polling entry for development
+
+### 完成内容
+- 完成任务“增加开发环境可直接启动的 Telegram long polling 入口”。
+- 已为 Telegram Bot 补独立 long polling 启动命令：
+  - [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py)
+  - 现可直接运行：
+    - `uv run python -m trms_backend telegram-bot --drop-pending-updates`
+- 已在 `aiogram` 处理器中补轮询执行能力：
+  - [src/trms_backend/application/telegram_bot_aiogram.py](/home/gsh/workspace/TRMS/src/trms_backend/application/telegram_bot_aiogram.py)
+  - 轮询启动前会先删除 webhook，避免 Telegram 继续把消息投递到 webhook 入口。
+- 已把 Telegram Bot 处理器挂到应用状态，供独立启动入口复用：
+  - [src/trms_backend/main.py](/home/gsh/workspace/TRMS/src/trms_backend/main.py)
+- 已补命令入口回归测试：
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+- 已更新 README 启动说明：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+
+### 根因
+- 当前 Telegram Bot 先前只支持 webhook 接入；本地开发时如果没有公网 `https` 地址，就无法直接从 Telegram 收消息。
+- 这会导致“Bot 代码已经接入，但开发环境不能直接联调”的断层。
+
+### 风险与影响面
+- long polling 入口面向开发环境，不应替代生产环境 webhook 部署方式。
+- 启动 long polling 前会删除 webhook；若同一 bot 正在由生产 webhook 使用，不应在共享 token 上随意启动开发轮询。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_async_jobs.py -k 'telegram_bot_entry or worker_once_uses_worker_entry or keeps_legacy_api_entrypoint'`
+  - `3/3` 通过。
+- 已实际启动开发轮询：
+  - `uv run python -m trms_backend telegram-bot --drop-pending-updates`
+  - 启动日志显示：
+    - `Start polling`
+    - `Run polling for bot @tongjireimbursementbot ...`
+
 ## 2026-05-03 23:55 - Add Telegram bot task switching/upload flow and align CLI semantics
 
 ### 完成内容

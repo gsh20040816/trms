@@ -34,6 +34,16 @@ class AiogramTelegramWebhookProcessor:
             request_id=request_id,
         )
 
+    async def run_polling(self, *, drop_pending_updates: bool = False) -> None:
+        try:
+            await self._bot.delete_webhook(drop_pending_updates=drop_pending_updates)
+            await self._dispatcher.start_polling(
+                self._bot,
+                request_id="telegram-polling",
+            )
+        finally:
+            await self.close()
+
     async def close(self) -> None:
         await self._bot.session.close()
 

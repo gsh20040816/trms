@@ -1068,6 +1068,47 @@ def test_backend_main_keeps_legacy_api_entrypoint(monkeypatch):
     ]
 
 
+def test_backend_main_telegram_bot_entry_uses_polling_runner(monkeypatch):
+    config = load_runtime_config(
+        env={},
+        public_web_base_url="http://127.0.0.1:5173",
+        telegram_bot_token="telegram-secret-token",
+    )
+    calls: list[bool] = []
+    log_entries: list[str] = []
+
+    class FakeTelegramProcessor:
+        async def run_polling(self, *, drop_pending_updates: bool = False) -> None:
+            calls.append(drop_pending_updates)
+
+    fake_app = type(
+        "FakeApp",
+        (),
+        {"state": type("State", (), {"telegram_webhook_processor": FakeTelegramProcessor()})()},
+    )()
+
+    monkeypatch.setattr(backend_main, "load_runtime_config", lambda **_: config)
+    monkeypatch.setattr(backend_main, "load_runtime_environment_variables", lambda: {})
+    monkeypatch.setattr(backend_main, "create_app", lambda runtime_config: fake_app)
+    monkeypatch.setattr(
+        backend_main,
+        "TELEGRAM_LOGGER",
+        type(
+            "Logger",
+            (),
+            {
+                "info": lambda self, message, payload: log_entries.append(f"{message} {payload}"),
+            },
+        )(),
+    )
+
+    exit_code = backend_main.main(["telegram-bot", "--drop-pending-updates"])
+
+    assert exit_code == 0
+    assert calls == [True]
+    assert any("telegram_bot_polling_startup" in entry for entry in log_entries)
+
+
 def test_recognition_async_processor_skips_duplicate_delivery_after_conflict(monkeypatch):
     refresh_calls: list[str] = []
 

@@ -14,6 +14,15 @@
     - 任务对外统一暴露 `submission_key` 命名，旧 `email_submission_key` 继续兼容
     - 相关测试和仓库级验证通过
 
+## 临时任务 - 2026-05-03 Telegram 开发轮询入口
+
+- [x] 增加开发环境可直接启动的 Telegram long polling 入口
+  - Done when:
+    - 后端存在独立于 API / webhook 的 Telegram 轮询启动命令
+    - 启动轮询前会移除 webhook，避免 Telegram 继续投递到 webhook
+    - 相关后端测试覆盖命令入口
+    - 相关测试和仓库级验证通过
+
 ## 临时任务 - 2026-05-03 worker SQLite 锁库修复
 
 - [x] 收口识别 worker 在线程并发下的 SQLite 锁库问题

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import os
 from collections.abc import Sequence
@@ -43,6 +44,7 @@ from trms_backend.infrastructure.repositories import (
 )
 from trms_backend.infrastructure.storage import build_material_file_storage
 from trms_backend.logging_safety import sanitize_log_fields
+from trms_backend.main import create_app
 from trms_backend.runtime_config import (
     RuntimeConfig,
     apply_system_ai_provider_overrides,
@@ -51,6 +53,7 @@ from trms_backend.runtime_config import (
 )
 
 LOGGER = logging.getLogger("trms_backend.worker")
+TELEGRAM_LOGGER = logging.getLogger("trms_backend.telegram")
 
 
 def configure_worker_logging() -> None:
@@ -281,10 +284,54 @@ def run_worker_command(argv: Sequence[str]) -> int:
     return 0
 
 
+def run_telegram_bot_command(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run the TRMS Telegram bot in long polling mode for development."
+    )
+    parser.add_argument(
+        "--drop-pending-updates",
+        action="store_true",
+        help="Discard queued Telegram updates before long polling starts.",
+    )
+    args = parser.parse_args(list(argv))
+
+    configure_worker_logging()
+    config = load_runtime_config(env=load_runtime_environment_variables())
+    app = create_app(runtime_config=config)
+    processor = getattr(app.state, "telegram_webhook_processor", None)
+    if processor is None:
+        raise RuntimeError(
+            "telegram bot is not configured; set TRMS_TELEGRAM_BOT_TOKEN in the environment first"
+        )
+
+    TELEGRAM_LOGGER.info(
+        "telegram_bot_polling_startup %s",
+        sanitize_log_fields(
+            {
+                "environment": config.environment,
+                "public_web_base_url": config.public_web_base_url,
+                "drop_pending_updates": args.drop_pending_updates,
+                "webhook_secret_configured": (
+                    config.telegram_bot is not None
+                    and config.telegram_bot.webhook_secret is not None
+                ),
+            }
+        ),
+    )
+    asyncio.run(
+        processor.run_polling(
+            drop_pending_updates=args.drop_pending_updates,
+        )
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else list(os.sys.argv[1:])
     if arguments and arguments[0] == "worker":
         return run_worker_command(arguments[1:])
+    if arguments and arguments[0] == "telegram-bot":
+        return run_telegram_bot_command(arguments[1:])
     if arguments and arguments[0] == "api":
         return run_api_command(arguments[1:])
     return run_api_command(arguments)
