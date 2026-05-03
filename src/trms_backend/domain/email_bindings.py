@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
+from threading import RLock
 from typing import Protocol
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -145,3 +147,52 @@ class EmailSubmissionIdentityResolver:
             status=EmailSubmissionIdentityStatus.BOUND,
             member_id=binding.member_id,
         )
+
+
+class InMemoryEmailAccountBindingRepository:
+    def __init__(self) -> None:
+        self._bindings: dict[str, EmailAccountBindingRecord] = {}
+        self._lock = RLock()
+
+    def upsert(self, data: EmailAccountBindingUpsert) -> EmailAccountBindingRecord:
+        with self._lock:
+            existing = self.get_by_email(data.email)
+            now = datetime.now(UTC)
+            if existing is not None:
+                if existing.member_id != data.member_id:
+                    raise EmailAccountBindingConflictError(
+                        "email is already bound to another member: "
+                        f"{data.email}"
+                    )
+                updated = existing.model_copy(update={"updated_at": now})
+                self._bindings[updated.id] = updated
+                return updated
+
+            record = EmailAccountBindingRecord(
+                id=str(uuid4()),
+                member_id=data.member_id,
+                email=data.email,
+                created_at=now,
+                updated_at=now,
+            )
+            self._bindings[record.id] = record
+            return record
+
+    def get_by_email(self, email: str) -> EmailAccountBindingRecord | None:
+        normalized_email = normalize_email_address(email)
+        with self._lock:
+            for record in self._bindings.values():
+                if record.email == normalized_email:
+                    return record
+            return None
+
+    def list_by_member_id(self, member_id: str) -> list[EmailAccountBindingRecord]:
+        normalized_member_id = member_id.strip()
+        with self._lock:
+            records = [
+                record
+                for record in self._bindings.values()
+                if record.member_id == normalized_member_id
+            ]
+            records.sort(key=lambda item: (item.created_at, item.email))
+            return records

@@ -1,5 +1,63 @@
 # WORKLOG
 
+## 2026-05-03 16:11 - Add IMAP inbox polling and ignored-sender recording
+
+### 完成内容
+- 完成任务“增加 IMAP 轮询读取已绑定邮箱并忽略未绑定发件人”。
+- 已新增 IMAP 收件配置：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - 新增 `TRMS_IMAP_HOST`、`TRMS_IMAP_PORT`、`TRMS_IMAP_USERNAME`、`TRMS_IMAP_PASSWORD`、`TRMS_IMAP_MAILBOX`、`TRMS_IMAP_POLL_INTERVAL_SECONDS`、`TRMS_IMAP_USE_SSL`、`TRMS_IMAP_STARTTLS`；
+  - 未完整配置 `TRMS_IMAP_*` 时不会启用邮箱轮询。
+- 已新增邮箱轮询结果持久化模型和迁移：
+  - [src/trms_backend/domain/email_inbox.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/email_inbox.py)
+  - [src/trms_backend/infrastructure/models.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/models.py)
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [alembic/versions/20260503_03_email_inbox_records.py](/home/gsh/workspace/TRMS/alembic/versions/20260503_03_email_inbox_records.py)
+  - 新增 `email_inbox_records` 表，按 `mailbox_uid` 去重记录轮询邮件；
+  - 每封邮件会记录发件人、主题、原始 `.eml` 存储位置、解析结果码、已解析成员和任务标识。
+- 已新增 IMAP 轮询 processor 并接入 worker：
+  - [src/trms_backend/application/email_inbox_polling.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_inbox_polling.py)
+  - [src/trms_backend/__main__.py](/home/gsh/workspace/TRMS/src/trms_backend/__main__.py)
+  - worker 现在注册 `email_inbox` 处理器；
+  - 若配置了 IMAP，则 worker 在每轮轮询中先拉取邮箱，再继续处理识别和导出任务；
+  - 原始邮件 `.eml` 会写入现有统一存储后端的 `_email_inbox/` 命名空间，而不是旁路本地目录。
+- 已明确忽略边界：
+  - 发件人邮箱未绑定成员身份时，邮件会被记录为 `ignored_unbound_sender`；
+  - 发件人已绑定但主题任务标识不存在时，邮件会被记录为 `ignored_unknown_task_key`；
+  - 主题不满足格式规范时，会保留现有稳定错误码，例如 `invalid_subject_prefix`、`missing_task_id`；
+  - 只有“已绑定成员 + 主题格式合法 + 任务标识存在”的邮件，才会被标记为 `ready_for_import`。
+- 已补测试：
+  - [tests/test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py)
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+  - [tests/test_database_migrations.py](/home/gsh/workspace/TRMS/tests/test_database_migrations.py)
+
+### 根因
+- 现有邮件接入虽然已经有格式化邮件解析和绑定邮箱身份识别，但缺少任何“真实邮箱收件 -> 系统内部可追踪记录”的执行链。
+- 没有 IMAP 轮询和去重表时，系统无法稳定消费邮箱新邮件，也无法明确区分“未绑定发件人应忽略”“主题无效应忽略”“已经消费过的邮件应跳过”这几类状态。
+- 这会导致后续附件接入主链路前，系统连最基础的收件边界都不可验证，更谈不上稳定失败原因和生产轮询行为。
+
+### 风险与影响面
+- 本轮只实现“IMAP 轮询、去重、原始邮件存档、忽略原因记录、ready_for_import 标记”，不包含：
+  - 邮件附件真正写入任务材料主链路；
+  - SMTP 自动回执；
+  - 已导入邮件的后续状态流转与再次消费。
+- 当前 IMAP client 使用 `UID SEARCH ALL` + 本地去重记录，优先保证语义闭合；尚未做更激进的服务端搜索优化或已读/已处理标记管理。
+- `.eml` 原文会进入统一存储后端，便于后续排障和附件导入；但当前还没有管理员查看这些收件记录的独立页面。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_email_bindings_api.py tests/test_email_materials_api.py tests/test_runtime_config.py tests/test_async_jobs.py tests/test_database_migrations.py`
+  - `59/59` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `594/594` 通过；
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 20:05 - Add stable task email submission keys
 
 ### 完成内容

@@ -141,6 +141,14 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_SMTP_STARTTLS`
 - `TRMS_SMTP_USE_SSL`
 - `TRMS_SMTP_TIMEOUT_SECONDS`
+- `TRMS_IMAP_HOST`
+- `TRMS_IMAP_PORT`
+- `TRMS_IMAP_USERNAME`
+- `TRMS_IMAP_PASSWORD`
+- `TRMS_IMAP_MAILBOX`
+- `TRMS_IMAP_POLL_INTERVAL_SECONDS`
+- `TRMS_IMAP_USE_SSL`
+- `TRMS_IMAP_STARTTLS`
 - `TRMS_TEXT_LLM_API_KEY`
 - `TRMS_TEXT_LLM_BASE_URL`
 - `TRMS_TEXT_LLM_MODEL`
@@ -196,6 +204,15 @@ uv run python -m trms_backend --reload
 - `TRMS_SMTP_USERNAME` 与 `TRMS_SMTP_PASSWORD` 必须成对出现；若留空，则按“无需 SMTP 登录”的本地中继模式发送。
 - `TRMS_SMTP_STARTTLS` 默认 `true`，`TRMS_SMTP_USE_SSL` 默认 `false`；若使用 SMTPS 465 端口，可设置 `TRMS_SMTP_USE_SSL=true` 并按服务端要求关闭 `STARTTLS`。
 - SMTP 凭据只允许通过后端环境变量注入，不入库、不返回前端，也不应写入日志。
+
+IMAP 收件轮询边界：
+
+- 当前 worker 已支持可选的 IMAP 邮箱轮询；仅当配置了 `TRMS_IMAP_HOST`、`TRMS_IMAP_PORT`、`TRMS_IMAP_USERNAME` 和 `TRMS_IMAP_PASSWORD` 后才会启用。
+- `TRMS_IMAP_MAILBOX` 默认 `INBOX`；`TRMS_IMAP_POLL_INTERVAL_SECONDS` 默认 `30`；`TRMS_IMAP_USE_SSL` 默认 `true`，`TRMS_IMAP_STARTTLS` 默认 `false`。
+- worker 会按邮箱 `UID` 去重记录已轮询邮件，并把原始 `.eml` 存入统一存储后端的 `_email_inbox/` 命名空间。
+- 发件人邮箱未绑定成员身份时，邮件会被显式记录为 `ignored_unbound_sender`，不会进入成员主链路。
+- 发件人已绑定但主题任务标识不存在或邮件格式不满足规范时，邮件会记录为稳定忽略原因，而不是静默丢弃。
+- 本轮只实现“轮询、去重、主题解析、忽略原因记录”；附件真正写入任务材料链路和自动 SMTP 回执仍是后续独立任务。
 
 生产环境不会静默回退到开发默认值；当 `TRMS_ENV=production` 时，以上变量都必须显式提供，否则服务会在启动时直接报错。启动参数 `--host`、`--port` 可覆盖对应环境变量，例如：
 
@@ -258,6 +275,7 @@ Telegram 入站可信边界：
 - `TRMS_ASYNC_JOB_WORKER_CONCURRENCY` 默认 `4`，用于 worker 模式下并发处理待识别材料，支持成员批量上传发票后同时消费多条识别任务。
 - 当前 worker 已可消费待执行的识别任务，并沿用现有识别状态、失败原因和重试历史查询接口。
 - 当前 worker 已可消费待执行的导出任务，并为已实现的 CSV / JSON / merged PDF 导出落盘产物、更新状态、失败原因和重试历史查询。
+- 当前 worker 也可在配置 IMAP 后轮询邮箱，记录邮件去重结果和忽略原因。
 - 导出产物需通过导出任务下载接口访问；当前真实合并 PDF 已实现，XLSX 导出仍未实现。
 
 示例：
@@ -289,7 +307,7 @@ TRMS_ASYNC_JOB_MODE=worker uv run python -m trms_backend worker --once
 以下能力不要按“README 已写到就等于可直接使用”理解：
 
 - Telegram 渠道目前只完成后端可信边界和待归属语义，未提供真实 Bot / Webhook 联通说明。
-- 格式化邮件渠道目前只完成格式规范和受信任入站边界，未实现真实 IMAP 轮询、Webhook 收件或邮箱绑定闭环。
+- 格式化邮件渠道目前已完成格式规范、受信任入站边界、邮箱绑定和 IMAP 轮询去重/忽略记录；但附件写入任务材料主链路、SMTP 回执和完整收件闭环仍未完成。
 - OpenAI 兼容文本 LLM / VLM Provider 只有在环境变量或系统管理员系统配置中至少配置了一类后才会启用；未配置对应 provider 时识别会显式失败，不会伪装为识别成功。
 - Browser Use / 财务系统自动录入明确属于第一阶段范围外，不应被当作现成功能。
 - XLSX 导出仍未实现；当前可落盘并下载的是 CSV / JSON / `merged_pdf`。

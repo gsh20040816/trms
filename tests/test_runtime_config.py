@@ -40,6 +40,7 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.auth.telegram_inbound_token is None
     assert config.auth.email_inbound_token is None
     assert config.outbound_email is None
+    assert config.email_inbox is None
     assert config.llm_provider is None
 
 
@@ -216,6 +217,49 @@ def test_load_runtime_config_rejects_invalid_async_job_mode():
         load_runtime_config(env={"TRMS_ASYNC_JOB_MODE": "sidecar"})
 
     assert "async_jobs.mode" in str(exc_info.value)
+
+
+def test_load_runtime_config_reads_email_inbox_settings_and_redacts_password():
+    config = load_runtime_config(
+        env={
+            "TRMS_IMAP_HOST": "imap.example.edu",
+            "TRMS_IMAP_PORT": "993",
+            "TRMS_IMAP_USERNAME": "mailer@example.edu",
+            "TRMS_IMAP_PASSWORD": "imap-secret",
+            "TRMS_IMAP_MAILBOX": "TRMS",
+            "TRMS_IMAP_POLL_INTERVAL_SECONDS": "45",
+            "TRMS_IMAP_USE_SSL": "true",
+            "TRMS_IMAP_STARTTLS": "false",
+        }
+    )
+
+    assert config.email_inbox is not None
+    assert config.email_inbox.host == "imap.example.edu"
+    assert config.email_inbox.port == 993
+    assert config.email_inbox.username == "mailer@example.edu"
+    assert config.email_inbox.password.get_secret_value() == "imap-secret"
+    assert config.email_inbox.mailbox == "TRMS"
+    assert config.email_inbox.poll_interval_seconds == 45
+    assert config.email_inbox.use_ssl is True
+    assert config.email_inbox.starttls is False
+
+    safe_log_fields = config.to_safe_log_fields()
+    assert safe_log_fields["email_inbox"]["password"] == "[redacted]"
+    assert safe_log_fields["email_inbox"]["password_configured"] is True
+
+
+def test_load_runtime_config_requires_complete_email_inbox_settings():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(
+            env={
+                "TRMS_IMAP_HOST": "imap.example.edu",
+                "TRMS_IMAP_PORT": "993",
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "TRMS_IMAP_USERNAME is required" in message
+    assert "TRMS_IMAP_PASSWORD is required" in message
 
 
 def test_load_runtime_config_reads_async_job_worker_concurrency():

@@ -43,6 +43,12 @@ from trms_backend.domain.email_bindings import (
     EmailBindingVerificationRecord,
     EmailBindingVerificationRepository,
 )
+from trms_backend.domain.email_inbox import (
+    EmailInboxRecord,
+    EmailInboxRecordCreate,
+    EmailInboxRecordRepository,
+    EmailInboxRecordStatus,
+)
 from trms_backend.domain.exports import (
     ExportArtifactFormat,
     ExportArtifactRecord,
@@ -119,6 +125,7 @@ from trms_backend.infrastructure.models import (
     ConfirmationRow,
     EmailAccountBindingRow,
     EmailBindingVerificationRow,
+    EmailInboxRecordRow,
     ExpenseSplitRow,
     ExportJobRow,
     GlobalInvoiceConfigRow,
@@ -911,6 +918,38 @@ class SqlAlchemyEmailBindingVerificationRepository(EmailBindingVerificationRepos
             row.consumed_at = consumed_at
             session.add(row)
         return _email_binding_verification_from_row(row)
+
+
+class SqlAlchemyEmailInboxRecordRepository(EmailInboxRecordRepository):
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    def create(self, data: EmailInboxRecordCreate) -> EmailInboxRecord:
+        row = EmailInboxRecordRow(
+            id=str(uuid4()),
+            created_at=datetime.now(timezone.utc),
+            **data.model_dump(),
+        )
+        with session_scope(self._session_factory) as session:
+            session.add(row)
+        return _email_inbox_record_from_row(row)
+
+    def get_by_mailbox_uid(self, mailbox_uid: str) -> EmailInboxRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.scalars(
+                select(EmailInboxRecordRow).where(EmailInboxRecordRow.mailbox_uid == mailbox_uid)
+            ).first()
+            return _email_inbox_record_from_row(row) if row else None
+
+    def list_ready_for_import(self, *, limit: int) -> list[EmailInboxRecord]:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(EmailInboxRecordRow)
+                .where(EmailInboxRecordRow.status == EmailInboxRecordStatus.READY_FOR_IMPORT.value)
+                .order_by(EmailInboxRecordRow.created_at)
+                .limit(limit)
+            ).all()
+            return [_email_inbox_record_from_row(row) for row in rows]
 
 
 class SqlAlchemyInvoiceRepository:
@@ -1903,6 +1942,24 @@ def _email_binding_verification_from_row(
         code_hash=row.code_hash,
         expires_at=_ensure_utc_datetime(row.expires_at),
         consumed_at=_ensure_utc_datetime(row.consumed_at) if row.consumed_at is not None else None,
+        created_at=_ensure_utc_datetime(row.created_at),
+    )
+
+
+def _email_inbox_record_from_row(row: EmailInboxRecordRow) -> EmailInboxRecord:
+    return EmailInboxRecord(
+        id=row.id,
+        mailbox_uid=row.mailbox_uid,
+        message_id=row.message_id,
+        sender_email=row.sender_email,
+        subject=row.subject,
+        raw_storage_key=row.raw_storage_key,
+        received_at=_ensure_utc_datetime(row.received_at) if row.received_at is not None else None,
+        status=EmailInboxRecordStatus(row.status),
+        result_code=row.result_code,
+        resolved_member_id=row.resolved_member_id,
+        submitted_task_key=row.submitted_task_key,
+        resolved_task_id=row.resolved_task_id,
         created_at=_ensure_utc_datetime(row.created_at),
     )
 

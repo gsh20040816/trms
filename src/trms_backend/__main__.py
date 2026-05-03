@@ -8,6 +8,11 @@ from collections.abc import Sequence
 import uvicorn
 
 from trms_backend.application.async_jobs import AsyncJobWorker
+from trms_backend.application.email_inbox_polling import (
+    EmailInboxPollingProcessor,
+    ImapEmailInboxClient,
+    StaticEmailInboxClient,
+)
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
 from trms_backend.application.metrics import InMemoryMetricsCollector
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
@@ -16,10 +21,13 @@ from trms_backend.application.recognition_llm import (
 )
 from trms_backend.application.recognition_preparation import RecognitionPreparationService
 from trms_backend.application.recognition_runtime import resolve_recognition_llm_capability
+from trms_backend.domain.email_bindings import EmailSubmissionIdentityResolver
 from trms_backend.infrastructure.database import build_session_factory, init_database
 from trms_backend.infrastructure.repositories import (
     SqlAlchemyAuditLogRepository,
     SqlAlchemyConfirmationRepository,
+    SqlAlchemyEmailAccountBindingRepository,
+    SqlAlchemyEmailInboxRecordRepository,
     SqlAlchemyExportJobRepository,
     SqlAlchemyExpenseSplitRepository,
     SqlAlchemyInvoiceRepository,
@@ -90,6 +98,8 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
     validation_repository = SqlAlchemyValidationRepository(session_factory)
     recognition_task_repository = SqlAlchemyRecognitionTaskRepository(session_factory)
     export_job_repository = SqlAlchemyExportJobRepository(session_factory)
+    email_account_binding_repository = SqlAlchemyEmailAccountBindingRepository(session_factory)
+    email_inbox_record_repository = SqlAlchemyEmailInboxRecordRepository(session_factory)
     split_repository = SqlAlchemyExpenseSplitRepository(session_factory)
     confirmation_repository = SqlAlchemyConfirmationRepository(session_factory)
     audit_log_repository = SqlAlchemyAuditLogRepository(session_factory)
@@ -102,6 +112,11 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
 
     effective_config = resolve_effective_runtime_config()
     material_file_storage = build_material_file_storage(effective_config)
+    email_inbox_client = (
+        ImapEmailInboxClient(effective_config.email_inbox)
+        if effective_config.email_inbox is not None
+        else StaticEmailInboxClient([])
+    )
     metrics_collector = InMemoryMetricsCollector()
     recognition_llm_client = (
         RoutedRecognitionClient(
@@ -122,6 +137,16 @@ def build_async_job_worker(config: RuntimeConfig) -> tuple[AsyncJobWorker, Runti
         AsyncJobWorker(
             effective_config.async_jobs,
             processors=(
+                EmailInboxPollingProcessor(
+                    email_inbox_client=email_inbox_client,
+                    email_inbox_record_repository=email_inbox_record_repository,
+                    email_submission_identity_resolver=EmailSubmissionIdentityResolver(
+                        email_account_binding_repository
+                    ),
+                    task_repository=task_repository,
+                    raw_email_storage=material_file_storage,
+                    audit_log_repository=audit_log_repository,
+                ),
                 RecognitionAsyncJobProcessor(
                     task_repository=task_repository,
                     material_repository=material_repository,

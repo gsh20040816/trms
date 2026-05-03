@@ -253,6 +253,71 @@ class OutboundEmailConfig(BaseModel):
         )
 
 
+class EmailInboxConfig(BaseModel):
+    host: str
+    port: int = Field(ge=1, le=65535)
+    username: str
+    password: SecretStr
+    mailbox: str = "INBOX"
+    poll_interval_seconds: float = Field(gt=0, le=3600)
+    use_ssl: bool = True
+    starttls: bool = False
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("email_inbox.host must not be empty")
+        if "://" in normalized or "/" in normalized or " " in normalized:
+            raise ValueError("email_inbox.host must be a bare host or IP address")
+        return normalized
+
+    @field_validator("username", "mailbox")
+    @classmethod
+    def validate_text_field(cls, value: str, info) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError(f"email_inbox.{info.field_name} must not be empty")
+        return normalized
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def validate_password(cls, value: SecretStr | str) -> SecretStr:
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        normalized = raw_value.strip()
+        if not normalized:
+            raise ValueError("email_inbox.password must not be empty")
+        return SecretStr(normalized)
+
+    @field_validator("use_ssl", "starttls", mode="before")
+    @classmethod
+    def validate_bool_fields(cls, value: bool | str) -> bool:
+        if isinstance(value, bool):
+            return value
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError("email_inbox boolean fields must be a boolean")
+
+    def to_safe_log_fields(self) -> dict[str, object]:
+        return sanitize_log_fields(
+            {
+                "host": self.host,
+                "port": self.port,
+                "username": self.username,
+                "password": "[redacted]",
+                "password_configured": True,
+                "mailbox": self.mailbox,
+                "poll_interval_seconds": self.poll_interval_seconds,
+                "use_ssl": self.use_ssl,
+                "starttls": self.starttls,
+            }
+        )
+
+
 class LocalFileStorageConfig(BaseModel):
     backend: Literal["local"]
     root_dir: Path
@@ -356,6 +421,7 @@ class RuntimeConfig(BaseModel):
     async_jobs: AsyncJobConfig
     auth: AuthConfig
     outbound_email: OutboundEmailConfig | None = None
+    email_inbox: EmailInboxConfig | None = None
     text_llm_provider: LLMProviderConfig | None = None
     vlm_provider: LLMProviderConfig | None = None
 
@@ -448,6 +514,11 @@ class RuntimeConfig(BaseModel):
                     if self.outbound_email is not None
                     else None
                 ),
+                "email_inbox": (
+                    self.email_inbox.to_safe_log_fields()
+                    if self.email_inbox is not None
+                    else None
+                ),
                 "llm_provider": (
                     self.llm_provider.to_safe_log_fields() if self.llm_provider is not None else None
                 ),
@@ -490,6 +561,14 @@ def load_runtime_config(
     auth_bootstrap_admin_token: str | None = None,
     auth_telegram_inbound_token: str | None = None,
     auth_email_inbound_token: str | None = None,
+    imap_host: str | None = None,
+    imap_port: str | int | None = None,
+    imap_username: str | None = None,
+    imap_password: str | None = None,
+    imap_mailbox: str | None = None,
+    imap_poll_interval_seconds: str | float | int | None = None,
+    imap_use_ssl: bool | str | None = None,
+    imap_starttls: bool | str | None = None,
     smtp_host: str | None = None,
     smtp_port: str | int | None = None,
     smtp_username: str | None = None,
@@ -668,6 +747,20 @@ def load_runtime_config(
         env=environment_variables,
         issues=issues,
     )
+    email_inbox_payload = _resolve_email_inbox_payload(
+        explicit={
+            "host": imap_host,
+            "port": imap_port,
+            "username": imap_username,
+            "password": imap_password,
+            "mailbox": imap_mailbox,
+            "poll_interval_seconds": imap_poll_interval_seconds,
+            "use_ssl": imap_use_ssl,
+            "starttls": imap_starttls,
+        },
+        env=environment_variables,
+        issues=issues,
+    )
 
     if normalized_environment == "production" and str(raw_async_job_mode).strip() == "in_process":
         issues.append(
@@ -740,6 +833,7 @@ def load_runtime_config(
                     "email_inbound_token": raw_auth_email_inbound_token,
                 },
                 "outbound_email": outbound_email_payload,
+                "email_inbox": email_inbox_payload,
                 "text_llm_provider": text_llm_provider_payload,
                 "vlm_provider": vlm_provider_payload,
             }
@@ -880,6 +974,57 @@ def _resolve_outbound_email_payload(
             if values.get("timeout_seconds") is not None
             else 15.0
         ),
+    }
+
+
+def _resolve_email_inbox_payload(
+    *,
+    explicit: Mapping[str, object | None],
+    env: Mapping[str, str],
+    issues: list[str],
+) -> dict[str, object] | None:
+    explicit_has_values = any(value is not None for value in explicit.values())
+    env_values = {
+        "host": env.get("TRMS_IMAP_HOST"),
+        "port": env.get("TRMS_IMAP_PORT"),
+        "username": env.get("TRMS_IMAP_USERNAME"),
+        "password": env.get("TRMS_IMAP_PASSWORD"),
+        "mailbox": env.get("TRMS_IMAP_MAILBOX"),
+        "poll_interval_seconds": env.get("TRMS_IMAP_POLL_INTERVAL_SECONDS"),
+        "use_ssl": env.get("TRMS_IMAP_USE_SSL"),
+        "starttls": env.get("TRMS_IMAP_STARTTLS"),
+    }
+    env_has_values = any(value is not None for value in env_values.values())
+    if not explicit_has_values and not env_has_values:
+        return None
+
+    values = dict(env_values)
+    for key, value in explicit.items():
+        if value is not None:
+            values[key] = value
+
+    if not _has_meaningful_value(values.get("host")):
+        issues.append("TRMS_IMAP_HOST is required when any TRMS_IMAP_* setting is configured")
+    if not _has_meaningful_value(values.get("port")):
+        issues.append("TRMS_IMAP_PORT is required when any TRMS_IMAP_* setting is configured")
+    if not _has_meaningful_value(values.get("username")):
+        issues.append("TRMS_IMAP_USERNAME is required when any TRMS_IMAP_* setting is configured")
+    if not _has_meaningful_value(values.get("password")):
+        issues.append("TRMS_IMAP_PASSWORD is required when any TRMS_IMAP_* setting is configured")
+
+    return {
+        "host": values.get("host"),
+        "port": values.get("port"),
+        "username": values.get("username"),
+        "password": values.get("password"),
+        "mailbox": values.get("mailbox") if values.get("mailbox") is not None else "INBOX",
+        "poll_interval_seconds": (
+            values.get("poll_interval_seconds")
+            if values.get("poll_interval_seconds") is not None
+            else 30.0
+        ),
+        "use_ssl": values.get("use_ssl") if values.get("use_ssl") is not None else True,
+        "starttls": values.get("starttls") if values.get("starttls") is not None else False,
     }
 
 

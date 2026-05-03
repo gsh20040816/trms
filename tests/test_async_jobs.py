@@ -1,14 +1,27 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Event, Lock, Thread
 
 import trms_backend.__main__ as backend_main
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
+from trms_backend.application.email_inbox_polling import (
+    EmailInboxPollingProcessor,
+    PolledEmailMessage,
+    StaticEmailInboxClient,
+)
 from trms_backend.application.metrics import InMemoryMetricsCollector
 import trms_backend.application.recognition_async_jobs as recognition_async_jobs
 from trms_backend.application.async_jobs import AsyncJobWorker, AsyncJobWorkerModeError
 from trms_backend.application.recognition_async_jobs import RecognitionAsyncJobProcessor
 from trms_backend.application.recognition_preparation import RecognitionTaskExecutionConflictError
 from trms_backend.domain.audit_logs import InMemoryAuditLogRepository
+from trms_backend.domain.email_bindings import (
+    EmailAccountBindingUpsert,
+    EmailSubmissionIdentityResolver,
+    InMemoryEmailAccountBindingRepository,
+)
+from trms_backend.domain.email_inbox import InMemoryEmailInboxRecordRepository
+from trms_backend.domain.tasks import InMemoryTaskRepository, TaskCreate, TaskStatus
+from trms_backend.infrastructure.storage import LocalMaterialFileStorage
 from trms_backend.domain.exports import (
     StoredExportArtifactRecord,
     TaskExportJobRecord,
@@ -118,6 +131,144 @@ def test_async_job_worker_rejects_in_process_mode():
         raise AssertionError("expected worker mode validation to fail")
 
 
+def test_email_inbox_polling_processor_records_ready_and_ignored_messages(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    task = task_repository.create(
+        TaskCreate(
+            competition_name="ICPC Mail Task",
+            competition_location="Shanghai",
+            competition_start_date=datetime(2026, 11, 1, tzinfo=timezone.utc).date(),
+            competition_end_date=datetime(2026, 11, 3, tzinfo=timezone.utc).date(),
+            deadline=datetime.now(timezone.utc) + timedelta(days=7),
+            email_submission_key="icpc-mail-task",
+            member_ids=["2250001"],
+            fee_categories=["registration"],
+            administrator_id="admin-1",
+            administrator_ids=["admin-1"],
+            project_info="",
+            reimburser_info="",
+            invoice_title="同济大学",
+            tax_number="91310000TEST00001",
+        )
+    )
+    task_repository.update_status(task.id, TaskStatus.OPEN)
+
+    binding_repository = InMemoryEmailAccountBindingRepository()
+    binding_repository.upsert(
+        EmailAccountBindingUpsert(member_id="2250001", email="bound@tongji.edu.cn")
+    )
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    client = StaticEmailInboxClient(
+        [
+            PolledEmailMessage(
+                mailbox_uid="1",
+                message_id="<a@example.edu>",
+                sender_email="bound@tongji.edu.cn",
+                subject="[TRMS] task:icpc-mail-task",
+                body="material_type: invoice\n",
+                raw_bytes=b"raw-message-1",
+                received_at=datetime.now(timezone.utc),
+            ),
+            PolledEmailMessage(
+                mailbox_uid="2",
+                message_id="<b@example.edu>",
+                sender_email="unknown@tongji.edu.cn",
+                subject="[TRMS] task:icpc-mail-task",
+                body="material_type: invoice\n",
+                raw_bytes=b"raw-message-2",
+                received_at=datetime.now(timezone.utc),
+            ),
+        ]
+    )
+    processor = EmailInboxPollingProcessor(
+        email_inbox_client=client,
+        email_inbox_record_repository=inbox_repository,
+        email_submission_identity_resolver=EmailSubmissionIdentityResolver(binding_repository),
+        task_repository=task_repository,
+        raw_email_storage=LocalMaterialFileStorage(tmp_path / "email-inbox"),
+        audit_log_repository=audit_repository,
+    )
+
+    processed = processor.run_once()
+
+    assert processed == 2
+    ready_items = inbox_repository.list_ready_for_import(limit=10)
+    assert len(ready_items) == 1
+    assert ready_items[0].mailbox_uid == "1"
+    assert ready_items[0].result_code == "ready_for_import"
+    ignored = inbox_repository.get_by_mailbox_uid("2")
+    assert ignored is not None
+    assert ignored.result_code == "ignored_unbound_sender"
+
+
+def test_email_inbox_polling_processor_skips_duplicate_mailbox_uid(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    binding_repository = InMemoryEmailAccountBindingRepository()
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    client = StaticEmailInboxClient(
+        [
+            PolledEmailMessage(
+                mailbox_uid="dup-1",
+                message_id="<dup@example.edu>",
+                sender_email="unknown@tongji.edu.cn",
+                subject="[TRMS] task:missing-task",
+                body="material_type: invoice\n",
+                raw_bytes=b"dup-message",
+                received_at=datetime.now(timezone.utc),
+            )
+        ]
+    )
+    processor = EmailInboxPollingProcessor(
+        email_inbox_client=client,
+        email_inbox_record_repository=inbox_repository,
+        email_submission_identity_resolver=EmailSubmissionIdentityResolver(binding_repository),
+        task_repository=task_repository,
+        raw_email_storage=LocalMaterialFileStorage(tmp_path / "email-inbox"),
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 1
+    assert processor.run_once() == 0
+
+
+def test_email_inbox_polling_processor_ignores_bound_sender_with_unknown_task_key(tmp_path):
+    task_repository = InMemoryTaskRepository()
+    binding_repository = InMemoryEmailAccountBindingRepository()
+    binding_repository.upsert(
+        EmailAccountBindingUpsert(member_id="2250001", email="bound@tongji.edu.cn")
+    )
+    inbox_repository = InMemoryEmailInboxRecordRepository()
+    audit_repository = InMemoryAuditLogRepository()
+    client = StaticEmailInboxClient(
+        [
+            PolledEmailMessage(
+                mailbox_uid="missing-task-1",
+                message_id="<missing@example.edu>",
+                sender_email="bound@tongji.edu.cn",
+                subject="[TRMS] task:missing-task",
+                body="material_type: invoice\n",
+                raw_bytes=b"missing-task-message",
+                received_at=datetime.now(timezone.utc),
+            )
+        ]
+    )
+    processor = EmailInboxPollingProcessor(
+        email_inbox_client=client,
+        email_inbox_record_repository=inbox_repository,
+        email_submission_identity_resolver=EmailSubmissionIdentityResolver(binding_repository),
+        task_repository=task_repository,
+        raw_email_storage=LocalMaterialFileStorage(tmp_path / "email-inbox"),
+        audit_log_repository=audit_repository,
+    )
+
+    assert processor.run_once() == 1
+    record = inbox_repository.get_by_mailbox_uid("missing-task-1")
+    assert record is not None
+    assert record.result_code == "ignored_unknown_task_key"
+
+
 def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
     config = load_runtime_config(
         env={},
@@ -131,7 +282,7 @@ def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
         mode = "worker"
         poll_interval_seconds = 5.0
         worker_concurrency = 4
-        registered_job_types = ("recognition", "export")
+        registered_job_types = ("email_inbox", "recognition", "export")
 
         def run_once(self) -> None:
             calls.append("run_once")
@@ -166,7 +317,7 @@ def test_worker_entry_configures_info_logging(monkeypatch):
         mode = "worker"
         poll_interval_seconds = 5.0
         worker_concurrency = 4
-        registered_job_types = ("recognition",)
+        registered_job_types = ("email_inbox", "recognition")
 
         def run_once(self) -> None:
             return None

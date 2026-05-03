@@ -159,6 +159,24 @@ class EmailBindingVerificationRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class EmailInboxRecordRow(Base):
+    __tablename__ = "email_inbox_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    mailbox_uid: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    sender_email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(998), nullable=False)
+    raw_storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    result_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved_member_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    submitted_task_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    resolved_task_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class InvoiceRow(Base):
     __tablename__ = "invoices"
     __table_args__ = (Index("ix_invoice_task_number", "task_id", "invoice_number"),)
