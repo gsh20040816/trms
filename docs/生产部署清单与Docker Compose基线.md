@@ -112,7 +112,7 @@ docker compose --env-file .env -f deploy/docker-compose.yml logs -f minio
 1. `TRMS_ENV=production` 时，后端不会自动建表；必须先运行 `migrate`。
 2. 前端默认通过 `VITE_API_BASE_URL=/api` 走同源反向代理，不在构建产物里暴露后端内网地址。
 3. 当前 worker 仍使用数据库轮询模型，`redis` 只作为第一阶段部署基线预留，不代表仓库已经切换到 Redis Broker；`TRMS_ASYNC_JOB_WORKER_CONCURRENCY` 控制单个 worker 进程内的识别并发线程数。
-4. 当前对象存储后端固定为 S3 兼容模式，Compose 基线里默认指向内部 `minio:9000`。
+4. 当前 Compose 基线默认使用 S3 兼容对象存储，并指向内部 `minio:9000`；若不使用本基线、而是单机部署 API/worker，生产环境也可改用 `TRMS_STORAGE_BACKEND=local`。
 5. 当前导出下载仍经后端接口鉴权读取，不暴露长期公开对象 URL。
 
 ## 初始管理员创建

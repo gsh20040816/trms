@@ -192,24 +192,23 @@ def test_load_runtime_config_rejects_in_process_mode_in_production():
     )
 
 
-def test_load_runtime_config_rejects_local_storage_in_production():
-    with pytest.raises(RuntimeConfigError) as exc_info:
-        load_runtime_config(
-            env={
-                "TRMS_ENV": "production",
-                "DATABASE_URL": "sqlite:///./prod.db",
-                "TRMS_STORAGE_BACKEND": "local",
-                "MATERIAL_STORAGE_DIR": "./prod-materials",
-                "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
-                "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
-                "TRMS_API_HOST": "0.0.0.0",
-                "TRMS_API_PORT": "8000",
-            }
-        )
-
-    assert "TRMS_STORAGE_BACKEND=local is not allowed when TRMS_ENV=production" in str(
-        exc_info.value
+def test_load_runtime_config_allows_local_storage_in_production():
+    config = load_runtime_config(
+        env={
+            "TRMS_ENV": "production",
+            "DATABASE_URL": "sqlite:///./prod.db",
+            "TRMS_STORAGE_BACKEND": "local",
+            "MATERIAL_STORAGE_DIR": "./prod-materials",
+            "TRMS_CORS_ALLOWED_ORIGINS": "https://trms.example.edu",
+            "TRMS_PUBLIC_API_BASE_URL": "https://trms.example.edu/api",
+            "TRMS_API_HOST": "0.0.0.0",
+            "TRMS_API_PORT": "8000",
+        }
     )
+
+    assert config.environment == "production"
+    assert config.file_storage.backend == "local"
+    assert config.material_storage_dir == Path("prod-materials")
 
 
 def test_load_runtime_config_rejects_invalid_async_job_mode():

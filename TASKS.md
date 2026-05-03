@@ -12,6 +12,15 @@
     - 已修正数据库中 `telegram-photo-AQADPBFrG6HduVd-.jpg` 被误落为 `invoice` 的历史记录，并补齐其支付记录关联
     - 相关测试和仓库级验证通过
 
+## 临时任务 - 2026-05-03 放开生产环境 local 存储限制
+
+- [x] 允许生产环境显式配置本地文件存储
+  - Done when:
+    - `TRMS_ENV=production` + `TRMS_STORAGE_BACKEND=local` 不再因运行时配置校验直接失败
+    - `MATERIAL_STORAGE_DIR` 在生产本地存储场景下继续生效
+    - 相关运行时配置测试通过
+    - README 与部署文档同步改为“生产可选 local 或 s3，Compose 基线默认 s3”
+
 ## 临时任务 - 2026-05-03 缺失材料提示去重与航空附加材料规则收口
 
 - [x] 收口成员侧缺失材料重复提示，并改造航空交通附加材料校验

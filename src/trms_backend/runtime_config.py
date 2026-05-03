@@ -845,11 +845,6 @@ def load_runtime_config(
     normalized_storage_backend = str(raw_storage_backend).strip().lower()
     storage_payload: dict[str, object]
     if normalized_storage_backend == "local":
-        if normalized_environment == "production":
-            issues.append(
-                "TRMS_STORAGE_BACKEND=local is not allowed when TRMS_ENV=production; "
-                "configure s3 storage instead"
-            )
         if raw_material_storage_dir is None:
             raw_material_storage_dir = DEFAULT_MATERIAL_STORAGE_DIR
         storage_payload = {

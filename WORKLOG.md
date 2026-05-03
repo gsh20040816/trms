@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-04 00:20 - Allow local file storage in production
+
+### 完成内容
+- 完成任务“允许生产环境显式配置本地文件存储”。
+- 已放开运行时配置对生产环境 `local` 存储的硬性拒绝：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)
+  - 现在 `TRMS_ENV=production` 时只要求显式配置 `TRMS_STORAGE_BACKEND`，不再强制必须为 `s3`；
+  - 若配置为 `local`，仍继续读取 `MATERIAL_STORAGE_DIR` 作为本地根目录。
+- 已更新回归测试：
+  - [tests/test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py)
+  - 旧的“生产环境拒绝 local”测试已改为“生产环境允许 local，并正确解析材料目录”。
+- 已同步更新说明文档：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md)
+  - 现在明确区分：
+    - 生产运行时支持 `local` 和 `s3`
+    - 仓库自带 Compose 基线默认仍使用 S3/MinIO
+
+### 根因
+- 当前限制并不是存储实现缺失，而是运行时配置层主动禁止了 `TRMS_ENV=production` 下的 `local` 后端。
+- 代码里的实际存储实现一直同时支持 `local` 和 `s3`，因此“生产环境只能 s3”是部署策略约束，不是技术能力边界。
+
+### 风险与影响面
+- 放开后，单机生产部署可以把原始材料和导出产物存到宿主机目录，但这也把数据持久化、备份、磁盘扩容和多实例共享责任交还给部署方。
+- 仓库自带 Docker Compose 基线仍默认走 S3/MinIO；本轮没有把 Compose 模板改成本地卷存储，以避免顺手扩大部署面改动。
+
+### 验证结果
+- 已通过定向测试：
+  - `uv run pytest tests/test_runtime_config.py`
+  - `26/26` 通过。
+- 已运行 `./scripts/verify.sh`：
+  - Python 编译检查通过；
+  - Alembic `upgrade -> downgrade -> upgrade` 验证通过；
+  - `pytest` `627/627` 通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 21:05 - Dedupe missing-material prompts and switch airfare supporting rule to order screenshots
 
 ### 完成内容
