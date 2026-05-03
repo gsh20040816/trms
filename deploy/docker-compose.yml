@@ -152,6 +152,8 @@ services:
       TRMS_VLM_MAX_RETRIES: ${TRMS_VLM_MAX_RETRIES}
     volumes:
       - ${MATERIAL_STORAGE_DIR}:${MATERIAL_STORAGE_DIR}
+    ports:
+      - "127.0.0.1:${TRMS_API_PORT}:9876"
     healthcheck:
       test:
         [
@@ -221,24 +223,8 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/healthz >/dev/null || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  reverse-proxy:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-      web:
-        condition: service_healthy
     ports:
-      - "${TRMS_PUBLIC_HTTP_PORT}:80"
-    volumes:
-      - ./reverse-proxy.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - "127.0.0.1:8081:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/healthz >/dev/null || exit 1"]
       interval: 10s

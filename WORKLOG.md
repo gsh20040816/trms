@@ -1,5 +1,34 @@
 # WORKLOG
 
+## 2026-05-04 01:20 - Remove Compose reverse proxy and switch baseline to external Caddy ingress
+
+### 完成内容
+- 完成任务“删除 Docker Compose 中的 `reverse-proxy`，改为直接暴露 `api` / `web` 到宿主机回环端口”。
+- 已更新 Compose 基线：
+  - [deploy/docker-compose.yml](/home/gsh/workspace/TRMS/deploy/docker-compose.yml)
+  - 删除 `reverse-proxy` 服务；
+  - `api` 现通过 `127.0.0.1:${TRMS_API_PORT}:9876` 暴露到宿主机回环地址；
+  - `web` 现通过固定回环端口 `127.0.0.1:8081:80` 暴露到宿主机，供外部 Caddy / Nginx 直接反代。
+- 已同步更新部署模板与说明：
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md)
+  - 现在明确约定：Compose 基线不再提供内置统一入口，默认由宿主机外部反向代理把 `/api` 转到 `127.0.0.1:${TRMS_API_PORT}`，把前端静态页面转到 `127.0.0.1:8081`。
+
+### 根因
+- 当部署方已经明确使用宿主机上的 Caddy 作为公网入口时，Compose 内再保留一层 `reverse-proxy` 只会增加一层无业务价值的代理跳转和额外维护面。
+- 原基线里的 `TRMS_PUBLIC_HTTP_PORT`、健康检查和初始化命令也都围绕内置代理设计，不再符合“外部 Caddy 统一接入”的真实部署拓扑。
+
+### 风险与影响面
+- 当前 `web` 对宿主机暴露端口固定为 `127.0.0.1:8081`；若宿主机已有占用，需要在后续单独参数化前端宿主机端口。
+- `deploy/reverse-proxy.nginx.conf` 文件本轮未删除，仅从 Compose 基线中移除引用，避免顺手扩大文件清理范围；当前它已不参与默认生产部署路径。
+- 若部署方未额外配置宿主机上的 Caddy / Nginx / 其他代理，本轮修改后将不再自动得到公网统一入口。
+
+### 验证结果
+- 已运行 `./scripts/verify.sh`：
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-04 00:55 - Persist local material storage path on host in Docker Compose
 
 ### 完成内容

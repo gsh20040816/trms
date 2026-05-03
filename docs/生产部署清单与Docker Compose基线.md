@@ -16,9 +16,8 @@
 4. `postgres`：主数据库。
 5. `redis`：为架构建议中的 Broker / 缓存预留，本轮只纳入部署基线，不接入当前后端主链路。
 6. `minio`：S3 兼容对象存储。
-7. `reverse-proxy`：统一入口，负责 `/api` 反向代理和前端静态页面转发。
-8. `migrate`：一次性 Alembic 迁移容器，用于启动前把数据库迁移到 `head`。
-9. `minio-init`：一次性初始化 MinIO bucket。
+7. `migrate`：一次性 Alembic 迁移容器，用于启动前把数据库迁移到 `head`。
+8. `minio-init`：一次性初始化 MinIO bucket。
 
 ## 部署前检查清单
 
@@ -38,10 +37,10 @@ cp .env.example .env
    - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
    - `TRMS_TEXT_LLM_API_KEY`
    - `TRMS_VLM_API_KEY`
-4. 若正式域名不是 `localhost`，同步更新：
-   - `TRMS_PUBLIC_HTTP_PORT`
+4. 同步更新对外正式地址：
    - `TRMS_CORS_ALLOWED_ORIGINS`
    - `TRMS_PUBLIC_API_BASE_URL`
+   - `TRMS_PUBLIC_WEB_BASE_URL`
 5. 若对象存储 bucket、region 或 key prefix 有定制需求，更新：
    - `TRMS_STORAGE_S3_BUCKET`
    - `TRMS_STORAGE_S3_REGION`
@@ -55,7 +54,7 @@ cp .env.example .env
 docker compose --env-file .env -f deploy/docker-compose.yml up -d postgres redis minio
 docker compose --env-file .env -f deploy/docker-compose.yml up minio-init
 docker compose --env-file .env -f deploy/docker-compose.yml run --rm migrate
-docker compose --env-file .env -f deploy/docker-compose.yml up -d api worker web reverse-proxy
+docker compose --env-file .env -f deploy/docker-compose.yml up -d api worker web
 ```
 
 如果只是重复执行迁移，也可以单独运行：
@@ -68,26 +67,32 @@ docker compose --env-file .env -f deploy/docker-compose.yml run --rm migrate
 
 部署完成后，至少检查以下内容：
 
-1. 统一入口健康检查：
+1. 后端健康检查：
 
 ```bash
-curl http://127.0.0.1:${TRMS_PUBLIC_HTTP_PORT:-8080}/health
+curl http://127.0.0.1:${TRMS_API_PORT:-9876}/health
 ```
 
-2. Compose 服务状态：
+2. 前端健康检查：
+
+```bash
+curl http://127.0.0.1:8081/healthz
+```
+
+3. Compose 服务状态：
 
 ```bash
 docker compose --env-file .env -f deploy/docker-compose.yml ps
 ```
 
-3. 关键容器健康状态应满足：
+4. 关键容器健康状态应满足：
    - `postgres` 为 `healthy`
    - `redis` 为 `healthy`
    - `minio` 为 `healthy`
    - `api` 为 `healthy`
    - `web` 为 `healthy`
-   - `reverse-proxy` 为 `healthy`
-4. MinIO 管理控制台默认仅暴露到宿主机 `127.0.0.1:9001`，应通过本机或受控隧道访问，不应直接公开到公网。
+5. `api` 当前仅暴露到宿主机 `127.0.0.1:${TRMS_API_PORT:-9876}`，`web` 仅暴露到宿主机 `127.0.0.1:8081`；应由宿主机上的 Caddy、Nginx 或其他外部反向代理统一提供 HTTPS 与公网入口，不应把这两个回环端口直接映射到公网。
+6. MinIO 管理控制台默认仅暴露到宿主机 `127.0.0.1:9001`，应通过本机或受控隧道访问，不应直接公开到公网。
 
 ## 日志位置
 
@@ -95,14 +100,14 @@ docker compose --env-file .env -f deploy/docker-compose.yml ps
 
 ```bash
 docker compose --env-file .env -f deploy/docker-compose.yml logs -f api worker
-docker compose --env-file .env -f deploy/docker-compose.yml logs -f reverse-proxy
+docker compose --env-file .env -f deploy/docker-compose.yml logs -f web
 docker compose --env-file .env -f deploy/docker-compose.yml logs -f postgres
 docker compose --env-file .env -f deploy/docker-compose.yml logs -f minio
 ```
 
 补充说明：
 
-1. `reverse-proxy` 和 `web` 容器内部仍使用 Nginx 默认日志路径 `/var/log/nginx/access.log` 与 `/var/log/nginx/error.log`，但在当前基线下推荐统一通过 `docker compose logs` 查看。
+1. `web` 容器内部仍使用 Nginx 默认日志路径 `/var/log/nginx/access.log` 与 `/var/log/nginx/error.log`，但在当前基线下推荐统一通过 `docker compose logs` 查看；若宿主机再通过 Caddy 或 Nginx 反代，对外入口日志应到对应宿主机代理中查看。
 2. PostgreSQL 数据目录位于命名卷 `postgres-data`。
 3. Redis 数据目录位于命名卷 `redis-data`。
 4. MinIO 对象数据位于命名卷 `minio-data`。
@@ -110,17 +115,17 @@ docker compose --env-file .env -f deploy/docker-compose.yml logs -f minio
 ## 运行边界
 
 1. `TRMS_ENV=production` 时，后端不会自动建表；必须先运行 `migrate`。
-2. 前端默认通过 `VITE_API_BASE_URL=/api` 走同源反向代理，不在构建产物里暴露后端内网地址。
+2. 前端默认通过 `VITE_API_BASE_URL=/api` 走同源反向代理，不在构建产物里暴露后端内网地址；当前 Compose 基线默认假设宿主机上的 Caddy、Nginx 或其他外部反向代理负责把 `/api` 路由到 `127.0.0.1:${TRMS_API_PORT:-9876}`，并把其他路径路由到 `127.0.0.1:8081`。
 3. 当前 worker 仍使用数据库轮询模型，`redis` 只作为第一阶段部署基线预留，不代表仓库已经切换到 Redis Broker；`TRMS_ASYNC_JOB_WORKER_CONCURRENCY` 控制单个 worker 进程内的识别并发线程数。
 4. 当前 Compose 基线默认使用 S3 兼容对象存储，并指向内部 `minio:9000`；若改为 `TRMS_STORAGE_BACKEND=local`，Compose 已会把 `MATERIAL_STORAGE_DIR` 透传给 `migrate`、`api`、`worker`，并将宿主机同一路径 bind mount 到 `api` 与 `worker` 容器内，例如 `MATERIAL_STORAGE_DIR=/srv/trms/materials` 时，宿主机 `/srv/trms/materials` 就是材料与导出产物的持久化目录。
 5. 当前导出下载仍经后端接口鉴权读取，不暴露长期公开对象 URL。
 
 ## 初始管理员创建
 
-部署完成且 `api` 健康后，可用 bootstrap token 创建首个高权限账号：
+部署完成且 `api` 健康后，可用 bootstrap token 创建首个高权限账号。若外部反向代理已就绪，优先走正式 HTTPS 域名；若仍在宿主机本地调试，也可直接访问回环端口：
 
 ```bash
-curl -X POST http://127.0.0.1:${TRMS_PUBLIC_HTTP_PORT:-8080}/api/auth/bootstrap-admin \
+curl -X POST http://127.0.0.1:${TRMS_API_PORT:-9876}/api/auth/bootstrap-admin \
   -H "Content-Type: application/json" \
   -H "X-TRMS-Bootstrap-Token: ${TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN}" \
   -d '{

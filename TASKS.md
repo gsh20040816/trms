@@ -2,6 +2,15 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-04 删除 Compose 内置反代并改为外部 Caddy 接入
+
+- [x] 删除 Docker Compose 中的 `reverse-proxy`，改为直接暴露 `api` / `web` 到宿主机回环端口
+  - Done when:
+    - `deploy/docker-compose.yml` 不再包含 `reverse-proxy` 服务
+    - `api` 与 `web` 会直接绑定到宿主机 `127.0.0.1` 端口供外部 Caddy 反代
+    - `.env.example` 与部署文档同步改为“由宿主机反向代理统一接入”的基线
+    - 仓库级验证通过
+
 ## 临时任务 - 2026-05-04 Docker Compose 本地材料目录宿主持久化
 
 - [x] 让 Docker Compose 在 local 存储模式下持久化 `MATERIAL_STORAGE_DIR`
