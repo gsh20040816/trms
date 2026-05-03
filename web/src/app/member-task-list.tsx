@@ -218,7 +218,7 @@ export function MemberTaskListPage() {
               我的报销任务
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ mt: 1, maxWidth: 720 }}>
-              先看我参与的任务，再进入单任务发票工作台处理上传、补材料和费用确认。
+              先看我参与的任务，再进入对应任务处理上传、补材料和费用确认。
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
               当前成员：{formatUserIdentityLabel(session)}
@@ -306,7 +306,7 @@ export function MemberTaskListPage() {
               <Box>
                 <Typography variant="h6">任务列表</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  优先从这里进入单任务发票工作台；如需跳过汇总页，也可以直接执行当前下一步。
+                  从这里进入对应任务工作台；如果已经知道下一步，也可以直接打开系统给出的快捷入口。
                 </Typography>
               </Box>
               <Chip color="info" size="small" label={`共 ${sortedVisibleTasks.length} 条`} />

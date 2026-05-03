@@ -1049,7 +1049,7 @@ describe("frontend main flow e2e placeholder", () => {
       setMockSession("admin");
       renderRoute("/admin/tasks/TASK-E2E/exports");
 
-      expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "导出与下载" })).toBeInTheDocument();
       expect(screen.getByText("材料包就绪度")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "生成完整材料包" })).toBeInTheDocument();
       expect(screen.getAllByText("可导出").length).toBeGreaterThan(0);

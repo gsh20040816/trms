@@ -427,7 +427,7 @@ export function MemberExpenseConfirmationPage() {
               label="目标任务"
               value={selectedTaskId}
               fullWidth
-              helperText="这里只列出你可以查看和确认的任务。"
+              helperText="下拉列表只显示你当前需要确认费用的任务。"
               onChange={(event) => {
                 setSelectedTaskId(event.target.value);
                 setStaleSplitId(null);

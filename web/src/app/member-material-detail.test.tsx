@@ -262,7 +262,7 @@ describe("MemberMaterialDetailPage", () => {
     const recognizedFieldSection = screen.getByLabelText("行程单识别字段");
     expect(within(recognizedFieldSection).getByText("交通方式")).toBeInTheDocument();
     expect(within(recognizedFieldSection).queryByText("去程出发机场")).not.toBeInTheDocument();
-    expect(screen.getByText("这里处理市内交通网约车行程单的时间、路线和出行方式，不再展示航空机场代码或舱位字段。")).toBeInTheDocument();
+    expect(screen.getByText("在本页核对市内交通行程单的时间、路线和出行方式；航空字段会自动隐藏。")).toBeInTheDocument();
   });
 
   it("shows current linked invoices even when no remaining candidate invoices exist", async () => {
@@ -335,7 +335,7 @@ describe("MemberMaterialDetailPage", () => {
     expect(invoiceOptions[1]).toHaveAccessibleName(/INV-LINKED-001/);
     fireEvent.click(screen.getByRole("checkbox", { name: /INV-LINKED-001/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /INV-CANDIDATE-001/ }));
-    fireEvent.click(screen.getByRole("button", { name: "更改关联" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存归属变更" }));
 
     await waitFor(() => {
       expect(requests).toContainEqual({

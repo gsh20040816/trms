@@ -67,7 +67,7 @@ const EXPORT_KIND_DESCRIPTIONS: Record<ExportArtifactKind, string> = {
 const EXPORT_FORMAT_LABELS: Record<ExportArtifactFormat, string> = {
   xlsx: "XLSX",
   csv: "CSV",
-  json: "在线预览",
+  json: "页面预览",
   pdf: "PDF",
   zip: "ZIP",
 };
@@ -117,42 +117,42 @@ function buildPreviewDescriptor(capability: TaskExportCapability) {
   if (capability.kind === "merged_pdf") {
     return {
       available: true,
-      buttonLabel: "查看 PDF 合并计划",
-      placeholderLabel: "合并顺序预览",
+      buttonLabel: "查看合并顺序",
+      placeholderLabel: "合并顺序",
     };
   }
 
   if (capability.kind === "finance_draft") {
     return {
       available: true,
-      buttonLabel: "查看草稿预览",
-      placeholderLabel: "在线草稿预览",
+      buttonLabel: "查看填报草稿",
+      placeholderLabel: "页面草稿",
     };
   }
 
   if (capability.kind === "reimbursement_package") {
     return {
       available: false,
-      buttonLabel: "预览暂不支持",
-      placeholderLabel: "仅支持后台生成",
+      buttonLabel: "暂不支持页面查看",
+      placeholderLabel: "生成后下载",
     };
   }
 
   return {
     available: capability.implemented_formats.includes("csv"),
-    buttonLabel: "查看在线预览",
-    placeholderLabel: capability.implemented_formats.includes("csv") ? "在线预览" : "下载入口待开放",
+    buttonLabel: "直接查看内容",
+    placeholderLabel: capability.implemented_formats.includes("csv") ? "页面预览" : "需生成后下载",
   };
 }
 
 function buildPreviewNote(kind: ExportArtifactKind) {
   if (kind === "merged_pdf") {
-    return "当前展示的是实际导出将采用的材料顺序与可读性检查结果；正式 PDF 请通过导出任务下载。";
+    return "该预览用于核对打印材料的合并顺序和可读性；正式 PDF 请下载导出文件。";
   }
   if (kind === "finance_draft") {
-    return "当前展示的是在线草稿预览，正式下载入口会在导出产物生成后提供。";
+    return "该预览用于快速核对填报草稿；正式文件请在导出成功后下载。";
   }
-  return "当前展示的是在线预览，正式下载入口会在导出产物生成后提供。";
+  return "该预览用于快速核对导出内容；正式文件请在导出成功后下载。";
 }
 
 function stringifyStructuredPreview(payload: FinanceDraftExport | MergedPdfExportPlan) {
@@ -203,7 +203,7 @@ function buildPackageJobSummary(job: TaskExportJobRecord | null) {
     return {
       badge: "完整材料包生成中",
       tone: "warning" as const,
-      note: "后台正在生成最新完整材料包。生成完成后，这里会提供下载入口并标记是否仍是最新任务数据版本。",
+      note: "后台正在生成最新完整材料包。生成完成后，会提供下载入口并标记是否仍是最新任务数据版本。",
     };
   }
 
@@ -354,7 +354,7 @@ export function AdminExportTasksPage() {
         header={(
           <PageHeader
             eyebrow="导出打印"
-            title="导出任务页面"
+            title="导出与下载"
             description="生成汇总、明细、草稿和打印材料包。"
           />
         )}
@@ -375,7 +375,7 @@ export function AdminExportTasksPage() {
 
     const confirmed = await confirm({
       title: `确认创建${formatExportKind(kind)}任务？`,
-      description: `任务 ${pageState.task.competition_name} 当前处于${formatTaskStatus(pageState.task.status)}。确认后会以 ${formatExportFormat(PREFERRED_JOB_FORMATS[kind])} 格式创建新的异步导出任务，并按当前数据版本进入后台队列。`,
+      description: `任务 ${pageState.task.competition_name} 当前处于${formatTaskStatus(pageState.task.status)}。确认后，系统会按当前数据版本创建一个 ${formatExportFormat(PREFERRED_JOB_FORMATS[kind])} 导出任务并放入后台队列。`,
       confirmLabel: "创建导出任务",
       cancelLabel: "暂不创建",
       tone: kind === "merged_pdf" ? "warning" : "info",
@@ -400,7 +400,7 @@ export function AdminExportTasksPage() {
         jobs: sortJobsByCreatedAtDesc([created, ...pageState.jobs]),
       });
       setActionFeedback(
-        `${formatExportKind(kind)} 导出任务已创建，当前状态：${formatExportJobStatus(created.status)}。`,
+        `${formatExportKind(kind)}已加入导出队列，当前状态：${formatExportJobStatus(created.status)}。`,
       );
     } catch (error) {
       setActionError(error);
@@ -418,7 +418,7 @@ export function AdminExportTasksPage() {
     setActivePreviewKind(kind);
     setPreviewState({
       status: "loading",
-      title: `${formatExportKind(kind)} 即时输出`,
+      title: `${formatExportKind(kind)} 页面查看`,
     });
 
     try {
@@ -456,14 +456,14 @@ export function AdminExportTasksPage() {
 
       setPreviewState({
         status: "ready",
-        title: `${formatExportKind(kind)} 即时输出`,
+        title: `${formatExportKind(kind)} 页面查看`,
         note: buildPreviewNote(kind),
         content,
       });
     } catch (error) {
       setPreviewState({
         status: "error",
-        title: `${formatExportKind(kind)} 即时输出`,
+        title: `${formatExportKind(kind)} 页面查看`,
         error,
       });
     } finally {
@@ -499,8 +499,8 @@ export function AdminExportTasksPage() {
       header={(
         <PageHeader
           eyebrow="导出打印"
-          title="导出任务页面"
-          description="主流程优先生成完整材料包，单项导出仅保留为高级排障和临时下载入口。"
+          title="导出与下载"
+          description="主流程优先生成完整材料包；单项导出仅在核对局部内容或排查问题时使用。"
           actions={(
             <div className="page-actions">
               <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
@@ -518,8 +518,8 @@ export function AdminExportTasksPage() {
       {pageState.status === "loading" ? (
         <section className="status-card admin-review-panel">
           <p className="eyebrow">导出任务</p>
-          <h2>正在加载导出边界</h2>
-          <p>正在读取任务信息、导出能力和既有导出任务，请稍候。</p>
+          <h2>正在加载导出准备情况</h2>
+          <p>正在读取任务信息、导出能力和既有导出记录，请稍候。</p>
         </section>
       ) : null}
 
@@ -567,7 +567,7 @@ export function AdminExportTasksPage() {
                     </Button>
                   ) : (
                     <span className="field-hint">
-                      生成成功后，这里会提供完整材料包下载入口。
+                      生成成功后，这里会出现完整材料包下载入口。
                     </span>
                   )}
                 </div>
@@ -684,7 +684,7 @@ export function AdminExportTasksPage() {
                       <h3>{formatExportKind(capability.kind)}</h3>
                     </div>
                     <StatusBadge tone={capability.implemented ? "success" : "warning"}>
-                      {capability.implemented ? "已有即时输出" : "占位能力"}
+                      {capability.implemented ? "可直接查看" : "需先生成"}
                     </StatusBadge>
                   </div>
 
@@ -695,7 +695,7 @@ export function AdminExportTasksPage() {
                       允许格式：{capability.formats.map(formatExportFormat).join(" / ")}
                     </StatusBadge>
                     <StatusBadge tone="info">
-                      在线预览：{previewDescriptor.placeholderLabel}
+                      页面查看：{previewDescriptor.placeholderLabel}
                     </StatusBadge>
                     {latestJob ? (
                       <StatusBadge tone={buildJobStatusTone(latestJob.status)}>
@@ -728,7 +728,7 @@ export function AdminExportTasksPage() {
                       </Button>
                     ) : (
                       <span className="field-hint">
-                        当前还没有可预览的在线内容，可先创建导出任务。
+                        该导出项暂时不能直接在页面查看，可先创建导出任务。
                       </span>
                     )}
                   </div>
@@ -772,7 +772,7 @@ export function AdminExportTasksPage() {
 
             {pageState.jobs.length === 0 ? (
               <p className="task-healthy-note">
-                当前还没有导出任务记录。创建任务后，这里会显示状态、失败原因和可下载产物信息。
+                当前还没有导出任务记录。创建任务后，会在这里显示状态、失败原因和可下载产物信息。
               </p>
             ) : (
               <div className="admin-review-record-list" aria-label="导出任务历史列表">
@@ -837,7 +837,7 @@ export function AdminExportTasksPage() {
                         </div>
                       </>
                     ) : (
-                      <p className="field-hint">当前任务尚无可下载产物；生成成功后这里会显示下载入口。</p>
+                      <p className="field-hint">当前任务尚无可下载产物；生成成功后会在这里显示下载入口。</p>
                     )}
                   </article>
                 ))}

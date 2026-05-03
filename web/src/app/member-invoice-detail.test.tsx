@@ -276,7 +276,7 @@ describe("MemberInvoiceDetailPage", () => {
       expect(requests.some((request) => request.method === "PUT" && request.url === "/api/invoices/INV-READY-001/splits")).toBe(true);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "运行重新识别" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新识别材料" }));
     await waitFor(() => {
       expect(requests.some((request) => request.method === "POST" && request.url === "/api/recognition-tasks/REC-NEW-001/execute")).toBe(true);
     });

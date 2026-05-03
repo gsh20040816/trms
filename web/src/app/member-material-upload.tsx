@@ -383,7 +383,7 @@ export function MemberMaterialUploadPage() {
         >
           <SectionCard
             title="选择任务并上传文件"
-            description="当前入口不再要求你先判断材料类型；上传后会显式展示材料编号、识别调度状态和逐文件失败原因。"
+            description="这里不用先判断材料类型；上传后会展示材料编号、识别进度和失败原因。"
             action={<StatusBadge tone="info">开放任务 {uploadableTasks.length} 个</StatusBadge>}
           >
             <Stack spacing={2.5}>
@@ -404,7 +404,7 @@ export function MemberMaterialUploadPage() {
                     updateField("taskId", event.target.value);
                   }}
                   error={Boolean(validationErrors.taskId)}
-                  helperText={validationErrors.taskId ?? "只列出当前成员可见且仍开放提交的任务。"}
+                  helperText={validationErrors.taskId ?? "下拉列表只显示你当前可以继续提交材料的任务。"}
                   fullWidth
                 >
                   {uploadableTasks.map((task) => (
@@ -419,7 +419,7 @@ export function MemberMaterialUploadPage() {
                   name="channel"
                   value="网页提交"
                   disabled
-                  helperText="当前页面默认按网页提交记录。"
+                  helperText="本页上传的材料会记录为网页提交。"
                   fullWidth
                 />
 
@@ -428,7 +428,7 @@ export function MemberMaterialUploadPage() {
                   name="recognition-strategy"
                   value="上传后自动识别材料类型"
                   disabled
-                  helperText="系统会先接收文件，再识别是发票、支付记录、比赛通知或其他附件。"
+                  helperText="系统会先接收文件，再自动判断它是发票还是辅助材料。"
                   fullWidth
                 />
               </Box>
@@ -446,7 +446,7 @@ export function MemberMaterialUploadPage() {
                   disabled={isSubmitting}
                   ariaLabel="上传文件"
                   fileListAriaLabel="待上传文件列表"
-                  hint={`支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 ${MAX_UPLOAD_FILE_SIZE_LABEL}。上传后系统会自动识别材料类型，再提示还缺哪些辅助资料。`}
+                  hint={`支持 PDF、ZIP、JPG、PNG、WEBP；单文件最大 ${MAX_UPLOAD_FILE_SIZE_LABEL}。上传后系统会自动识别材料类型，并提示下一步还缺哪些材料。`}
                 />
                 {validationErrors.files ? (
                   <Typography color="error" variant="body2" sx={{ mt: 1 }}>
@@ -503,7 +503,7 @@ export function MemberMaterialUploadPage() {
                 justifyContent="space-between"
               >
                 <Typography variant="body2" color="text.secondary">
-                  上传完成后会立即给出成功、部分成功或失败反馈；若 AI 还未识别出类型，结果会先显示为“其他附件”。
+                  上传完成后会立即给出成功、部分成功或失败反馈；若识别还没完成，结果会先显示为“其他材料”或待识别状态。
                 </Typography>
                 <Button type="submit" variant="contained" disabled={isSubmitting}>
                   {isSubmitting ? "正在上传..." : "上传材料"}
@@ -517,7 +517,7 @@ export function MemberMaterialUploadPage() {
       {uploadResult ? (
         <SectionCard
           title="上传结果"
-          description="这里展示最近一次提交的逐文件结果，以及系统当前记录下来的材料类型。"
+          description="展示最近一次上传的逐文件结果，以及系统当前记录下来的材料类型。"
           action={<StatusBadge tone={buildUploadResultTone(uploadResult.status)}>{formatUploadResultStatus(uploadResult.status)}</StatusBadge>}
         >
           <Stack spacing={2}>

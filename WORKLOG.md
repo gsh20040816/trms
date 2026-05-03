@@ -1,5 +1,57 @@
 # WORKLOG
 
+## 2026-05-03 14:28 - Soften unfriendly frontend copy across member and admin flows
+
+### 完成内容
+- 完成任务“review 当前前端用户不友好的文案并统一收口”。
+- 已修改成员主路径页面文案：
+  - [web/src/app/member-task-list.tsx](/home/gsh/workspace/TRMS/web/src/app/member-task-list.tsx)
+  - [web/src/app/member-material-upload.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-upload.tsx)
+  - [web/src/app/member-material-status.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.tsx)
+  - [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx)
+  - [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - [web/src/app/member-expense-confirmation.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.tsx)
+  - [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)
+- 已修改管理员与首页相关文案：
+  - [web/src/app/admin-export-tasks.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.tsx)
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)
+  - [web/src/app/admin-split-editor.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-split-editor.tsx)
+  - [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)
+  - [web/src/app/pages.tsx](/home/gsh/workspace/TRMS/web/src/app/pages.tsx)
+  - [web/src/app/system-admin-dashboard.tsx](/home/gsh/workspace/TRMS/web/src/app/system-admin-dashboard.tsx)
+- 本轮主要把以下文案类型统一收口为业务语言：
+  - “这里处理 / 这里只 / 点击下拉框后 / 运行重新识别”这类命令式或开发者自述口吻；
+  - “在线预览 / 占位能力 / 仅支持后台生成 / 即时输出”这类实现视角文案；
+  - 一些把正常流程描述得像异常、或没有明确告诉用户下一步动作的说明文字。
+- 已同步更新前端测试：
+  - [web/src/app/member-material-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.test.tsx)
+  - [web/src/app/member-material-status.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-status.test.tsx)
+  - [web/src/app/member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+  - [web/src/app/admin-corrections-reminders.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.test.tsx)
+  - [web/src/app/admin-export-tasks.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-export-tasks.test.tsx)
+  - [web/src/app/main-flow-e2e-placeholder.test.tsx](/home/gsh/workspace/TRMS/web/src/app/main-flow-e2e-placeholder.test.tsx)
+
+### 根因
+- 前端近期虽然已经完成多轮结构调整，但不少页面文案仍保留了明显的开发阶段表达：
+  - 用“这里处理”“这里只展示”“点击下拉框后”描述页面，而不是告诉用户当前能做什么；
+  - 用“在线预览”“占位能力”“仅支持后台生成”“即时输出”暴露实现边界；
+  - 同一操作在不同页面里还存在“运行重新识别”这类偏系统动作的命名，不够接近日常业务语言。
+- 这类文案不会直接造成逻辑错误，但会增加理解成本，也和 `docs/UI原型图对照与交互规范补充.md` 中“主文案优先描述业务动作，不优先描述技术边界”的要求冲突。
+
+### 风险与影响面
+- 本轮只修改用户可见文案和相关测试断言，不改业务逻辑、权限判断、接口或状态机。
+- 文案收口覆盖成员、管理员、首页和系统管理页的主路径；未对后端返回的原始错误文本做语义重写。
+- `admin-export-tasks` 的导出能力边界仍保持不变，只是把呈现文案从实现视角改成“页面查看 / 生成后下载”这类用户更易理解的表达。
+
+### 验证结果
+- 已通过定向前端测试：
+  - `cd web && npm test -- --run src/app/member-material-detail.test.tsx src/app/member-material-status.test.tsx src/app/member-invoice-detail.test.tsx src/app/admin-corrections-reminders.test.tsx src/app/admin-export-tasks.test.tsx src/app/main-flow-e2e-placeholder.test.tsx`
+- 已运行 `./scripts/verify.sh`：
+  - `web` lint 仍只有 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx) 两条既有 `react-hooks/exhaustive-deps` warning，本轮未新增 lint error；
+  - `web` 测试 `123/123` 通过；
+  - `web` 构建通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-03 01:20 - Fix system timezone summary and expose browser timezone in frontend
 
 ### 完成内容

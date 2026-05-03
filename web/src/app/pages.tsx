@@ -94,7 +94,7 @@ function GuestHomePage() {
           登录后进入对应工作台
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 720 }}>
-          先登录账号，再按你的身份进入材料提交、任务复核或系统配置。未登录状态下不会展示与当前职责无关的入口。
+          先登录账号，再按你的身份进入材料处理、任务复核或系统管理。系统会自动隐藏与你当前职责无关的入口。
         </Typography>
         <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
           <Button
@@ -134,7 +134,7 @@ function GuestHomePage() {
           {
             label: "系统管理员",
             value: "系统配置",
-            description: "系统配置和诊断入口不对未登录用户展示。",
+            description: "登录后可维护系统配置、账号角色和运行状态。",
             Icon: AdminPanelSettingsIcon,
             color: "secondary.main",
           },

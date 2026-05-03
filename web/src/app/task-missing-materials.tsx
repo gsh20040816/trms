@@ -380,7 +380,7 @@ export function AdminMissingMaterialsPage() {
                     <MenuItem value="expense_type">按费用类型查看</MenuItem>
                   </Select>
                 </FormControl>
-                <span className="field-hint">这里用于梳理待补材料，提醒和更正可在其他工作页继续处理。</span>
+                <span className="field-hint">当前页用于梳理待补材料；如需提醒成员或更正数据，请回到对应工作页继续处理。</span>
               </div>
             </div>
           </section>
@@ -599,7 +599,7 @@ export function MemberMissingMaterialsPage() {
                   ))}
                 </Select>
               </FormControl>
-              <span className="field-hint">这里只列出你可以查看的任务，并只显示与你相关的待补材料。</span>
+              <span className="field-hint">下拉列表只显示你当前可查看的任务，待补列表也只展示与你相关的内容。</span>
             </div>
             <div className="field-stack">
               <span>相关入口</span>
@@ -633,7 +633,7 @@ export function MemberMissingMaterialsPage() {
                   <MenuItem value="expense_type">按费用类型查看</MenuItem>
                 </Select>
               </FormControl>
-              <span className="field-hint">成员视角不显示其他成员的信息。</span>
+              <span className="field-hint">为保护隐私，本页不会展示其他成员的信息。</span>
             </div>
           </div>
         </SectionCard>

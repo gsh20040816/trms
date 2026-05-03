@@ -238,7 +238,7 @@ describe("admin export tasks page", () => {
 
     renderExportRoute();
 
-    expect(await screen.findByRole("heading", { name: "导出任务页面" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "导出与下载" })).toBeInTheDocument();
     const moduleNav = screen.getByLabelText("管理员模块导航");
     expect(within(moduleNav).getByText("导出打印").closest("a")).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { name: "先生成完整材料包" })).toBeInTheDocument();
@@ -255,7 +255,7 @@ describe("admin export tasks page", () => {
       await Promise.resolve();
     });
     const confirmDialog = await screen.findByRole("dialog");
-    expect(within(confirmDialog).getByText("任务 ICPC 区域赛报销 当前处于可导出。确认后会以 XLSX 格式创建新的异步导出任务，并按当前数据版本进入后台队列。")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("任务 ICPC 区域赛报销 当前处于可导出。确认后，系统会按当前数据版本创建一个 XLSX 导出任务并放入后台队列。")).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(within(confirmDialog).getByRole("button", { name: "暂不创建" }));
       await Promise.resolve();
@@ -265,7 +265,7 @@ describe("admin export tasks page", () => {
     });
 
     expect(createJobRequestCount).toBe(0);
-    expect(screen.queryByText("报销汇总表 导出任务已创建，当前状态：待生成。")).not.toBeInTheDocument();
+    expect(screen.queryByText("报销汇总表已加入导出队列，当前状态：待生成。")).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(summaryActions.getByRole("button", { name: "创建报销汇总表任务" }));
@@ -281,7 +281,7 @@ describe("admin export tasks page", () => {
     });
 
     expect(
-      await screen.findByText("报销汇总表 导出任务已创建，当前状态：待生成。"),
+      await screen.findByText("报销汇总表已加入导出队列，当前状态：待生成。"),
     ).toBeInTheDocument();
     expect(createJobRequestCount).toBe(1);
     const exportHistory = within(screen.getByLabelText("导出任务历史列表"));
@@ -293,11 +293,11 @@ describe("admin export tasks page", () => {
     const refreshedSummaryActions = within(refreshedSummaryCard as HTMLElement);
 
     await act(async () => {
-      fireEvent.click(refreshedSummaryActions.getByRole("button", { name: "查看在线预览" }));
+      fireEvent.click(refreshedSummaryActions.getByRole("button", { name: "直接查看内容" }));
       await Promise.resolve();
     });
 
-    expect(await screen.findByRole("heading", { name: "报销汇总表 即时输出" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "报销汇总表 页面查看" })).toBeInTheDocument();
     expect(screen.getByText(/expense_type,total_amount_cents,2250001/)).toBeInTheDocument();
   });
 
@@ -443,7 +443,7 @@ describe("admin export tasks page", () => {
 
     const confirmDialog = await screen.findByRole("dialog");
     expect(within(confirmDialog).getByText(
-      "任务 ICPC 区域赛报销 当前处于可导出。确认后会以 ZIP 格式创建新的异步导出任务，并按当前数据版本进入后台队列。",
+      "任务 ICPC 区域赛报销 当前处于可导出。确认后，系统会按当前数据版本创建一个 ZIP 导出任务并放入后台队列。",
     )).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(within(confirmDialog).getByRole("button", { name: "创建导出任务" }));
@@ -455,7 +455,7 @@ describe("admin export tasks page", () => {
 
     expect(createRequests).toEqual([{ kind: "reimbursement_package", format: "zip" }]);
     expect(
-      await screen.findByText("完整报销材料包 导出任务已创建，当前状态：待生成。"),
+      await screen.findByText("完整报销材料包已加入导出队列，当前状态：待生成。"),
     ).toBeInTheDocument();
     const packageHistory = within(screen.getByLabelText("导出任务历史列表"));
     expect(packageHistory.getAllByText(/完整报销材料包\s*\/\s*ZIP/).length).toBe(2);
@@ -494,9 +494,9 @@ describe("admin export tasks page", () => {
     const summaryActions = within(summaryCard as HTMLElement);
 
     expect(summaryActions.getByRole("button", { name: "创建报销汇总表任务" })).toBeDisabled();
-    expect(summaryActions.getByRole("button", { name: "查看在线预览" })).toBeDisabled();
+    expect(summaryActions.getByRole("button", { name: "直接查看内容" })).toBeDisabled();
     expect(
-      screen.getByText("当前还没有导出任务记录。创建任务后，这里会显示状态、失败原因和可下载产物信息。"),
+      screen.getByText("当前还没有导出任务记录。创建任务后，会在这里显示状态、失败原因和可下载产物信息。"),
     ).toBeInTheDocument();
   });
 });

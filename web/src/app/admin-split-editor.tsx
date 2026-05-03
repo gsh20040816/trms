@@ -521,7 +521,7 @@ export function AdminSplitEditorPage() {
         <PageHeader
           eyebrow="分摊确认"
           title="费用分摊编辑"
-          description="在这里为单张发票维护归属成员和分摊金额，并检查总额是否一致。"
+          description="为单张发票维护归属成员和分摊金额，并核对分摊合计。"
           actions={(
             <div className="page-actions">
               <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}`}>
@@ -657,9 +657,7 @@ export function AdminSplitEditorPage() {
                     })}
                   </Select>
                 </FormControl>
-                <p className="field-hint">
-                  点击下拉框后再展开候选发票；列表高度固定，滚动发生在下拉层内部，不再把左侧整列拉长。
-                </p>
+                <p className="field-hint">候选发票会在展开层中滚动显示，方便持续对照右侧分摊信息。</p>
               </div>
             )}
           </article>
@@ -858,7 +856,7 @@ export function AdminSplitEditorPage() {
 
                   {selectedInvoiceItem.invoiceItem.splits.length === 0 ? (
                     <p className="field-hint">
-                      当前发票还没有持久化分摊记录；首次保存后，这里会显示每个成员的最新确认状态。
+                      当前发票还没有已保存的分摊记录；首次保存后，会显示每个成员的最新确认状态。
                     </p>
                   ) : (
                     <ul className="admin-review-record-list" aria-label="当前分摊确认状态">

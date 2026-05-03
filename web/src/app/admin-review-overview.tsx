@@ -1356,7 +1356,7 @@ export function AdminReviewOverviewPage() {
                 <StatusBadge tone="info">{detailItems.length} 份材料</StatusBadge>
               </div>
               <p className="field-hint">
-                先从左侧选中当前要处理的材料，再在右侧同页查看原件、识别字段、校验异常和分摊去向。
+                先在左侧选中要处理的材料，再在右侧查看原件、识别字段、校验异常和分摊去向。
               </p>
               {detailItems.length > 0 ? (
                 <div className="invoice-editor-select-panel">
@@ -1460,9 +1460,7 @@ export function AdminReviewOverviewPage() {
                       })}
                     </Select>
                   </FormControl>
-                  <p className="field-hint">
-                    点击下拉框后再展开候选材料；下拉层高度固定，滚动发生在展开层内部，不再把左侧材料区拉成很长的列表。
-                  </p>
+                  <p className="field-hint">候选材料会在展开层中滚动显示，方便你持续对照右侧详情处理。</p>
                 </div>
               ) : (
                 <p className="field-hint">当前任务还没有已归档材料。</p>
@@ -1564,7 +1562,7 @@ export function AdminReviewOverviewPage() {
                               type={previewState.contentType}
                               aria-label="原始票据 PDF 预览"
                             >
-                              <p className="field-hint">当前环境无法直接显示 PDF 预览，但材料内容已成功加载。</p>
+                              <p className="field-hint">当前环境暂时无法直接显示 PDF，但材料内容已经成功加载。</p>
                             </object>
                           )}
                         </div>
@@ -2137,7 +2135,7 @@ export function AdminReviewOverviewPage() {
                               </div>
 
                               {selectedActionInvoice.splits.length === 0 ? (
-                                <p className="field-hint">当前发票还没有持久化分摊记录；首次保存后，这里会显示每个成员的最新确认状态。</p>
+                                <p className="field-hint">当前发票还没有已保存的分摊记录；首次保存后，会显示每个成员的最新确认状态。</p>
                               ) : (
                                 <ul className="admin-review-record-list" aria-label="当前材料分摊列表">
                                   {selectedActionInvoice.splits.map(({ split, confirmation }) => (

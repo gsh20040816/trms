@@ -272,7 +272,7 @@ describe("AdminCorrectionsRemindersPage", () => {
     renderCorrectionsRoute();
 
     expect(await screen.findByRole("heading", { name: "管理员补材料提醒" })).toBeInTheDocument();
-    expect(screen.getByText("这里只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。")).toBeInTheDocument();
+    expect(screen.getByText("系统只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。")).toBeInTheDocument();
     expect(screen.queryByText("待人工更正项")).not.toBeInTheDocument();
     expect(screen.queryByText("识别字段待确认或待补录材料")).not.toBeInTheDocument();
     expect(screen.queryByText("存在异常校验或异议的发票")).not.toBeInTheDocument();

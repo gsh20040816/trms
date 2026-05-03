@@ -803,7 +803,7 @@ export function MemberMaterialStatusPage() {
       {taskState.status === "ready" && visibleTasks.length > 0 ? (
         <SectionCard
           title="选择要查看的任务"
-          description="这里只展示你当前可访问的任务，并只聚合你本人提交的材料。"
+          description="请先选择一个任务，本页会汇总你本人提交的材料状态。"
           action={selectedTask ? <StatusBadge tone="info">{formatTaskStatus(selectedTask.status)}</StatusBadge> : null}
         >
           <div className="admin-form-grid">
@@ -812,7 +812,7 @@ export function MemberMaterialStatusPage() {
               label="目标任务"
               fullWidth
               value={selectedTaskId}
-              helperText="这里只列出你可以查看的任务，并只汇总你本人提交的材料。"
+              helperText="下拉列表只显示你当前可查看的任务，页面不会混入其他成员的材料。"
               onChange={(event) => {
                 resetLocalActionState();
                 setSelectedTaskId(event.target.value);
@@ -996,8 +996,8 @@ export function MemberMaterialStatusPage() {
                     {retryingMaterialId === item.material.id
                       ? "重新识别中..."
                       : item.recognition
-                        ? "运行重新识别"
-                        : "开始识别"}
+                        ? "重新识别材料"
+                        : "开始识别材料"}
                   </Button>
                 </div>
               </section>

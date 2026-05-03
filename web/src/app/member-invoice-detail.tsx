@@ -779,7 +779,7 @@ export function MemberInvoiceDetailPage() {
                 {openingOriginal ? "正在打开..." : "查看原文件"}
               </Button>
               <Button type="button" variant="outlined" disabled={retryingRecognition} onClick={() => { void handleRecognitionRetry(); }}>
-                {retryingRecognition ? "重新识别中..." : "运行重新识别"}
+                {retryingRecognition ? "重新识别中..." : "重新识别材料"}
               </Button>
               {canDeleteInvoice ? (
                 <Button type="button" color="error" variant="outlined" disabled={deletingInvoice} onClick={() => { void handleDeleteInvoice(); }}>

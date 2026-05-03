@@ -875,7 +875,7 @@ export function SystemAdminDashboardPage() {
                   当前运行状态
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  这里只暴露排障必需的安全摘要，不展示 token、密钥或长期凭据原文。
+                  此处仅展示排障必需的安全摘要，不会显示 token、密钥或长期凭据原文。
                 </Typography>
 
                 <Box

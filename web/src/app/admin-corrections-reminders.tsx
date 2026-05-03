@@ -193,7 +193,7 @@ export function AdminCorrectionsRemindersPage() {
         <PageHeader
           eyebrow="成员提醒"
           title="管理员补材料提醒"
-          description="这里只处理提醒成员补材料与确认信息，不再在这个页面展示发票列表或更正入口。"
+          description="在这里记录对成员的补材料提醒和确认说明，发票审核仍在材料审核页处理。"
           actions={(
             <div className="page-actions">
               <Button component={RouterLink} variant="outlined" to={`/admin/tasks/${taskId}/review`}>
@@ -237,7 +237,7 @@ export function AdminCorrectionsRemindersPage() {
             </div>
 
             <p className="field-hint">
-              当前页面只负责选择成员并保存内部提醒记录，不再展示发票列表或更正入口；材料审核、字段更正和分摊调整统一回到材料审核页处理。
+              先选择成员并记录提醒内容；发票审核、字段更正和分摊调整统一回到材料审核页处理。
             </p>
 
             <form onSubmit={handleReminderSubmit}>
@@ -265,7 +265,7 @@ export function AdminCorrectionsRemindersPage() {
                   value={content}
                   placeholder="例如：请补充支付记录和比赛通知，并在补交后重新确认金额。"
                   error={Boolean(formErrors.content)}
-                  helperText={formErrors.content ?? "当前只记录管理员提醒内容与时间，不接入真实短信、邮件或 Telegram 发送。"}
+                  helperText={formErrors.content ?? "这里会记录提醒内容和时间，但不会自动代发短信、邮件或 Telegram 消息。"}
                   onChange={(event) => {
                     setContent(event.target.value);
                     setFormErrors((current) => ({ ...current, content: undefined }));
@@ -274,7 +274,7 @@ export function AdminCorrectionsRemindersPage() {
               </div>
 
               <div className="admin-form-footer">
-                <p className="field-hint">这里只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。</p>
+                <p className="field-hint">系统只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。</p>
                 <Button variant="contained" type="submit" disabled={isSubmitting || visibleTask.member_ids.length === 0}>
                   {isSubmitting ? "保存中..." : "保存内部提醒记录"}
                 </Button>

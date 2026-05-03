@@ -300,7 +300,7 @@ describe("MemberMaterialStatusPage", () => {
       "发票金额达到阈值，缺少支付记录",
     );
     expect(within(detailPanel).getByLabelText("MAT-SELF-INV 缺失材料提示列表")).toHaveTextContent("支付记录");
-    expect(within(detailPanel).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
+    expect(within(detailPanel).getByRole("button", { name: "重新识别材料" })).toBeInTheDocument();
     act(() => {
       fireEvent.click(within(detailPanel).getByRole("button", { name: "人工填写发票信息" }));
     });
@@ -321,7 +321,7 @@ describe("MemberMaterialStatusPage", () => {
     expect(within(detailPanel).getByText("pay.png")).toBeInTheDocument();
     expect(within(detailPanel).getByText("识别排队中")).toBeInTheDocument();
     expect(within(detailPanel).getByText("当前材料暂无独立发票校验")).toBeInTheDocument();
-    expect(within(detailPanel).getByRole("button", { name: "运行重新识别" })).toBeInTheDocument();
+    expect(within(detailPanel).getByRole("button", { name: "重新识别材料" })).toBeInTheDocument();
 
     expect(screen.getByLabelText("材料状态摘要")).toHaveTextContent("本人材料");
     expect(screen.getByLabelText("材料状态摘要")).toHaveTextContent("2");
