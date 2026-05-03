@@ -1,5 +1,39 @@
 # WORKLOG
 
+## 2026-05-04 04:30 - Pass remaining IMAP environment variables into production Compose containers
+
+### 完成内容
+- 完成任务“修复生产 Compose 未向容器透传 `TRMS_IMAP_*` 配置的问题”。
+- 先静态比对了运行时配置与 Compose 透传边界，确认当前 `runtime_config.py` 中仍未被 `deploy/docker-compose.yml` 显式继承的变量只剩 `TRMS_IMAP_*`：
+  - `TRMS_IMAP_HOST`
+  - `TRMS_IMAP_PORT`
+  - `TRMS_IMAP_USERNAME`
+  - `TRMS_IMAP_PASSWORD`
+  - `TRMS_IMAP_MAILBOX`
+  - `TRMS_IMAP_POLL_INTERVAL_SECONDS`
+  - `TRMS_IMAP_USE_SSL`
+  - `TRMS_IMAP_STARTTLS`
+- 已更新 Compose 基线：
+  - [deploy/docker-compose.yml](/home/gsh/workspace/TRMS/deploy/docker-compose.yml)
+  - `migrate`、`api`、`worker` 现在都会显式继承上述 `TRMS_IMAP_*` 变量；
+  - 这样 worker 容器内的 `effective_config.email_inbox` 才能真正从 `.env` 中解析出 IMAP 轮询配置。
+- 已同步更新部署文档：
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/%E7%94%9F%E4%BA%A7%E9%83%A8%E7%BD%B2%E6%B8%85%E5%8D%95%E4%B8%8EDocker%20Compose%E5%9F%BA%E7%BA%BF.md)
+  - 现明确说明：IMAP 轮询和 SMTP 一样，不能只在 `.env` 里写变量，容器必须实际继承；更新后需重新 `build/deploy`。
+
+### 根因
+- worker 的 IMAP 轮询实现只有在 `effective_config.email_inbox is not None` 时才会实例化 `ImapEmailInboxClient`；否则会退化成空的 `StaticEmailInboxClient([])`。
+- 当前生产 Compose 之前没有把 `TRMS_IMAP_*` 传进容器，因此 worker 虽然持续打印 `email_inbox` job 已注册，但实际每轮都只能拿到空客户端，表现为持续 `processed_counts.email_inbox = 0`，且邮箱侧看不到任何登录尝试。
+
+### 风险与影响面
+- 本轮只补齐 IMAP 环境变量透传，不改变 IMAP 登录、抓取、导入逻辑本身。
+- 旧容器不会自动拿到这些变量；部署侧必须重新 `build/deploy`，否则 worker 仍会继续按“未启用 IMAP”的旧状态运行。
+
+### 验证结果
+- 已运行 `./scripts/verify.sh`：
+  - Docker Compose 配置检查通过；
+  - `git diff --check` 通过。
+
 ## 2026-05-04 04:10 - Pass SMTP environment variables into production Compose app containers
 
 ### 完成内容

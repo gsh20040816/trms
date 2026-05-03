@@ -2,6 +2,15 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-04 Compose 透传剩余 IMAP 环境变量
+
+- [x] 修复生产 Compose 未向容器透传 `TRMS_IMAP_*` 配置的问题
+  - Done when:
+    - 已确认 `runtime_config.py` 仍未被 Compose 透传的变量只剩 `TRMS_IMAP_*`
+    - `deploy/docker-compose.yml` 中相关应用容器显式继承 `TRMS_IMAP_HOST`、`TRMS_IMAP_PORT`、`TRMS_IMAP_USERNAME`、`TRMS_IMAP_PASSWORD`、`TRMS_IMAP_MAILBOX`、`TRMS_IMAP_POLL_INTERVAL_SECONDS`、`TRMS_IMAP_USE_SSL`、`TRMS_IMAP_STARTTLS`
+    - 部署文档明确说明 IMAP 轮询只有在 worker 容器实际拿到这些变量后才会启用
+    - 仓库级验证通过
+
 ## 临时任务 - 2026-05-04 Compose 透传 SMTP 环境变量到生产容器
 
 - [x] 修复生产 Compose 未向应用容器透传 `TRMS_SMTP_*` 配置的问题
