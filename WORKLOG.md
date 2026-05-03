@@ -17183,6 +17183,36 @@
 ### 后续建议
 - 下一轮按顺序处理 `TASKS.md` 中“增加基础指标边界”，优先为上传、识别、校验和导出建立最小指标抽象，不要直接引入重量级监控组件。
 
+## 2026-05-03 - Accept angle-bracket task keys in email subjects
+
+### 完成内容
+- 扩展格式化邮件主题解析：
+  - 继续支持原有 `[TRMS] task:<task_key>`；
+  - 新增支持 `<task_key>` 开头的短格式，例如 `<ccny2026>Fw: 中国南方航空全电发票（全面数字化电子发票）` 会解析为 `ccny2026`。
+- 更新邮件提交规范文档，明确两种合法主题格式和 `invalid_subject_prefix` 的新边界。
+- 增加 API 回归测试，覆盖真实转发标题形态下的任务邮件提交标识解析和材料入库。
+- 将 `TASKS.md` 中“允许邮件主题使用尖括号任务标识”标记为已完成。
+
+### 根因
+- 当前解析器只接受主题以 `[TRMS] ` 开头，并要求紧跟 `task:`；真实转发邮件使用 `<ccny2026>Fw: ...` 时，第一步前缀检查失败，因此日志记录 `invalid_subject_prefix`，即使发件人邮箱已经解析出成员身份也无法继续解析任务。
+
+### 修改文件
+- `src/trms_backend/application/email_material_submission.py`
+- `tests/test_email_materials_api.py`
+- `docs/格式化邮件提交规范说明.md`
+- `TASKS.md`
+- `WORKLOG.md`
+
+### 已验证
+- `uv run pytest tests/test_email_materials_api.py`
+- `uv run pytest tests/test_async_jobs.py -k email`
+- `./scripts/verify.sh`
+  - Python 语法编译检查、Alembic 升降级、pytest 601 个用例和 `git diff --check` 通过。
+
+### 说明
+- 本轮只扩展主题里的任务标识解析，不改变正文元数据要求；邮件正文开头仍需要 `material_type: invoice` 等元数据。
+- 发件人身份仍来自已绑定邮箱或受信任入站边界，本轮没有放宽成员身份解析。
+
 ## 2026-05-03 - Add profile email binding entry and fix chip label contrast
 
 ### 完成内容

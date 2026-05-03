@@ -18,6 +18,7 @@ from trms_backend.domain.tasks import ReimbursementTask, TaskRepository
 
 SUBJECT_PREFIX = "[TRMS] "
 TASK_MARKER = "task:"
+ANGLE_BRACKET_TASK_PATTERN = re.compile(r"^<(?P<task_id>[^<>]+)>")
 OTHER_ATTACHMENT_EMAIL_ALIAS = "other"
 METADATA_LINE_PATTERN = re.compile(r"^(?P<key>[a-z_]+):(?P<value>.*)$")
 SUPPORTED_METADATA_KEYS = frozenset({"material_type", "submitter_id", "task_id", "note"})
@@ -158,10 +159,20 @@ def parse_formatted_email_submission(
 
 def _parse_subject(subject: str) -> str:
     normalized_subject = subject.strip()
+    angle_bracket_match = ANGLE_BRACKET_TASK_PATTERN.match(normalized_subject)
+    if angle_bracket_match is not None:
+        task_id = angle_bracket_match.group("task_id").strip().lower()
+        if not task_id or re.search(r"\s", task_id):
+            raise EmailMaterialSubmissionFormatError(
+                error_code="missing_task_id",
+                detail="email subject angle-bracket task marker must be non-empty",
+            )
+        return task_id
+
     if not normalized_subject.startswith(SUBJECT_PREFIX):
         raise EmailMaterialSubmissionFormatError(
             error_code="invalid_subject_prefix",
-            detail="email subject must start with [TRMS]",
+            detail="email subject must start with [TRMS] or <task_key>",
         )
 
     marker_count = normalized_subject.count(TASK_MARKER)

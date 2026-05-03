@@ -301,8 +301,31 @@ def test_email_material_submission_rejects_subject_without_trms_prefix(tmp_path)
     assert response.json() == {
         "status": "failed",
         "error_code": "invalid_subject_prefix",
-        "detail": "email subject must start with [TRMS]",
+        "detail": "email subject must start with [TRMS] or <task_key>",
     }
+
+
+def test_email_material_submission_accepts_angle_bracket_task_key_subject(tmp_path):
+    client = make_client(tmp_path, trusted_inbound_token=TRUSTED_EMAIL_TOKEN)
+    task_id, task_key = create_open_task_with_mail_key(client)
+
+    response = client.post(
+        "/api/email/materials",
+        headers={"X-TRMS-Email-Inbound-Token": TRUSTED_EMAIL_TOKEN},
+        data={
+            "sender_email": "member1@tongji.edu.cn",
+            "resolved_member_id": "2250001",
+            "subject": f"<{task_key}>Fw: 中国南方航空全电发票（全面数字化电子发票）",
+            "body": "material_type: invoice\n",
+        },
+        files={"files": ("invoice.pdf", b"email-pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["parsed_email"]["task_id"] == task_id
+    assert payload["parsed_email"]["submitted_task_key"] == task_key
+    assert payload["items"][0]["task_id"] == task_id
 
 
 def test_email_material_submission_rejects_task_id_mismatch(tmp_path):
