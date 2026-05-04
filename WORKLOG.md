@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-05-04 13:55 - Fix task member summary lookup when task member_ids use actor_id
+
+### 完成内容
+- 已修复生产环境 `/api/tasks` 因成员标识混用导致的 `500 internal server error`：
+  - [src/trms_backend/infrastructure/repositories.py](/home/gsh/workspace/TRMS/src/trms_backend/infrastructure/repositories.py)
+  - [src/trms_backend/domain/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/tasks.py)
+- `list_users_by_member_identifiers()` 现在会按“实际命中的标识”排序：
+  - 若任务 `member_ids` 命中的是 `actor_id`，就按 `actor_id` 的位置排序；
+  - 若命中的是 `member_code`，就按 `member_code` 的位置排序；
+  - 不再无条件把 `member_code or actor_id` 拿去做索引。
+- `build_task_member_summaries()` 现在同时用 `actor_id` 和 `member_code` 建立索引：
+  - 任务成员列表里无论存的是登录标识还是学号，都能正确回填 `username`、`display_name` 和 `student_id`。
+- 已补回归测试：
+  - [tests/test_tasks_api.py](/home/gsh/workspace/TRMS/tests/test_tasks_api.py)
+  - 覆盖生产已出现的数据形态：成员账号 `actor_id=bovmelo`、`member_code=2453005`，任务 `member_ids=["bovmelo"]` 时创建任务和成员查看任务列表都不会再报 500。
+
+### 根因
+- 任务列表接口在补充 `member_summaries` 时，会先按 `actor_id/member_code` 任一命中筛出用户，再按用户标识顺序排序。
+- 旧实现的排序键固定使用 `user.member_code or user.actor_id`：
+  - 当任务 `member_ids` 实际保存的是 `actor_id`；
+  - 但该成员账号同时配置了不同的 `member_code`；
+  - 用户会因为 `actor_id` 命中被筛出来，但排序阶段会错误地去 `member_ids` 中查 `member_code`，最终触发 `ValueError`。
+- 生产环境已实际确认该形态：
+  - 用户 `username=bovmelo`
+  - `actor_id=bovmelo`
+  - `member_code=2453005`
+  - `/api/tasks` traceback 落在 `list_users_by_member_identifiers()` 排序逻辑。
+
+### 风险与影响面
+- 本轮只收口任务成员摘要查询与排序，不改任务成员持久化格式，也不改注册/登录语义。
+- 影响面主要在所有会构造 `member_summaries` 的任务接口，包括创建任务、管理员任务列表和成员任务列表。
+- 当前修复允许同一用户同时通过 `actor_id` 和 `member_code` 被任务引用；这是对现有数据形态的兼容收口，不引入新的持久化约束。
+
+### 验证结果
+- 已运行定向测试：
+  - `uv run pytest tests/test_tasks_api.py -k 'actor_id_member_identifiers or health_check'`
+  - `2 passed`
+- 已运行相关回归：
+  - `uv run pytest tests/test_tasks_api.py`
+  - `59 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - `634 passed`
+
 ## 2026-05-04 19:40 - Auto-register Telegram webhook during production API startup
 
 ### 完成内容

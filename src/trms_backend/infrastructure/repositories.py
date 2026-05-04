@@ -342,13 +342,26 @@ class SqlAlchemyAuthRepository(AuthRepository):
         with session_scope(self._session_factory) as session:
             rows = session.scalars(select(UserAccountRow)).all()
 
-        matched_users = [
-            _authenticated_user_from_row(row)
-            for row in rows
-            if row.member_code in normalized_identifiers or row.actor_id in normalized_identifiers
-        ]
-        matched_users.sort(key=lambda user: normalized_identifiers.index(user.member_code or user.actor_id))
-        return matched_users
+        matched_users_with_index: list[tuple[int, AuthenticatedUser]] = []
+        for row in rows:
+            matched_identifier: str | None = None
+            if row.actor_id in normalized_identifiers:
+                matched_identifier = row.actor_id
+            elif row.member_code in normalized_identifiers:
+                matched_identifier = row.member_code
+
+            if matched_identifier is None:
+                continue
+
+            matched_users_with_index.append(
+                (
+                    normalized_identifiers.index(matched_identifier),
+                    _authenticated_user_from_row(row),
+                )
+            )
+
+        matched_users_with_index.sort(key=lambda item: item[0])
+        return [user for _, user in matched_users_with_index]
 
     def search_users(
         self,

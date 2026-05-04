@@ -228,6 +228,52 @@ def test_health_check(tmp_path):
     assert response.json() == {"status": "ok"}
 
 
+def test_member_tasks_listing_supports_actor_id_member_identifiers(tmp_path):
+    client = make_client(tmp_path)
+    admin_headers = admin_auth_headers(client)
+    member_token = register_and_get_token(
+        client,
+        username="bovmelo",
+        role="member",
+        actor_id="bovmelo",
+        member_code="2453005",
+    )
+
+    create_response = client.post(
+        "/api/tasks",
+        json=valid_task_payload() | {"member_ids": ["bovmelo"]},
+        headers=admin_headers,
+    )
+
+    assert create_response.status_code == 201
+    created_task = create_response.json()
+    assert created_task["member_summaries"] == [
+        {
+            "member_id": "bovmelo",
+            "username": "bovmelo",
+            "display_name": "bovmelo",
+            "student_id": "2453005",
+        }
+    ]
+
+    member_list_response = client.get(
+        "/api/tasks",
+        params={"member_id": "bovmelo"},
+        headers=auth_headers(member_token),
+    )
+
+    assert member_list_response.status_code == 200
+    assert member_list_response.json()[0]["id"] == created_task["id"]
+    assert member_list_response.json()[0]["member_summaries"] == [
+        {
+            "member_id": "bovmelo",
+            "username": "bovmelo",
+            "display_name": "bovmelo",
+            "student_id": "2453005",
+        }
+    ]
+
+
 def test_task_administrator_can_delete_task_and_related_records_in_any_status(tmp_path):
     client = make_client(tmp_path)
     task = create_task(client)

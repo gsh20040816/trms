@@ -2,6 +2,15 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-05-04 修复 actor_id / member_code 混用导致任务列表 500
+
+- [x] 修复成员标识使用 `actor_id` 时任务列表成员摘要排序崩溃的问题
+  - Done when:
+    - `list_users_by_member_identifiers()` 不再在 `actor_id` 命中、`member_code` 不命中的情况下对不存在的标识做排序索引
+    - 任务 `member_summaries` 在 `member_ids` 使用 `actor_id` 或 `member_code` 时都能正确回填用户名、显示名和学号
+    - 有回归测试覆盖 `actor_id != member_code` 的成员访问 `/api/tasks` 场景
+    - 仓库级验证通过
+
 ## 临时任务 - 2026-05-04 Compose 透传剩余 IMAP 环境变量
 
 - [x] 修复生产 Compose 未向容器透传 `TRMS_IMAP_*` 配置的问题

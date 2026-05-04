@@ -348,10 +348,12 @@ def build_task_member_summaries(
     member_ids: list[str],
     users: list[AuthenticatedUser],
 ) -> list[TaskMemberSummary]:
-    users_by_member_identifier = {
-        (user.member_code or user.actor_id): user
-        for user in users
-    }
+    users_by_member_identifier: dict[str, AuthenticatedUser] = {}
+    for user in users:
+        users_by_member_identifier[user.actor_id] = user
+        if user.member_code:
+            users_by_member_identifier[user.member_code] = user
+
     summaries: list[TaskMemberSummary] = []
     for member_id in member_ids:
         user = users_by_member_identifier.get(member_id)
