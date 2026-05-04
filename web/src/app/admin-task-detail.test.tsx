@@ -170,7 +170,9 @@ describe("admin task detail page", () => {
     expect(screen.getAllByText("alpha-mail-key")).toHaveLength(2);
     expect(await screen.findByRole("region", { name: "材料提交说明" })).toHaveTextContent("网页");
     expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("<alpha-mail-key>");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("先在个人信息页绑定发件邮箱");
     expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("submit@example.edu");
+    expect(screen.getByRole("link", { name: "绑定邮箱" })).toHaveAttribute("href", "/profile");
     expect(screen.getByRole("link", { name: "Telegram Bot" })).toHaveAttribute("href", "https://t.me/trms_bot");
     expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("/task alpha-mail-key");
     expect(screen.getByText("2 名管理员")).toBeInTheDocument();

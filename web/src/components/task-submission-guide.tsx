@@ -44,12 +44,15 @@ export function TaskSubmissionGuide({
           <strong>邮件</strong>
           {submissionKey && emailAddress ? (
             <span>
-              主题以 <code>{emailSubject}</code> 开头，发送到 <a href={`mailto:${emailAddress}?subject=${encodeURIComponent(emailSubject ?? "")}`}>{emailAddress}</a>。
+              先在个人信息页绑定发件邮箱；主题以 <code>{emailSubject}</code> 开头，发送到 <a href={`mailto:${emailAddress}?subject=${encodeURIComponent(emailSubject ?? "")}`}>{emailAddress}</a>。
               多封邮件可作为 <code>.eml</code> 邮件包附件合并转发，系统会导入邮件包里的真实附件。
             </span>
           ) : (
-            <span>{submissionKey ? "邮件提交入口未配置，先使用网页上传。" : "任务提交标识未配置，邮件提交暂不可用。"}</span>
+            <span>{submissionKey ? "邮件提交入口未配置；如后续启用邮件提交，发送前仍需先在个人信息页绑定发件邮箱。" : "任务提交标识未配置，邮件提交暂不可用。"}</span>
           )}
+          <Button size="small" variant="text" href="/profile">
+            绑定邮箱
+          </Button>
         </li>
         <li>
           <strong>Telegram</strong>

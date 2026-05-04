@@ -293,7 +293,9 @@ describe("MemberInvoiceWorkbenchPage", () => {
     expect(await screen.findByRole("heading", { name: "比赛报销项目" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "材料提交说明" })).toHaveTextContent("网页");
     expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("<icpc-wuhan>");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("先在个人信息页绑定发件邮箱");
     expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("submit@example.edu");
+    expect(screen.getByRole("link", { name: "绑定邮箱" })).toHaveAttribute("href", "/profile");
     expect(screen.getByRole("link", { name: "Telegram Bot" })).toHaveAttribute("href", "https://t.me/trms_bot");
     expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("/task icpc-wuhan");
     expect(screen.getByRole("complementary", { name: "用户工作台分类" })).toBeInTheDocument();

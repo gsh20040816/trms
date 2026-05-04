@@ -1,5 +1,32 @@
 # WORKLOG
 
+## 2026-05-04 14:18 - Clarify email submission requires bound sender address
+
+### 完成内容
+- 已在任务页邮件提交说明中补充前置条件：
+  - 发送邮件前，成员需要先在个人信息页绑定发件邮箱；
+  - 邮件渠道说明区域提供“绑定邮箱”入口，跳转到 `/profile`。
+- 已覆盖两个展示入口：
+  - [web/src/components/task-submission-guide.tsx](/home/gsh/workspace/TRMS/web/src/components/task-submission-guide.tsx)
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+
+### 根因
+- 邮件入站识别成员身份依赖已绑定发件人邮箱；任务页此前只说明主题格式和收件地址，容易让成员误以为任意邮箱直接发送即可。
+
+### 风险与影响面
+- 本轮只改前端说明文案和测试，不改变邮件入站权限边界。
+- 实际邮件提交仍由后端按已绑定邮箱解析身份；未绑定发件人不会进入成员主链路。
+
+### 验证结果
+- 已运行定向前端测试：
+  - `npm test -- --run src/app/admin-task-detail.test.tsx src/app/member-invoice-workbench.test.tsx`
+  - `18 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - 按本轮前端改动范围执行，前端 `30 passed / 131 tests passed`，构建和 `git diff --check` 通过。
+- `npm run lint` 仍报告 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
 ## 2026-05-04 14:09 - Add task page submission guide for web, email and Telegram
 
 ### 完成内容
