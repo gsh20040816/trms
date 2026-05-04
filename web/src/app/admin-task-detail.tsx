@@ -1,8 +1,8 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 
-import Autocomplete from "@mui/material/Autocomplete";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Checkbox from "@mui/material/Checkbox";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
@@ -14,6 +14,7 @@ import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { TaskSubmissionGuide } from "../components/task-submission-guide";
+import { UserSearchCandidatePicker } from "../components/UserSearchCandidatePicker";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { useSnackbar } from "../components/use-snackbar";
 import { MetadataChip, PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
@@ -29,7 +30,7 @@ import type {
   TaskUpdateInput,
   UserSearchSummary,
 } from "../lib/api/types";
-import { buildTaskMemberSummaryMap, formatExpenseType, formatTaskMemberLabel, formatTaskStatus, formatUserSearchSummary } from "../lib/ui-text";
+import { formatExpenseType, formatTaskStatus, formatUserSearchSummary } from "../lib/ui-text";
 import {
   buildTaskAdministratorSearchOptions,
   formatTaskAdministratorCountLabel,
@@ -359,6 +360,9 @@ export function AdminTaskDetailPage() {
   const [state, setState] = useState<TaskDetailState>({ status: "loading" });
   const [formState, setFormState] = useState<TaskEditFormState | null>(null);
   const [memberInputValue, setMemberInputValue] = useState("");
+  const [memberOptions, setMemberOptions] = useState<UserSearchSummary[]>([]);
+  const [memberSearchError, setMemberSearchError] = useState<unknown>(null);
+  const [isSearchingMembers, setIsSearchingMembers] = useState(false);
   const [administratorInputValue, setAdministratorInputValue] = useState("");
   const [administratorOptions, setAdministratorOptions] = useState<UserSearchSummary[]>([]);
   const [administratorSearchError, setAdministratorSearchError] = useState<unknown>(null);
@@ -371,10 +375,14 @@ export function AdminTaskDetailPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeletingTask, setIsDeletingTask] = useState(false);
   const [submissionGuideConfig, setSubmissionGuideConfig] = useState<SubmissionGuideConfig | null>(null);
+  const memberSearchTimerRef = useRef<number | null>(null);
   const administratorSearchTimerRef = useRef<number | null>(null);
 
   useEffect(() => (
     () => {
+      if (memberSearchTimerRef.current !== null) {
+        window.clearTimeout(memberSearchTimerRef.current);
+      }
       if (administratorSearchTimerRef.current !== null) {
         window.clearTimeout(administratorSearchTimerRef.current);
       }
@@ -424,6 +432,9 @@ export function AdminTaskDetailPage() {
         setFormState(buildFormState(task));
         setValidationErrors({});
         setMemberInputValue("");
+        setMemberOptions([]);
+        setMemberSearchError(null);
+        setIsSearchingMembers(false);
         setAdministratorInputValue("");
         setAdministratorSearchError(null);
         setIsSearchingAdministrators(false);
@@ -479,10 +490,34 @@ export function AdminTaskDetailPage() {
   const visibleReadiness = state.status === "ready" && !isForeignTask ? state.readiness : null;
   const readinessGroups = visibleReadiness ? buildReadinessGroups(visibleReadiness) : [];
   const visiblePriorityIssues = visibleReadiness ? buildVisiblePriorityIssues(visibleReadiness) : [];
-  const memberSummaryMap = visibleTask ? buildTaskMemberSummaryMap(visibleTask.member_summaries) : new Map();
   const isDraftEditable = visibleTask?.status === "draft";
   const selectedAdministratorOptions = formState
     ? buildTaskAdministratorSearchOptions(formState.administratorIds, administratorOptions)
+    : [];
+  const selectedMemberOptions = formState
+    ? formState.memberIds.map((memberId) => (
+        memberOptions.find((option) => option.actor_id === memberId)
+        ?? (() => {
+          const summary = visibleTask?.member_summaries?.find((item) => item.member_id === memberId);
+          return summary
+            ? {
+                actor_id: summary.member_id,
+                username: summary.username ?? summary.member_id,
+                display_name: summary.display_name ?? summary.member_id,
+                student_id: summary.student_id,
+              }
+            : null;
+        })()
+        ?? {
+          actor_id: memberId,
+          username: memberId,
+          display_name: memberId,
+          student_id: null,
+        }
+      ))
+    : [];
+  const visibleMemberOptions = formState
+    ? memberOptions.filter((option) => !formState.memberIds.includes(option.actor_id))
     : [];
   const visibleAdministratorOptions = formState
     ? administratorOptions.filter((option) => !formState.administratorIds.includes(option.actor_id))
@@ -522,16 +557,22 @@ export function AdminTaskDetailPage() {
     updateField("feeCategories", nextCategories);
   }
 
-  function commitMemberInput() {
+  function addMember(member: UserSearchSummary) {
+    if (!formState || formState.memberIds.includes(member.actor_id)) {
+      return;
+    }
+    updateField("memberIds", [...formState.memberIds, member.actor_id]);
+    setMemberInputValue("");
+  }
+
+  function removeMember(memberId: string) {
     if (!formState) {
       return;
     }
-    const normalized = memberInputValue.trim();
-    if (normalized.length === 0) {
-      return;
-    }
-    updateField("memberIds", [...formState.memberIds, normalized]);
-    setMemberInputValue("");
+    updateField(
+      "memberIds",
+      formState.memberIds.filter((currentMemberId) => currentMemberId !== memberId),
+    );
   }
 
   function addAdministrator(administrator: UserSearchSummary) {
@@ -584,6 +625,41 @@ export function AdminTaskDetailPage() {
         .finally(() => {
           setIsSearchingAdministrators(false);
           administratorSearchTimerRef.current = null;
+        });
+    }, 250);
+  }
+
+  function handleMemberKeywordChange(value: string) {
+    setMemberInputValue(value);
+    const keyword = value.trim();
+    if (memberSearchTimerRef.current !== null) {
+      window.clearTimeout(memberSearchTimerRef.current);
+      memberSearchTimerRef.current = null;
+    }
+
+    if (keyword.length === 0) {
+      setMemberOptions([]);
+      setMemberSearchError(null);
+      setIsSearchingMembers(false);
+      return;
+    }
+
+    setIsSearchingMembers(true);
+    setMemberSearchError(null);
+    memberSearchTimerRef.current = window.setTimeout(() => {
+      void trmsApi.searchTaskMemberCandidates(keyword, 10)
+        .then((response) => {
+          startTransition(() => {
+            setMemberOptions(response.items);
+          });
+        })
+        .catch((error) => {
+          setMemberOptions([]);
+          setMemberSearchError(error);
+        })
+        .finally(() => {
+          setIsSearchingMembers(false);
+          memberSearchTimerRef.current = null;
         });
     }, 250);
   }
@@ -1080,55 +1156,47 @@ export function AdminTaskDetailPage() {
                 </div>
 
                 <Stack spacing={3}>
-                  <Autocomplete
-                    multiple
-                    freeSolo
-                    options={[]}
-                    value={formState.memberIds}
-                    inputValue={memberInputValue}
-                    readOnly={!isDraftEditable}
-                    onInputChange={(_event, value, reason) => {
-                      if (reason === "reset") {
-                        setMemberInputValue("");
-                        return;
-                      }
-                      setMemberInputValue(value);
-                    }}
-                    onChange={(_event, value) => {
-                      updateField(
-                        "memberIds",
-                        value
-                          .map((memberId) => memberId.trim())
-                          .filter((memberId) => memberId.length > 0),
-                      );
-                    }}
-                    onKeyDown={(event) => {
-                      if ((event.key === "Enter" || event.key === ",") && memberInputValue.trim().length > 0) {
-                        event.preventDefault();
-                        commitMemberInput();
-                      }
-                    }}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="成员名单"
-                        placeholder="输入成员姓名或学号后按回车添加"
-                        error={Boolean(validationErrors.memberIds)}
-                        helperText={validationErrors.memberIds ?? "当前阶段请填写成员姓名或学号字符串，不要填写内部数据库 ID。"}
-                      />
-                    )}
+                  <UserSearchCandidatePicker
+                    label="成员名单搜索"
+                    value={memberInputValue}
+                    onChange={handleMemberKeywordChange}
+                    placeholder="输入成员姓名、用户名或学号检索"
+                    error={Boolean(validationErrors.memberIds)}
+                    helperText={
+                      validationErrors.memberIds
+                      ?? (
+                        isSearchingMembers
+                          ? "正在检索成员..."
+                          : "输入后会实时向后端检索候选成员。"
+                      )
+                    }
+                    disabled={!isDraftEditable}
+                    showOptions={memberInputValue.trim().length > 0 && isDraftEditable}
+                    options={visibleMemberOptions.map((option) => ({
+                      key: option.actor_id,
+                      label: formatUserSearchSummary(option),
+                      onSelect: () => {
+                        addMember(option);
+                      },
+                    }))}
+                    listAriaLabel="成员候选列表"
+                    searchErrorText={memberSearchError ? "成员检索失败，请稍后重试。" : null}
+                    emptyText={!isSearchingMembers ? "没有匹配的成员。" : ""}
                   />
 
-                  <ul className="token-list" aria-label="任务成员名单">
-                    {formState.memberIds.map((memberId) => (
-                      <MetadataChip
-                        key={memberId}
-                        component="li"
-                        className="token-chip"
-                        label={formatTaskMemberLabel(memberId, memberSummaryMap)}
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="任务成员名单">
+                    {selectedMemberOptions.map((member) => (
+                      <Chip
+                        key={member.actor_id}
+                        label={formatUserSearchSummary(member)}
+                        onDelete={isDraftEditable
+                          ? () => {
+                              removeMember(member.actor_id);
+                            }
+                          : undefined}
                       />
                     ))}
-                  </ul>
+                  </Stack>
 
                   <Stack spacing={0.75}>
                     <TextField

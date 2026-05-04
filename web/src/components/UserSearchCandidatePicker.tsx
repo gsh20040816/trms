@@ -21,6 +21,7 @@ type UserSearchCandidatePickerProps = {
   listAriaLabel: string;
   searchErrorText: string | null;
   emptyText: string;
+  disabled?: boolean;
 };
 
 export function UserSearchCandidatePicker({
@@ -35,6 +36,7 @@ export function UserSearchCandidatePicker({
   listAriaLabel,
   searchErrorText,
   emptyText,
+  disabled = false,
 }: UserSearchCandidatePickerProps) {
   return (
     <Stack spacing={0.75}>
@@ -47,6 +49,7 @@ export function UserSearchCandidatePicker({
         placeholder={placeholder}
         helperText={helperText}
         error={error}
+        disabled={disabled}
         fullWidth
       />
 

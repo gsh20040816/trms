@@ -380,7 +380,7 @@ describe("admin task detail page", () => {
           competition_end_date: "2026-08-03",
           deadline: "2026-08-10T10:00:00.000Z",
           email_submission_key: "updated-mail-key",
-          member_ids: ["2250001", "2250002"],
+          member_ids: ["2250001", "2250002", "member-actor-3"],
           administrator_id: "admin-1",
           administrator_ids: ["admin-1", "admin-2"],
           fee_categories: ["registration", "hotel"],
@@ -396,7 +396,12 @@ describe("admin task detail page", () => {
           competition_end_date: "2026-08-03",
           deadline: "2026-08-10T10:00:00.000Z",
           email_submission_key: "updated-mail-key",
-          member_ids: ["2250001", "2250002"],
+          member_ids: ["2250001", "2250002", "member-actor-3"],
+          member_summaries: [
+            { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+            { member_id: "2250002", username: "member2", display_name: "李四", student_id: "2250002" },
+            { member_id: "member-actor-3", username: "member3", display_name: "王五", student_id: "2250003" },
+          ],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
           administrator_ids: ["admin-1", "admin-2"],
@@ -439,6 +444,10 @@ describe("admin task detail page", () => {
           deadline: "2026-08-10T18:00:00+08:00",
           email_submission_key: "draft-mail-key",
           member_ids: ["2250001", "2250002"],
+          member_summaries: [
+            { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+            { member_id: "2250002", username: "member2", display_name: "李四", student_id: "2250002" },
+          ],
           fee_categories: ["registration", "hotel"],
           administrator_id: "admin-1",
           administrator_ids: ["admin-1"],
@@ -451,12 +460,36 @@ describe("admin task detail page", () => {
         }));
       }
 
+      if (url === "/api/tasks/search/member-candidates?keyword=%E7%8E%8B&limit=10") {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              actor_id: "member-actor-3",
+              username: "member3",
+              display_name: "王五",
+              student_id: "2250003",
+            },
+          ],
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in detail edit test: ${url}`);
     });
 
     renderAdminTaskDetailRoute("TASK-DRAFT-EDIT");
 
     expect(await screen.findByDisplayValue("待编辑任务")).toBeInTheDocument();
+    expect(screen.getByText("输入后会实时向后端检索候选成员。")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("成员名单搜索"), {
+      target: { value: "王" },
+    });
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 260);
+      });
+    });
+    fireEvent.click(await screen.findByText("王五 / member3 / 2250003"));
+    expect(screen.getByLabelText("任务成员名单")).toHaveTextContent("王五 / member3 / 2250003");
     fireEvent.change(screen.getByLabelText("管理员搜索"), {
       target: { value: "李" },
     });

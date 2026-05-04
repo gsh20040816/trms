@@ -1,5 +1,41 @@
 # WORKLOG
 
+## 2026-05-04 14:54 - Fix live member search when editing draft task members
+
+### 完成内容
+- 已修复管理员编辑已有草稿任务成员时没有实时搜索成员的问题：
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)
+  - 任务详情页的成员编辑从本地 `Autocomplete freeSolo` 改为复用 `UserSearchCandidatePicker`；
+  - 输入成员姓名、用户名或学号时，会调用现有 `/api/tasks/search/member-candidates` 查询候选成员；
+  - 点击候选成员会把其 `actor_id` 写入任务成员列表；
+  - 已选成员用 chip 展示，草稿状态下仍可删除。
+- 已为候选搜索组件补充禁用态：
+  - [web/src/components/UserSearchCandidatePicker.tsx](/home/gsh/workspace/TRMS/web/src/components/UserSearchCandidatePicker.tsx)
+  - 非草稿任务仍保持只读，不会误开放成员搜索编辑。
+- 已补回归测试：
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+
+### 根因
+- 创建任务页已经使用后端成员候选搜索接口；
+- 任务详情页编辑成员名单仍停留在本地 `Autocomplete`，`options=[]`，只能输入字符串，无法实时检索已有成员；
+- 同时部分旧任务响应或测试数据没有 `member_summaries`，新增展示映射时需要兼容该字段缺失。
+
+### 风险与影响面
+- 本轮只改管理员任务详情页的草稿编辑交互，不改变后端任务成员保存语义。
+- 选择候选成员时继续写入 `actor_id`，与创建任务页保持一致。
+- 非草稿任务成员配置仍禁用编辑。
+
+### 验证结果
+- 已运行定向前端测试：
+  - `npm test -- --run src/app/admin-task-detail.test.tsx src/app/admin-task-create.test.tsx`
+  - `12 passed`
+- 已运行前端 lint：
+  - `npm run lint`
+  - 无新增 error；仍有 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - 按本轮前端改动范围执行，前端 `30 passed / 133 tests passed`，构建和 `git diff --check` 通过。
+
 ## 2026-05-04 14:41 - Add batch paper invoice creation and receipt confirmation
 
 ### 完成内容
