@@ -247,6 +247,31 @@ def test_load_runtime_config_reads_email_inbox_settings_and_redacts_password():
     assert safe_log_fields["email_inbox"]["password_configured"] is True
 
 
+def test_load_runtime_config_derives_public_email_submission_address_from_imap_username():
+    config = load_runtime_config(
+        env={
+            "TRMS_IMAP_HOST": "imap.example.edu",
+            "TRMS_IMAP_PORT": "993",
+            "TRMS_IMAP_USERNAME": "TRMS@tongji.edu.cn",
+            "TRMS_IMAP_PASSWORD": "imap-secret",
+        }
+    )
+
+    assert config.submission_guide.email_submission_address == "trms@tongji.edu.cn"
+
+
+def test_load_runtime_config_reads_public_submission_guide_settings():
+    config = load_runtime_config(
+        env={
+            "TRMS_PUBLIC_EMAIL_SUBMISSION_ADDRESS": " Submit@tongji.edu.cn ",
+            "TRMS_TELEGRAM_BOT_URL": " https://t.me/trms_bot/ ",
+        }
+    )
+
+    assert config.submission_guide.email_submission_address == "submit@tongji.edu.cn"
+    assert config.submission_guide.telegram_bot_url == "https://t.me/trms_bot"
+
+
 def test_load_runtime_config_requires_complete_email_inbox_settings():
     with pytest.raises(RuntimeConfigError) as exc_info:
         load_runtime_config(

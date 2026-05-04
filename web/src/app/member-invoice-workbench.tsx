@@ -12,6 +12,7 @@ import Typography from "@mui/material/Typography";
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
 import { FileDropZone } from "../components/FileDropZone";
 import { InvoiceSummaryRow } from "../components/invoice-summary-row";
+import { TaskSubmissionGuide } from "../components/task-submission-guide";
 import { ApiError } from "../lib/api/client";
 import {
   EmptyState,
@@ -38,6 +39,7 @@ import type {
   RecognitionTaskRecord,
   RecognitionTaskStatus,
   ReimbursementTask,
+  SubmissionGuideConfig,
   TaskMemberWorkbenchItem as TaskMemberWorkbenchSummaryItem,
   TaskMemberWorkbenchQueueGroup,
   TaskMemberMaterialStatusItem,
@@ -1279,6 +1281,7 @@ export function MemberInvoiceWorkbenchPage() {
   const [runningInvoiceBatchAction, setRunningInvoiceBatchAction] = useState<InvoiceBatchAction | null>(null);
   const [expandedProblemInvoiceGroupKeys, setExpandedProblemInvoiceGroupKeys] = useState<string[]>([]);
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
+  const [submissionGuideConfig, setSubmissionGuideConfig] = useState<SubmissionGuideConfig | null>(null);
 
   function resetTaskScopedUiState() {
     setUploadValidationErrors({});
@@ -1300,12 +1303,30 @@ export function MemberInvoiceWorkbenchPage() {
   useEffect(() => {
     let cancelled = false;
 
+    async function loadSubmissionGuideConfig() {
+      if (!session || session.role !== "member") {
+        return;
+      }
+
+      try {
+        const config = await trmsApi.getSubmissionGuideConfig();
+        if (!cancelled) {
+          setSubmissionGuideConfig(config);
+        }
+      } catch {
+        if (!cancelled) {
+          setSubmissionGuideConfig(null);
+        }
+      }
+    }
+
     async function loadVisibleTasks() {
       if (!session || session.role !== "member") {
         return;
       }
 
       setTaskState({ status: "loading" });
+      setSubmissionGuideConfig(null);
 
       try {
         const allTasks = await trmsApi.listTasks();
@@ -1332,6 +1353,7 @@ export function MemberInvoiceWorkbenchPage() {
       }
     }
 
+    void loadSubmissionGuideConfig();
     void loadVisibleTasks();
 
     return () => {
@@ -2123,6 +2145,13 @@ export function MemberInvoiceWorkbenchPage() {
               </dl>
                 );
               })()
+            ) : null}
+            {selectedTask ? (
+              <TaskSubmissionGuide
+                task={selectedTask}
+                guideConfig={submissionGuideConfig}
+                webUploadHref="#member-workbench-upload"
+              />
             ) : null}
           </div>
         </SectionCard>

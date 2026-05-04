@@ -149,6 +149,13 @@ describe("admin task detail page", () => {
         return Promise.resolve(jsonResponse(buildReadinessResponse()));
       }
 
+      if (url === "/api/system/submission-guide") {
+        return Promise.resolve(jsonResponse({
+          email_submission_address: "submit@example.edu",
+          telegram_bot_url: "https://t.me/trms_bot",
+        }));
+      }
+
       throw new Error(`Unhandled fetch URL in detail test: ${url}`);
     });
 
@@ -160,7 +167,12 @@ describe("admin task detail page", () => {
     expect(screen.queryByText("报销人信息")).not.toBeInTheDocument();
     expect(screen.getByText("同济大学")).toBeInTheDocument();
     expect(screen.getByText("91310000TEST00001")).toBeInTheDocument();
-    expect(screen.getByText("alpha-mail-key")).toBeInTheDocument();
+    expect(screen.getAllByText("alpha-mail-key")).toHaveLength(2);
+    expect(await screen.findByRole("region", { name: "材料提交说明" })).toHaveTextContent("网页");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("<alpha-mail-key>");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("submit@example.edu");
+    expect(screen.getByRole("link", { name: "Telegram Bot" })).toHaveAttribute("href", "https://t.me/trms_bot");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("/task alpha-mail-key");
     expect(screen.getByText("2 名管理员")).toBeInTheDocument();
     expect(screen.getByLabelText("任务管理员列表")).toHaveTextContent("admin-1");
     expect(screen.getByLabelText("任务管理员列表")).toHaveTextContent("admin-2");

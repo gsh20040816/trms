@@ -219,6 +219,38 @@ class TelegramBotConfig(BaseModel):
         )
 
 
+class SubmissionGuideConfig(BaseModel):
+    email_submission_address: str | None = None
+    telegram_bot_url: str | None = None
+
+    @field_validator("email_submission_address", mode="before")
+    @classmethod
+    def validate_email_submission_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        return _normalize_email_address(
+            normalized,
+            field_name="submission_guide.email_submission_address",
+        )
+
+    @field_validator("telegram_bot_url", mode="before")
+    @classmethod
+    def validate_telegram_bot_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        return _normalize_http_url(
+            normalized,
+            field_name="submission_guide.telegram_bot_url",
+            allow_path=True,
+        )
+
+
 class OutboundEmailConfig(BaseModel):
     host: str
     port: int = Field(ge=1, le=65535)
@@ -459,6 +491,7 @@ class RuntimeConfig(BaseModel):
     api_port: int = Field(ge=1, le=65535)
     async_jobs: AsyncJobConfig
     auth: AuthConfig
+    submission_guide: SubmissionGuideConfig = Field(default_factory=SubmissionGuideConfig)
     telegram_bot: TelegramBotConfig | None = None
     outbound_email: OutboundEmailConfig | None = None
     email_inbox: EmailInboxConfig | None = None
@@ -559,6 +592,7 @@ class RuntimeConfig(BaseModel):
                     "worker_concurrency": self.async_jobs.worker_concurrency,
                 },
                 "auth": self.auth.to_safe_log_fields(),
+                "submission_guide": self.submission_guide.model_dump(),
                 "telegram_bot": (
                     self.telegram_bot.to_safe_log_fields()
                     if self.telegram_bot is not None
@@ -619,6 +653,8 @@ def load_runtime_config(
     auth_email_inbound_token: str | None = None,
     telegram_bot_token: str | None = None,
     telegram_webhook_secret: str | None = None,
+    public_email_submission_address: str | None = None,
+    telegram_bot_url: str | None = None,
     imap_host: str | None = None,
     imap_port: str | int | None = None,
     imap_username: str | None = None,
@@ -807,6 +843,14 @@ def load_runtime_config(
         telegram_webhook_secret,
         environment_variables.get("TRMS_TELEGRAM_WEBHOOK_SECRET"),
     )
+    raw_public_email_submission_address = _resolve_value(
+        public_email_submission_address,
+        environment_variables.get("TRMS_PUBLIC_EMAIL_SUBMISSION_ADDRESS"),
+    )
+    raw_telegram_bot_url = _resolve_value(
+        telegram_bot_url,
+        environment_variables.get("TRMS_TELEGRAM_BOT_URL"),
+    )
     outbound_email_payload = _resolve_outbound_email_payload(
         explicit={
             "host": smtp_host,
@@ -834,6 +878,10 @@ def load_runtime_config(
         },
         env=environment_variables,
         issues=issues,
+    )
+    raw_public_email_submission_address = _resolve_public_email_submission_address(
+        explicit=raw_public_email_submission_address,
+        email_inbox_payload=email_inbox_payload,
     )
 
     if normalized_environment == "production" and str(raw_async_job_mode).strip() == "in_process":
@@ -902,6 +950,10 @@ def load_runtime_config(
                     "telegram_inbound_token": raw_auth_telegram_inbound_token,
                     "email_inbound_token": raw_auth_email_inbound_token,
                 },
+                "submission_guide": {
+                    "email_submission_address": raw_public_email_submission_address,
+                    "telegram_bot_url": raw_telegram_bot_url,
+                },
                 "telegram_bot": (
                     {
                         "token": raw_telegram_bot_token,
@@ -924,6 +976,24 @@ def _resolve_value(explicit_value: object | None, environment_value: object | No
     if explicit_value is not None:
         return explicit_value
     return environment_value
+
+
+def _resolve_public_email_submission_address(
+    *,
+    explicit: object | None,
+    email_inbox_payload: dict[str, object] | None,
+) -> object | None:
+    if explicit is not None:
+        return explicit
+    if email_inbox_payload is None:
+        return None
+    username = email_inbox_payload.get("username")
+    if not isinstance(username, str):
+        return None
+    try:
+        return _normalize_email_address(username, field_name="TRMS_IMAP_USERNAME")
+    except ValueError:
+        return None
 
 
 def _resolve_provider_payload(

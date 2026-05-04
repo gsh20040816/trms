@@ -460,6 +460,71 @@
   color: #35506f;
 }
 
+.task-submission-guide {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.task-submission-guide-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-submission-guide-header h3 {
+  margin: 2px 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.task-submission-guide code {
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.task-submission-guide-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-submission-guide-list li {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.task-submission-guide-list strong {
+  color: #0f172a;
+}
+
+.task-submission-guide-list a {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .task-submission-guide-header {
+    display: grid;
+  }
+
+  .task-submission-guide-list li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .member-upload-meta-grid {
   margin-top: 22px;
 }

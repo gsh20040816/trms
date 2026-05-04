@@ -147,6 +147,8 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_CORS_ALLOWED_ORIGINS`：逗号分隔的 `http(s)://host[:port]` 列表
 - `TRMS_PUBLIC_API_BASE_URL`
 - `TRMS_PUBLIC_WEB_BASE_URL`
+- `TRMS_PUBLIC_EMAIL_SUBMISSION_ADDRESS`：任务页展示的邮件提交收件地址；未配置时会尝试使用合法邮箱格式的 `TRMS_IMAP_USERNAME`
+- `TRMS_TELEGRAM_BOT_URL`：任务页展示的 Telegram Bot 入口，例如 `https://t.me/example_bot`
 - `TZ`：系统时区，默认 `UTC`；建议使用 IANA 时区名，例如 `Asia/Shanghai`
 - `TRMS_API_HOST`
 - `TRMS_API_PORT`
@@ -235,12 +237,19 @@ uv run python -m trms_backend --reload
 IMAP 收件轮询边界：
 
 - 当前 worker 已支持可选的 IMAP 邮箱轮询；仅当配置了 `TRMS_IMAP_HOST`、`TRMS_IMAP_PORT`、`TRMS_IMAP_USERNAME` 和 `TRMS_IMAP_PASSWORD` 后才会启用。
+- 成员任务页和管理员任务详情页会展示邮件提交说明；收件地址优先读取 `TRMS_PUBLIC_EMAIL_SUBMISSION_ADDRESS`，未配置时仅在 `TRMS_IMAP_USERNAME` 是合法邮箱地址的情况下使用它。
 - `TRMS_IMAP_MAILBOX` 默认 `INBOX`；`TRMS_IMAP_POLL_INTERVAL_SECONDS` 默认 `30`；`TRMS_IMAP_USE_SSL` 默认 `true`，`TRMS_IMAP_STARTTLS` 默认 `false`。
 - worker 会按邮箱 `UID` 去重记录已轮询邮件，并把原始 `.eml` 存入统一存储后端的 `_email_inbox/` 命名空间。
 - 发件人邮箱未绑定成员身份时，邮件会被显式记录为 `ignored_unbound_sender`，不会进入成员主链路。
 - 发件人已绑定但主题任务标识不存在或邮件格式不满足规范时，邮件会记录为稳定忽略原因，而不是静默丢弃。
 - 对于 `ready_for_import` 的收件记录，worker 会继续提取邮件附件并复用统一材料上传链路写入目标任务。
 - 若已配置 SMTP，系统会自动回复“已收到 / 部分成功 / 失败原因”这三类处理结果摘要。
+
+Telegram Bot 提交说明：
+
+- 成员任务页和管理员任务详情页会展示 Telegram 提交流程；Bot 入口来自 `TRMS_TELEGRAM_BOT_URL`。
+- 成员先在 Bot 内发送 `/bind` 完成账号绑定，再发送 `/task <任务提交标识>` 切换当前任务；之后可直接向 Bot 发送文件，系统会复用网页上传主链路识别。
+- `TRMS_TELEGRAM_BOT_TOKEN` 只用于后端连接 Telegram，不会返回前端；因此 Bot 展示链接必须通过 `TRMS_TELEGRAM_BOT_URL` 显式配置。
 
 生产环境不会静默回退到开发默认值；当 `TRMS_ENV=production` 时，以上变量都必须显式提供，否则服务会在启动时直接报错。启动参数 `--host`、`--port` 可覆盖对应环境变量，例如：
 

@@ -43,6 +43,7 @@ import type {
   ReimbursementTask,
   RoleSwitchPayload,
   SystemDashboard,
+  SubmissionGuideConfig,
   SystemAiProviderConfigPayload,
   SystemAiProviderConfigSummary,
   SystemUserRoleSummary,
@@ -242,6 +243,10 @@ export const trmsApi = {
 
   getSystemDashboard() {
     return apiClient.request<SystemDashboard>("/system/dashboard");
+  },
+
+  getSubmissionGuideConfig() {
+    return apiClient.request<SubmissionGuideConfig>("/system/submission-guide");
   },
 
   updateGlobalInvoiceConfig(payload: GlobalInvoiceConfig) {

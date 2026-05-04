@@ -54,6 +54,8 @@ const task = {
   competition_start_date: "2026-05-01",
   competition_end_date: "2026-05-03",
   deadline: "2026-05-10T12:00:00+08:00",
+  email_submission_key: "icpc-wuhan",
+  submission_key: "icpc-wuhan",
   member_ids: ["2250001", "2250002"],
   fee_categories: ["railway", "hotel", "registration"],
   administrator_id: "admin-1",
@@ -220,6 +222,12 @@ function mockCommonFetch(summary = buildWorkbenchSummary()) {
     if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
       return Promise.resolve(jsonResponse(summary));
     }
+    if (url === "/api/system/submission-guide" && method === "GET") {
+      return Promise.resolve(jsonResponse({
+        email_submission_address: "submit@example.edu",
+        telegram_bot_url: "https://t.me/trms_bot",
+      }));
+    }
     if (url === "/api/tasks/TASK-OPEN/paper-invoices" && method === "POST") {
       return Promise.resolve(jsonResponse({
         invoice: {
@@ -283,6 +291,11 @@ describe("MemberInvoiceWorkbenchPage", () => {
     const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
 
     expect(await screen.findByRole("heading", { name: "比赛报销项目" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "材料提交说明" })).toHaveTextContent("网页");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("<icpc-wuhan>");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("submit@example.edu");
+    expect(screen.getByRole("link", { name: "Telegram Bot" })).toHaveAttribute("href", "https://t.me/trms_bot");
+    expect(screen.getByRole("region", { name: "材料提交说明" })).toHaveTextContent("/task icpc-wuhan");
     expect(screen.getByRole("complementary", { name: "用户工作台分类" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /工作状态/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /上传页面/ })).toBeInTheDocument();

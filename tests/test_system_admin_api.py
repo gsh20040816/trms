@@ -112,6 +112,35 @@ def test_system_admin_dashboard_returns_real_config_and_runtime_summary(tmp_path
     }
 
 
+def test_authenticated_member_can_read_submission_guide_config(tmp_path):
+    runtime_config = load_runtime_config(
+        env={
+            "DATABASE_URL": f"sqlite:///{tmp_path}/test.db",
+            "TRMS_PUBLIC_API_BASE_URL": "http://127.0.0.1:9876/api",
+            "TRMS_PUBLIC_EMAIL_SUBMISSION_ADDRESS": "submit@example.edu",
+            "TRMS_TELEGRAM_BOT_URL": "https://t.me/trms_bot",
+        }
+    )
+    client = TestClient(create_app(runtime_config=runtime_config))
+    headers = auth_headers(
+        register_and_get_token(
+            client,
+            username="member1",
+            role="member",
+            actor_id="2250001",
+            member_code="2250001",
+        )
+    )
+
+    response = client.get("/api/system/submission-guide", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "email_submission_address": "submit@example.edu",
+        "telegram_bot_url": "https://t.me/trms_bot",
+    }
+
+
 def test_system_admin_can_update_registration_policy(tmp_path):
     client = make_client(tmp_path)
 

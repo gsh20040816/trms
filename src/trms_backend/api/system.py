@@ -57,6 +57,11 @@ class SystemDashboardResponse(BaseModel):
     user_counts: SystemUserCountSummary
 
 
+class SubmissionGuideConfigResponse(BaseModel):
+    email_submission_address: str | None = None
+    telegram_bot_url: str | None = None
+
+
 class SystemUserRoleSummary(BaseModel):
     id: str
     actor_id: str
@@ -157,6 +162,15 @@ def build_system_router(
     ) -> SystemDashboardResponse:
         ensure_system_admin(identity)
         return build_dashboard_response()
+
+    @router.get("/submission-guide")
+    def get_submission_guide_config(
+        identity: Annotated[RequestIdentity, Depends(authenticated_request_identity)],
+    ) -> SubmissionGuideConfigResponse:
+        return SubmissionGuideConfigResponse(
+            email_submission_address=runtime_config.submission_guide.email_submission_address,
+            telegram_bot_url=runtime_config.submission_guide.telegram_bot_url,
+        )
 
     @router.put("/global-invoice-config")
     def update_global_invoice_config(

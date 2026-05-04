@@ -13,6 +13,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { ApiErrorNotice } from "../components/ApiErrorNotice";
+import { TaskSubmissionGuide } from "../components/task-submission-guide";
 import { useConfirmDialog } from "../components/use-confirm-dialog";
 import { useSnackbar } from "../components/use-snackbar";
 import { MetadataChip, PageHeader, StatusBadge, SurfaceCard } from "../components/dashboard";
@@ -20,6 +21,7 @@ import { trmsApi } from "../lib/api/trms";
 import type {
   ExpenseType,
   ReimbursementTask,
+  SubmissionGuideConfig,
   TaskReadinessIssue,
   TaskReadinessIssueKind,
   TaskReadinessSummary,
@@ -368,6 +370,7 @@ export function AdminTaskDetailPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeletingTask, setIsDeletingTask] = useState(false);
+  const [submissionGuideConfig, setSubmissionGuideConfig] = useState<SubmissionGuideConfig | null>(null);
   const administratorSearchTimerRef = useRef<number | null>(null);
 
   useEffect(() => (
@@ -381,12 +384,26 @@ export function AdminTaskDetailPage() {
   useEffect(() => {
     let cancelled = false;
 
+    async function loadSubmissionGuideConfig() {
+      try {
+        const config = await trmsApi.getSubmissionGuideConfig();
+        if (!cancelled) {
+          setSubmissionGuideConfig(config);
+        }
+      } catch {
+        if (!cancelled) {
+          setSubmissionGuideConfig(null);
+        }
+      }
+    }
+
     async function loadTask() {
       if (!session || session.role !== "admin" || !taskId) {
         return;
       }
 
       setState({ status: "loading" });
+      setSubmissionGuideConfig(null);
       setSubmitError(null);
       setStatusUpdateError(null);
       setSaveNotice(null);
@@ -421,6 +438,7 @@ export function AdminTaskDetailPage() {
       }
     }
 
+    void loadSubmissionGuideConfig();
     void loadTask();
 
     return () => {
@@ -812,6 +830,10 @@ export function AdminTaskDetailPage() {
                 </Stack>
               </div>
             </div>
+            <TaskSubmissionGuide
+              task={visibleTask}
+              guideConfig={submissionGuideConfig}
+            />
           </SurfaceCard>
 
           {visibleReadiness ? (

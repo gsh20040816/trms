@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-05-04 14:09 - Add task page submission guide for web, email and Telegram
+
+### 完成内容
+- 已在任务页补充简短材料提交说明：
+  - [web/src/components/task-submission-guide.tsx](/home/gsh/workspace/TRMS/web/src/components/task-submission-guide.tsx)
+  - [web/src/app/admin-task-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.tsx)
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+- 说明文案现在基于当前任务 `submission_key` 生成：
+  - 网页：提示在当前任务页直接上传材料；
+  - 邮件：提示主题必须以 `<submission_key>` 开头，发送到配置的收件地址，并说明 `.eml` 邮件包附件会导入其中真实附件；
+  - Telegram：提示打开配置的 Bot，先 `/bind` 绑定，再 `/task <submission_key>` 切换任务，之后直接发送文件识别。
+- 已新增非敏感运行配置和认证后可读接口：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)
+  - [src/trms_backend/api/system.py](/home/gsh/workspace/TRMS/src/trms_backend/api/system.py)
+  - `TRMS_PUBLIC_EMAIL_SUBMISSION_ADDRESS` 用于任务页展示邮件提交收件地址；
+  - `TRMS_TELEGRAM_BOT_URL` 用于任务页展示 Telegram Bot 入口；
+  - 未显式配置邮件提交地址时，若 `TRMS_IMAP_USERNAME` 是合法邮箱地址，会作为展示地址。
+- 已同步配置模板和说明：
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+- 已补回归测试：
+  - [tests/test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py)
+  - [tests/test_system_admin_api.py](/home/gsh/workspace/TRMS/tests/test_system_admin_api.py)
+  - [web/src/app/admin-task-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-task-detail.test.tsx)
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+
+### 根因
+- 任务详情此前只展示了任务提交标识，没有把“网页、邮件、Telegram”三条实际提交流程放在任务上下文里。
+- 邮件收件地址和 Telegram Bot 链接属于部署期公开入口，前端此前没有稳定数据来源；直接写死会导致不同环境展示错误入口。
+
+### 风险与影响面
+- 本轮新增的是非敏感公开说明配置，不返回 Bot token、SMTP/IMAP 密码或入站鉴权 token。
+- `/api/system/submission-guide` 仅要求已登录用户，用于成员和管理员任务页展示提交入口；它不授予任何提交权限，实际提交仍走各渠道既有绑定和任务成员权限校验。
+- 若生产环境未配置 `TRMS_TELEGRAM_BOT_URL`，页面会明确显示 Telegram 入口未配置；若未配置公开邮件地址且 IMAP 用户名不是邮箱，页面会明确显示邮件入口未配置。
+
+### 验证结果
+- 已运行定向后端测试：
+  - `uv run pytest tests/test_runtime_config.py tests/test_system_admin_api.py`
+  - `40 passed`
+- 已运行定向前端测试：
+  - `npm test -- --run src/app/admin-task-detail.test.tsx src/app/member-invoice-workbench.test.tsx`
+  - `18 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - `637 passed`，前端 `30 passed / 131 tests passed`，构建、Compose 配置检查和 `git diff --check` 通过。
+- `npm run lint` 仍报告 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
 ## 2026-05-04 13:55 - Fix task member summary lookup when task member_ids use actor_id
 
 ### 完成内容

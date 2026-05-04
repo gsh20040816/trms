@@ -157,6 +157,11 @@ export type SystemDashboard = {
   user_counts: SystemUserCountSummary;
 };
 
+export type SubmissionGuideConfig = {
+  email_submission_address: string | null;
+  telegram_bot_url: string | null;
+};
+
 export type RegisterPayload = {
   username: string;
   password: string;
