@@ -822,6 +822,16 @@ export function AdminReviewOverviewPage() {
   const visibleTask = state.status === "ready" && !isForeignTask ? state.task : null;
   const visibleSummary = state.status === "ready" && !isForeignTask ? state.reviewSummary : null;
   const visibleOverdueSummary = state.status === "ready" && !isForeignTask ? state.overdueSummary : null;
+  const pendingPaperReceiptInvoiceItems = useMemo(
+    () => (
+      visibleSummary
+        ? visibleSummary.invoices.filter(
+            (item) => item.invoice.is_paper_invoice && !item.invoice.paper_invoice_received,
+          )
+        : []
+    ),
+    [visibleSummary],
+  );
   const memberSummaryMap: Map<string, TaskMemberSummary> = visibleTask
     ? buildTaskMemberSummaryMap(visibleTask.member_summaries)
     : new Map<string, TaskMemberSummary>();
@@ -1102,6 +1112,32 @@ export function AdminReviewOverviewPage() {
     }
   }
 
+  async function handleConfirmPendingPaperReceipts() {
+    if (!session || pendingPaperReceiptInvoiceItems.length === 0) {
+      return;
+    }
+
+    setActionError(null);
+    setIsConfirmingPaperReceipt(true);
+    try {
+      const response = await trmsApi.confirmPaperInvoiceReceipts({
+        actor_id: session.actorId,
+        invoice_ids: pendingPaperReceiptInvoiceItems.map((item) => item.invoice.id),
+      });
+      const confirmedCount = response.items?.length ?? 1;
+      setActionFeedback({
+        invoiceId: null,
+        kind: "paper_receipt",
+        message: `已批量确认 ${confirmedCount} 张纸质发票收票，相关校验已刷新。`,
+      });
+      setRefreshNonce((current) => current + 1);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setIsConfirmingPaperReceipt(false);
+    }
+  }
+
   async function handleSaveSplits(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session || !visibleTask || !selectedActionInvoice || splitRows.length === 0) {
@@ -1305,6 +1341,30 @@ export function AdminReviewOverviewPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            ) : null}
+            {pendingPaperReceiptInvoiceItems.length > 0 ? (
+              <div className="admin-review-subsection">
+                <h4>待确认纸票</h4>
+                <p className="field-hint">
+                  当前有 {pendingPaperReceiptInvoiceItems.length} 张纸质发票尚未确认收票；确认后会逐张刷新纸票收票校验。
+                </p>
+                {actionError ? <ApiErrorNotice error={actionError} /> : null}
+                <div className="admin-form-footer">
+                  <Button
+                    type="button"
+                    variant="contained"
+                    disabled={isConfirmingPaperReceipt}
+                    onClick={() => {
+                      void handleConfirmPendingPaperReceipts();
+                    }}
+                  >
+                    {isConfirmingPaperReceipt ? "正在批量确认收票..." : `批量确认 ${pendingPaperReceiptInvoiceItems.length} 张纸票`}
+                  </Button>
+                </div>
+                {actionFeedback?.kind === "paper_receipt" ? (
+                  <p className="field-hint">{actionFeedback.message}</p>
+                ) : null}
               </div>
             ) : null}
           </SurfaceCard>

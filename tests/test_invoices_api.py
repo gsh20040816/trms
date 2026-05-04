@@ -451,6 +451,90 @@ def test_create_paper_invoice_generates_distinct_invoice_numbers_for_same_member
     assert first_invoice_number != second_invoice_number
 
 
+def test_member_can_create_multiple_same_paper_invoices_at_once(tmp_path):
+    client = make_client(tmp_path)
+    task = create_admin_task(client)
+    open_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert open_response.status_code == 200
+    member_token = register_and_get_token(
+        client,
+        username="paper-member-batch",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/paper-invoices",
+        json={
+            "expense_type": "railway",
+            "amount_cents": 8800,
+            "quantity": 3,
+        },
+        headers=auth_headers(member_token),
+    )
+
+    assert create_response.status_code == 201
+    body = create_response.json()
+    assert len(body["items"]) == 3
+    invoice_numbers = [item["invoice"]["invoice_number"] for item in body["items"]]
+    assert len(set(invoice_numbers)) == 3
+    assert {item["invoice"]["amount_cents"] for item in body["items"]} == {8800}
+    assert {item["invoice"]["expense_type"] for item in body["items"]} == {"railway"}
+    assert all(item["invoice"]["is_paper_invoice"] is True for item in body["items"])
+    assert body["invoice"]["id"] == body["items"][0]["invoice"]["id"]
+
+
+def test_admin_can_confirm_multiple_paper_invoice_receipts_at_once(tmp_path):
+    client = make_client(tmp_path)
+    task = create_admin_task(client)
+    open_response = client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    )
+    assert open_response.status_code == 200
+    member_token = register_and_get_token(
+        client,
+        username="paper-member-receipt-batch",
+        role="member",
+        actor_id="2250001",
+        member_code="2250001",
+    )
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/paper-invoices",
+        json={
+            "expense_type": "railway",
+            "amount_cents": 8800,
+            "quantity": 2,
+        },
+        headers=auth_headers(member_token),
+    )
+    assert create_response.status_code == 201
+    invoice_ids = [item["invoice"]["id"] for item in create_response.json()["items"]]
+
+    confirm_response = client.put(
+        "/api/invoices/paper-receipts",
+        json={"actor_id": "admin-1", "invoice_ids": invoice_ids},
+        headers=admin_auth_headers(client),
+    )
+
+    assert confirm_response.status_code == 200
+    body = confirm_response.json()
+    assert len(body["items"]) == 2
+    assert [item["invoice"]["id"] for item in body["items"]] == invoice_ids
+    assert all(item["invoice"]["paper_invoice_received"] is True for item in body["items"])
+    assert all(item["invoice"]["paper_invoice_received_by"] == "admin-1" for item in body["items"])
+    assert {
+        validation_by_code(item, "invoice_paper_receipt_required")["status"]
+        for item in body["items"]
+    } == {"passed"}
+
+
 def test_task_administrator_can_record_invoice_for_member_material(tmp_path):
     client = make_client(tmp_path)
     task_id, material_id = create_material(client)

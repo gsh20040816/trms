@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -807,6 +807,170 @@ describe("AdminReviewOverviewPage", () => {
 
     expect(detailPanel.getByText("未识别金额")).toBeInTheDocument();
     expect(detailPanel.queryByText("未识别金额/待补录")).not.toBeInTheDocument();
+  });
+
+  it("allows administrators to batch confirm pending paper invoice receipts", async () => {
+    setMockSession("admin");
+
+    const task = {
+      id: "TASK-REVIEW",
+      status: "reviewing",
+      competition_name: "ICPC 纸票复核任务",
+      competition_location: "上海",
+      competition_start_date: "2026-05-01",
+      competition_end_date: "2026-05-03",
+      deadline: "2026-05-10T18:00:00+08:00",
+      member_ids: ["2250001"],
+      member_summaries: [
+        { member_id: "2250001", username: "member1", display_name: "张三", student_id: "2250001" },
+      ],
+      fee_categories: ["railway"],
+      administrator_id: "admin-1",
+      administrator_ids: ["admin-1"],
+      project_info: "ACM 竞赛项目",
+      reimburser_info: "张管理员",
+      invoice_title: "同济大学",
+      tax_number: "91310000TEST00001",
+      created_at: "2026-04-20T09:00:00+08:00",
+      updated_at: "2026-04-25T10:00:00+08:00",
+    };
+    const buildPaperMaterial = (index: number) => ({
+      id: `MAT-PAPER-${index}`,
+      status: "assigned",
+      task_id: "TASK-REVIEW",
+      submitter_id: "2250001",
+      task_id_hint: null,
+      submitter_id_hint: null,
+      channel: "web",
+      material_type: "invoice",
+      storage_key: `TASK-REVIEW/paper-${index}.txt`,
+      original_filename: `paper-invoice-PAPER-${index}.txt`,
+      content_type: "text/plain",
+      size_bytes: 128,
+      sha256: String(index).repeat(64),
+      duplicate_of: null,
+      claimed_by: null,
+      claimed_at: null,
+      created_at: "2026-04-28T09:00:00+08:00",
+    });
+    const buildPaperInvoiceItem = (index: number, received: boolean) => ({
+      invoice: {
+        id: `INV-PAPER-${index}`,
+        task_id: "TASK-REVIEW",
+        material_id: `MAT-PAPER-${index}`,
+        invoice_number: `PAPER-${index}`,
+        issue_date: null,
+        transaction_time: null,
+        buyer_name: "同济大学",
+        tax_number: "91310000TEST00001",
+        seller_name: null,
+        corporate_transfer_reference: null,
+        is_paper_invoice: true,
+        paper_invoice_received: received,
+        paper_invoice_received_at: received ? "2026-04-28T10:00:00+08:00" : null,
+        paper_invoice_received_by: received ? "admin-1" : null,
+        amount_cents: 8800,
+        expense_type: "railway",
+        member_submission_status: "submitted",
+        submitted_by_member_id: "2250001",
+        submitted_at: "2026-04-28T09:30:00+08:00",
+        created_at: "2026-04-28T09:00:00+08:00",
+        updated_at: "2026-04-28T09:00:00+08:00",
+      },
+      supporting_material_ids: [],
+      validations: [
+        {
+          id: `VAL-PAPER-${index}`,
+          rule_code: "invoice_paper_receipt_required",
+          target_type: "invoice",
+          target_id: `INV-PAPER-${index}`,
+          severity: "blocker",
+          status: received ? "passed" : "failed",
+          message: received ? "纸质发票已由管理员确认收到" : "纸质发票待管理员确认已收到纸票",
+          evidence: {},
+          created_at: "2026-04-28T09:05:00+08:00",
+        },
+      ],
+      splits: [],
+    });
+    const buildReviewSummary = (received: boolean) => ({
+      task_id: "TASK-REVIEW",
+      administrator_id: "admin-1",
+      counts: {
+        material_count: 2,
+        pending_assignment_material_count: 0,
+        invoice_count: 2,
+        validation_count: 2,
+        blocker_failed_validation_count: received ? 0 : 2,
+        split_count: 0,
+        confirmed_split_count: 0,
+        pending_confirmation_count: 0,
+        disputed_confirmation_count: 0,
+        missing_confirmation_count: 0,
+        pending_recognition_count: 0,
+        failed_recognition_count: 0,
+        needs_confirmation_recognition_count: 0,
+      },
+      materials: [
+        { material: buildPaperMaterial(1), latest_recognition: null, invoice_id: "INV-PAPER-1", supporting_invoice_ids: [] },
+        { material: buildPaperMaterial(2), latest_recognition: null, invoice_id: "INV-PAPER-2", supporting_invoice_ids: [] },
+      ],
+      pending_assignment_materials: [],
+      invoices: [
+        buildPaperInvoiceItem(1, received),
+        buildPaperInvoiceItem(2, received),
+      ],
+    });
+    let reviewSummary = buildReviewSummary(false);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+
+      if (url === "/api/tasks/TASK-REVIEW") {
+        return Promise.resolve(jsonResponse(task));
+      }
+      if (url === "/api/tasks/TASK-REVIEW/review-summary?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse(reviewSummary));
+      }
+      if (url === "/api/tasks/TASK-REVIEW/overdue-confirmations?actor_id=admin-1") {
+        return Promise.resolve(jsonResponse({
+          task_id: "TASK-REVIEW",
+          administrator_id: "admin-1",
+          confirmation_deadline: "2026-05-10T18:00:00+08:00",
+          is_overdue: false,
+          total_overdue_members: 0,
+          overdue_member_ids: [],
+        }));
+      }
+      if (url === "/api/invoices/paper-receipts" && init?.method === "PUT") {
+        reviewSummary = buildReviewSummary(true);
+        return Promise.resolve(jsonResponse({
+          ...reviewSummary.invoices[0],
+          items: reviewSummary.invoices,
+        }));
+      }
+
+      throw new Error(`Unhandled fetch URL in batch paper receipt test: ${url}`);
+    });
+
+    renderReviewRoute();
+
+    expect(await screen.findByRole("heading", { name: "待确认纸票" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "批量确认 2 张纸票" }));
+
+    await waitFor(() => {
+      const batchRequest = fetchSpy.mock.calls.find(([input, init]) => (
+        resolveRequestUrl(input) === "/api/invoices/paper-receipts" && init?.method === "PUT"
+      ));
+      expect(batchRequest).toBeDefined();
+      const requestBody = typeof batchRequest?.[1]?.body === "string" ? batchRequest[1].body : "";
+      expect(JSON.parse(requestBody)).toEqual({
+        actor_id: "admin-1",
+        invoice_ids: ["INV-PAPER-1", "INV-PAPER-2"],
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "批量确认 2 张纸票" })).not.toBeInTheDocument();
+    });
   });
 
   it("blocks member access through the existing protected admin route", async () => {

@@ -229,12 +229,16 @@ function mockCommonFetch(summary = buildWorkbenchSummary()) {
       }));
     }
     if (url === "/api/tasks/TASK-OPEN/paper-invoices" && method === "POST") {
-      return Promise.resolve(jsonResponse({
+      const requestBody = typeof init?.body === "string"
+        ? JSON.parse(init.body) as { quantity?: unknown }
+        : {};
+      const quantity = typeof requestBody.quantity === "number" ? requestBody.quantity : 1;
+      const items = Array.from({ length: quantity }, (_, index) => ({
         invoice: {
           ...invoice,
-          id: "INV-PAPER-001",
-          material_id: "MAT-PAPER-001",
-          invoice_number: "PAPER-001",
+          id: `INV-PAPER-${String(index + 1).padStart(3, "0")}`,
+          material_id: `MAT-PAPER-${String(index + 1).padStart(3, "0")}`,
+          invoice_number: `PAPER-${String(index + 1).padStart(3, "0")}`,
           expense_type: "registration",
           is_paper_invoice: true,
           paper_invoice_received: false,
@@ -243,10 +247,10 @@ function mockCommonFetch(summary = buildWorkbenchSummary()) {
         },
         validations: [
           {
-            id: "VAL-PAPER-001",
+            id: `VAL-PAPER-${String(index + 1).padStart(3, "0")}`,
             rule_code: "invoice_paper_receipt_required",
             target_type: "invoice",
-            target_id: "INV-PAPER-001",
+            target_id: `INV-PAPER-${String(index + 1).padStart(3, "0")}`,
             severity: "blocker",
             status: "failed",
             message: "纸质发票待管理员确认已收到纸票",
@@ -254,6 +258,10 @@ function mockCommonFetch(summary = buildWorkbenchSummary()) {
             created_at: "2026-04-28T11:00:00+08:00",
           },
         ],
+      }));
+      return Promise.resolve(jsonResponse({
+        ...items[0],
+        items,
       }));
     }
     if (url === "/api/tasks/TASK-OPEN/invoice-submissions" && method === "POST") {
@@ -822,6 +830,48 @@ describe("MemberInvoiceWorkbenchPage", () => {
       actor_id: "2250001",
       amount_cents: 8800,
       expense_type: "railway",
+      quantity: 1,
+    });
+  });
+
+  it("allows members to create multiple same paper invoices from the workbench", async () => {
+    const fetchSpy = mockCommonFetch(buildWorkbenchSummary({
+      items: [],
+      report: {
+        ...buildWorkbenchSummary().report,
+        materials: [],
+        counts: {
+          ...buildWorkbenchSummary().report.counts,
+          material_count: 0,
+        },
+      },
+    }));
+    const router = renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    expect(await screen.findByRole("heading", { name: "手动录入纸质发票" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("金额（元）"), { target: { value: "88.00" } });
+    fireEvent.change(screen.getByLabelText("张数"), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "新增纸质发票" }));
+
+    await waitFor(() => {
+      expect(fetchSpy.mock.calls.some(([input, init]) => (
+        resolveRequestUrl(input) === "/api/tasks/TASK-OPEN/paper-invoices"
+        && resolveRequestMethod(input, init) === "POST"
+      ))).toBe(true);
+    });
+    expect(router.state.location.pathname).toBe("/member/invoices/workbench");
+    const paperInvoiceRequest = fetchSpy.mock.calls.find(([input, init]) => (
+      resolveRequestUrl(input) === "/api/tasks/TASK-OPEN/paper-invoices"
+      && resolveRequestMethod(input, init) === "POST"
+    ));
+    expect(paperInvoiceRequest).toBeDefined();
+    const requestInit = paperInvoiceRequest?.[1];
+    const requestBody = typeof requestInit?.body === "string" ? requestInit.body : "";
+    expect(JSON.parse(requestBody)).toEqual({
+      actor_id: "2250001",
+      amount_cents: 8800,
+      expense_type: "railway",
+      quantity: 3,
     });
   });
 

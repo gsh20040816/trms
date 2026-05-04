@@ -469,10 +469,16 @@ export type PaperInvoiceCreateRequest = {
   actor_id: string;
   amount_cents: number;
   expense_type: ExpenseType;
+  quantity?: number;
 };
 
 export type PaperInvoiceReceiptConfirmRequest = {
   actor_id: string;
+};
+
+export type PaperInvoiceReceiptBatchConfirmRequest = {
+  actor_id: string;
+  invoice_ids: string[];
 };
 
 export type ValidationResult = {
@@ -490,6 +496,10 @@ export type ValidationResult = {
 export type ManualInvoiceEntryResponse = {
   invoice: InvoiceRecord;
   validations: ValidationResult[];
+};
+
+export type PaperInvoiceBatchEntryResponse = ManualInvoiceEntryResponse & {
+  items?: ManualInvoiceEntryResponse[];
 };
 
 export type ExpenseSplitItem = {

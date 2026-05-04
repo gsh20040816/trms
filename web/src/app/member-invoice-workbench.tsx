@@ -150,6 +150,7 @@ type WorkbenchUploadValidationErrors = Partial<Record<keyof WorkbenchUploadFormS
 type PaperInvoiceFormState = {
   amountYuan: string;
   expenseType: InvoiceRecord["expense_type"];
+  quantity: string;
 };
 
 type InvoiceBatchAction = "submit" | "withdraw";
@@ -273,6 +274,14 @@ function parseCurrencyInputToCents(value: string) {
   return Number(integerPart) * 100 + Number(`${decimalPart}00`.slice(0, 2));
 }
 
+function parsePaperInvoiceQuantity(value: string) {
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    return null;
+  }
+  return Number(normalized);
+}
+
 function buildInitialPaperInvoiceFormState(task: ReimbursementTask | null): PaperInvoiceFormState {
   const defaultExpenseType = task?.fee_categories.find(
     (value): value is InvoiceRecord["expense_type"] => (
@@ -287,6 +296,7 @@ function buildInitialPaperInvoiceFormState(task: ReimbursementTask | null): Pape
   return {
     amountYuan: "",
     expenseType: defaultExpenseType,
+    quantity: "1",
   };
 }
 
@@ -303,6 +313,10 @@ function validatePaperInvoiceForm(
   }
   if (!task.fee_categories.includes(formState.expenseType)) {
     return "请选择当前任务允许的费用类型。";
+  }
+  const quantity = parsePaperInvoiceQuantity(formState.quantity);
+  if (quantity === null || quantity < 1 || quantity > 50) {
+    return "请填写有效张数，范围为 1 到 50。";
   }
   return null;
 }
@@ -1908,6 +1922,11 @@ export function MemberInvoiceWorkbenchPage() {
       setPaperInvoiceError("请填写有效金额，格式示例为 123.45。");
       return;
     }
+    const quantity = parsePaperInvoiceQuantity(activePaperInvoiceFormState.quantity);
+    if (quantity === null || quantity < 1 || quantity > 50) {
+      setPaperInvoiceError("请填写有效张数，范围为 1 到 50。");
+      return;
+    }
 
     setPaperInvoiceError(null);
     setIsCreatingPaperInvoice(true);
@@ -1916,12 +1935,20 @@ export function MemberInvoiceWorkbenchPage() {
         actor_id: session.actorId,
         amount_cents: amountCents,
         expense_type: activePaperInvoiceFormState.expenseType,
+        quantity,
       });
+      const createdCount = response.items?.length ?? 1;
       setPaperInvoiceFormTaskId(selectedTask.id);
       setPaperInvoiceFormState(buildInitialPaperInvoiceFormState(selectedTask));
       setWorkbenchReloadVersion((current) => current + 1);
-      showSuccess("已新增纸质发票记录，等待管理员确认收票。");
-      void navigate(buildInvoiceDetailPath(selectedTask.id, response.invoice.id));
+      showSuccess(
+        createdCount > 1
+          ? `已新增 ${createdCount} 张纸质发票记录，等待管理员确认收票。`
+          : "已新增纸质发票记录，等待管理员确认收票。",
+      );
+      if (createdCount === 1) {
+        void navigate(buildInvoiceDetailPath(selectedTask.id, response.invoice.id));
+      }
     } catch (error) {
       const message = error instanceof ApiError ? error.summary.message : "纸质发票创建失败，请稍后重试。";
       setPaperInvoiceError(message);
@@ -2410,11 +2437,21 @@ export function MemberInvoiceWorkbenchPage() {
                           </MenuItem>
                         ))}
                       </TextField>
+                      <TextField
+                        label="张数"
+                        type="number"
+                        inputProps={{ min: 1, max: 50, step: 1 }}
+                        value={activePaperInvoiceFormState.quantity}
+                        onChange={(event) => {
+                          updatePaperInvoiceField("quantity", event.target.value);
+                        }}
+                        fullWidth
+                      />
                     </div>
                     {paperInvoiceError ? <p className="field-error field-error-block">{paperInvoiceError}</p> : null}
                     <div className="admin-form-footer member-paper-invoice-footer">
                       <p className="field-hint">
-                        录入后会自动生成“全额归属本人”的默认分摊；纸质票号占位和任务抬头税号由系统生成，后续仍可进入单票页调整。
+                        录入后每张纸票都会自动生成“全额归属本人”的默认分摊；纸质票号占位和任务抬头税号由系统生成，后续仍可进入单票页调整。
                       </p>
                       <Button
                         className="member-paper-invoice-submit"

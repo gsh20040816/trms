@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-05-04 14:41 - Add batch paper invoice creation and receipt confirmation
+
+### 完成内容
+- 已支持成员一次性新增多张相同纸质发票：
+  - [src/trms_backend/api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py)
+  - `POST /api/tasks/{task_id}/paper-invoices` 新增 `quantity`，默认 1，范围 1-50；
+  - 批量创建时，每张纸质发票都会生成独立发票号、占位材料、默认本人全额分摊和纸票收票校验；
+  - 原单张响应继续保留 `invoice` / `validations`，批量响应额外返回 `items`。
+- 已支持管理员一次性确认纸质发票收票：
+  - 新增 `PUT /api/invoices/paper-receipts`，接收 `invoice_ids`；
+  - 批量确认前逐张校验发票存在、确为纸质发票、当前操作者具备任务管理员权限；
+  - 确认后逐张刷新 `invoice_paper_receipt_required` 校验并记录审计。
+- 已接入前端：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)
+  - 成员纸质发票表单增加“张数”输入；
+  - 管理员复核总览展示待确认纸票数量，并提供批量确认按钮。
+- 已补回归测试：
+  - [tests/test_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_invoices_api.py)
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - [web/src/app/admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)
+
+### 根因
+- 旧纸质发票入口一次请求只能创建一张票；当成员有多张金额和费用类型相同的纸票时，需要重复录入。
+- 管理员侧旧收票确认也只能在单张发票上下文处理，批量纸票会造成重复点击和重复等待校验刷新。
+
+### 风险与影响面
+- 本轮不改变纸质发票的校验语义：管理员未确认收到纸票前，纸票仍阻塞任务进入可导出。
+- 单张创建和单张确认接口保持兼容；新增批量响应中的 `items` 只扩展数据，不删除原字段。
+- 批量确认采用先校验后写入，避免前几张已确认、后几张因权限或类型错误失败的部分更新。
+
+### 验证结果
+- 已运行定向后端测试：
+  - `uv run pytest tests/test_invoices_api.py -k 'paper_invoice'`
+  - `4 passed`
+- 已运行定向前端测试：
+  - `npm test -- --run src/app/member-invoice-workbench.test.tsx src/app/admin-review-overview.test.tsx`
+  - `18 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - `639 passed`，前端 `30 passed / 133 tests passed`，构建、迁移验证、Compose 配置检查和 `git diff --check` 通过。
+- `npm run lint` 仍报告 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
 ## 2026-05-04 14:18 - Clarify email submission requires bound sender address
 
 ### 完成内容
