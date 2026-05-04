@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import Box from "@mui/material/Box";
@@ -42,6 +42,7 @@ import type {
   SubmissionGuideConfig,
   TaskMemberWorkbenchItem as TaskMemberWorkbenchSummaryItem,
   TaskMemberWorkbenchQueueGroup,
+  TaskMemberWorkbenchSummary,
   TaskMemberMaterialStatusItem,
   TaskMemberStatusReport,
   TaskSharedInvoiceItem,
@@ -177,6 +178,16 @@ type UploadProcessingSnapshot = {
   transitioning: boolean;
   actionLabel: string | null;
   actionHref: string | null;
+};
+
+type PrefetchedWorkbenchResult =
+  | { status: "ready"; summary: TaskMemberWorkbenchSummary }
+  | { status: "error"; error: unknown };
+
+type PrefetchedWorkbenchRequest = {
+  taskId: string;
+  actorId: string;
+  promise: Promise<PrefetchedWorkbenchResult>;
 };
 
 const MATERIAL_FILE_ACCEPT = ".pdf,.zip,.jpg,.jpeg,.png,.webp";
@@ -1296,6 +1307,7 @@ export function MemberInvoiceWorkbenchPage() {
   const [expandedProblemInvoiceGroupKeys, setExpandedProblemInvoiceGroupKeys] = useState<string[]>([]);
   const [workbenchReloadVersion, setWorkbenchReloadVersion] = useState(0);
   const [submissionGuideConfig, setSubmissionGuideConfig] = useState<SubmissionGuideConfig | null>(null);
+  const prefetchedWorkbenchRef = useRef<PrefetchedWorkbenchRequest | null>(null);
 
   function resetTaskScopedUiState() {
     setUploadValidationErrors({});
@@ -1316,6 +1328,18 @@ export function MemberInvoiceWorkbenchPage() {
 
   useEffect(() => {
     let cancelled = false;
+
+    prefetchedWorkbenchRef.current = (
+      session && session.role === "member" && preferredTaskId
+        ? {
+          taskId: preferredTaskId,
+          actorId: session.actorId,
+          promise: trmsApi.getTaskMemberWorkbench(preferredTaskId, session.actorId)
+            .then((summary) => ({ status: "ready", summary }) satisfies PrefetchedWorkbenchResult)
+            .catch((error: unknown) => ({ status: "error", error }) satisfies PrefetchedWorkbenchResult),
+        }
+        : null
+    );
 
     async function loadSubmissionGuideConfig() {
       if (!session || session.role !== "member") {
@@ -1401,6 +1425,16 @@ export function MemberInvoiceWorkbenchPage() {
       });
     }
 
+    function applyLoadedWorkbenchSummary(task: ReimbursementTask, summary: TaskMemberWorkbenchSummary) {
+      applyLoadedWorkbenchState(
+        task,
+        summary.report,
+        summary.items.map(mapWorkbenchSummaryItem),
+        summary.pending_supporting_material_linkage_items,
+        summary.shared_invoices,
+      );
+    }
+
     async function loadWorkbenchLegacy(task: ReimbursementTask) {
       const [report, sharedInvoicesReport, pendingSupportingMaterialLinkageReport, invoicesResponse] = await Promise.all([
         trmsApi.getTaskMemberStatus(task.id, session!.actorId),
@@ -1459,15 +1493,42 @@ export function MemberInvoiceWorkbenchPage() {
     async function loadWorkbench(task: ReimbursementTask) {
       setWorkbenchState({ status: "loading", task });
 
+      const currentPrefetchedWorkbench = prefetchedWorkbenchRef.current;
+      const prefetchedWorkbench = (
+        workbenchReloadVersion === 0
+        && currentPrefetchedWorkbench?.taskId === task.id
+        && currentPrefetchedWorkbench.actorId === session!.actorId
+      )
+        ? currentPrefetchedWorkbench
+        : null;
+
+      if (prefetchedWorkbench) {
+        prefetchedWorkbenchRef.current = null;
+        const preloadResult = await prefetchedWorkbench.promise;
+
+        if (cancelled) {
+          return;
+        }
+
+        if (preloadResult.status === "ready") {
+          applyLoadedWorkbenchSummary(task, preloadResult.summary);
+          return;
+        }
+
+        try {
+          await loadWorkbenchLegacy(task);
+        } catch (legacyError) {
+          if (cancelled) {
+            return;
+          }
+          setWorkbenchState({ status: "error", task, error: legacyError ?? preloadResult.error });
+        }
+        return;
+      }
+
       try {
         const summary = await trmsApi.getTaskMemberWorkbench(task.id, session!.actorId);
-        applyLoadedWorkbenchState(
-          task,
-          summary.report,
-          summary.items.map(mapWorkbenchSummaryItem),
-          summary.pending_supporting_material_linkage_items,
-          summary.shared_invoices,
-        );
+        applyLoadedWorkbenchSummary(task, summary);
       } catch (error) {
         try {
           await loadWorkbenchLegacy(task);

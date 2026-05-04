@@ -34,6 +34,14 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+function createDeferredResponse() {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function renderRoute(entry = "/member/invoices/workbench?taskId=TASK-OPEN") {
   const router = createMemoryRouter(routes, {
     initialEntries: [entry],
@@ -292,6 +300,44 @@ describe("MemberInvoiceWorkbenchPage", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     clearMockSession();
+  });
+
+  it("starts the aggregate workbench request in parallel with task loading when taskId is present", async () => {
+    const requestedUrls: string[] = [];
+    const tasksDeferred = createDeferredResponse();
+    const workbenchDeferred = createDeferredResponse();
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+      const url = resolveRequestUrl(input);
+      const method = resolveRequestMethod(input, init);
+      requestedUrls.push(url);
+
+      if (url === "/api/tasks" && method === "GET") {
+        return tasksDeferred.promise;
+      }
+      if (url === "/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001" && method === "GET") {
+        return workbenchDeferred.promise;
+      }
+      if (url === "/api/system/submission-guide" && method === "GET") {
+        return Promise.resolve(jsonResponse({
+          email_submission_address: "submit@example.edu",
+          telegram_bot_url: "https://t.me/trms_bot",
+        }));
+      }
+      throw new Error(`Unhandled fetch request: ${method} ${url}`);
+    });
+
+    renderRoute("/member/invoices/workbench?taskId=TASK-OPEN#member-workbench-invoices");
+
+    await waitFor(() => {
+      expect(requestedUrls).toContain("/api/tasks");
+      expect(requestedUrls).toContain("/api/tasks/TASK-OPEN/member-workbench?actor_id=2250001");
+    });
+
+    tasksDeferred.resolve(jsonResponse([task]));
+    workbenchDeferred.resolve(jsonResponse(buildWorkbenchSummary()));
+
+    expect(await screen.findByRole("heading", { name: "比赛报销项目" })).toBeInTheDocument();
   });
 
   it("keeps the workbench concise and links invoice summary rows to the per-invoice page", async () => {

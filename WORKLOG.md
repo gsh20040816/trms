@@ -1,5 +1,38 @@
 # WORKLOG
 
+## 2026-05-05 00:02 - Prefetch member workbench aggregate data in parallel on initial load
+
+### 完成内容
+- 已优化成员工作台首屏请求链路：
+  - [web/src/app/member-invoice-workbench.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.tsx)
+  - 当工作台路由已携带 `taskId` 且当前会话是成员时，页面会在加载可见任务列表前并行预取 `/api/tasks/{task_id}/member-workbench`；
+  - 等 `/api/tasks` 返回并确认该任务对当前成员可见后，工作台直接消费这次预取结果，不再额外重复等待一次聚合接口往返；
+  - 若预取失败，仍保持现有“聚合接口失败后回落 legacy N+1 路径”的兼容行为。
+- 已补并行请求回归测试：
+  - [web/src/app/member-invoice-workbench.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-workbench.test.tsx)
+  - 覆盖“带 `taskId` 打开工作台时，`/api/tasks` 与 `/api/tasks/{task_id}/member-workbench` 会并行发起”的主路径。
+
+### 根因
+- 旧实现虽然会并行拉取 `submission-guide` 与 `/api/tasks`，但工作台聚合接口仍放在第二个 `useEffect` 里；
+- 成员进入 `/member/invoices/workbench?taskId=...` 时，前端必须先等 `/api/tasks` 返回、筛出当前成员可见任务并写入 `selectedTaskId`，随后才开始请求 `/member-workbench`；
+- 对高 RTT 场景，这会把两个本可重叠的网络往返串起来，首屏体感延迟被明显放大。
+
+### 风险与影响面
+- 本轮只改成员工作台首屏的请求时序，不改后端接口、权限规则和数据结构。
+- 预取结果只有在 `taskId` 与当前成员身份都匹配，且最终任务列表确认该任务可见时才会被消费，不会绕过前端已有任务可见性收口。
+- 当前只优化成员工作台这一条主链路；成员材料状态、上传页、费用确认等其他页面仍保留原有串行模式，若线上体感仍明显，可继续按同样模式逐页收口。
+
+### 验证结果
+- 已运行定向前端测试：
+  - `npm test -- --run src/app/member-invoice-workbench.test.tsx src/app/member-invoice-workbench-aggregate.test.tsx src/app/member-invoice-workbench-layout.test.tsx`
+  - `16 passed`
+- 已运行前端 lint：
+  - `npm run lint`
+  - 无新增 error；仍有 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - 前端 `30 passed / 134 tests passed`，构建与 `git diff --check` 通过。
+
 ## 2026-05-04 14:54 - Fix live member search when editing draft task members
 
 ### 完成内容
