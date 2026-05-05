@@ -387,9 +387,10 @@ describe("AdminReviewOverviewPage", () => {
     });
     expect(await screen.findByText("原始文件名：invoice.pdf")).toBeInTheDocument();
     expect(screen.getByText("原始文件名：payment.png")).toBeInTheDocument();
+    expect(screen.getByText("材料类型：支付记录")).toBeInTheDocument();
+    expect(screen.getByText(/材料简介：在本页核对支付时间、金额和支付场景/)).toBeInTheDocument();
     expect(screen.getAllByText("校验通过：否").length).toBeGreaterThan(0);
-    expect(screen.getByText("类型：发票")).toBeInTheDocument();
-    expect(screen.getByText("金额：￥123.45")).toBeInTheDocument();
+    expect(screen.getAllByText(/类型：发票；金额：￥123.45/).length).toBeGreaterThan(0);
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: /invoice\.pdf/i }));
       await Promise.resolve();
@@ -438,6 +439,10 @@ describe("AdminReviewOverviewPage", () => {
     });
 
     expect(await detailPanel.findByText("payment.png")).toBeInTheDocument();
+    expect(detailPanel.getByText("材料简介")).toBeInTheDocument();
+    expect(detailPanel.getByText("在本页核对支付时间、金额和支付场景，避免和发票字段混在一起。")).toBeInTheDocument();
+    expect(detailPanel.getByText("关联发票 INV-001")).toBeInTheDocument();
+    expect(detailPanel.queryByText("尚未形成主发票")).not.toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(detailTabs.getByRole("tab", { name: "附件预览" }));

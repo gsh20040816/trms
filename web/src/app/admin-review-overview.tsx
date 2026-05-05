@@ -29,6 +29,7 @@ import type {
   ValidationResult,
 } from "../lib/api/types";
 import { formatCurrencyFromCents, formatInvoiceAmountFromCents } from "../lib/currency";
+import { resolveNonInvoiceMaterialDetailConfig } from "../lib/material-detail";
 import {
   buildTaskMemberSummaryMap,
   describeRecognitionFailure,
@@ -660,18 +661,40 @@ function getReviewDetailItemSelectorStatus(
   return { label: "否", tone: "warning" as const };
 }
 
-function getReviewDetailItemSelectorNumber(item: ReviewMaterialDetailItem) {
-  return item.primaryInvoice?.invoice.invoice_number ?? "未形成主发票";
+function getReviewMaterialDetailConfig(item: ReviewMaterialDetailItem) {
+  return resolveNonInvoiceMaterialDetailConfig(
+    item.materialItem.material.material_type,
+    item.materialItem.latest_recognition?.recognized_fields ?? null,
+  );
 }
 
-function getReviewDetailItemSelectorAmount(item: ReviewMaterialDetailItem) {
-  return item.primaryInvoice
-    ? formatInvoiceAmountFromCents(item.primaryInvoice.invoice.amount_cents)
-    : "未形成主发票";
+function describeReviewRelatedInvoices(invoices: TaskReviewSummaryInvoiceItem[]) {
+  if (invoices.length === 0) {
+    return "未关联";
+  }
+  if (invoices.length === 1) {
+    return invoices[0]!.invoice.invoice_number;
+  }
+  return invoices.map((invoiceItem) => invoiceItem.invoice.invoice_number).join("、");
 }
 
-function getReviewDetailItemSelectorType(item: ReviewMaterialDetailItem) {
-  return formatMaterialType(item.materialItem.material.material_type);
+function getReviewDetailItemSelectorHeadline(item: ReviewMaterialDetailItem) {
+  if (item.materialItem.material.material_type !== "invoice") {
+    return `材料类型：${formatMaterialType(item.materialItem.material.material_type)}`;
+  }
+  return `发票号：${item.primaryInvoice?.invoice.invoice_number ?? "未形成主发票"}`;
+}
+
+function getReviewDetailItemSelectorSummary(item: ReviewMaterialDetailItem) {
+  if (item.materialItem.material.material_type !== "invoice") {
+    const detailConfig = getReviewMaterialDetailConfig(item);
+    return `类型：${formatMaterialType(item.materialItem.material.material_type)}；材料简介：${detailConfig?.description ?? "按当前材料类型核对识别字段和归属关系。"}`;
+  }
+  return `类型：${formatMaterialType(item.materialItem.material.material_type)}；金额：${
+    item.primaryInvoice
+      ? formatInvoiceAmountFromCents(item.primaryInvoice.invoice.amount_cents)
+      : "未形成主发票"
+  }`;
 }
 
 function getReviewDetailItemSelectorHint(
@@ -680,6 +703,22 @@ function getReviewDetailItemSelectorHint(
 ) {
   const recognition = item.materialItem.latest_recognition;
   return `提交人 ${formatTaskMemberLabel(item.materialItem.material.submitter_id, memberSummaryMap)}；${recognition ? formatRecognitionStatus(recognition.status) : "未触发识别"}`;
+}
+
+function getReviewDetailItemBadgeLabel(item: ReviewMaterialDetailItem | null) {
+  if (item === null) {
+    return "尚未选择材料";
+  }
+  if (item.materialItem.material.material_type === "invoice") {
+    return item.primaryInvoice ? `当前发票 ${item.primaryInvoice.invoice.invoice_number}` : "尚未形成主发票";
+  }
+  if (item.relatedInvoices.length === 0) {
+    return "尚未关联发票";
+  }
+  if (item.relatedInvoices.length === 1) {
+    return `关联发票 ${item.relatedInvoices[0]!.invoice.invoice_number}`;
+  }
+  return `已关联 ${item.relatedInvoices.length} 张发票`;
 }
 
 function syncActionEditorState(params: {
@@ -930,6 +969,7 @@ export function AdminReviewOverviewPage() {
   const selectedRecognition = selectedDetailItem?.materialItem.latest_recognition ?? null;
   const selectedInvoice = selectedDetailItem?.primaryInvoice ?? null;
   const relatedInvoices = selectedDetailItem?.relatedInvoices ?? [];
+  const selectedMaterialDetailConfig = selectedDetailItem ? getReviewMaterialDetailConfig(selectedDetailItem) : null;
   const selectedValidations = selectedInvoice?.validations.filter(
     (validation) => validation.status !== "passed" && validation.status !== "not_applicable",
   ) ?? [];
@@ -1469,8 +1509,8 @@ export function AdminReviewOverviewPage() {
                         return (
                           <span className="invoice-editor-select-value">
                             <span className="invoice-editor-select-value-title">
-                              <strong title={getReviewDetailItemSelectorNumber(currentItem)}>
-                                发票号：{getReviewDetailItemSelectorNumber(currentItem)}
+                              <strong title={getReviewDetailItemSelectorHeadline(currentItem)}>
+                                {getReviewDetailItemSelectorHeadline(currentItem)}
                               </strong>
                               <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
                                 校验通过：{selectorStatus.label}
@@ -1478,7 +1518,7 @@ export function AdminReviewOverviewPage() {
                             </span>
                             <span title={material.original_filename}>文件：{material.original_filename}</span>
                             <span>
-                              类型：{getReviewDetailItemSelectorType(currentItem)}；金额：{getReviewDetailItemSelectorAmount(currentItem)}
+                              {getReviewDetailItemSelectorSummary(currentItem)}
                             </span>
                           </span>
                         );
@@ -1505,8 +1545,8 @@ export function AdminReviewOverviewPage() {
                           <MenuItem key={material.id} value={material.id} className="invoice-editor-select-option">
                             <span className="invoice-editor-select-option-content">
                               <span className="invoice-editor-select-option-title">
-                                <strong title={getReviewDetailItemSelectorNumber(item)}>
-                                  发票号：{getReviewDetailItemSelectorNumber(item)}
+                                <strong title={getReviewDetailItemSelectorHeadline(item)}>
+                                  {getReviewDetailItemSelectorHeadline(item)}
                                 </strong>
                                 <span className={`invoice-editor-select-value-status invoice-editor-select-value-status-${selectorStatus.tone}`}>
                                   校验通过：{selectorStatus.label}
@@ -1514,8 +1554,7 @@ export function AdminReviewOverviewPage() {
                               </span>
                               <span className="invoice-editor-select-option-grid">
                                 <span title={material.original_filename}>原始文件名：{material.original_filename}</span>
-                                <span>类型：{getReviewDetailItemSelectorType(item)}</span>
-                                <span>金额：{getReviewDetailItemSelectorAmount(item)}</span>
+                                <span>{getReviewDetailItemSelectorSummary(item)}</span>
                                 <span title={getReviewDetailItemSelectorHint(item, memberSummaryMap)}>
                                   {getReviewDetailItemSelectorHint(item, memberSummaryMap)}
                                 </span>
@@ -1552,7 +1591,7 @@ export function AdminReviewOverviewPage() {
                       <h3>{selectedMaterial.original_filename}</h3>
                     </div>
                     <StatusBadge tone="info">
-                      {selectedInvoice ? `当前发票 ${selectedInvoice.invoice.invoice_number}` : "尚未形成主发票"}
+                      {getReviewDetailItemBadgeLabel(selectedDetailItem)}
                     </StatusBadge>
                   </div>
 
@@ -1566,22 +1605,45 @@ export function AdminReviewOverviewPage() {
                   </div>
 
                   <div className="task-meta-grid admin-review-meta-grid admin-review-detail-grid">
-                    <div>
-                      <dt>上传时间</dt>
-                      <dd>{formatDateTime(selectedMaterial.created_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>内容类型</dt>
-                      <dd>{selectedMaterial.content_type ?? "未知"}</dd>
-                    </div>
-                    <div>
-                      <dt>主发票</dt>
-                      <dd>{describeInvoiceReference(selectedInvoice)}</dd>
-                    </div>
-                    <div>
-                      <dt>辅助归属到</dt>
-                      <dd>{describeSupportingInvoiceReferences(relatedInvoices.filter((item) => item.invoice.id !== selectedInvoice?.invoice.id))}</dd>
-                    </div>
+                    {selectedMaterial.material_type === "invoice" ? (
+                      <>
+                        <div>
+                          <dt>上传时间</dt>
+                          <dd>{formatDateTime(selectedMaterial.created_at)}</dd>
+                        </div>
+                        <div>
+                          <dt>内容类型</dt>
+                          <dd>{selectedMaterial.content_type ?? "未知"}</dd>
+                        </div>
+                        <div>
+                          <dt>主发票</dt>
+                          <dd>{describeInvoiceReference(selectedInvoice)}</dd>
+                        </div>
+                        <div>
+                          <dt>辅助归属到</dt>
+                          <dd>{describeSupportingInvoiceReferences(relatedInvoices.filter((item) => item.invoice.id !== selectedInvoice?.invoice.id))}</dd>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <dt>上传时间</dt>
+                          <dd>{formatDateTime(selectedMaterial.created_at)}</dd>
+                        </div>
+                        <div>
+                          <dt>识别状态</dt>
+                          <dd>{selectedRecognition ? formatRecognitionStatus(selectedRecognition.status) : "暂无识别"}</dd>
+                        </div>
+                        <div>
+                          <dt>材料简介</dt>
+                          <dd>{selectedMaterialDetailConfig?.description ?? "按当前材料类型核对识别字段和归属关系。"}</dd>
+                        </div>
+                        <div>
+                          <dt>关联发票</dt>
+                          <dd>{describeReviewRelatedInvoices(relatedInvoices)}</dd>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <Box sx={{ mt: 3, borderBottom: 1, borderColor: "divider" }}>

@@ -1,5 +1,40 @@
 # WORKLOG
 
+## 2026-05-05 15:25 - Align admin review material intro with member material detail copy
+
+### 完成内容
+- 已修复管理员材料审核页非发票材料仍按发票口径展示简介的问题：
+  - [web/src/app/admin-review-overview.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.tsx)
+  - 管理员材料选择器当前值、下拉候选项和右侧详情头部现在会区分“发票材料”和“通用辅助材料”；
+  - 对 `payment_record`、`competition_notice`、`itinerary`、`order_screenshot`、`other_attachment`，不再展示“未形成主发票/金额未形成主发票”这类错误简介；
+  - 管理员页保留现有列表 + 详情样式，但非发票材料会改为显示与成员材料查看页一致的通用材料简介文案，并用“关联发票/尚未关联发票”替代错误的主发票提示。
+- 已抽出共享材料简介配置，避免成员页和管理员页继续各自维护一套口径：
+  - [web/src/lib/material-detail.ts](/home/gsh/workspace/TRMS/web/src/lib/material-detail.ts)
+  - [web/src/app/member-material-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-material-detail.tsx)
+  - 成员材料查看页的材料类型描述、动态行程单简介和下一步提示已迁移到共享 helper；
+  - 管理员材料审核页直接复用这套简介来源，后续再调整通用材料文案时不需要重复改两处。
+- 已补前端回归测试：
+  - [web/src/app/admin-review-overview.test.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-review-overview.test.tsx)
+  - 覆盖管理员在材料下拉中查看支付记录简介，以及切换到支付记录后详情头部展示“材料简介/关联发票”而不是“尚未形成主发票”的场景。
+
+### 根因
+- 管理员材料审核页的材料选择器和详情头部此前只按 `primaryInvoice` 渲染摘要，默认假设每份材料都应该先映射成主发票；
+- 非发票材料（如支付记录）本来就可能只有 `supporting_invoice_ids`，没有 `invoice_id`，因此会错误落入“未形成主发票”和“金额未形成主发票”的发票兜底文案；
+- 成员材料查看页已经有按材料类型区分的通用简介，但管理员页没有复用，导致两处材料文案持续漂移。
+
+### 风险与影响面
+- 本轮只改管理员材料审核页的摘要与详情介绍文案，以及成员/管理员共用的材料简介配置来源，不改发票归属、分摊、识别、校验和保存接口。
+- 发票材料的管理员审核口径保持不变；变化只发生在非发票材料的简介与关联发票提示。
+
+### 验证结果
+- 已运行定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-review-overview.test.tsx`
+  - `6 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - 验证完成；前端 `30 passed / 134 tests passed`，构建和 `git diff --check` 通过。
+  - `npm run lint` 仍有 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
 ## 2026-05-05 15:08 - Fix member/admin dual-role scope leakage in expense views
 
 ### 完成内容
