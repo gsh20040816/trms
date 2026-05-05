@@ -68,9 +68,10 @@ def resolve_expense_detail_scope(
     task: ReimbursementTask,
     *,
     actor_id: str,
+    administrator_view: bool = False,
 ) -> ExpenseDetailScope:
     normalized_actor_id = actor_id.strip()
-    if is_task_administrator(task, actor_id=normalized_actor_id):
+    if administrator_view and is_task_administrator(task, actor_id=normalized_actor_id):
         return ExpenseDetailScope.TASK
     if normalized_actor_id in task.member_ids:
         return ExpenseDetailScope.MEMBER
@@ -84,9 +85,14 @@ def build_expense_detail_list(
     invoices: list[InvoiceRecord],
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
     confirmations_by_split_id: dict[str, ConfirmationRecord],
+    administrator_view: bool = False,
 ) -> ExpenseDetailList:
     normalized_actor_id = actor_id.strip()
-    scope = resolve_expense_detail_scope(task, actor_id=normalized_actor_id)
+    scope = resolve_expense_detail_scope(
+        task,
+        actor_id=normalized_actor_id,
+        administrator_view=administrator_view,
+    )
 
     items: list[ExpenseDetailItem] = []
     for invoice in invoices:

@@ -126,6 +126,7 @@ def build_visible_missing_material_list(
     invoices: list[InvoiceRecord],
     materials_by_id: dict[str, MaterialRecord],
     validations_by_invoice_id: dict[str, list[ValidationResult]],
+    administrator_view: bool = False,
 ) -> VisibleMissingMaterialList:
     normalized_actor_id = actor_id.strip()
     missing_materials = aggregate_task_missing_materials(
@@ -135,7 +136,7 @@ def build_visible_missing_material_list(
         validations_by_invoice_id=validations_by_invoice_id,
     )
 
-    if is_task_administrator(task, actor_id=normalized_actor_id):
+    if administrator_view and is_task_administrator(task, actor_id=normalized_actor_id):
         return VisibleMissingMaterialList(
             task_id=task.id,
             actor_id=normalized_actor_id,

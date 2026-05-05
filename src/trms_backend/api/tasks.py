@@ -550,12 +550,18 @@ def build_task_router(
             actor_id,
             field_name="actor_id",
         )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view expense details for this task",
+        )
         materials_by_id = build_materials_by_id(material_repository, task_id)
         invoices = filter_invoices_visible_to_actor(
             task,
             actor_id=resolved_actor_id,
             invoices=invoice_repository.list_by_task(task_id),
             materials_by_id=materials_by_id,
+            administrator_view=scope is TaskAccessScope.ADMINISTRATOR,
         )
         splits_by_invoice_id = {
             invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
@@ -572,6 +578,7 @@ def build_task_router(
                 invoices=invoices,
                 splits_by_invoice_id=splits_by_invoice_id,
                 confirmations_by_split_id=confirmations_by_split_id,
+                administrator_view=scope is TaskAccessScope.ADMINISTRATOR,
             )
         except ExpenseDetailActorNotAllowedError as error:
             raise HTTPException(
@@ -594,6 +601,11 @@ def build_task_router(
             actor_id,
             field_name="actor_id",
         )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view member status for this task",
+        )
 
         materials = material_repository.list_by_task(task_id)
         materials_by_id = {material.id: material for material in materials}
@@ -602,6 +614,7 @@ def build_task_router(
             actor_id=resolved_actor_id,
             invoices=invoice_repository.list_by_task(task_id),
             materials_by_id=materials_by_id,
+            administrator_view=scope is TaskAccessScope.ADMINISTRATOR,
         )
         validations_by_invoice_id = {
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
@@ -653,6 +666,11 @@ def build_task_router(
             actor_id,
             field_name="actor_id",
         )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view member workbench summary for this task",
+        )
 
         materials = material_repository.list_by_task(task_id)
         materials_by_id = {material.id: material for material in materials}
@@ -661,6 +679,7 @@ def build_task_router(
             actor_id=resolved_actor_id,
             invoices=invoice_repository.list_by_task(task_id),
             materials_by_id=materials_by_id,
+            administrator_view=scope is TaskAccessScope.ADMINISTRATOR,
         )
         validations_by_invoice_id = {
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
@@ -740,12 +759,18 @@ def build_task_router(
             actor_id,
             field_name="actor_id",
         )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view shared invoices for this task",
+        )
         materials_by_id = build_materials_by_id(material_repository, task_id)
         invoices = filter_invoices_visible_to_actor(
             task,
             actor_id=resolved_actor_id,
             invoices=invoice_repository.list_by_task(task_id),
             materials_by_id=materials_by_id,
+            administrator_view=scope is TaskAccessScope.ADMINISTRATOR,
         )
         supporting_materials_by_invoice_id: dict[str, list[MaterialRecord]] = {}
         for invoice in invoices:
@@ -771,6 +796,7 @@ def build_task_router(
                 validations_by_invoice_id=validations_by_invoice_id,
                 supporting_materials_by_invoice_id=supporting_materials_by_invoice_id,
                 splits_by_invoice_id=splits_by_invoice_id,
+                administrator_view=scope is TaskAccessScope.ADMINISTRATOR,
             )
         except TaskSharedInvoiceActorNotAllowedError as error:
             raise HTTPException(
@@ -936,6 +962,11 @@ def build_task_router(
             actor_id,
             field_name="actor_id",
         )
+        scope = resolve_task_access_scope(
+            identity,
+            task,
+            forbidden_detail="actor is not allowed to view missing materials for this task",
+        )
         try:
             return build_visible_missing_material_list(
                 task,
@@ -943,6 +974,7 @@ def build_task_router(
                 invoices=invoices,
                 materials_by_id=materials_by_id,
                 validations_by_invoice_id=validations_by_invoice_id,
+                administrator_view=scope is TaskAccessScope.ADMINISTRATOR,
             )
         except TaskMissingMaterialActorNotAllowedError as error:
             raise HTTPException(
@@ -1048,6 +1080,7 @@ def build_task_router(
             actor_id=resolved_actor_id,
             invoices=all_invoices,
             materials_by_id=materials_by_id,
+            administrator_view=True,
         )
         visible_materials = filter_task_invoice_materials_for_actor(
             materials,
@@ -1123,6 +1156,7 @@ def build_task_router(
             actor_id=resolved_actor_id,
             invoices=all_invoices,
             materials_by_id=materials_by_id,
+            administrator_view=True,
         )
         visible_materials = filter_task_invoice_materials_for_actor(
             materials,

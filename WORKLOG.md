@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-05-05 15:08 - Fix member/admin dual-role scope leakage in expense views
+
+### 完成内容
+- 已定位并修复生产环境 `2351837` 这类“双身份账号”费用口径串视角问题：
+  - [src/trms_backend/domain/invoice_visibility.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_visibility.py)
+  - [src/trms_backend/domain/expense_details.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/expense_details.py)
+  - [src/trms_backend/domain/missing_materials.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/missing_materials.py)
+  - [src/trms_backend/domain/task_shared_invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_shared_invoices.py)
+  - [src/trms_backend/domain/task_member_status.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_status.py)
+  - [src/trms_backend/domain/task_member_workbench.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/task_member_workbench.py)
+  - [src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)
+- 当前实现不再仅凭“actor 出现在 `administrator_ids`”就切到管理员口径，而是显式区分当前请求是否处于管理员视角：
+  - 成员会话下，`expense-details`、`member-status`、`member-workbench`、`shared-invoices`、缺失材料列表都会继续按成员视角处理；
+  - 管理员会话下，`review-summary`、`readiness` 和管理员共享发票摘要仍按管理员只读口径处理。
+- 已补双身份回归测试：
+  - [tests/test_expense_details_api.py](/home/gsh/workspace/TRMS/tests/test_expense_details_api.py)
+  - [tests/test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py)
+  - 覆盖“成员同时也是任务管理员，但仍应看到本人未提交费用和未提交发票”的场景。
+
+### 生产根因
+- 已直接 SSH 到生产机 `netcup` 检查：
+  - 任务 `CCPC Final 2026` 的 `member_ids` 与 `administrator_ids` 同时包含 `2351837`；
+  - 生产库中 `2351837` 当前正确本人分摊总额为 `633516` 分；
+  - 但生产代码中的多处成员页域逻辑此前只按 `is_task_administrator(task, actor_id)` 判断视角，没有结合当前 session 的活动角色；
+  - 因此同一账号在成员页请求中会误走管理员视角分支，导致成员页的费用与发票可见性口径被污染。
+
+### 风险与影响面
+- 本轮没有改管理员底层可编辑发票列表、自动识别入票、附件关联和导出主链路，只修正成员页和管理员只读聚合的视角判定。
+- 对普通成员和普通管理员没有行为放宽；变化只发生在“同一个 actor 同时是成员又是任务管理员”的任务场景。
+
+### 验证结果
+- 已运行定向后端测试：
+  - `uv run pytest tests/test_expense_details_api.py -k 'dual_role or task_administrator or unsubmitted'`
+  - `3 passed`
+  - `uv run pytest tests/test_task_member_workbench_api.py -k 'dual_role or submission_status'`
+  - `2 passed`
+  - `uv run pytest tests/test_task_shared_invoices_api.py tests/test_missing_materials_api.py`
+  - `9 passed`
+  - `uv run pytest tests/test_task_review_summary_api.py tests/test_task_readiness_api.py tests/test_web_bearer_request_identity_api.py tests/test_expense_details_api.py tests/test_task_shared_invoices_api.py tests/test_task_member_workbench_api.py tests/test_missing_materials_api.py`
+  - `53 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - `644 passed`，迁移验证和 `git diff --check` 通过。
+
 ## 2026-05-05 14:52 - Fix member expense wording and hide unsubmitted invoices from read-only summaries
 
 ### 完成内容

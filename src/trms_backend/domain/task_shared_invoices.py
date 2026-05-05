@@ -69,9 +69,13 @@ def build_task_shared_invoice_report(
     validations_by_invoice_id: dict[str, list[ValidationResult]],
     supporting_materials_by_invoice_id: dict[str, list[MaterialRecord]],
     splits_by_invoice_id: dict[str, list[ExpenseSplitRecord]],
+    administrator_view: bool = False,
 ) -> TaskSharedInvoiceReport:
     normalized_actor_id = actor_id.strip()
-    if not is_task_administrator(task, actor_id=normalized_actor_id) and normalized_actor_id not in task.member_ids:
+    if administrator_view:
+        if not is_task_administrator(task, actor_id=normalized_actor_id):
+            raise TaskSharedInvoiceActorNotAllowedError()
+    elif normalized_actor_id not in task.member_ids:
         raise TaskSharedInvoiceActorNotAllowedError()
 
     items: list[TaskSharedInvoiceItem] = []

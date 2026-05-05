@@ -9,6 +9,7 @@ from test_tasks_api import (
     auth_headers,
     create_task as create_admin_task,
     register_and_get_token,
+    valid_task_payload,
 )
 
 
@@ -33,8 +34,8 @@ def member_auth_headers(client: TestClient, *, username: str, actor_id: str) -> 
     )
 
 
-def create_task(client: TestClient) -> str:
-    task_id = create_admin_task(client)["id"]
+def create_task(client: TestClient, *, payload: dict | None = None) -> str:
+    task_id = create_admin_task(client, payload=payload)["id"]
     response = client.patch(
         f"/api/tasks/{task_id}/status",
         json={"target_status": "open"},
@@ -213,6 +214,51 @@ def test_other_member_and_admin_do_not_see_unsubmitted_invoice_expense_details(t
     assert admin_response.json()["items"] == []
     assert submitter_response.status_code == 200
     assert submitter_response.json()["total_amount_cents"] == 6000
+
+
+def test_member_role_still_sees_own_unsubmitted_expense_when_also_task_administrator(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_task(
+        client,
+        payload=valid_task_payload() | {"administrator_ids": ["admin-1", "2250001"]},
+    )
+    material_id = upload_invoice_material(client, task_id, submitter_id="2250001", filename="dual-role.pdf")
+    mark_new_recognition_succeeded(client, material_id)
+    response = client.post(
+        f"/api/materials/{material_id}/invoice",
+        json=valid_invoice_payload(),
+    )
+    assert response.status_code == 201
+    invoice_id = response.json()["invoice"]["id"]
+
+    split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 12345, "note": "self paid"},
+            ],
+        },
+    )
+    assert split_response.status_code == 200
+    split_id = split_response.json()["items"][0]["id"]
+    assert client.put(
+        f"/api/splits/{split_id}/confirmation",
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
+    ).status_code == 200
+
+    response = client.get(
+        f"/api/tasks/{task_id}/expense-details",
+        headers=member_auth_headers(client, username="dualrole-member", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scope"] == "member"
+    assert body["total_amount_cents"] == 12345
+    assert len(body["items"]) == 1
+    assert body["items"][0]["invoice"]["id"] == invoice_id
+    assert body["items"][0]["amount_cents"] == 12345
 
 
 def test_task_administrator_can_list_all_expense_details(tmp_path):

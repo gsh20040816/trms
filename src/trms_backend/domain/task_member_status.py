@@ -133,6 +133,7 @@ def build_task_member_status_report(
         invoices=invoices,
         materials_by_id={material.id: material for material in materials},
         validations_by_invoice_id=validations_by_invoice_id,
+        administrator_view=False,
     ).items
     expense_details = build_expense_detail_list(
         task,
@@ -140,6 +141,7 @@ def build_task_member_status_report(
         invoices=invoices,
         splits_by_invoice_id=splits_by_invoice_id,
         confirmations_by_split_id=confirmations_by_split_id,
+        administrator_view=False,
     )
 
     recognition_counts = {

@@ -171,6 +171,7 @@ def build_task_member_workbench_summary(
         validations_by_invoice_id=validations_by_invoice_id,
         supporting_materials_by_invoice_id=shared_supporting_materials_by_invoice_id,
         splits_by_invoice_id=splits_by_invoice_id,
+        administrator_view=False,
     )
 
     invoices_by_material_id = {

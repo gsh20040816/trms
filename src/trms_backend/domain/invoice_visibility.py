@@ -15,9 +15,12 @@ def filter_invoices_visible_to_actor(
     actor_id: str,
     invoices: list[InvoiceRecord],
     materials_by_id: dict[str, MaterialRecord],
+    administrator_view: bool = False,
 ) -> list[InvoiceRecord]:
     normalized_actor_id = actor_id.strip()
-    if is_task_administrator(task, actor_id=normalized_actor_id):
+    if administrator_view:
+        if not is_task_administrator(task, actor_id=normalized_actor_id):
+            return []
         return [invoice for invoice in invoices if is_submitted_invoice(invoice)]
 
     if normalized_actor_id not in task.member_ids:

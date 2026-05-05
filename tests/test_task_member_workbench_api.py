@@ -130,6 +130,54 @@ def create_ready_workbench_fixture(client: TestClient) -> tuple[str, str]:
     return task_id, invoice_id
 
 
+def create_dual_role_unsubmitted_workbench_fixture(client: TestClient) -> tuple[str, str]:
+    task = create_task(
+        client,
+        payload=valid_task_payload() | {"administrator_ids": ["admin-1", "2250001"]},
+    )
+    assert client.patch(
+        f"/api/tasks/{task['id']}/status",
+        json={"target_status": "open"},
+        headers=admin_auth_headers(client),
+    ).status_code == 200
+    material_id = upload_material(
+        client,
+        task["id"],
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="dual-role-unsubmitted.pdf",
+    )
+    invoice_id = create_invoice(
+        client,
+        material_id,
+        actor_id="2250001",
+        invoice_number="DUAL-001",
+        amount_cents=12345,
+        expense_type="railway",
+    )
+    split_response = client.put(
+        f"/api/invoices/{invoice_id}/splits",
+        json={
+            "actor_id": "2250001",
+            "items": [
+                {"member_id": "2250001", "amount_cents": 12345, "note": "self paid"},
+            ],
+        },
+    )
+    assert split_response.status_code == 200
+    split_id = split_response.json()["items"][0]["id"]
+    assert client.put(
+        f"/api/splits/{split_id}/confirmation",
+        json={
+            "actor_id": "2250001",
+            "member_id": "2250001",
+            "status": "confirmed",
+        },
+    ).status_code == 200
+    mark_recognition_succeeded(client, material_id)
+    return task["id"], invoice_id
+
+
 def create_blocked_workbench_fixture(client: TestClient) -> str:
     task_id = create_open_task(client)
 
@@ -306,6 +354,28 @@ def test_member_workbench_summary_returns_ready_state_and_submission_status(tmp_
     ready_item = after_submit.json()["items"][0]
     assert ready_item["invoice"]["member_submission_status"] == "submitted"
     assert ready_item["ready_for_submission"] is True
+
+
+def test_member_workbench_keeps_own_unsubmitted_invoice_visible_for_dual_role_member(tmp_path):
+    client = make_client(tmp_path)
+    task_id, invoice_id = create_dual_role_unsubmitted_workbench_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/member-workbench",
+        headers=member_auth_headers(client, username="dualrole-member", actor_id="2250001"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["report"]["total_expense_amount_cents"] == 12345
+    items_by_invoice_id = {
+        item["invoice"]["id"]: item
+        for item in body["items"]
+        if item["invoice"] is not None
+    }
+    assert invoice_id in items_by_invoice_id
+    assert items_by_invoice_id[invoice_id]["invoice"]["member_submission_status"] == "unsubmitted"
+    assert items_by_invoice_id[invoice_id]["ready_for_submission"] is True
 
 
 def test_member_workbench_summary_maps_blocking_reasons_and_pending_linkage(tmp_path):
