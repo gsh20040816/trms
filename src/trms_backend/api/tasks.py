@@ -61,7 +61,7 @@ from trms_backend.domain.material_reminders import (
     create_task_material_reminder,
     list_task_material_reminders,
 )
-from trms_backend.domain.materials import MaterialRecord, MaterialRepository
+from trms_backend.domain.materials import MaterialRecord, MaterialRepository, MaterialType
 from trms_backend.domain.missing_materials import (
     TaskMissingMaterialActorNotAllowedError,
     build_visible_missing_material_list,
@@ -167,6 +167,23 @@ def build_user_search_summary(user) -> UserSearchSummary:
 
 def build_materials_by_id(material_repository: MaterialRepository, task_id: str) -> dict[str, MaterialRecord]:
     return {material.id: material for material in material_repository.list_by_task(task_id)}
+
+
+def filter_task_invoice_materials_for_actor(
+    materials: list[MaterialRecord],
+    *,
+    visible_invoices: list,
+    all_invoices: list,
+) -> list[MaterialRecord]:
+    visible_invoice_material_ids = {invoice.material_id for invoice in visible_invoices}
+    all_invoice_material_ids = {invoice.material_id for invoice in all_invoices}
+    return [
+        material
+        for material in materials
+        if material.material_type is not MaterialType.INVOICE
+        or material.id not in all_invoice_material_ids
+        or material.id in visible_invoice_material_ids
+    ]
 
 
 def build_task_router(
@@ -907,14 +924,13 @@ def build_task_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
-        invoices = invoice_repository.list_by_task(task_id)
         materials_by_id = {
             material.id: material for material in material_repository.list_by_task(task_id)
         }
+        invoices = invoice_repository.list_by_task(task_id)
         validations_by_invoice_id = {
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
-
         resolved_actor_id = resolve_required_actor_request_field(
             identity,
             actor_id,
@@ -989,7 +1005,6 @@ def build_task_router(
         for invoice in invoices:
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
-
         resolved_actor_id = resolve_required_actor_request_field(
             identity,
             actor_id,
@@ -1019,16 +1034,32 @@ def build_task_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         materials = material_repository.list_by_task(task_id)
         pending_assignment_materials = material_repository.list_pending_assignment_by_task_hint(task_id)
+        materials_by_id = {material.id: material for material in materials}
+        all_invoices = invoice_repository.list_by_task(task_id)
+        invoices = filter_invoices_visible_to_actor(
+            task,
+            actor_id=resolved_actor_id,
+            invoices=all_invoices,
+            materials_by_id=materials_by_id,
+        )
+        visible_materials = filter_task_invoice_materials_for_actor(
+            materials,
+            visible_invoices=invoices,
+            all_invoices=all_invoices,
+        )
         latest_recognitions_by_material_id = {}
-        for material in materials:
+        for material in visible_materials:
             recognition_tasks = recognition_task_repository.list_by_material(material.id)
             latest_recognitions_by_material_id[material.id] = (
                 recognition_tasks[-1] if recognition_tasks else None
             )
-
-        invoices = invoice_repository.list_by_task(task_id)
         invoice_by_material_id = {invoice.material_id: invoice for invoice in invoices}
         supporting_invoice_ids_by_material_id: dict[str, list[str]] = {}
         supporting_material_ids_by_invoice_id: dict[str, list[str]] = {}
@@ -1047,16 +1078,11 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
-        resolved_actor_id = resolve_required_actor_request_field(
-            identity,
-            actor_id,
-            field_name="actor_id",
-        )
         try:
             return build_task_review_summary(
                 task,
                 administrator_id=resolved_actor_id,
-                materials=materials,
+                materials=visible_materials,
                 pending_assignment_materials=pending_assignment_materials,
                 latest_recognitions_by_material_id=latest_recognitions_by_material_id,
                 invoices=invoices,
@@ -1083,22 +1109,38 @@ def build_task_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
         materials = material_repository.list_by_task(task_id)
         pending_assignment_materials = material_repository.list_pending_assignment_by_task_hint(task_id)
+        materials_by_id = {material.id: material for material in materials}
+        all_invoices = invoice_repository.list_by_task(task_id)
+        invoices = filter_invoices_visible_to_actor(
+            task,
+            actor_id=resolved_actor_id,
+            invoices=all_invoices,
+            materials_by_id=materials_by_id,
+        )
+        visible_materials = filter_task_invoice_materials_for_actor(
+            materials,
+            visible_invoices=invoices,
+            all_invoices=all_invoices,
+        )
         latest_recognitions_by_material_id = {}
-        for material in materials:
+        for material in visible_materials:
             recognition_tasks = recognition_task_repository.list_by_material(material.id)
             latest_recognitions_by_material_id[material.id] = (
                 recognition_tasks[-1] if recognition_tasks else None
             )
-
-        invoices = invoice_repository.list_by_task(task_id)
         validations_by_invoice_id = {}
         splits_by_invoice_id = {}
         confirmations_by_split_id = {}
         linked_invoice_ids_by_material_id: dict[str, list[str]] = {
             material.id: []
-            for material in materials
+            for material in visible_materials
         }
         for invoice in invoices:
             supporting_links = invoice_repository.list_supporting_material_links(invoice.id)
@@ -1109,16 +1151,11 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
-        resolved_actor_id = resolve_required_actor_request_field(
-            identity,
-            actor_id,
-            field_name="actor_id",
-        )
         try:
             return build_task_readiness_summary(
                 task,
                 administrator_id=resolved_actor_id,
-                materials=materials,
+                materials=visible_materials,
                 pending_assignment_materials=pending_assignment_materials,
                 latest_recognitions_by_material_id=latest_recognitions_by_material_id,
                 invoices=invoices,

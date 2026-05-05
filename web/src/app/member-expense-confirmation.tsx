@@ -295,13 +295,13 @@ export function MemberExpenseConfirmationPage() {
   const summaryCards = expenseState.status === "ready" ? [
     {
       label: "本人费用",
-      value: readyItems.length,
-      description: "当前任务下与你相关的费用明细条数。",
+      value: formatCurrencyFromCents(totalAmountCents),
+      description: "当前任务下分摊到你名下的费用合计。",
     },
     {
-      label: "总金额",
-      value: formatCurrencyFromCents(totalAmountCents),
-      description: "当前任务下分到你名下的费用合计。",
+      label: "费用条数",
+      value: readyItems.length,
+      description: "当前任务下与你相关的费用明细条数。",
     },
     {
       label: "待确认",

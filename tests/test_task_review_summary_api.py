@@ -32,6 +32,27 @@ def make_client(tmp_path):
     )
 
 
+def member_auth_headers(client: TestClient, *, username: str, actor_id: str) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username=username,
+            role="member",
+            actor_id=actor_id,
+            member_code=actor_id,
+        )
+    )
+
+
+def submit_invoice(client: TestClient, task_id: str, invoice_id: str, *, actor_id: str = "2250001") -> None:
+    response = client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        headers=member_auth_headers(client, username=f"member-{actor_id}", actor_id=actor_id),
+        json={"invoice_ids": [invoice_id]},
+    )
+    assert response.status_code == 200
+
+
 def create_open_task(client: TestClient) -> str:
     task_id = create_task(client)["id"]
     response = client.patch(
@@ -158,6 +179,16 @@ def create_review_fixture(client: TestClient) -> tuple[str, str, str, str]:
     )
     assert response.status_code == 200
 
+    response = client.put(
+        f"/api/splits/{split_ids['2250002']}/confirmation",
+        json={
+            "actor_id": "2250002",
+            "member_id": "2250002",
+            "status": "confirmed",
+        },
+    )
+    assert response.status_code == 200
+    submit_invoice(client, task_id, invoice_id)
     response = client.put(
         f"/api/splits/{split_ids['2250002']}/confirmation",
         json={
@@ -313,6 +344,38 @@ def test_review_summary_does_not_count_non_invoice_needs_confirmation_as_admin_r
     assert body["counts"]["needs_confirmation_recognition_count"] == 0
     materials_by_id = {item["material"]["id"]: item for item in body["materials"]}
     assert materials_by_id[payment_material_id]["latest_recognition"]["status"] == "needs_confirmation"
+
+
+def test_review_summary_hides_unsubmitted_invoice_materials_and_invoices_from_administrator(tmp_path):
+    client = make_client(tmp_path)
+    task_id, invoice_id, invoice_material_id, _ = create_review_fixture(client)
+    draft_material_id = upload_material(
+        client,
+        task_id,
+        material_type="invoice",
+        filename="draft-invoice.pdf",
+    )
+    response = client.post(
+        f"/api/materials/{draft_material_id}/invoice",
+        json=valid_invoice_payload() | {"invoice_number": "DRAFT-001"},
+    )
+    assert response.status_code == 201
+    draft_invoice_id = response.json()["invoice"]["id"]
+
+    response = client.get(
+        f"/api/tasks/{task_id}/review-summary",
+        params={"actor_id": "admin-1"},
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["counts"]["invoice_count"] == 1
+    assert [item["invoice"]["id"] for item in body["invoices"]] == [invoice_id]
+    visible_invoice_material_ids = {item["material"]["id"] for item in body["materials"]}
+    assert invoice_material_id in visible_invoice_material_ids
+    assert draft_material_id not in visible_invoice_material_ids
+    assert all(item["invoice"]["id"] != draft_invoice_id for item in body["invoices"])
 
 
 def test_non_administrator_cannot_get_review_summary(tmp_path):

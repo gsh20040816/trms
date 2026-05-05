@@ -1,5 +1,49 @@
 # WORKLOG
 
+## 2026-05-05 14:52 - Fix member expense wording and hide unsubmitted invoices from read-only summaries
+
+### 完成内容
+- 已修正成员费用确认页“本人费用”口径：
+  - [web/src/app/member-expense-confirmation.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.tsx)
+  - 成员费用确认页的统计卡片现在把“本人费用”明确展示为分摊到当前成员名下的金额；
+  - 原先混淆金额与条数的卡片改为“费用条数”，避免把发票总额或费用条数误读成“本人费用”。
+- 已收口管理员只读聚合对未提交发票的展示范围：
+  - [src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)
+  - 管理员任务复核摘要 `review-summary` 和任务就绪度 `readiness` 现在只基于已提交发票构建发票级汇总；
+  - 对应聚合中的发票材料列表也会隐藏那些已经形成发票实体但尚未提交给管理员的成员草稿发票；
+  - 其他成员原有的共享发票、费用明细、成员工作台可见性收口保持生效。
+- 已同步更新回归测试：
+  - [tests/test_task_review_summary_api.py](/home/gsh/workspace/TRMS/tests/test_task_review_summary_api.py)
+  - [tests/test_task_readiness_api.py](/home/gsh/workspace/TRMS/tests/test_task_readiness_api.py)
+  - [tests/test_main_flow_e2e.py](/home/gsh/workspace/TRMS/tests/test_main_flow_e2e.py)
+  - [web/src/app/member-expense-confirmation.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-expense-confirmation.test.tsx)
+
+### 根因
+- 成员费用确认页把“本人费用”卡片错误地展示成了费用条数，金额被放在另一个“总金额”卡片里，和业务口径不一致。
+- 管理员复核摘要和任务就绪度在构建只读聚合时直接遍历任务下全部发票，没有区分成员是否已经把发票正式提交给管理员。
+
+### 风险与影响面
+- 本轮只收口管理员只读聚合页与成员共享/费用只读口径，不改成员本人录票、管理员底层通用任务发票列表、材料关联接口和自动识别入链逻辑。
+- 因此自动识别、材料关联、主流程测试仍可继续基于未提交发票工作；真正暴露给管理员的摘要视图则不会再提前泄露这些草稿发票。
+
+### 验证结果
+- 已运行定向后端测试：
+  - `uv run pytest tests/test_task_review_summary_api.py tests/test_task_readiness_api.py tests/test_web_bearer_request_identity_api.py tests/test_expense_details_api.py tests/test_task_shared_invoices_api.py`
+  - `38 passed`
+  - `uv run pytest tests/test_invoices_api.py tests/test_task_member_workbench_api.py`
+  - `56 passed`
+  - `uv run pytest tests/test_recognition_execution_api.py tests/test_recognition_async_jobs.py tests/test_supporting_material_linkage_api.py tests/test_missing_materials_api.py tests/test_overdue_confirmations_api.py tests/test_main_flow_e2e.py`
+  - `51 passed`
+- 已运行定向前端测试：
+  - `cd web && npm test -- --run src/app/member-expense-confirmation.test.tsx`
+  - `4 passed`
+  - `cd web && npm test -- --run src/app/member-invoice-workbench.test.tsx src/app/member-invoice-workbench-aggregate.test.tsx src/app/member-invoice-detail.test.tsx`
+  - `22 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - `642 passed`，前端 `30 passed / 134 tests passed`，构建、迁移验证和 `git diff --check` 通过。
+  - `npm run lint` 仍有 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
 ## 2026-05-05 14:20 - Restrict shared invoice visibility to submitted invoices
 
 ### 完成内容

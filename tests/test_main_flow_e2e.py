@@ -378,6 +378,13 @@ def test_main_flow_e2e_scaffold_covers_submission_to_export_gate(tmp_path):
     assert len(detail_body["items"]) == 1
     assert detail_body["items"][0]["split_id"] == split_id
     assert detail_body["items"][0]["confirmation"]["status"] == "confirmed"
+    submit_invoice_response = client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        headers=member_headers,
+        json={"invoice_ids": [invoice_id]},
+    )
+    assert submit_invoice_response.status_code == 200
+    assert submit_invoice_response.json()["items"][0]["id"] == invoice_id
 
     review_summary_after_split = client.get(
         f"/api/tasks/{task_id}/review-summary",

@@ -33,6 +33,27 @@ def make_client(tmp_path):
     )
 
 
+def member_auth_headers(client: TestClient, *, username: str, actor_id: str) -> dict[str, str]:
+    return auth_headers(
+        register_and_get_token(
+            client,
+            username=username,
+            role="member",
+            actor_id=actor_id,
+            member_code=actor_id,
+        )
+    )
+
+
+def submit_invoice(client: TestClient, task_id: str, invoice_id: str, *, actor_id: str = "2250001") -> None:
+    response = client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        headers=member_auth_headers(client, username=f"member-{actor_id}", actor_id=actor_id),
+        json={"invoice_ids": [invoice_id]},
+    )
+    assert response.status_code == 200
+
+
 def create_open_task(client: TestClient) -> str:
     task_id = create_task(client)["id"]
     response = client.patch(
@@ -190,6 +211,7 @@ def test_task_readiness_reports_all_clear_when_task_can_export(tmp_path):
     invoice_id = create_invoice(client, invoice_material_id)
     split_id = replace_splits(client, invoice_id)[0]["id"]
     confirm_split(client, split_id)
+    submit_invoice(client, task_id, invoice_id)
     move_task_to_ready_to_export(client, task_id)
 
     response = client.get(
@@ -370,32 +392,44 @@ def test_task_readiness_reports_supporting_material_and_missing_material_blocker
         material_type="invoice",
         filename="ticket.pdf",
     )
-    mark_invoice_recognition_succeeded(client, invoice_material_id, invoice_number="AIR-001")
+    mark_invoice_recognition_succeeded(client, invoice_material_id, invoice_number="REG-001")
     invoice_id = create_invoice(
         client,
         invoice_material_id,
-        invoice_number="AIR-001",
-        expense_type="airfare",
+        invoice_number="REG-001",
+        expense_type="registration",
     )
-    second_invoice_material_id = upload_material(
+    notice_material_id = upload_material(
+        client,
+        task_id,
+        material_type="competition_notice",
+        filename="notice.pdf",
+    )
+    assert client.put(
+        f"/api/invoices/{invoice_id}/supporting-materials/{notice_material_id}",
+        headers=admin_auth_headers(client),
+    ).status_code == 200
+    split_id = replace_splits(client, invoice_id)[0]["id"]
+    confirm_split(client, split_id)
+    submit_invoice(client, task_id, invoice_id)
+    assert client.delete(
+        f"/api/invoices/{invoice_id}/supporting-materials/{notice_material_id}",
+        headers=admin_auth_headers(client),
+    ).status_code == 200
+
+    draft_invoice_material_id = upload_material(
         client,
         task_id,
         material_type="invoice",
         filename="ticket-2.pdf",
     )
-    mark_invoice_recognition_succeeded(client, second_invoice_material_id, invoice_number="AIR-002")
-    second_invoice_id = create_invoice(
+    mark_invoice_recognition_succeeded(client, draft_invoice_material_id, invoice_number="DRAFT-001")
+    create_invoice(
         client,
-        second_invoice_material_id,
-        invoice_number="AIR-002",
-        expense_type="airfare",
+        draft_invoice_material_id,
+        invoice_number="DRAFT-001",
+        expense_type="registration",
         amount_cents=8888,
-    )
-    upload_material(
-        client,
-        task_id,
-        material_type="order_screenshot",
-        filename="order.png",
     )
 
     response = client.get(
@@ -411,10 +445,7 @@ def test_task_readiness_reports_supporting_material_and_missing_material_blocker
     assert body["counts"]["blocker_validation_count"] == 0
     issues_by_kind = {item["kind"]: item for item in body["issues"]}
     assert issues_by_kind["supporting_material_linkage"]["count"] == 1
-    assert issues_by_kind["supporting_material_linkage"]["invoice_ids"] == [
-        invoice_id,
-        second_invoice_id,
-    ]
+    assert issues_by_kind["supporting_material_linkage"]["invoice_ids"] == [invoice_id]
     assert invoice_id in issues_by_kind["missing_materials"]["invoice_ids"]
     assert "validation_blocker" not in issues_by_kind
 
@@ -451,6 +482,14 @@ def test_task_readiness_reports_confirmation_and_split_blockers(tmp_path):
         split_ids[1],
         actor_id="2250002",
         member_id="2250002",
+        status="confirmed",
+    )
+    submit_invoice(client, task_id, first_invoice_id)
+    confirm_split(
+        client,
+        split_ids[1],
+        actor_id="2250002",
+        member_id="2250002",
         status="disputed",
         dispute_reason="shared amount should be lower",
     )
@@ -467,6 +506,9 @@ def test_task_readiness_reports_confirmation_and_split_blockers(tmp_path):
         invoice_number="SPLIT-001",
         amount_cents=20000,
     )
+    second_split_id = replace_splits(client, second_invoice_id)[0]["id"]
+    confirm_split(client, second_split_id)
+    submit_invoice(client, task_id, second_invoice_id)
     create_invoice(
         client,
         second_invoice_material_id,

@@ -185,6 +185,10 @@ describe("MemberExpenseConfirmationPage", () => {
       "/member/invoices/workbench?taskId=TASK-OPEN",
     );
     const detailList = await screen.findByLabelText("成员费用明细列表");
+    expect(screen.getByText("本人费用")).toBeInTheDocument();
+    expect(screen.getByText("当前任务下分摊到你名下的费用合计。")).toBeInTheDocument();
+    expect(screen.getByText("费用条数")).toBeInTheDocument();
+    expect(screen.getByText("当前任务下与你相关的费用明细条数。")).toBeInTheDocument();
     const detailCard = within(detailList).getByRole("heading", { name: "INV-001" }).closest("article");
     if (!detailCard) {
       throw new Error("expected one expense detail card");
