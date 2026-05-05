@@ -194,7 +194,7 @@ def create_redaction_fixture(client: TestClient) -> str:
         actor_id="2250001",
         invoice_number="SHARED-001",
         amount_cents=20000,
-        expense_type="registration",
+        expense_type="railway",
     )
     mark_recognition_succeeded(client, shared_material_id)
 
@@ -233,6 +233,21 @@ def create_redaction_fixture(client: TestClient) -> str:
         },
     )
     assert split_response.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in split_response.json()["items"]}
+    for member_id, split_id in split_ids.items():
+        assert client.put(
+            f"/api/splits/{split_id}/confirmation",
+            json={
+                "actor_id": member_id,
+                "member_id": member_id,
+                "status": "confirmed",
+            },
+        ).status_code == 200
+    assert client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+        json={"invoice_ids": [shared_invoice_id]},
+    ).status_code == 200
 
     own_material_id = upload_material(
         client,
@@ -507,7 +522,7 @@ def test_member_workbench_summary_redacts_shared_attachment_details_and_recognit
     )
     assert shared_item["original_filename"] == "shared-registration.pdf"
     assert shared_item["submitter_id"] == "2250001"
-    assert shared_item["validation_status"] == "failed"
+    assert shared_item["validation_status"] == "passed"
     assert shared_item["supporting_materials"] == [
         {"material_type": "order_screenshot", "count": 1},
         {"material_type": "payment_record", "count": 1},

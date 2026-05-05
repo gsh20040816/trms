@@ -402,8 +402,8 @@ function findPrimaryInvoice(item: TaskMemberWorkbenchItem | null, sharedInvoice:
     corporate_transfer_reference: null,
     amount_cents: sharedInvoice.amount_cents,
     expense_type: sharedInvoice.expense_type,
-    member_submission_status: "unsubmitted",
-    submitted_by_member_id: null,
+    member_submission_status: "submitted",
+    submitted_by_member_id: sharedInvoice.submitter_id,
     submitted_at: null,
     created_at: sharedInvoice.updated_at,
     updated_at: sharedInvoice.updated_at,
@@ -479,7 +479,8 @@ export function MemberInvoiceDetailPage() {
   const abnormalReasons = useMemo(() => (item ? collectAbnormalReasons(item) : []), [item]);
   const allowedExpenseTypes = task ? buildAllowedExpenseTypes(task) : [];
   const splitSummary = summarizeSplitDrafts(splitDrafts);
-  const canEditInvoice = invoice?.member_submission_status !== "submitted";
+  const isSharedReadonlyDetail = Boolean(sharedInvoice && !item);
+  const canEditInvoice = Boolean(item) && invoice?.member_submission_status !== "submitted";
   const canEditSplits = canEditInvoice;
   const canDeleteCurrentItem = Boolean(
     item
@@ -727,7 +728,9 @@ export function MemberInvoiceDetailPage() {
         <PageHeader
           eyebrow="单张发票处理"
           title={invoice?.invoice_number ?? item?.material.original_filename ?? "发票处理"}
-          description="在这个页面补齐字段、修改材料类型、调整分摊金额，并查看校验与附件状态。"
+          description={isSharedReadonlyDetail
+            ? "这是其他成员已提交的发票详情，当前账号只能查看，不能编辑字段、分摊或附件。"
+            : "在这个页面补齐字段、修改材料类型、调整分摊金额，并查看校验与附件状态。"}
           meta={task ? `${task.competition_name} / ${formatTaskStatus(task.status)}` : `当前成员：${formatUserIdentityLabel(session)}`}
           actions={(
             <div className="page-actions">
@@ -754,22 +757,66 @@ export function MemberInvoiceDetailPage() {
       ) : null}
 
       {detailState.status === "ready" && sharedInvoice ? (
-        <SectionCard
-          title="共享发票摘要"
-          description="这是任务内其他成员上传的发票，只展示可共享摘要，不提供原始附件和编辑入口。"
-          action={<StatusBadge tone="info">只读</StatusBadge>}
-        >
-          <InvoiceSummaryRow
-            filename={sharedInvoice.original_filename}
-            invoiceNumber={sharedInvoice.invoice_number}
-            amountLabel={formatCurrencyFromCents(sharedInvoice.amount_cents)}
-            validationLabel={formatSharedInvoiceValidationLabel(sharedInvoice.validation_status)}
-            validationTone={mapSharedInvoiceValidationTone(sharedInvoice.validation_status)}
-            supportingMaterialCount={sharedInvoice.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
-            statusHint={`上传成员 ${sharedInvoice.submitter_id ? formatTaskMemberLabel(sharedInvoice.submitter_id, memberSummaryMap) : "未记录"}；费用类型 ${formatExpenseType(sharedInvoice.expense_type)}`}
-            trailingContent={<StatusBadge tone="info">{formatExpenseType(sharedInvoice.expense_type)}</StatusBadge>}
-          />
-        </SectionCard>
+        <>
+          <SectionCard
+            title="当前状态"
+            description="这张发票已由其他成员提交给管理员，当前页面复用成员发票详情布局，但所有操作保持只读。"
+            action={<StatusBadge tone="info">只读</StatusBadge>}
+          >
+            <InvoiceSummaryRow
+              filename={sharedInvoice.original_filename}
+              invoiceNumber={sharedInvoice.invoice_number}
+              amountLabel={formatCurrencyFromCents(sharedInvoice.amount_cents)}
+              validationLabel={formatSharedInvoiceValidationLabel(sharedInvoice.validation_status)}
+              validationTone={mapSharedInvoiceValidationTone(sharedInvoice.validation_status)}
+              supportingMaterialCount={sharedInvoice.supporting_materials.reduce((sum, material) => sum + material.count, 0)}
+              statusHint={`上传成员 ${sharedInvoice.submitter_id ? formatTaskMemberLabel(sharedInvoice.submitter_id, memberSummaryMap) : "未记录"}；费用类型 ${formatExpenseType(sharedInvoice.expense_type)}`}
+              trailingContent={<StatusBadge tone="info">{formatExpenseType(sharedInvoice.expense_type)}</StatusBadge>}
+            />
+            <p className="field-hint">其他成员已提交发票只能查看摘要和金额归属，不能打开原始文件、重新识别、修改字段或调整分摊。</p>
+          </SectionCard>
+
+          <SectionCard title="发票字段" description="以下字段来自已提交发票的共享摘要，只读展示。">
+            <dl className="task-meta-grid member-status-meta-grid">
+              <div><dt>发票号码</dt><dd>{sharedInvoice.invoice_number}</dd></div>
+              <div><dt>开票日期</dt><dd>{sharedInvoice.issue_date ?? "未填写"}</dd></div>
+              <div><dt>发票抬头</dt><dd>{sharedInvoice.buyer_name}</dd></div>
+              <div><dt>销售方</dt><dd>{sharedInvoice.seller_name ?? "未填写"}</dd></div>
+              <div><dt>金额</dt><dd>{formatCurrencyFromCents(sharedInvoice.amount_cents)}</dd></div>
+              <div><dt>费用类型</dt><dd>{formatExpenseType(sharedInvoice.expense_type)}</dd></div>
+            </dl>
+          </SectionCard>
+
+          <SectionCard title="金额归属" description="只读展示这张已提交发票的当前分摊去向。">
+            {sharedInvoice.splits.length > 0 ? (
+              <ul className="member-status-message-list" aria-label="共享发票分摊列表">
+                {sharedInvoice.splits.map((split) => (
+                  <li key={`${sharedInvoice.invoice_id}:${split.member_id}`}>
+                    <strong>{formatTaskMemberLabel(split.member_id, memberSummaryMap)}</strong>
+                    <span>归属金额：{formatCurrencyFromCents(split.amount_cents)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="field-hint">当前共享摘要中没有分摊记录。</p>
+            )}
+          </SectionCard>
+
+          <SectionCard title="附件与缺失材料" description="只读展示附件类型和数量，不暴露其他成员上传的原始附件内容。">
+            {sharedInvoice.supporting_materials.length > 0 ? (
+              <ul className="member-status-message-list" aria-label="共享发票附件摘要列表">
+                {sharedInvoice.supporting_materials.map((material) => (
+                  <li key={`${sharedInvoice.invoice_id}:${material.material_type}`}>
+                    <strong>{formatMaterialType(material.material_type)}</strong>
+                    <span>{material.count} 份</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="field-hint">当前共享摘要中没有已关联附件。</p>
+            )}
+          </SectionCard>
+        </>
       ) : null}
 
       {detailState.status === "ready" && item ? (

@@ -95,7 +95,7 @@ def create_shared_invoice_fixture(client: TestClient) -> str:
         actor_id="2250001",
         invoice_number="REG-001",
         amount_cents=20000,
-        expense_type="registration",
+        expense_type="railway",
     )
 
     own_support_material_id = upload_material(
@@ -135,6 +135,37 @@ def create_shared_invoice_fixture(client: TestClient) -> str:
         },
     )
     assert split_response.status_code == 200
+    split_ids = {item["member_id"]: item["id"] for item in split_response.json()["items"]}
+    for member_id, split_id in split_ids.items():
+        assert client.put(
+            f"/api/splits/{split_id}/confirmation",
+            json={
+                "actor_id": member_id,
+                "member_id": member_id,
+                "status": "confirmed",
+            },
+        ).status_code == 200
+    assert client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+        json={"invoice_ids": [member_one_invoice_id]},
+    ).status_code == 200
+
+    member_one_draft_material_id = upload_material(
+        client,
+        task_id,
+        submitter_id="2250001",
+        material_type="invoice",
+        filename="member-one-draft.pdf",
+    )
+    create_invoice(
+        client,
+        member_one_draft_material_id,
+        actor_id="2250001",
+        invoice_number="DRAFT-001",
+        amount_cents=9999,
+        expense_type="railway",
+    )
 
     member_two_invoice_material_id = upload_material(
         client,
@@ -175,7 +206,7 @@ def test_task_member_can_view_shared_invoice_summary_without_sensitive_attachmen
     shared_invoice = items_by_invoice_number["REG-001"]
     assert shared_invoice["original_filename"] == "member-one-registration.pdf"
     assert shared_invoice["submitter_id"] == "2250001"
-    assert shared_invoice["validation_status"] == "failed"
+    assert shared_invoice["validation_status"] == "passed"
     assert shared_invoice["buyer_name"] == "同济大学"
     assert shared_invoice["amount_cents"] == 20000
     assert shared_invoice["splits"] == [
@@ -190,6 +221,19 @@ def test_task_member_can_view_shared_invoice_summary_without_sensitive_attachmen
     assert "transaction_time" not in shared_invoice
     assert all("original_filename" not in item for item in shared_invoice["supporting_materials"])
     assert all("note" not in item for item in shared_invoice["splits"])
+
+
+def test_task_administrator_shared_invoice_summary_only_includes_submitted_invoices(tmp_path):
+    client = make_client(tmp_path)
+    task_id = create_shared_invoice_fixture(client)
+
+    response = client.get(
+        f"/api/tasks/{task_id}/shared-invoices",
+        headers=admin_auth_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert [item["invoice_number"] for item in response.json()["items"]] == ["REG-001"]
 
 
 def test_non_member_cannot_view_task_shared_invoice_summary(tmp_path):

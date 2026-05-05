@@ -53,6 +53,7 @@ from trms_backend.domain.overdue_confirmations import (
 )
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigRepository
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
+from trms_backend.domain.invoice_visibility import filter_invoices_visible_to_actor
 from trms_backend.domain.material_reminders import (
     MaterialReminderCreate,
     MaterialReminderRepository,
@@ -162,6 +163,10 @@ def build_user_search_summary(user) -> UserSearchSummary:
         display_name=user.display_name,
         student_id=user.member_code,
     )
+
+
+def build_materials_by_id(material_repository: MaterialRepository, task_id: str) -> dict[str, MaterialRecord]:
+    return {material.id: material for material in material_repository.list_by_task(task_id)}
 
 
 def build_task_router(
@@ -523,7 +528,18 @@ def build_task_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
-        invoices = invoice_repository.list_by_task(task_id)
+        resolved_actor_id = resolve_required_actor_request_field(
+            identity,
+            actor_id,
+            field_name="actor_id",
+        )
+        materials_by_id = build_materials_by_id(material_repository, task_id)
+        invoices = filter_invoices_visible_to_actor(
+            task,
+            actor_id=resolved_actor_id,
+            invoices=invoice_repository.list_by_task(task_id),
+            materials_by_id=materials_by_id,
+        )
         splits_by_invoice_id = {
             invoice.id: split_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
@@ -532,11 +548,6 @@ def build_task_router(
             for confirmation in confirmation_repository.list_current_by_invoice(invoice.id):
                 confirmations_by_split_id[confirmation.split_id] = confirmation
 
-        resolved_actor_id = resolve_required_actor_request_field(
-            identity,
-            actor_id,
-            field_name="actor_id",
-        )
         try:
             return build_expense_detail_list(
                 task,
@@ -568,7 +579,13 @@ def build_task_router(
         )
 
         materials = material_repository.list_by_task(task_id)
-        invoices = invoice_repository.list_by_task(task_id)
+        materials_by_id = {material.id: material for material in materials}
+        invoices = filter_invoices_visible_to_actor(
+            task,
+            actor_id=resolved_actor_id,
+            invoices=invoice_repository.list_by_task(task_id),
+            materials_by_id=materials_by_id,
+        )
         validations_by_invoice_id = {
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
@@ -621,7 +638,13 @@ def build_task_router(
         )
 
         materials = material_repository.list_by_task(task_id)
-        invoices = invoice_repository.list_by_task(task_id)
+        materials_by_id = {material.id: material for material in materials}
+        invoices = filter_invoices_visible_to_actor(
+            task,
+            actor_id=resolved_actor_id,
+            invoices=invoice_repository.list_by_task(task_id),
+            materials_by_id=materials_by_id,
+        )
         validations_by_invoice_id = {
             invoice.id: validation_repository.list_by_invoice(invoice.id) for invoice in invoices
         }
@@ -700,10 +723,13 @@ def build_task_router(
             actor_id,
             field_name="actor_id",
         )
-        invoices = invoice_repository.list_by_task(task_id)
-        materials_by_id = {
-            material.id: material for material in material_repository.list_by_task(task_id)
-        }
+        materials_by_id = build_materials_by_id(material_repository, task_id)
+        invoices = filter_invoices_visible_to_actor(
+            task,
+            actor_id=resolved_actor_id,
+            invoices=invoice_repository.list_by_task(task_id),
+            materials_by_id=materials_by_id,
+        )
         supporting_materials_by_invoice_id: dict[str, list[MaterialRecord]] = {}
         for invoice in invoices:
             supporting_materials = []

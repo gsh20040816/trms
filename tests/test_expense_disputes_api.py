@@ -8,6 +8,7 @@ from trms_backend.main import create_app
 from trms_backend.runtime_config import load_runtime_config
 
 from test_invoices_api import valid_invoice_payload
+from test_expense_details_api import mark_new_recognition_succeeded
 from test_tasks_api import (
     admin_auth_headers,
     auth_headers,
@@ -77,6 +78,7 @@ def upload_invoice_material(
 def create_disputed_split_fixture(client: TestClient) -> tuple[str, str, str]:
     task_id = create_task(client)
     material_id = upload_invoice_material(client, task_id)
+    mark_new_recognition_succeeded(client, material_id)
     response = client.post(
         f"/api/materials/{material_id}/invoice",
         json=valid_invoice_payload(),
@@ -103,6 +105,30 @@ def create_disputed_split_fixture(client: TestClient) -> tuple[str, str, str]:
     )
     assert response.status_code == 200
 
+    response = client.put(
+        f"/api/splits/{split_ids['2250002']}/confirmation",
+        json={
+            "actor_id": "2250002",
+            "member_id": "2250002",
+            "status": "confirmed",
+        },
+    )
+    assert response.status_code == 200
+    response = client.post(
+        f"/api/tasks/{task_id}/invoice-submissions",
+        headers=auth_headers(
+            register_and_get_token(
+                client,
+                username="member1",
+                role="member",
+                actor_id="2250001",
+                member_code="2250001",
+            )
+        ),
+        json={"invoice_ids": [invoice_id]},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
     response = client.put(
         f"/api/splits/{split_ids['2250002']}/confirmation",
         json={
@@ -270,14 +296,14 @@ def test_resolving_dispute_returns_split_to_pending_and_blocks_ready_to_export(t
     assert response.json()["dispute_reason"] == "shared amount should be lower"
 
     audit_logs = list_split_audit_logs(tmp_path, split_id)
-    assert len(audit_logs) == 2
-    assert audit_logs[1].actor_id == "admin-1"
-    assert audit_logs[1].action == "resolve_split_dispute"
-    assert audit_logs[1].result is AuditLogResult.SUCCEEDED
-    assert audit_logs[1].request_id.startswith("req_")
-    assert audit_logs[1].detail["status"] == "pending"
-    assert audit_logs[1].detail["previous_status"] == "disputed"
-    assert audit_logs[1].detail["dispute_reason"] == "shared amount should be lower"
+    assert len(audit_logs) == 3
+    assert audit_logs[2].actor_id == "admin-1"
+    assert audit_logs[2].action == "resolve_split_dispute"
+    assert audit_logs[2].result is AuditLogResult.SUCCEEDED
+    assert audit_logs[2].request_id.startswith("req_")
+    assert audit_logs[2].detail["status"] == "pending"
+    assert audit_logs[2].detail["previous_status"] == "disputed"
+    assert audit_logs[2].detail["dispute_reason"] == "shared amount should be lower"
 
     expense_detail_response = client.get(
         f"/api/tasks/{task_id}/expense-details",

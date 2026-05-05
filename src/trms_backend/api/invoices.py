@@ -45,6 +45,7 @@ from trms_backend.domain.invoices import (
     ValidationRepository,
     ensure_manual_invoice_entry_actor_allowed,
 )
+from trms_backend.domain.invoice_visibility import filter_invoices_visible_to_actor
 from trms_backend.domain.materials import (
     MaterialCreate,
     MaterialFileStorage,
@@ -675,20 +676,23 @@ def build_invoice_router(
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
 
-        items = invoice_repository.list_by_task(task_id)
         scope = resolve_task_access_scope(
             identity,
             task,
             forbidden_detail="actor is not allowed to view invoices for this task",
         )
         if scope is TaskAccessScope.MEMBER:
-            actor_id = identity.actor_id or ""
-            visible_material_ids = {
-                material.id
-                for material in material_repository.list_by_task(task_id)
-                if material.submitter_id == actor_id
+            materials_by_id = {
+                material.id: material for material in material_repository.list_by_task(task_id)
             }
-            items = [item for item in items if item.material_id in visible_material_ids]
+            items = filter_invoices_visible_to_actor(
+                task,
+                actor_id=identity.actor_id or "",
+                invoices=invoice_repository.list_by_task(task_id),
+                materials_by_id=materials_by_id,
+            )
+        else:
+            items = invoice_repository.list_by_task(task_id)
         return {"items": items}
 
     @router.get("/api/invoices/{invoice_id}/validations")

@@ -64,9 +64,48 @@ def upload_invoice_material(
     return response.json()["items"][0]["id"]
 
 
-def create_split_fixture(client: TestClient) -> tuple[str, str, dict[str, str]]:
+def mark_new_recognition_succeeded(client: TestClient, material_id: str) -> None:
+    create_response = client.post(
+        f"/api/materials/{material_id}/recognition-tasks",
+        headers=admin_auth_headers(client),
+    )
+    assert create_response.status_code == 201
+    recognition_task_id = create_response.json()["item"]["id"]
+    update_response = client.patch(
+        f"/api/recognition-tasks/{recognition_task_id}/status",
+        headers=admin_auth_headers(client),
+        json={
+            "target_status": "succeeded",
+            "result": {
+                "raw_response": {"provider": "test-provider"},
+                "recognized_fields": {
+                    "buyer_name": {
+                        "value": "同济大学",
+                        "source": "manual",
+                        "confidence": 1,
+                        "status": "recognized",
+                    },
+                    "tax_number": {
+                        "value": "12100000425006117D",
+                        "source": "manual",
+                        "confidence": 1,
+                        "status": "recognized",
+                    },
+                },
+            },
+        },
+    )
+    assert update_response.status_code == 200
+
+
+def create_split_fixture(
+    client: TestClient,
+    *,
+    submitted: bool = True,
+) -> tuple[str, str, dict[str, str]]:
     task_id = create_task(client)
     material_id = upload_invoice_material(client, task_id)
+    mark_new_recognition_succeeded(client, material_id)
     response = client.post(
         f"/api/materials/{material_id}/invoice",
         json=valid_invoice_payload(),
@@ -92,6 +131,18 @@ def create_split_fixture(client: TestClient) -> tuple[str, str, dict[str, str]]:
         json={"actor_id": "2250002", "member_id": "2250002", "status": "confirmed"},
     )
     assert response.status_code == 200
+    response = client.put(
+        f"/api/splits/{split_ids['2250001']}/confirmation",
+        json={"actor_id": "2250001", "member_id": "2250001", "status": "confirmed"},
+    )
+    assert response.status_code == 200
+    if submitted:
+        response = client.post(
+            f"/api/tasks/{task_id}/invoice-submissions",
+            headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+            json={"invoice_ids": [invoice_id]},
+        )
+        assert response.status_code == 200
 
     return task_id, invoice_id, split_ids
 
@@ -135,6 +186,33 @@ def test_task_member_without_related_splits_gets_empty_expense_details(tmp_path)
         "total_amount_cents": 0,
         "items": [],
     }
+
+
+def test_other_member_and_admin_do_not_see_unsubmitted_invoice_expense_details(tmp_path):
+    client = make_client(tmp_path)
+    task_id, _, _ = create_split_fixture(client, submitted=False)
+
+    other_member_response = client.get(
+        f"/api/tasks/{task_id}/expense-details",
+        headers=member_auth_headers(client, username="member2", actor_id="2250002"),
+    )
+    admin_response = client.get(
+        f"/api/tasks/{task_id}/expense-details",
+        headers=admin_auth_headers(client),
+    )
+    submitter_response = client.get(
+        f"/api/tasks/{task_id}/expense-details",
+        headers=member_auth_headers(client, username="member1", actor_id="2250001"),
+    )
+
+    assert other_member_response.status_code == 200
+    assert other_member_response.json()["total_amount_cents"] == 0
+    assert other_member_response.json()["items"] == []
+    assert admin_response.status_code == 200
+    assert admin_response.json()["total_amount_cents"] == 0
+    assert admin_response.json()["items"] == []
+    assert submitter_response.status_code == 200
+    assert submitter_response.json()["total_amount_cents"] == 6000
 
 
 def test_task_administrator_can_list_all_expense_details(tmp_path):

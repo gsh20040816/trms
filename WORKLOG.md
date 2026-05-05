@@ -1,5 +1,50 @@
 # WORKLOG
 
+## 2026-05-05 14:20 - Restrict shared invoice visibility to submitted invoices
+
+### 完成内容
+- 已收口成员发票提交后的可见性：
+  - [src/trms_backend/domain/invoice_visibility.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/invoice_visibility.py)
+  - 新增统一发票可见性规则：本人上传的发票本人可见；其他成员只能看到已提交发票；管理员在共享/费用口径中只看到已提交发票。
+- 已修复成员页“本人费用”统计：
+  - [src/trms_backend/api/tasks.py](/home/gsh/workspace/TRMS/src/trms_backend/api/tasks.py)
+  - `/api/tasks/{task_id}/expense-details`、`member-status`、`member-workbench` 和 `shared-invoices` 在展开分摊、确认、共享摘要前先按提交状态过滤发票；
+  - 其他成员未提交发票上的分摊不再计入当前成员或管理员费用。
+- 已收口成员读取任务发票列表：
+  - [src/trms_backend/api/invoices.py](/home/gsh/workspace/TRMS/src/trms_backend/api/invoices.py)
+  - 成员可见本人发票与其他成员已提交发票；管理员通用管理列表保留既有任务内发票管理能力，避免破坏识别后管理员立即查看新成票的主路径。
+- 已调整成员共享发票详情页：
+  - [web/src/app/member-invoice-detail.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.tsx)
+  - 其他成员点击已提交共享发票仍进入成员发票详情路由，但页面按只读模式展示发票字段、金额归属和附件摘要，不提供原文件、重新识别、字段保存、分摊保存等编辑入口。
+- 已补充和更新回归测试：
+  - [tests/test_expense_details_api.py](/home/gsh/workspace/TRMS/tests/test_expense_details_api.py)
+  - [tests/test_task_shared_invoices_api.py](/home/gsh/workspace/TRMS/tests/test_task_shared_invoices_api.py)
+  - [tests/test_task_member_workbench_api.py](/home/gsh/workspace/TRMS/tests/test_task_member_workbench_api.py)
+  - [web/src/app/member-invoice-detail.test.tsx](/home/gsh/workspace/TRMS/web/src/app/member-invoice-detail.test.tsx)
+
+### 根因
+- 共享发票报表此前直接遍历任务下全部发票，没有区分成员是否已将发票提交给管理员。
+- 费用明细接口在按成员分摊过滤前使用了任务下全部发票，导致其他成员仍在编辑中的未提交发票也会把分摊金额计入当前成员“本人费用”。
+- 成员共享发票详情页虽然走同一路由，但只显示摘要卡，没有形成与本人发票详情一致的只读详情视图。
+
+### 风险与影响面
+- 本轮不改变发票提交/撤回流程本身，只改变其他成员和管理员侧的读取口径。
+- 提交人本人仍可看到并处理自己的未提交发票，避免影响成员工作台闭环。
+- 管理员更完整的材料审核页仍有“材料队列”层面的历史展示口径，后续如果要做到管理员完全看不到未提交原始材料，需要单独收口管理员材料审核聚合，不应混入本轮费用/发票共享修复。
+
+### 验证结果
+- 已运行定向后端测试：
+  - `uv run pytest tests/test_expense_details_api.py tests/test_task_shared_invoices_api.py tests/test_task_member_workbench_api.py`
+  - `20 passed`
+- 已运行定向前端测试：
+  - `npm test -- --run src/app/member-invoice-detail.test.tsx src/app/member-invoice-workbench.test.tsx src/app/member-invoice-workbench-aggregate.test.tsx`
+  - `22 passed`
+- 仓库级验证曾失败，原因是首次实现误把管理员通用任务发票列表也收窄为仅已提交发票，破坏识别后管理员查看新生成发票的既有主路径；已修正为只在共享发票和费用明细口径过滤提交状态。
+- 已重新运行仓库级验证：
+  - `./scripts/verify.sh`
+  - `641 passed`，前端 `30 passed / 134 tests passed`，构建、迁移验证和 `git diff --check` 通过。
+  - `npm run lint` 仍有 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
 ## 2026-05-05 00:02 - Prefetch member workbench aggregate data in parallel on initial load
 
 ### 完成内容

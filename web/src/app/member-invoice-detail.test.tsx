@@ -385,7 +385,7 @@ describe("MemberInvoiceDetailPage", () => {
     expect(requests.some((request) => request.url === "/api/splits/SPLIT-001/confirmation")).toBe(false);
   });
 
-  it("renders shared invoices with the same one-line summary fields", async () => {
+  it("renders other members submitted invoices on the detail route as read-only", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
       const method = resolveRequestMethod(input, init);
@@ -407,11 +407,17 @@ describe("MemberInvoiceDetailPage", () => {
       render(<RouterProvider router={router} />);
     });
 
-    expect(await screen.findByRole("heading", { name: "共享发票摘要" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "当前状态" })).toBeInTheDocument();
     expect(screen.getByText("team-shared.pdf")).toBeInTheDocument();
     expect(screen.getByText("票号 TEAM-SHARED-001")).toBeInTheDocument();
     expect(screen.getByText("校验通过")).toBeInTheDocument();
     expect(screen.getByText("附件 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "发票字段" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "金额归属" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "附件与缺失材料" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存发票字段并校验" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存金额归属" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看原文件" })).not.toBeInTheDocument();
   });
 
   it("shows delete action for own unsubmitted invoice and deletes after confirmation", async () => {
