@@ -170,8 +170,9 @@ def test_admin_bearer_review_summary_and_material_reminders_do_not_require_actor
     )
 
     assert create_response.status_code == 201
-    assert create_response.json()["administrator_id"] == "admin-1"
-    assert create_response.json()["member_id"] == "2250002"
+    reminder = create_response.json()["items"][0]
+    assert reminder["administrator_id"] == "admin-1"
+    assert reminder["member_id"] == "2250002"
 
     list_response = client.get(
         f"/api/tasks/{task_id}/material-reminders",
@@ -460,7 +461,7 @@ def test_secondary_admin_bearer_can_access_multi_admin_review_routes(tmp_path):
         },
     )
     assert reminder_response.status_code == 201
-    assert reminder_response.json()["administrator_id"] == "admin-2"
+    assert reminder_response.json()["items"][0]["administrator_id"] == "admin-2"
 
 
 def test_admin_bearer_review_routes_reject_anonymous_or_unrelated_admin(tmp_path):

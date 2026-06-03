@@ -599,10 +599,15 @@ export type TaskExportJobRecord = {
 };
 
 export type MaterialReminderCreate = {
-  administrator_id: string;
-  member_id: string;
+  administrator_id?: string;
+  member_id?: string;
+  member_ids?: string[];
   content: string;
+  email_subject?: string | null;
+  email_body?: string | null;
 };
+
+export type MaterialReminderEmailDeliveryStatus = "pending" | "sent" | "failed";
 
 export type MaterialReminderRecord = {
   id: string;
@@ -610,6 +615,12 @@ export type MaterialReminderRecord = {
   administrator_id: string;
   member_id: string;
   content: string;
+  email_recipient: string | null;
+  email_subject: string | null;
+  email_body: string | null;
+  email_delivery_status: MaterialReminderEmailDeliveryStatus | null;
+  email_failure_reason: string | null;
+  email_sent_at: ApiDateTime | null;
   created_at: ApiDateTime;
 };
 

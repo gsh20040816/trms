@@ -17,6 +17,7 @@ from trms_backend.application.invoice_member_submission import (
 from trms_backend.application.invoice_member_submission_withdrawal import (
     InvoiceMemberSubmissionWithdrawalService,
 )
+from trms_backend.application.material_reminder_email import MaterialReminderEmailDispatchService
 from trms_backend.application.supporting_material_auto_link import SupportingMaterialAutoLinkService
 from trms_backend.application.task_deletion import (
     TaskDeletionActorNotAllowedError,
@@ -55,10 +56,8 @@ from trms_backend.domain.global_invoice_config import GlobalInvoiceConfigReposit
 from trms_backend.domain.invoices import InvoiceRepository, ValidationRepository
 from trms_backend.domain.invoice_visibility import filter_invoices_visible_to_actor
 from trms_backend.domain.material_reminders import (
-    MaterialReminderCreate,
     MaterialReminderRepository,
     TaskMaterialReminderActorNotAllowedError,
-    create_task_material_reminder,
     list_task_material_reminders,
 )
 from trms_backend.domain.materials import MaterialRecord, MaterialRepository, MaterialType
@@ -116,23 +115,31 @@ from trms_backend.domain.tasks import (
 
 class TaskMaterialReminderCreateRequest(BaseModel):
     administrator_id: str | None = None
-    member_id: str = Field(min_length=1)
+    member_id: str | None = Field(default=None, min_length=1)
+    member_ids: list[str] = Field(default_factory=list)
     content: str = Field(min_length=1, max_length=2000)
+    email_subject: str | None = Field(default=None, max_length=255)
+    email_body: str | None = Field(default=None, max_length=8000)
 
     @model_validator(mode="after")
     def normalize_text(self) -> "TaskMaterialReminderCreateRequest":
         if self.administrator_id is not None:
             self.administrator_id = self.administrator_id.strip() or None
-        self.member_id = self.member_id.strip()
+        if self.member_id is not None:
+            self.member_id = self.member_id.strip() or None
+        member_ids = [member_id.strip() for member_id in self.member_ids if member_id.strip()]
+        if self.member_id:
+            member_ids = [self.member_id, *member_ids]
+        deduplicated_member_ids = list(dict.fromkeys(member_ids))
+        if not deduplicated_member_ids:
+            raise ValueError("member_ids must not be empty")
+        self.member_ids = deduplicated_member_ids
         self.content = self.content.strip()
+        if self.email_subject is not None:
+            self.email_subject = self.email_subject.strip() or None
+        if self.email_body is not None:
+            self.email_body = self.email_body.strip() or None
         return self
-
-    def to_domain(self, *, administrator_id: str) -> MaterialReminderCreate:
-        return MaterialReminderCreate(
-            administrator_id=administrator_id,
-            member_id=self.member_id,
-            content=self.content,
-        )
 
 
 class InvoiceMemberSubmissionBatchRequest(BaseModel):
@@ -200,6 +207,7 @@ def build_task_router(
     confirmation_repository: ConfirmationRepository,
     audit_log_repository: AuditLogRepository,
     task_deletion_service: TaskDeletionService,
+    material_reminder_email_service: MaterialReminderEmailDispatchService,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     authenticated_request_identity = build_authenticated_request_identity_dependency(
@@ -490,11 +498,16 @@ def build_task_router(
             field_name="administrator_id",
         )
         try:
-            return create_task_material_reminder(
-                task,
-                reminder_repository=material_reminder_repository,
-                payload=payload.to_domain(administrator_id=administrator_id),
-            )
+            return {
+                "items": material_reminder_email_service.create_and_send(
+                    task,
+                    administrator_id=administrator_id,
+                    member_ids=payload.member_ids,
+                    content=payload.content,
+                    email_subject=payload.email_subject,
+                    email_body=payload.email_body,
+                )
+            }
         except TaskMaterialReminderActorNotAllowedError as error:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

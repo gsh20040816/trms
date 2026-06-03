@@ -401,6 +401,12 @@ class MaterialReminderRow(Base):
     administrator_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     member_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     content: Mapped[str] = mapped_column(String(2000), nullable=False)
+    email_recipient: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    email_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_body: Mapped[str | None] = mapped_column(String(8000), nullable=True)
+    email_delivery_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    email_failure_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

@@ -3,10 +3,12 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from trms_backend.application.outbound_email import OutboundEmailMessage
 from trms_backend.domain.global_invoice_config import GlobalInvoiceConfig
 from trms_backend.infrastructure.database import build_session_factory, session_scope
 from trms_backend.infrastructure.models import (
     ConfirmationRow,
+    EmailAccountBindingRow,
     ExpenseSplitRow,
     ExportJobRow,
     InvoiceRow,
@@ -22,7 +24,19 @@ from trms_backend.runtime_config import load_runtime_config
 from api_error_assertions import assert_api_error
 
 
-def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = None):
+class RecordingOutboundEmailSender:
+    def __init__(self) -> None:
+        self.messages: list[OutboundEmailMessage] = []
+
+    def send(self, message: OutboundEmailMessage) -> None:
+        self.messages.append(message)
+
+
+def make_client(
+    tmp_path,
+    global_invoice_config: GlobalInvoiceConfig | None = None,
+    outbound_email_sender=None,
+):
     runtime_config = load_runtime_config(
         environment="test",
         database_url=f"sqlite:///{tmp_path}/test.db",
@@ -38,6 +52,7 @@ def make_client(tmp_path, global_invoice_config: GlobalInvoiceConfig | None = No
             runtime_config=runtime_config,
             global_invoice_config=global_invoice_config,
             material_file_storage=LocalMaterialFileStorage(tmp_path / "material-storage"),
+            outbound_email_sender=outbound_email_sender,
         )
     )
 
@@ -115,6 +130,21 @@ def update_task_row(tmp_path, task_id: str, **updates):
         for field_name, value in updates.items():
             setattr(row, field_name, value)
         session.add(row)
+
+
+def bind_primary_email(tmp_path, *, member_id: str, email: str) -> None:
+    session_factory = build_session_factory(f"sqlite:///{tmp_path}/test.db")
+    now = datetime.now(UTC)
+    with session_scope(session_factory) as session:
+        session.add(
+            EmailAccountBindingRow(
+                id=str(uuid4()),
+                member_id=member_id,
+                email=email,
+                created_at=now,
+                updated_at=now,
+            )
+        )
 
 
 def valid_task_payload():
@@ -961,27 +991,43 @@ def test_secondary_administrator_can_manage_task_routes(tmp_path):
     assert status_response.json()["status"] == "open"
 
 
-def test_administrator_can_record_and_list_material_reminders(tmp_path):
-    client = make_client(tmp_path)
+def test_administrator_can_send_and_list_material_reminder_emails(tmp_path):
+    sender = RecordingOutboundEmailSender()
+    client = make_client(tmp_path, outbound_email_sender=sender)
     task = create_task(client)
+    bind_primary_email(tmp_path, member_id="2250002", email="member2@tongji.edu.cn")
+    bind_primary_email(tmp_path, member_id="2250003", email="member3@tongji.edu.cn")
 
     create_response = client.post(
         f"/api/tasks/{task['id']}/material-reminders",
         json={
             "administrator_id": "admin-1",
-            "member_id": "2250002",
+            "member_ids": ["2250002", "2250003"],
             "content": "请补充支付记录和比赛通知。",
+            "email_subject": "ICPC 报销材料提醒",
+            "email_body": "这是一封 TRMS 自动化提醒邮件，无需直接回复本邮件。\n请补材料。",
         },
         headers=admin_auth_headers(client),
     )
 
     assert create_response.status_code == 201
-    reminder = create_response.json()
-    assert reminder["task_id"] == task["id"]
-    assert reminder["administrator_id"] == "admin-1"
-    assert reminder["member_id"] == "2250002"
-    assert reminder["content"] == "请补充支付记录和比赛通知。"
-    assert reminder["created_at"]
+    reminders = create_response.json()["items"]
+    assert [item["task_id"] for item in reminders] == [task["id"], task["id"]]
+    assert [item["administrator_id"] for item in reminders] == ["admin-1", "admin-1"]
+    assert [item["member_id"] for item in reminders] == ["2250002", "2250003"]
+    assert [item["email_recipient"] for item in reminders] == [
+        "member2@tongji.edu.cn",
+        "member3@tongji.edu.cn",
+    ]
+    assert [item["email_delivery_status"] for item in reminders] == ["sent", "sent"]
+    assert all(item["email_sent_at"] for item in reminders)
+    assert all(item["email_failure_reason"] is None for item in reminders)
+    assert [message.to_email for message in sender.messages] == [
+        "member2@tongji.edu.cn",
+        "member3@tongji.edu.cn",
+    ]
+    assert all(message.subject == "ICPC 报销材料提醒" for message in sender.messages)
+    assert all("无需直接回复本邮件" in message.text_body for message in sender.messages)
 
     list_response = client.get(
         f"/api/tasks/{task['id']}/material-reminders",
@@ -990,7 +1036,58 @@ def test_administrator_can_record_and_list_material_reminders(tmp_path):
     )
 
     assert list_response.status_code == 200
-    assert list_response.json() == {"items": [reminder]}
+    assert list_response.json() == {"items": reminders}
+
+
+def test_material_reminder_records_email_failures_without_hiding_them(tmp_path):
+    client = make_client(tmp_path)
+    task = create_task(client)
+    bind_primary_email(tmp_path, member_id="2250002", email="member2@tongji.edu.cn")
+
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/material-reminders",
+        json={
+            "administrator_id": "admin-1",
+            "member_ids": ["2250002", "2250003"],
+            "content": "请补充支付记录。",
+        },
+        headers=admin_auth_headers(client),
+    )
+
+    assert create_response.status_code == 201
+    reminders = create_response.json()["items"]
+    assert [item["member_id"] for item in reminders] == ["2250002", "2250003"]
+    assert [item["email_delivery_status"] for item in reminders] == ["failed", "failed"]
+    assert [item["email_failure_reason"] for item in reminders] == [
+        "outbound email is not configured",
+        "member has no primary email binding",
+    ]
+    assert [item["email_recipient"] for item in reminders] == ["member2@tongji.edu.cn", None]
+
+
+def test_material_reminder_uses_default_email_template_when_body_is_omitted(tmp_path):
+    sender = RecordingOutboundEmailSender()
+    client = make_client(tmp_path, outbound_email_sender=sender)
+    task = create_task(client)
+    bind_primary_email(tmp_path, member_id="2250002", email="member2@tongji.edu.cn")
+
+    create_response = client.post(
+        f"/api/tasks/{task['id']}/material-reminders",
+        json={
+            "administrator_id": "admin-1",
+            "member_id": "2250002",
+            "content": "请补充支付记录。",
+        },
+        headers=admin_auth_headers(client),
+    )
+
+    assert create_response.status_code == 201
+    reminder = create_response.json()["items"][0]
+    assert reminder["email_delivery_status"] == "sent"
+    assert reminder["email_subject"] == "TRMS 报销任务提醒：ICPC Asia Regional"
+    assert "这是一封 TRMS 自动化提醒邮件，无需直接回复本邮件。" in reminder["email_body"]
+    assert "提醒对象：2250002" in reminder["email_body"]
+    assert "请补充支付记录。" in sender.messages[0].text_body
 
 
 def test_create_material_reminder_rejects_non_administrator(tmp_path):

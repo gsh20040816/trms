@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from trms_backend.application.email_binding import EmailBindingService
 from trms_backend.application.email_material_submission import EmailMaterialSubmissionService
 from trms_backend.application.material_deletion import MaterialDeletionService
+from trms_backend.application.material_reminder_email import MaterialReminderEmailDispatchService
 from trms_backend.application.metrics import InMemoryMetricsCollector, MetricsCollector
 from trms_backend.application.material_submission import MaterialSubmissionService
 from trms_backend.application.material_type_update import MaterialTypeUpdateService
@@ -223,6 +224,11 @@ def create_app(
         email_binding_verification_repository,
         resolved_outbound_email_sender,
     )
+    material_reminder_email_service = MaterialReminderEmailDispatchService(
+        reminder_repository=material_reminder_repository,
+        email_binding_repository=email_account_binding_repository,
+        outbound_email_sender=resolved_outbound_email_sender,
+    )
     self_service_registration_service = SelfServiceRegistrationService(
         session_factory,
         registration_policy_repository,
@@ -310,6 +316,7 @@ def create_app(
             confirmation_repository,
             audit_log_repository,
             task_deletion_service,
+            material_reminder_email_service,
         )
     )
     app.include_router(

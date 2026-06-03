@@ -229,7 +229,10 @@ uv run python -m trms_backend --reload
 邮箱验证码发送边界：
 
 - 成员自助绑定邮箱时，后端会通过 SMTP 发送 6 位验证码邮件；当前验证码默认有效期为 10 分钟。
+- 管理员在成员提醒页发送补材料提醒时，也复用同一套 SMTP 出站配置；系统会向每个目标成员最早绑定的邮箱发送提醒邮件，并在提醒记录中保存收件邮箱、主题、正文、发送状态和失败原因。
+- 当前没有独立的邮箱主次设置；同一成员绑定多个邮箱时，按绑定时间最早的邮箱作为提醒邮件的 primary 邮箱。
 - 只有配置了 `TRMS_SMTP_HOST`、`TRMS_SMTP_PORT` 和 `TRMS_SMTP_FROM_ADDRESS` 后，`/api/email-bindings/verification-code` 才可用。
+- 若 SMTP 未配置，邮箱验证码接口会直接不可用；管理员提醒仍会创建记录，但邮件发送状态会明确标记为失败，不会伪装成已发送。
 - `TRMS_SMTP_USERNAME` 与 `TRMS_SMTP_PASSWORD` 必须成对出现；若留空，则按“无需 SMTP 登录”的本地中继模式发送。
 - `TRMS_SMTP_STARTTLS` 默认 `true`，`TRMS_SMTP_USE_SSL` 默认 `false`；若使用 SMTPS 465 端口，可设置 `TRMS_SMTP_USE_SSL=true` 并按服务端要求关闭 `STARTTLS`。
 - SMTP 凭据只允许通过后端环境变量注入，不入库、不返回前端，也不应写入日志。

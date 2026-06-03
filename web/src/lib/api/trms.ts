@@ -404,7 +404,7 @@ export const trmsApi = {
   },
 
   createTaskMaterialReminder(taskId: string, payload: MaterialReminderCreate) {
-    return apiClient.request<MaterialReminderRecord>(
+    return apiClient.request<ApiListResponse<MaterialReminderRecord>>(
       `/tasks/${encodeSegment(taskId)}/material-reminders`,
       {
         method: "POST",

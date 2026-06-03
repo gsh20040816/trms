@@ -82,6 +82,7 @@ from trms_backend.domain.invoices import (
 )
 from trms_backend.domain.material_reminders import (
     MaterialReminderCreate,
+    MaterialReminderEmailDeliveryStatus,
     MaterialReminderRecord,
     MaterialReminderRepository,
 )
@@ -1768,11 +1769,35 @@ class SqlAlchemyMaterialReminderRepository(MaterialReminderRepository):
             administrator_id=data.administrator_id,
             member_id=data.member_id,
             content=data.content,
+            email_recipient=data.email_recipient,
+            email_subject=data.email_subject,
+            email_body=data.email_body,
+            email_delivery_status=data.email_delivery_status,
+            email_failure_reason=data.email_failure_reason,
+            email_sent_at=data.email_sent_at,
             created_at=datetime.now(timezone.utc),
         )
         with session_scope(self._session_factory) as session:
             session.add(row)
         return _material_reminder_from_row(row)
+
+    def update_email_delivery(
+        self,
+        reminder_id: str,
+        *,
+        status: MaterialReminderEmailDeliveryStatus,
+        sent_at: datetime | None,
+        failure_reason: str | None,
+    ) -> MaterialReminderRecord | None:
+        with session_scope(self._session_factory) as session:
+            row = session.get(MaterialReminderRow, reminder_id)
+            if row is None:
+                return None
+            row.email_delivery_status = status.value
+            row.email_sent_at = sent_at
+            row.email_failure_reason = failure_reason
+            session.add(row)
+            return _material_reminder_from_row(row)
 
     def list_by_task(self, task_id: str) -> list[MaterialReminderRecord]:
         with session_scope(self._session_factory) as session:
@@ -2318,6 +2343,20 @@ def _material_reminder_from_row(row: MaterialReminderRow) -> MaterialReminderRec
         administrator_id=row.administrator_id,
         member_id=row.member_id,
         content=row.content,
+        email_recipient=row.email_recipient,
+        email_subject=row.email_subject,
+        email_body=row.email_body,
+        email_delivery_status=(
+            MaterialReminderEmailDeliveryStatus(row.email_delivery_status)
+            if row.email_delivery_status is not None
+            else None
+        ),
+        email_failure_reason=row.email_failure_reason,
+        email_sent_at=(
+            _ensure_utc_datetime(row.email_sent_at)
+            if row.email_sent_at is not None
+            else None
+        ),
         created_at=_ensure_utc_datetime(row.created_at),
     )
 

@@ -25,6 +25,21 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+type ReminderPostBody = {
+  administrator_id: string;
+  member_ids: string[];
+  content: string;
+  email_subject: string;
+  email_body: string;
+};
+
+function parseReminderPostBody(body: BodyInit | null | undefined): ReminderPostBody {
+  if (typeof body !== "string") {
+    throw new Error("expected JSON string request body");
+  }
+  return JSON.parse(body) as ReminderPostBody;
+}
+
 function buildTask() {
   return {
     id: "TASK-REVIEW",
@@ -223,7 +238,7 @@ describe("AdminCorrectionsRemindersPage", () => {
     clearMockSession();
   });
 
-  it("shows only member reminder controls and records manual material reminders", async () => {
+  it("selects members and sends editable reminder emails", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
 
@@ -244,6 +259,12 @@ describe("AdminCorrectionsRemindersPage", () => {
               administrator_id: "admin-1",
               member_id: "2250001",
               content: "请补充支付记录。",
+              email_recipient: "member1@tongji.edu.cn",
+              email_subject: "TRMS 报销任务提醒：ICPC 复核任务",
+              email_body: "这是一封 TRMS 自动化提醒邮件，无需直接回复本邮件。",
+              email_delivery_status: "sent",
+              email_failure_reason: null,
+              email_sent_at: "2026-04-28T09:41:00+08:00",
               created_at: "2026-04-28T09:40:00+08:00",
             },
           ],
@@ -251,18 +272,30 @@ describe("AdminCorrectionsRemindersPage", () => {
       }
 
       if (url === "/api/tasks/TASK-REVIEW/material-reminders" && init?.method === "POST") {
-        expect(init.body).toBe(JSON.stringify({
-          administrator_id: "admin-1",
-          member_id: "2250002",
-          content: "请补充比赛通知，并在补交后重新确认金额。",
-        }));
+        const body = parseReminderPostBody(init.body);
+        expect(body.administrator_id).toBe("admin-1");
+        expect(body.member_ids).toEqual(["2250002"]);
+        expect(body.content).toBe("请补充比赛通知，并在补交后重新确认金额。");
+        expect(body.email_subject).toBe("TRMS 报销任务提醒：ICPC 复核任务");
+        expect(body.email_body).toContain("这是一封 TRMS 自动化提醒邮件，无需直接回复本邮件。");
+        expect(body.email_body).toContain("请补充比赛通知，并在补交后重新确认金额。");
         return Promise.resolve(jsonResponse({
-          id: "REM-002",
-          task_id: "TASK-REVIEW",
-          administrator_id: "admin-1",
-          member_id: "2250002",
-          content: "请补充比赛通知，并在补交后重新确认金额。",
-          created_at: "2026-04-28T09:45:00+08:00",
+          items: [
+            {
+              id: "REM-002",
+              task_id: "TASK-REVIEW",
+              administrator_id: "admin-1",
+              member_id: "2250002",
+              content: "请补充比赛通知，并在补交后重新确认金额。",
+              email_recipient: "member2@tongji.edu.cn",
+              email_subject: body.email_subject,
+              email_body: body.email_body,
+              email_delivery_status: "sent",
+              email_failure_reason: null,
+              email_sent_at: "2026-04-28T09:45:30+08:00",
+              created_at: "2026-04-28T09:45:00+08:00",
+            },
+          ],
         }, { status: 201 }));
       }
 
@@ -272,7 +305,8 @@ describe("AdminCorrectionsRemindersPage", () => {
     renderCorrectionsRoute();
 
     expect(await screen.findByRole("heading", { name: "管理员补材料提醒" })).toBeInTheDocument();
-    expect(screen.getByText("系统只保存内部提醒记录，不会自动发送短信、邮件或 Telegram 消息；如需真正通知成员，请另行联系。")).toBeInTheDocument();
+    expect(screen.getByText("系统会使用成员最早绑定的邮箱作为 primary 邮箱；没有 primary 邮箱或邮件配置异常时，会记录失败原因。")).toBeInTheDocument();
+    expect(screen.getByLabelText("邮件正文")).toHaveDisplayValue(/这是一封 TRMS 自动化提醒邮件，无需直接回复本邮件。/);
     expect(screen.queryByText("待人工更正项")).not.toBeInTheDocument();
     expect(screen.queryByText("识别字段待确认或待补录材料")).not.toBeInTheDocument();
     expect(screen.queryByText("存在异常校验或异议的发票")).not.toBeInTheDocument();
@@ -284,23 +318,27 @@ describe("AdminCorrectionsRemindersPage", () => {
     const reminderList = within(await screen.findByLabelText("补材料提醒列表"));
     expect(reminderList.getByText("请补充支付记录。")).toBeInTheDocument();
     expect(reminderList.getByText("张三 / member1 / 2250001")).toBeInTheDocument();
+    expect(reminderList.getByText("邮件已发送")).toBeInTheDocument();
+    expect(reminderList.getByText("primary 邮箱 member1@tongji.edu.cn")).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.mouseDown(screen.getByRole("combobox", { name: "提醒对象成员" }));
       await Promise.resolve();
     });
     fireEvent.click(await screen.findByRole("option", { name: "李四 / member2 / 2250002" }));
+    expect(within(screen.getByLabelText("已选提醒对象")).getByText("李四 / member2 / 2250002")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("提醒内容"), {
       target: { value: "请补充比赛通知，并在补交后重新确认金额。" },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
+      fireEvent.click(screen.getByRole("button", { name: "发送提醒邮件" }));
       await Promise.resolve();
     });
 
-    expect(await screen.findByText("已保存对李四 / member2 / 2250002的内部提醒记录；系统不会自动发送消息。")).toBeInTheDocument();
+    expect(await screen.findByText("已记录 1 条提醒；邮件发送成功 1 封，失败 0 封。")).toBeInTheDocument();
     const updatedReminderList = within(screen.getByLabelText("补材料提醒列表"));
     expect(updatedReminderList.getByText("请补充比赛通知，并在补交后重新确认金额。")).toBeInTheDocument();
+    expect(updatedReminderList.getByText("primary 邮箱 member2@tongji.edu.cn")).toBeInTheDocument();
   });
 
   it("shows backend reminder creation errors instead of pretending success", async () => {
@@ -342,7 +380,7 @@ describe("AdminCorrectionsRemindersPage", () => {
       target: { value: "请补交材料。" },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "保存内部提醒记录" }));
+      fireEvent.click(screen.getByRole("button", { name: "发送提醒邮件" }));
       await Promise.resolve();
     });
 
@@ -393,6 +431,6 @@ describe("AdminCorrectionsRemindersPage", () => {
       });
       await Promise.resolve();
     });
-    expect(await screen.findByRole("option", { name: "没有匹配的成员" })).toBeInTheDocument();
+    expect(await screen.findByText("没有匹配的成员")).toBeInTheDocument();
   });
 });

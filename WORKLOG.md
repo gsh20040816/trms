@@ -1,5 +1,48 @@
 # WORKLOG
 
+## 2026-06-04 01:27 - Send editable admin member reminder emails
+
+### 完成内容
+- 已把管理员“成员提醒”从纯内部记录升级为显式邮件提醒：
+  - [web/src/app/admin-corrections-reminders.tsx](/home/gsh/workspace/TRMS/web/src/app/admin-corrections-reminders.tsx)
+  - 管理员可搜索并追加多个任务成员，发送前可编辑提醒内容、邮件主题和邮件正文；
+  - 默认邮件正文包含“TRMS 自动化提醒邮件”“无需直接回复本邮件”、任务名称、任务编号、提醒对象、提醒内容和登录系统处理指引。
+- 已补后端邮件发送与可追踪状态：
+  - [src/trms_backend/application/material_reminder_email.py](/home/gsh/workspace/TRMS/src/trms_backend/application/material_reminder_email.py)
+  - [src/trms_backend/domain/material_reminders.py](/home/gsh/workspace/TRMS/src/trms_backend/domain/material_reminders.py)
+  - `POST /api/tasks/{task_id}/material-reminders` 支持 `member_ids` 批量目标，旧 `member_id` 仍兼容；
+  - 每名成员生成独立提醒记录，使用该成员最早绑定邮箱作为 primary 邮箱，并保存收件邮箱、主题、正文、`sent/failed` 状态、失败原因和发送时间；
+  - SMTP 未配置或成员没有 primary 邮箱时，记录明确失败原因，不伪装成已发送。
+- 已新增迁移：
+  - [alembic/versions/20260604_01_material_reminder_email_delivery.py](/home/gsh/workspace/TRMS/alembic/versions/20260604_01_material_reminder_email_delivery.py)
+  - 为 `material_reminders` 增加邮件投递字段，旧提醒记录保留且邮件字段为空。
+- 已同步文档和任务记录：
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/自动生成成员补材料消息评估.md](/home/gsh/workspace/TRMS/docs/自动生成成员补材料消息评估.md)
+  - [TASKS.md](/home/gsh/workspace/TRMS/TASKS.md)
+
+### 根因 / 边界变化
+- 旧实现按此前产品边界只保存内部提醒记录，页面还明确提示“不会自动发送邮件”；
+- 本轮需求要求管理员提醒真实发送到成员 primary 邮箱，因此需要新增显式邮件出站和发送结果记录；
+- 当前系统没有独立“主邮箱”字段，本轮保守采用“成员最早绑定的邮箱”为 primary 邮箱，并在 README 中明确该边界；系统自动提醒任务 `automatic_reminder_tasks` 仍不会隐式外发。
+
+### 风险与影响面
+- 本轮只改变管理员手动成员提醒，不改变自动提醒任务生成、邮件材料入站、邮箱验证码绑定、Telegram 或 CLI 逻辑。
+- 邮件发送在 API 请求内同步尝试；单次多选成员数量受任务成员规模约束，失败会逐条落库展示。后续如提醒规模增大，应再拆通知 outbox / 异步重试模型。
+
+### 验证结果
+- 已运行定向后端测试：
+  - `uv run pytest tests/test_tasks_api.py -k 'material_reminder or reminder'`，`6 passed`
+  - `uv run pytest tests/test_web_bearer_request_identity_api.py -k 'material_reminders or review_summary_and_material_reminders or secondary_admin'`，`3 passed`
+  - `uv run pytest tests/test_api_error_responses.py -k forbidden_error_uses_standard_error_payload`，`1 passed`
+- 已运行定向前端测试：
+  - `cd web && npm test -- --run src/app/admin-corrections-reminders.test.tsx`，`3 passed`
+  - `cd web && npm test -- --run src/app/admin-corrections-reminders.test.tsx src/lib/api/trms.test.ts src/lib/api/client.test.ts`，`14 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - 验证完成；后端 `646 passed`，前端 `30 passed / 134 tests passed`，Alembic 升降级、前端构建、Docker Compose 配置检查和 `git diff --check` 通过。
+  - `npm run lint` 仍有 2 个既有 warning，均位于 [web/src/app/task-missing-materials.tsx](/home/gsh/workspace/TRMS/web/src/app/task-missing-materials.tsx)，与本轮改动无关。
+
 ## 2026-05-05 15:25 - Align admin review material intro with member material detail copy
 
 ### 完成内容
