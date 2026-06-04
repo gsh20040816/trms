@@ -1,5 +1,44 @@
 # WORKLOG
 
+## 2026-06-04 02:08 - Run worker processors asynchronously with timeout
+
+### 完成内容
+- 已修复 worker 主循环按 processor 顺序同步执行的问题：
+  - [src/trms_backend/application/async_jobs.py](/home/gsh/workspace/TRMS/src/trms_backend/application/async_jobs.py)
+  - 每轮会把已注册 processor 作为后台任务并发启动，worker 主线程只等待到配置的 timeout；
+  - 单类 processor 超时后记录 `worker_processor_timeout`，主循环继续处理其他 processor；
+  - 上一轮同类 processor 仍未结束时记录 `worker_processor_still_running` 并跳过，不重复启动同类任务；
+  - 超时后完成的任务会在后续轮询中被清理并记录 `worker_processor_late_complete`。
+- 已新增 worker 任务 timeout 配置：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)
+  - 新增 `TRMS_ASYNC_JOB_WORKER_TASK_TIMEOUT_SECONDS`，默认 `300` 秒，允许范围 `(0, 3600]`；
+  - worker 启动日志和轮询日志会包含该配置。
+- 已同步配置模板和文档：
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md)
+- 已补回归测试：
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+  - [tests/test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py)
+
+### 根因 / 边界变化
+- 根因是 `AsyncJobWorker.run_once()` 原来在主线程中逐个调用 `processor.run_once()`；任一邮件、识别或导出 processor 卡住，都会阻塞后续 processor 和整个 worker 轮询。
+- 本轮修复把阻塞边界收口到单类 processor 后台任务；Python 线程无法被安全强杀，因此 timeout 的语义是“worker 主循环停止等待并继续下一轮”，不是强制终止正在执行的业务线程。
+- 为避免同类任务堆叠，超时任务未结束前不会再次启动同一 `job_type`。
+
+### 风险与影响面
+- 本轮只改 worker 调度层和运行配置，不改变识别、导出、邮件入站等业务 processor 的内部状态机。
+- 某个 processor 超时后，其内部已经领取为 `RUNNING` 的业务记录仍由该 processor 自己完成或失败；调度层不会伪装业务任务已成功，也不会跨 repository 强制改状态。
+
+### 验证结果
+- 已运行定向测试：
+  - `uv run pytest tests/test_async_jobs.py -k 'async_job_worker or backend_main_worker_once or worker_entry_configures_info_logging'`，`9 passed`
+  - `uv run pytest tests/test_runtime_config.py -k 'async_job_worker_task_timeout or async_job_worker_concurrency or development_defaults'`，`5 passed`
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - 验证完成；Python 编译检查、Alembic 升降级、pytest、Docker Compose 配置检查和 `git diff --check` 通过；pytest 结果为 `650 passed`。
+
 ## 2026-06-04 01:27 - Send editable admin member reminder emails
 
 ### 完成内容

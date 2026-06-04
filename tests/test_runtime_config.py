@@ -35,6 +35,7 @@ def test_load_runtime_config_uses_development_defaults():
     assert config.async_jobs.mode == "in_process"
     assert config.async_jobs.worker_poll_interval_seconds == 5
     assert config.async_jobs.worker_concurrency == 4
+    assert config.async_jobs.worker_task_timeout_seconds == 300
     assert config.auth.allow_admin_self_register is True
     assert config.auth.bootstrap_admin_token is None
     assert config.auth.telegram_inbound_token is None
@@ -297,6 +298,19 @@ def test_load_runtime_config_rejects_invalid_async_job_worker_concurrency():
         load_runtime_config(env={"TRMS_ASYNC_JOB_WORKER_CONCURRENCY": "0"})
 
     assert "worker_concurrency" in str(exc_info.value)
+
+
+def test_load_runtime_config_reads_async_job_worker_task_timeout():
+    config = load_runtime_config(env={"TRMS_ASYNC_JOB_WORKER_TASK_TIMEOUT_SECONDS": "45"})
+
+    assert config.async_jobs.worker_task_timeout_seconds == 45
+
+
+def test_load_runtime_config_rejects_invalid_async_job_worker_task_timeout():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(env={"TRMS_ASYNC_JOB_WORKER_TASK_TIMEOUT_SECONDS": "0"})
+
+    assert "worker_task_timeout_seconds" in str(exc_info.value)
 
 
 def test_load_runtime_config_reads_llm_provider_and_normalizes_base_url():

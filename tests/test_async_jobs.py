@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from threading import Event, Lock, Thread
+from time import monotonic
 
 import trms_backend.__main__ as backend_main
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
@@ -99,9 +100,35 @@ class CountingProcessor:
     def __init__(self, job_type: str, processed_count: int) -> None:
         self.job_type = job_type
         self._processed_count = processed_count
+        self.calls = 0
 
     def run_once(self) -> int:
+        self.calls += 1
         return self._processed_count
+
+
+class BlockingProcessor:
+    def __init__(self, job_type: str, release: Event) -> None:
+        self.job_type = job_type
+        self.release = release
+        self.started = Event()
+        self.finished = Event()
+        self.calls = 0
+
+    def run_once(self) -> int:
+        self.calls += 1
+        self.started.set()
+        self.release.wait(timeout=1)
+        self.finished.set()
+        return 1
+
+
+class FailingProcessor:
+    def __init__(self, job_type: str) -> None:
+        self.job_type = job_type
+
+    def run_once(self) -> int:
+        raise RuntimeError("processor failed")
 
 
 def test_async_job_worker_run_once_aggregates_registered_processors():
@@ -120,6 +147,55 @@ def test_async_job_worker_run_once_aggregates_registered_processors():
     assert worker.worker_concurrency == 4
     assert result.processed_counts == {"recognition": 2, "export": 1}
     assert result.total_processed == 3
+
+
+def test_async_job_worker_times_out_blocking_processors_without_restarting_them():
+    config = load_runtime_config(
+        env={},
+        async_job_mode="worker",
+        async_job_worker_task_timeout_seconds=0.03,
+    )
+    release = Event()
+    blocking_processor = BlockingProcessor("recognition", release)
+    fast_processor = CountingProcessor("export", 2)
+    worker = AsyncJobWorker(
+        config.async_jobs,
+        processors=(blocking_processor, fast_processor),
+    )
+
+    started_at = monotonic()
+    first_result = worker.run_once()
+    elapsed_seconds = monotonic() - started_at
+    second_result = worker.run_once()
+
+    release.set()
+    assert blocking_processor.finished.wait(timeout=1)
+    assert blocking_processor.started.is_set()
+    assert elapsed_seconds < 0.5
+    assert blocking_processor.calls == 1
+    assert fast_processor.calls == 2
+    assert first_result.processed_counts == {"recognition": 0, "export": 2}
+    assert second_result.processed_counts == {"recognition": 0, "export": 2}
+
+
+def test_async_job_worker_isolates_processor_failures():
+    config = load_runtime_config(
+        env={},
+        async_job_mode="worker",
+        async_job_worker_task_timeout_seconds=0.1,
+    )
+    worker = AsyncJobWorker(
+        config.async_jobs,
+        processors=(
+            FailingProcessor("recognition"),
+            CountingProcessor("export", 1),
+        ),
+    )
+
+    result = worker.run_once()
+
+    assert result.processed_counts == {"recognition": 0, "export": 1}
+    assert result.total_processed == 1
 
 
 def test_resolve_recognition_worker_max_workers_serializes_sqlite():
@@ -942,6 +1018,7 @@ def test_backend_main_worker_once_uses_worker_entry(monkeypatch):
         mode = "worker"
         poll_interval_seconds = 5.0
         worker_concurrency = 4
+        worker_task_timeout_seconds = 300.0
         registered_job_types = ("email_inbox", "recognition", "export")
 
         def run_once(self) -> None:
@@ -1013,6 +1090,7 @@ def test_worker_entry_configures_info_logging(monkeypatch):
         mode = "worker"
         poll_interval_seconds = 5.0
         worker_concurrency = 4
+        worker_task_timeout_seconds = 300.0
         registered_job_types = ("email_inbox", "recognition")
 
         def run_once(self) -> None:

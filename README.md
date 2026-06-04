@@ -155,6 +155,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_ASYNC_JOB_MODE`
 - `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS`
 - `TRMS_ASYNC_JOB_WORKER_CONCURRENCY`
+- `TRMS_ASYNC_JOB_WORKER_TASK_TIMEOUT_SECONDS`
 - `TRMS_AUTH_ALLOW_ADMIN_SELF_REGISTER`
 - `TRMS_AUTH_BOOTSTRAP_ADMIN_TOKEN`
 - `TRMS_AUTH_TELEGRAM_INBOUND_TOKEN`
@@ -332,6 +333,7 @@ Telegram Bot 与入站可信边界：
 - `TRMS_ENV=production` 时默认切换为 `worker`，并拒绝 `TRMS_ASYNC_JOB_MODE=in_process`，避免把耗时任务长期留在请求线程。
 - `TRMS_ASYNC_JOB_POLL_INTERVAL_SECONDS` 默认 `5`，用于 worker 空闲轮询间隔。
 - `TRMS_ASYNC_JOB_WORKER_CONCURRENCY` 默认 `4`，用于 worker 模式下并发处理待识别材料，支持成员批量上传发票后同时消费多条识别任务。
+- `TRMS_ASYNC_JOB_WORKER_TASK_TIMEOUT_SECONDS` 默认 `300`，用于限制 worker 主循环等待单类后台任务的最长秒数；超时任务会继续在后台完成，worker 不会在同类任务仍运行时重复启动它。
 - 当前 worker 已可消费待执行的识别任务，并沿用现有识别状态、失败原因和重试历史查询接口。
 - 当前 worker 已可消费待执行的导出任务，并为已实现的 CSV / JSON / merged PDF 导出落盘产物、更新状态、失败原因和重试历史查询。
 - 当前 worker 也可在配置 IMAP 后轮询邮箱，记录邮件去重结果和忽略原因。

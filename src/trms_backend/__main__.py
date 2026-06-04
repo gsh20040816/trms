@@ -261,6 +261,7 @@ def run_worker_command(argv: Sequence[str]) -> int:
             "mode": worker.mode,
             "poll_interval_seconds": worker.poll_interval_seconds,
             "worker_concurrency": worker.worker_concurrency,
+            "worker_task_timeout_seconds": worker.worker_task_timeout_seconds,
             "registered_job_types": list(worker.registered_job_types),
             "environment": config.environment,
             "file_storage": effective_config.file_storage.to_safe_log_fields(),
