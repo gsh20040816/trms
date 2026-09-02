@@ -176,6 +176,7 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/trms uv run pytho
 - `TRMS_IMAP_PASSWORD`
 - `TRMS_IMAP_MAILBOX`
 - `TRMS_IMAP_POLL_INTERVAL_SECONDS`
+- `TRMS_IMAP_TIMEOUT_SECONDS`
 - `TRMS_IMAP_USE_SSL`
 - `TRMS_IMAP_STARTTLS`
 - `TRMS_TEXT_LLM_API_KEY`
@@ -242,7 +243,7 @@ IMAP 收件轮询边界：
 
 - 当前 worker 已支持可选的 IMAP 邮箱轮询；仅当配置了 `TRMS_IMAP_HOST`、`TRMS_IMAP_PORT`、`TRMS_IMAP_USERNAME` 和 `TRMS_IMAP_PASSWORD` 后才会启用。
 - 成员任务页和管理员任务详情页会展示邮件提交说明；收件地址优先读取 `TRMS_PUBLIC_EMAIL_SUBMISSION_ADDRESS`，未配置时仅在 `TRMS_IMAP_USERNAME` 是合法邮箱地址的情况下使用它。
-- `TRMS_IMAP_MAILBOX` 默认 `INBOX`；`TRMS_IMAP_POLL_INTERVAL_SECONDS` 默认 `30`；`TRMS_IMAP_USE_SSL` 默认 `true`，`TRMS_IMAP_STARTTLS` 默认 `false`。
+- `TRMS_IMAP_MAILBOX` 默认 `INBOX`；`TRMS_IMAP_POLL_INTERVAL_SECONDS` 默认 `30`；`TRMS_IMAP_TIMEOUT_SECONDS` 默认 `30` 秒，并限制每次底层 socket 等待，避免网络半连接永久阻塞收件线程；`TRMS_IMAP_USE_SSL` 默认 `true`，`TRMS_IMAP_STARTTLS` 默认 `false`。
 - worker 会按邮箱 `UID` 去重记录已轮询邮件，并把原始 `.eml` 存入统一存储后端的 `_email_inbox/` 命名空间。
 - 发件人邮箱未绑定成员身份时，邮件会被显式记录为 `ignored_unbound_sender`，不会进入成员主链路。
 - 发件人已绑定但主题任务标识不存在或邮件格式不满足规范时，邮件会记录为稳定忽略原因，而不是静默丢弃。

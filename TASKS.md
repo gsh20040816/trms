@@ -2,6 +2,15 @@
 
 本任务队列根据 `README.md`、需求分析文档 V0.2、架构设计文档 V0.1 和当前代码状态生成。后续 Codex 每轮只应完成一个未完成且未阻塞的最小任务。
 
+## 临时任务 - 2026-09-02 IMAP 收件线程永久阻塞修复
+
+- [x] 为 IMAP 连接增加有限 socket 超时，避免网络半连接永久阻塞邮件收件 processor
+  - Done when:
+    - IMAP SSL 与非 SSL 连接都使用可配置的有限 socket 超时
+    - `TRMS_IMAP_TIMEOUT_SECONDS` 默认值和合法范围明确，非法配置启动即失败
+    - 配置模板和生产部署文档说明该超时的运维边界
+    - 相关配置、IMAP client 回归测试和仓库级验证通过
+
 ## 临时任务 - 2026-06-04 worker 任务异步执行与 timeout
 
 - [x] 修复 worker 单类任务同步阻塞主循环的问题

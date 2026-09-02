@@ -1,5 +1,45 @@
 # WORKLOG
 
+## 2026-09-02 16:35 - Bound IMAP socket waits to prevent permanent inbox stalls
+
+### 完成内容
+- 已先对生产环境执行即时恢复：
+  - 只重启 netcup 上的 `deploy-worker-1`，没有重启 API、Web、PostgreSQL、Redis 或 MinIO；
+  - 重启后的连续三轮 `email_inbox` 轮询均在约 2.5 秒内完成，旧阻塞线程已消失，邮箱最高 UID 与数据库最后消费 UID 一致，没有待补消费积压。
+- 已为 IMAP 收件连接增加有限 socket 超时：
+  - [src/trms_backend/runtime_config.py](/home/gsh/workspace/TRMS/src/trms_backend/runtime_config.py)
+  - [src/trms_backend/application/email_inbox_polling.py](/home/gsh/workspace/TRMS/src/trms_backend/application/email_inbox_polling.py)
+  - 新增 `TRMS_IMAP_TIMEOUT_SECONDS`，默认 `30` 秒，允许范围 `(0, 300]`；
+  - SSL 与非 SSL IMAP 构造器都会收到该 timeout，连接、认证、搜索、读取或退出阶段遇到无响应时不再无限等待；
+  - timeout 会进入安全运行配置日志，但 IMAP 密码仍保持脱敏。
+- 已同步配置模板和部署说明：
+  - [.env.example](/home/gsh/workspace/TRMS/.env.example)
+  - [.env.development.example](/home/gsh/workspace/TRMS/.env.development.example)
+  - [README.md](/home/gsh/workspace/TRMS/README.md)
+  - [docs/生产部署清单与Docker Compose基线.md](/home/gsh/workspace/TRMS/docs/生产部署清单与Docker%20Compose基线.md)
+- 已补配置读取、非法值 Fail-Fast、SSL/非 SSL 构造器 timeout 透传回归测试：
+  - [tests/test_runtime_config.py](/home/gsh/workspace/TRMS/tests/test_runtime_config.py)
+  - [tests/test_async_jobs.py](/home/gsh/workspace/TRMS/tests/test_async_jobs.py)
+
+### 根因
+- 生产 `email_inbox` 线程从 2026-08-15 15:49（北京时间）起持续阻塞约 18 天；宿主机线程栈确认它停在 `tcp_recvmsg`，worker 只能持续记录 `worker_processor_still_running`。
+- `ImapEmailInboxClient` 原先调用 `imaplib.IMAP4_SSL` / `IMAP4` 时未传 `timeout`，进程默认 socket timeout 又是 `None`；一次网络半连接即可让该线程永久等待。
+- worker 的任务 timeout 只能停止主循环等待，不能安全强杀 Python 线程；为了避免同类任务堆叠，后续轮询又会跳过尚未结束的 `email_inbox` 任务。因此正确修复边界是让 IMAP socket 自身有限时失败，使 processor 明确报错并在下一轮重新连接，而不是增加另一层 fallback 或重复启动线程。
+
+### 风险与影响面
+- 本轮只改变 IMAP 外部 I/O 的等待上限，不改变邮箱 UID 去重、发件人绑定、主题解析、附件导入或 SMTP 回执语义。
+- 单次底层 socket 等待超过配置值时，本轮轮询会显式失败并由 worker 记录 `worker_processor_failed`；下一轮会重新建立 IMAP 连接，不会把失败伪装成成功。
+- 生产现有 `.env` 未配置新变量时会直接使用 `30` 秒默认值，无需增加兼容分支。
+
+### 验证结果
+- 首次定向测试收集因新增参数化用例漏导入 `pytest` 而失败；补齐导入后重新运行同一命令，不跳过或弱化测试。
+- 已运行定向测试：
+  - `uv run pytest tests/test_runtime_config.py tests/test_async_jobs.py -k 'email_inbox or imap'`
+  - `17 passed`。
+- 已运行仓库级验证：
+  - `./scripts/verify.sh`
+  - Python 编译、Alembic 升降级、Docker Compose 配置与 `git diff --check` 均通过；pytest 结果为 `653 passed`。
+
 ## 2026-06-04 02:08 - Run worker processors asynchronously with timeout
 
 ### 完成内容

@@ -454,9 +454,17 @@ class ImapEmailInboxClient:
 
     def fetch_new_messages(self, *, after_uid: str | None = None) -> list[PolledEmailMessage]:
         if self._config.use_ssl:
-            connection = imaplib.IMAP4_SSL(self._config.host, self._config.port)
+            connection = imaplib.IMAP4_SSL(
+                self._config.host,
+                self._config.port,
+                timeout=self._config.timeout_seconds,
+            )
         else:
-            connection = imaplib.IMAP4(self._config.host, self._config.port)
+            connection = imaplib.IMAP4(
+                self._config.host,
+                self._config.port,
+                timeout=self._config.timeout_seconds,
+            )
         try:
             if self._config.starttls:
                 connection.starttls()

@@ -332,6 +332,7 @@ class EmailInboxConfig(BaseModel):
     password: SecretStr
     mailbox: str = "INBOX"
     poll_interval_seconds: float = Field(gt=0, le=3600)
+    timeout_seconds: float = Field(gt=0, le=300)
     use_ssl: bool = True
     starttls: bool = False
 
@@ -384,6 +385,7 @@ class EmailInboxConfig(BaseModel):
                 "password_configured": True,
                 "mailbox": self.mailbox,
                 "poll_interval_seconds": self.poll_interval_seconds,
+                "timeout_seconds": self.timeout_seconds,
                 "use_ssl": self.use_ssl,
                 "starttls": self.starttls,
             }
@@ -665,6 +667,7 @@ def load_runtime_config(
     imap_password: str | None = None,
     imap_mailbox: str | None = None,
     imap_poll_interval_seconds: str | float | int | None = None,
+    imap_timeout_seconds: str | float | int | None = None,
     imap_use_ssl: bool | str | None = None,
     imap_starttls: bool | str | None = None,
     smtp_host: str | None = None,
@@ -885,6 +888,7 @@ def load_runtime_config(
             "password": imap_password,
             "mailbox": imap_mailbox,
             "poll_interval_seconds": imap_poll_interval_seconds,
+            "timeout_seconds": imap_timeout_seconds,
             "use_ssl": imap_use_ssl,
             "starttls": imap_starttls,
         },
@@ -1152,6 +1156,7 @@ def _resolve_email_inbox_payload(
         "password": env.get("TRMS_IMAP_PASSWORD"),
         "mailbox": env.get("TRMS_IMAP_MAILBOX"),
         "poll_interval_seconds": env.get("TRMS_IMAP_POLL_INTERVAL_SECONDS"),
+        "timeout_seconds": env.get("TRMS_IMAP_TIMEOUT_SECONDS"),
         "use_ssl": env.get("TRMS_IMAP_USE_SSL"),
         "starttls": env.get("TRMS_IMAP_STARTTLS"),
     }
@@ -1182,6 +1187,11 @@ def _resolve_email_inbox_payload(
         "poll_interval_seconds": (
             values.get("poll_interval_seconds")
             if values.get("poll_interval_seconds") is not None
+            else 30.0
+        ),
+        "timeout_seconds": (
+            values.get("timeout_seconds")
+            if values.get("timeout_seconds") is not None
             else 30.0
         ),
         "use_ssl": values.get("use_ssl") if values.get("use_ssl") is not None else True,

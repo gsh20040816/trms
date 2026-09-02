@@ -228,6 +228,7 @@ def test_load_runtime_config_reads_email_inbox_settings_and_redacts_password():
             "TRMS_IMAP_PASSWORD": "imap-secret",
             "TRMS_IMAP_MAILBOX": "TRMS",
             "TRMS_IMAP_POLL_INTERVAL_SECONDS": "45",
+            "TRMS_IMAP_TIMEOUT_SECONDS": "12",
             "TRMS_IMAP_USE_SSL": "true",
             "TRMS_IMAP_STARTTLS": "false",
         }
@@ -240,12 +241,29 @@ def test_load_runtime_config_reads_email_inbox_settings_and_redacts_password():
     assert config.email_inbox.password.get_secret_value() == "imap-secret"
     assert config.email_inbox.mailbox == "TRMS"
     assert config.email_inbox.poll_interval_seconds == 45
+    assert config.email_inbox.timeout_seconds == 12
     assert config.email_inbox.use_ssl is True
     assert config.email_inbox.starttls is False
 
     safe_log_fields = config.to_safe_log_fields()
     assert safe_log_fields["email_inbox"]["password"] == "[redacted]"
     assert safe_log_fields["email_inbox"]["password_configured"] is True
+    assert safe_log_fields["email_inbox"]["timeout_seconds"] == 12
+
+
+def test_load_runtime_config_rejects_invalid_email_inbox_timeout():
+    with pytest.raises(RuntimeConfigError) as exc_info:
+        load_runtime_config(
+            env={
+                "TRMS_IMAP_HOST": "imap.example.edu",
+                "TRMS_IMAP_PORT": "993",
+                "TRMS_IMAP_USERNAME": "mailer@example.edu",
+                "TRMS_IMAP_PASSWORD": "imap-secret",
+                "TRMS_IMAP_TIMEOUT_SECONDS": "0",
+            }
+        )
+
+    assert "timeout_seconds" in str(exc_info.value)
 
 
 def test_load_runtime_config_derives_public_email_submission_address_from_imap_username():

@@ -2,11 +2,15 @@ from datetime import datetime, timedelta, timezone
 from threading import Event, Lock, Thread
 from time import monotonic
 
+import pytest
+
 import trms_backend.__main__ as backend_main
+import trms_backend.application.email_inbox_polling as email_inbox_polling
 from trms_backend.application.export_async_jobs import ExportAsyncJobProcessor
 from trms_backend.application.email_inbox_polling import (
     EmailInboxImportProcessor,
     EmailInboxPollingProcessor,
+    ImapEmailInboxClient,
     PolledEmailMessage,
     StaticEmailInboxClient,
 )
@@ -406,6 +410,72 @@ def test_static_email_inbox_client_only_returns_messages_after_last_seen_uid():
     result = client.fetch_new_messages(after_uid="10")
 
     assert [item.mailbox_uid for item in result] == ["11"]
+
+
+@pytest.mark.parametrize(
+    ("use_ssl", "constructor_name"),
+    [(True, "IMAP4_SSL"), (False, "IMAP4")],
+)
+def test_imap_email_inbox_client_applies_socket_timeout(
+    monkeypatch,
+    use_ssl,
+    constructor_name,
+):
+    captured: dict[str, object] = {}
+
+    class RecordingImapConnection:
+        def __init__(self, host, port, *, timeout):
+            captured.update(host=host, port=port, timeout=timeout)
+
+        def login(self, username, password):
+            captured.update(username=username, password=password)
+
+        def select(self, mailbox):
+            captured["mailbox"] = mailbox
+
+        def uid(self, command, charset, search_criteria):
+            captured.update(
+                command=command,
+                charset=charset,
+                search_criteria=search_criteria,
+            )
+            return "OK", [b""]
+
+        def logout(self):
+            captured["logged_out"] = True
+
+    monkeypatch.setattr(
+        email_inbox_polling.imaplib,
+        constructor_name,
+        RecordingImapConnection,
+    )
+    config = load_runtime_config(
+        env={
+            "TRMS_IMAP_HOST": "imap.example.edu",
+            "TRMS_IMAP_PORT": "993",
+            "TRMS_IMAP_USERNAME": "mailer@example.edu",
+            "TRMS_IMAP_PASSWORD": "imap-secret",
+            "TRMS_IMAP_TIMEOUT_SECONDS": "12",
+            "TRMS_IMAP_USE_SSL": str(use_ssl).lower(),
+        }
+    )
+    assert config.email_inbox is not None
+
+    result = ImapEmailInboxClient(config.email_inbox).fetch_new_messages(after_uid="10")
+
+    assert result == []
+    assert captured == {
+        "host": "imap.example.edu",
+        "port": 993,
+        "timeout": 12,
+        "username": "mailer@example.edu",
+        "password": "imap-secret",
+        "mailbox": "INBOX",
+        "command": "search",
+        "charset": None,
+        "search_criteria": "UID 10:*",
+        "logged_out": True,
+    }
 
 
 def test_email_inbox_polling_processor_ignores_bound_sender_with_unknown_task_key(tmp_path):
